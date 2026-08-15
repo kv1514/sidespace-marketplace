@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.vercel/
+.env*
+!.env.example
+*.tsbuildinfo
+*.log
+
+# Business outreach data is operational, not application source.
+outreach/
