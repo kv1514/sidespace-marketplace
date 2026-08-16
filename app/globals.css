@@ -4993,3 +4993,151 @@ html.reveal-ready [data-reveal].is-visible {
     display: none;
   }
 }
+
+/* ===== Looping step widgets (override earlier one-shot rules) ===== */
+
+/* Every card animates continuously; the active card is simply emphasised. */
+.mock-field em {
+  width: 0;
+  animation: loop-type 4.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.mock-caret {
+  animation: loop-caret 4.6s steps(1) infinite;
+}
+
+.mock-chips b:nth-child(2) {
+  animation: loop-chip 4.6s ease-out infinite;
+}
+
+.mock-results li {
+  animation: loop-row 4.6s cubic-bezier(0.19, 1, 0.22, 1) infinite;
+  opacity: 0;
+}
+
+.mock-results li:nth-child(1) { animation-delay: 0s; }
+.mock-results li:nth-child(2) { animation-delay: 0.14s; }
+.mock-results li:nth-child(3) { animation-delay: 0.28s; }
+
+.mock-bubble {
+  animation: loop-bubble 4.6s cubic-bezier(0.19, 1, 0.22, 1) infinite;
+  opacity: 0;
+}
+
+.mock-bubble:nth-of-type(1) { animation-delay: 0s; }
+.mock-bubble:nth-of-type(2) { animation-delay: 0.5s; }
+.mock-bubble:nth-of-type(3) { animation-delay: 1s; }
+
+.mock-typing {
+  animation: loop-typing 4.6s ease-out infinite;
+  opacity: 0;
+}
+
+.mock-typing i {
+  animation: mock-bounce 1s ease-in-out infinite;
+}
+
+.mock-typing i:nth-child(2) { animation-delay: 0.15s; }
+.mock-typing i:nth-child(3) { animation-delay: 0.3s; }
+
+.mock-status {
+  animation: loop-status 4.6s ease-out infinite;
+}
+
+.mock-deal-check {
+  animation: loop-check 4.6s cubic-bezier(0.34, 1.85, 0.64, 1) infinite;
+  opacity: 0;
+}
+
+/* Inactive cards keep animating but sit back visually. */
+.steps article .step-widget {
+  opacity: 0.55;
+  transition: opacity 320ms ease-out;
+}
+
+.steps article.step-active .step-widget {
+  opacity: 1;
+}
+
+@keyframes loop-type {
+  0%       { width: 0; }
+  22%      { width: 108px; }
+  88%      { width: 108px; }
+  94%, 100% { width: 0; }
+}
+
+@keyframes loop-caret {
+  0%, 24%   { opacity: 1; }
+  25%, 49%  { opacity: 0; }
+  50%, 74%  { opacity: 1; }
+  75%, 100% { opacity: 0; }
+}
+
+@keyframes loop-chip {
+  0%, 24%  { background: var(--paper-2); color: var(--ink); }
+  30%, 88% { background: var(--ink); color: var(--lime); }
+  95%, 100% { background: var(--paper-2); color: var(--ink); }
+}
+
+@keyframes loop-row {
+  0%, 26%   { opacity: 0; transform: translateY(8px); }
+  36%, 86%  { opacity: 1; transform: none; }
+  94%, 100% { opacity: 0; transform: translateY(8px); }
+}
+
+@keyframes loop-bubble {
+  0%        { opacity: 0; transform: translateY(8px) scale(0.98); }
+  10%, 82%  { opacity: 1; transform: none; }
+  92%, 100% { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+
+@keyframes loop-typing {
+  0%, 32%   { opacity: 0; }
+  40%, 84%  { opacity: 1; }
+  92%, 100% { opacity: 0; }
+}
+
+@keyframes loop-status {
+  0%, 30% {
+    background: var(--paper-2);
+    color: var(--ink-soft);
+    transform: scale(1);
+  }
+  40%, 88% {
+    background: var(--ink);
+    color: var(--lime);
+    transform: scale(1.05);
+  }
+  96%, 100% {
+    background: var(--paper-2);
+    color: var(--ink-soft);
+    transform: scale(1);
+  }
+}
+
+@keyframes loop-check {
+  0%, 40%   { opacity: 0; transform: scale(0.4) rotate(-12deg); }
+  52%, 86%  { opacity: 1; transform: scale(1) rotate(0deg); }
+  94%, 100% { opacity: 0; transform: scale(0.4) rotate(-12deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mock-field em,
+  .mock-caret,
+  .mock-chips b:nth-child(2),
+  .mock-results li,
+  .mock-bubble,
+  .mock-typing,
+  .mock-typing i,
+  .mock-status,
+  .mock-deal-check {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+    width: auto;
+  }
+
+  .steps article .step-widget {
+    opacity: 1;
+  }
+}

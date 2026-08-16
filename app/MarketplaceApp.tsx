@@ -946,9 +946,11 @@ export default function MarketplaceApp() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // Matches the widget animation cycle so each story finishes before the
+    // section moves on.
     const timer = window.setInterval(() => {
       setActiveStep((current) => (current + 1) % 3);
-    }, 2600);
+    }, 4600);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -2466,9 +2468,7 @@ export default function MarketplaceApp() {
           ].map((step, index) => (
             <article
               key={step.title}
-              data-reveal
               className={activeStep === index ? "step-active" : ""}
-              style={{ ["--reveal-delay" as string]: `${index * 90}ms` }}
               onMouseEnter={() => setActiveStep(index)}
             >
               <span>{`0${index + 1}`}</span>
