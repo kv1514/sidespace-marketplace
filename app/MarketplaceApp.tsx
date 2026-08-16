@@ -505,6 +505,28 @@ function SocialLinks({ profile, compact = false }: { profile: Profile; compact?:
   );
 }
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * A dialog cannot read which control opened it: by the time it mounts the
+ * browser has already dropped focus to <body>. Remember the last real focus
+ * target so the dialog can hand focus back when it closes.
+ */
+let lastFocusedElement: HTMLElement | null = null;
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "focusin",
+    (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target && target !== document.body && !target.closest(".modal-card")) {
+        lastFocusedElement = target;
+      }
+    },
+    true,
+  );
+}
+
 function Modal({
   children,
   onClose,
@@ -514,12 +536,74 @@ function Modal({
   onClose: () => void;
   wide?: boolean;
 }) {
+  const cardRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+    const active = document.activeElement as HTMLElement | null;
+    const opener =
+      active && active !== document.body ? active : lastFocusedElement;
+
+    // Move focus into the dialog so keyboard and screen reader users land
+    // inside it instead of on the page behind the overlay. Deferred by a
+    // frame because the browser restores focus to the clicked trigger once
+    // the click that opened this finishes dispatching.
+    // Focus the dialog itself rather than a child: screen readers announce
+    // the dialog, and a child can be replaced by a later re-render. Re-assert
+    // a few times because content arriving after mount (the Google button,
+    // loaded listings) can drop focus back to the body.
+    let attempts = 0;
+    const focusTimer = window.setInterval(() => {
+      attempts += 1;
+      if (!card.contains(document.activeElement)) {
+        card.focus({ preventScroll: true });
+      }
+      if (attempts >= 6) window.clearInterval(focusTimer);
+    }, 80);
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = Array.from(
+        card!.querySelectorAll<HTMLElement>(FOCUSABLE),
+      ).filter((element) => element.offsetParent !== null);
+      if (!items.length) return;
+      const firstItem = items[0];
+      const lastItem = items[items.length - 1];
+      // Keep Tab inside the dialog rather than wandering behind it.
+      if (event.shiftKey && document.activeElement === firstItem) {
+        event.preventDefault();
+        lastItem.focus();
+      } else if (!event.shiftKey && document.activeElement === lastItem) {
+        event.preventDefault();
+        firstItem.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.clearInterval(focusTimer);
+      document.removeEventListener("keydown", onKeyDown, true);
+      // Send focus back where it came from so the page does not lose place.
+      if (opener && document.contains(opener)) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+  }, [onClose]);
+
   return (
     <div className="modal-layer" role="presentation" onMouseDown={onClose}>
       <section
+        ref={cardRef}
         className={`modal-card ${wide ? "modal-wide" : ""}`}
         role="dialog"
         aria-modal="true"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <button className="close-button" onClick={onClose} aria-label="Close">
@@ -2556,8 +2640,10 @@ export default function MarketplaceApp() {
 
         <div className="market-controls">
           <label className="search-control">
-            <span>⌕</span>
+            <span aria-hidden="true">⌕</span>
             <input
+              type="search"
+              aria-label="Search listings by platform, creator, space, or city"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search Instagram, creators, spaces, cities..."
@@ -4721,12 +4807,16 @@ export default function MarketplaceApp() {
         </div>
       )}
 
-      {toast && (
-        <div className="toast" role="status">
-          <span>✓</span>
-          {toast}
-        </div>
-      )}
+      {/* Always mounted so screen readers announce changes; role=status is
+          only honoured on a region that already exists in the DOM. */}
+      <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">
+        {toast && (
+          <div className="toast">
+            <span aria-hidden="true">✓</span>
+            {toast}
+          </div>
+        )}
+      </div>
     </main>
   );
 }

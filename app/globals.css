@@ -5383,3 +5383,17 @@ html.reveal-ready [data-reveal].is-visible {
 .listing-form.field-grid {
   gap: 20px 18px;
 }
+
+/* The live region is a positioned wrapper; the toast keeps its own styling. */
+.toast-region {
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+  position: fixed;
+  right: 0;
+  z-index: 60;
+}
+
+.toast-region .toast {
+  pointer-events: auto;
+}
