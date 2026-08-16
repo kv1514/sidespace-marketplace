@@ -5216,3 +5216,10 @@ html.reveal-ready [data-reveal].is-visible {
     display: none;
   }
 }
+
+/* width/overflow only apply to non-inline boxes, so the typing effect
+   needs an inline-block or it animates a property with no effect. */
+.mock-field em {
+  display: inline-block;
+  vertical-align: middle;
+}
