@@ -5668,3 +5668,68 @@ html.reveal-ready [data-reveal].is-visible {
   margin-bottom: 1px;
   text-transform: uppercase;
 }
+
+/* ===== Intent switch: which side of the marketplace are you on ===== */
+
+.intent-switch {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
+.intent-switch > button:not(.intent-clear) {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: grid;
+  gap: 3px;
+  padding: 16px 18px;
+  text-align: left;
+  transition: border-color 0.15s ease-out, background 0.15s ease-out;
+}
+
+.intent-switch > button:not(.intent-clear):hover {
+  border-color: var(--ink);
+}
+
+.intent-switch > button.active {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.intent-switch strong {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.intent-switch small {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.intent-switch > button.active strong {
+  color: var(--white);
+}
+
+.intent-switch > button.active small {
+  color: color-mix(in srgb, var(--white) 72%, transparent);
+}
+
+.intent-clear {
+  background: none;
+  border: 0;
+  color: var(--coral);
+  font-size: 13px;
+  font-weight: 500;
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 4px 0;
+}
+
+@media (max-width: 620px) {
+  .intent-switch {
+    grid-template-columns: 1fr;
+  }
+}

@@ -399,6 +399,37 @@ function isBrief(listing: Pick<Listing, "channel">) {
   return listing.channel === "Business brief";
 }
 
+/**
+ * Stable pseudo-random key from the id. Gives the grid a mixed, non-
+ * chronological feel without reshuffling on every render (which would fight
+ * hydration and make the page jump).
+ */
+function shuffleKey(id: string) {
+  let hash = 0;
+  for (let index = 0; index < id.length; index += 1) {
+    hash = (hash * 31 + id.charCodeAt(index)) % 100000;
+  }
+  return hash;
+}
+
+/**
+ * A listing is "ready" when it would not embarrass the marketplace: it says
+ * enough for someone to decide. Thin ones sink below the complete ones.
+ */
+function listingIsReady(listing: Listing) {
+  return (
+    listing.description.trim().length >= 60 &&
+    listing.format.trim().length >= 10 &&
+    listing.title.trim().length >= 8
+  );
+}
+
+/** Real and complete first, then real but thin, then samples. */
+function listingRank(listing: Listing) {
+  if (listing.owner.is_demo) return 2;
+  return listingIsReady(listing) ? 0 : 1;
+}
+
 /** Every role a profile acts as, primary first. */
 function profileRoles(profile: Pick<Profile, "role" | "extra_roles">): Role[] {
   const extras = (profile.extra_roles ?? []).filter(
@@ -1042,7 +1073,14 @@ export default function MarketplaceApp() {
         channelFilter === "All" || listing.channel === channelFilter;
       const text = `${listing.title} ${listing.channel} ${listing.description} ${listing.demographics} ${listing.owner.display_name} ${listing.owner.city}`.toLowerCase();
       return roleMatches && channelMatches && (!normalized || text.includes(normalized));
-    });
+    })
+      // Members first, samples last; within each band the order is mixed
+      // rather than newest-first so one fresh post cannot dominate the top.
+      .sort(
+        (a, b) =>
+          listingRank(a) - listingRank(b) ||
+          shuffleKey(a.id) - shuffleKey(b.id),
+      );
   }, [blockedProfileIds, channelFilter, listings, query, roleFilter]);
 
   // Reveal widgets as they scroll into view, and cycle the how-it-works steps
@@ -2718,6 +2756,44 @@ export default function MarketplaceApp() {
             physical formats. See the details, meet the owner, and start a
             private conversation.
           </p>
+        </div>
+
+        {/* Which side of the marketplace someone is on decides what they
+            should even be looking at, so ask it plainly first. */}
+        <div className="intent-switch" role="group" aria-label="What are you here for?">
+          <button
+            type="button"
+            className={roleFilter === "supply" ? "active" : ""}
+            aria-pressed={roleFilter === "supply"}
+            onClick={() => {
+              setRoleFilter("supply");
+              setChannelFilter("All");
+            }}
+          >
+            <strong>I want to advertise</strong>
+            <small>Buy space from local people and creators</small>
+          </button>
+          <button
+            type="button"
+            className={roleFilter === "business" ? "active" : ""}
+            aria-pressed={roleFilter === "business"}
+            onClick={() => {
+              setRoleFilter("business");
+              setChannelFilter("All");
+            }}
+          >
+            <strong>I have space to offer</strong>
+            <small>Find businesses looking to work with you</small>
+          </button>
+          {roleFilter !== "all" && (
+            <button
+              type="button"
+              className="intent-clear"
+              onClick={() => setRoleFilter("all")}
+            >
+              Show everything
+            </button>
+          )}
         </div>
 
         <div className="market-controls">
