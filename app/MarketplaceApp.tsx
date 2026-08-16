@@ -1736,6 +1736,7 @@ export default function MarketplaceApp() {
             Get seen
             <br />
             <em>where it matters.</em>
+            <span className="type-cursor" aria-hidden="true" />
           </h1>
           <p className="hero-lede">
             SideSpace turns everyday attention into bookable ad space: local
