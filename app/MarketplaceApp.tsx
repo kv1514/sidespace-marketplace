@@ -3040,13 +3040,19 @@ export default function MarketplaceApp() {
                   ))}
                 </div>
               )}
-              <div className="person-stats">
-                <span>
-                  <b>{compactNumber(person.followers || person.avg_views)}</b>
-                  {person.followers ? " followers" : " weekly looks"}
-                </span>
-                <span>{person.audience_age}</span>
-              </div>
+              {Boolean(person.followers || person.avg_views || person.audience_age) && (
+                // The row is bordered top and bottom, so drop it entirely rather
+                // than framing a "0 weekly looks" for someone who has not filled it in.
+                <div className="person-stats">
+                  {Boolean(person.followers || person.avg_views) && (
+                    <span>
+                      <b>{compactNumber(person.followers || person.avg_views)}</b>
+                      {person.followers ? " followers" : " weekly looks"}
+                    </span>
+                  )}
+                  {Boolean(person.audience_age) && <span>{person.audience_age}</span>}
+                </div>
+              )}
               <button onClick={() => requireAccount(() => void startConversation(person))}>
                 Say hello ↗
               </button>
