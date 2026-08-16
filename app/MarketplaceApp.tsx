@@ -690,6 +690,10 @@ export default function MarketplaceApp() {
     Array<{ id: string; display_name: string }>
   >([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  // Distinguishes "still loading the profile" from "checked, and there is
+  // none" — otherwise a signed-in user without a profile row sits on the
+  // loading screen forever.
+  const [profileChecked, setProfileChecked] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
@@ -818,10 +822,12 @@ export default function MarketplaceApp() {
         .eq("auth_user_id", currentUser.id)
         .maybeSingle();
       if (error) {
+        setProfileChecked(true);
         setToast("We could not load your saved profile. Please refresh and try again.");
         return;
       }
       const own = (data as Profile | null) ?? null;
+      setProfileChecked(true);
       if (own) {
         await Promise.all([
           loadOwnListings(own),
@@ -981,6 +987,16 @@ export default function MarketplaceApp() {
       void supabase.removeChannel(channel);
     };
   }, [activeThread, supabase]);
+
+  /** Real listings lead the hero preview; samples only pad it out. */
+  const heroListings = useMemo(
+    () =>
+      listings
+        .slice()
+        .sort((a, b) => Number(a.owner.is_demo) - Number(b.owner.is_demo))
+        .slice(0, 4),
+    [listings],
+  );
 
   const ownerIdsWithListings = useMemo(
     () => new Set(listings.map((listing) => listing.owner.id)),
@@ -1923,6 +1939,7 @@ export default function MarketplaceApp() {
 
   function clearSessionState() {
     setProfile(null);
+    setProfileChecked(false);
     setOwnListings([]);
     setCampaignRequests([]);
     setVerificationRequest(null);
@@ -2257,7 +2274,7 @@ export default function MarketplaceApp() {
         </div>
       </header>
 
-      {user && !profile ? (
+      {user && !profile && !profileChecked ? (
         <section className="dashboard" aria-label="Loading your dashboard">
           <div className="dashboard-head">
             <div>
@@ -2501,33 +2518,53 @@ export default function MarketplaceApp() {
             <span>Digital and physical reach</span>
           </div>
         </div>
-        <div className="hero-stage" aria-label="Featured digital and physical placements">
-          <figure className="hero-main-photo">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/photos/rural-main-street.jpg"
-              alt="Independent storefronts on a small-town Main Street"
-              fetchPriority="high"
-              decoding="async"
-            />
-            <figcaption>
-              <span className="status-pill">Available now</span>
-              <strong>Main Street Window</strong>
-              <small>Fredericksburg, TX · street-facing storefront</small>
-            </figcaption>
-          </figure>
-          <figure className="hero-side-photo">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/roadside-farm-stand.jpg" alt="" decoding="async" />
-          </figure>
-          <div className="floating-card">
-            <span className="floating-icon">@</span>
-            <div>
-              <small>Instagram Story</small>
-              <strong>Maya · 4.2K</strong>
-              <span>Bisbee, AZ · local life</span>
+        {/* The strongest proof this is real is the real inventory, so the hero
+            shows the actual marketplace rather than stock photography. */}
+        <div className="hero-stage" aria-label="A preview of live listings">
+          <div className="hero-app">
+            <div className="hero-app-bar" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <span>SideSpace</span>
             </div>
-            <b>Open</b>
+            <div className="hero-app-body">
+              <aside className="hero-app-side" aria-hidden="true">
+                <small>Type of space</small>
+                <ul>
+                  <li className="on">Storefront</li>
+                  <li>Vehicle</li>
+                  <li>Community board</li>
+                  <li>Social post</li>
+                </ul>
+                <small>Near</small>
+                <p>Orange County</p>
+              </aside>
+              <div className="hero-app-grid">
+                {heroListings.map((listing) => (
+                  <article className="hero-app-card" key={listing.id}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={listing.image_url || "/photos/market-creator.jpg"}
+                      alt=""
+                      fetchPriority="high"
+                      decoding="async"
+                    />
+                    <div>
+                      <strong>{listing.title}</strong>
+                      <small>
+                        {listing.owner.display_name}
+                        {listing.owner.city ? ` · ${listing.owner.city}` : ""}
+                      </small>
+                      <b>
+                        ${listing.price}
+                        <span> / {listing.price_unit}</span>
+                      </b>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </section>

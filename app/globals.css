@@ -5477,3 +5477,175 @@ html.reveal-ready [data-reveal].is-visible {
   border-style: solid;
   color: var(--ink);
 }
+
+/* ===== Hero product surface =====
+   Replaces the stock-photo collage. The strongest proof a marketplace is real
+   is its inventory, so the hero frames the actual listings. */
+
+.hero-stage {
+  align-items: center;
+  display: flex;
+}
+
+.hero-app {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow:
+    0 24px 60px rgba(21, 19, 14, 0.1),
+    0 10px 24px rgba(21, 19, 14, 0.06);
+  overflow: hidden;
+  width: 100%;
+}
+
+.hero-app-bar {
+  align-items: center;
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  gap: 6px;
+  padding: 10px 14px;
+}
+
+.hero-app-bar i {
+  background: rgba(21, 19, 14, 0.18);
+  border-radius: 50%;
+  height: 9px;
+  width: 9px;
+}
+
+.hero-app-bar span {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  margin-left: 8px;
+  text-transform: uppercase;
+}
+
+.hero-app-body {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+}
+
+.hero-app-side {
+  border-right: 1px solid var(--line-soft);
+  padding: 14px 12px;
+}
+
+.hero-app-side small {
+  color: var(--ink-soft);
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  margin-bottom: 7px;
+  text-transform: uppercase;
+}
+
+.hero-app-side ul {
+  display: grid;
+  gap: 5px;
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+}
+
+.hero-app-side li {
+  border-radius: 7px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+.hero-app-side li.on {
+  background: var(--ink);
+  color: var(--white);
+}
+
+.hero-app-side p {
+  font-size: 12px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.hero-app-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 14px;
+}
+
+.hero-app-card {
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.hero-app-card img {
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  width: 100%;
+}
+
+.hero-app-card > div {
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px 11px;
+}
+
+/* Product type is deliberately smaller and heavier than marketing type, so
+   this reads as software rather than page furniture. */
+.hero-app-card strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-app-card small {
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-app-card b {
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-top: 3px;
+}
+
+.hero-app-card b span {
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+@media (max-width: 1120px) {
+  .hero-app-body {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-app-side {
+    border-bottom: 1px solid var(--line-soft);
+    border-right: 0;
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .hero-app-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .hero-app-card img {
+    aspect-ratio: 4 / 3;
+  }
+}
