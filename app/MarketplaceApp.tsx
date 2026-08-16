@@ -720,6 +720,10 @@ export default function MarketplaceApp() {
   const [igAvatarBusy, setIgAvatarBusy] = useState(false);
   const igAvatarSeqRef = useRef(0);
   const igAvatarPromiseRef = useRef<Promise<string> | null>(null);
+  // Last handle we actually looked up, and the storage object that lookup
+  // produced, so repeat blurs are free and superseded photos get cleaned up.
+  const igSyncedHandleRef = useRef("");
+  const igSyncedUrlRef = useRef("");
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [inboxOpen, setInboxOpen] = useState(false);
@@ -945,6 +949,8 @@ export default function MarketplaceApp() {
         setInboxOpen(false);
         igAvatarSeqRef.current += 1;
         igAvatarPromiseRef.current = null;
+        igSyncedHandleRef.current = "";
+        igSyncedUrlRef.current = "";
         setIgAvatar("");
         setIgStats(null);
         setIgAvatarBusy(false);
@@ -2090,6 +2096,10 @@ export default function MarketplaceApp() {
   function resetIgAvatarSync() {
     igAvatarSeqRef.current += 1;
     igAvatarPromiseRef.current = null;
+    // Deliberately not deleting igSyncedUrlRef here: this also runs straight
+    // after a successful save, where that photo is now the member's avatar.
+    igSyncedHandleRef.current = "";
+    igSyncedUrlRef.current = "";
     setIgAvatar("");
     setIgStats(null);
     setIgAvatarBusy(false);
@@ -2108,6 +2118,18 @@ export default function MarketplaceApp() {
     input.value = String(followers);
   }
 
+  // A photo fetched for a handle the member then changed away from is dead
+  // weight in a public bucket, so drop it as soon as it is superseded.
+  async function discardSyncedIgPhoto(url: string) {
+    if (!supabase || !url) return;
+    const path = storagePathFromUrl(url);
+    if (!path) return;
+    await supabase.storage
+      .from("marketplace-media")
+      .remove([path])
+      .catch(() => undefined);
+  }
+
   async function syncInstagramAvatar(
     rawHandle: string,
     form?: HTMLFormElement | null,
@@ -2117,12 +2139,27 @@ export default function MarketplaceApp() {
     const seq = ++igAvatarSeqRef.current;
     if (!handle) {
       igAvatarPromiseRef.current = null;
+      void discardSyncedIgPhoto(igSyncedUrlRef.current);
+      igSyncedUrlRef.current = "";
+      igSyncedHandleRef.current = "";
       setIgAvatar("");
       setIgStats(null);
+      // This branch never started a request, but an older one may still be in
+      // flight and will return stale; clear the flag or the submit button
+      // stays disabled with nothing left to wait for.
+      setIgAvatarBusy(false);
       return;
     }
+    // onBlur fires whether or not the field changed, and every lookup that
+    // wants a photo costs an upload, so only re-run when the handle is new.
+    if (handle === igSyncedHandleRef.current) {
+      setIgAvatarBusy(false);
+      return;
+    }
+
     // A photo the member already has or is uploading always wins, but the
-    // follower count is worth fetching either way.
+    // follower count is worth fetching either way. Tell the server, so it
+    // reads the stats without downloading and storing a photo we would bin.
     const fileInput = form?.elements.namedItem("avatar_file");
     const photoAlreadyChosen =
       Boolean(profile?.avatar_url) ||
@@ -2134,7 +2171,7 @@ export default function MarketplaceApp() {
     const lookup = (async () => {
       try {
         const { data, error } = await client.functions.invoke("ig-avatar", {
-          body: { handle },
+          body: { handle, want_photo: !photoAlreadyChosen },
         });
         if (error) {
           // invoke() treats our 404/503 as an error, so the explanation we
@@ -2148,11 +2185,20 @@ export default function MarketplaceApp() {
         }
         if (!data || typeof data !== "object") return "";
         const stats = data as IgStats;
-        if (seq === igAvatarSeqRef.current) {
-          setIgStats(stats);
-          prefillFollowers(form, stats.followers);
+        const url = String(stats.url ?? "");
+        if (seq !== igAvatarSeqRef.current) {
+          // Superseded mid-flight: nothing will ever show this photo.
+          void discardSyncedIgPhoto(url);
+          return "";
         }
-        return photoAlreadyChosen ? "" : String(stats.url ?? "");
+        setIgStats(stats);
+        prefillFollowers(form, stats.followers);
+        igSyncedHandleRef.current = handle;
+        if (url) {
+          void discardSyncedIgPhoto(igSyncedUrlRef.current);
+          igSyncedUrlRef.current = url;
+        }
+        return url;
       } catch {
         return "";
       }
@@ -4201,7 +4247,7 @@ export default function MarketplaceApp() {
                       igStats && (
                         <small className="ig-sync-note" role="status">
                           {igStats.throttled
-                            ? "Instagram is busy right now. Your handle is saved — try again in a minute."
+                            ? "Instagram did not answer just now. Carry on and finish your profile — you can type your follower count in yourself, or come back and sync later."
                             : igStats.error
                               ? igStats.error
                               : typeof igStats.followers === "number"

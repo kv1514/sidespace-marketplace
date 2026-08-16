@@ -4137,13 +4137,9 @@ a:focus-visible {
   line-height: 1.4;
 }
 
-.ig-sync-note {
-  color: var(--ink-soft);
-  display: block;
-  font-size: 12px;
-  line-height: 1.4;
-  margin-top: 6px;
-}
+/* .ig-sync-note deliberately has no rule of its own: `.field-grid label > small`
+   later in this file styles every hint in the form, and matching it keeps the
+   Instagram note consistent with its neighbours. */
 
 html {
   scrollbar-color: rgba(21, 19, 14, 0.3) transparent;
