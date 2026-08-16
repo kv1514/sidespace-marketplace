@@ -460,7 +460,7 @@ function Avatar({
     <span className={`avatar avatar-${size}`}>
       {profile.avatar_url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={profile.avatar_url} alt="" />
+        <img src={profile.avatar_url} alt="" loading="lazy" decoding="async" />
       ) : (
         initials(profile.display_name)
       )}
@@ -2069,6 +2069,8 @@ export default function MarketplaceApp() {
             <img
               src="/photos/rural-main-street.jpg"
               alt="Independent storefronts on a small-town Main Street"
+              fetchPriority="high"
+              decoding="async"
             />
             <figcaption>
               <span className="status-pill">Available now</span>
@@ -2078,7 +2080,7 @@ export default function MarketplaceApp() {
           </figure>
           <figure className="hero-side-photo">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/roadside-farm-stand.jpg" alt="" />
+            <img src="/photos/roadside-farm-stand.jpg" alt="" decoding="async" />
           </figure>
           <div className="floating-card">
             <span className="floating-icon">@</span>
@@ -2169,7 +2171,7 @@ export default function MarketplaceApp() {
                 onClick={() => openListing(listing)}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={listing.image_url} alt="" />
+                <img src={listing.image_url} alt="" loading="lazy" decoding="async" />
                 <span className="listing-channel">{listing.channel}</span>
                 {listingImages(listing).length > 1 && (
                   <span className="photo-count">
@@ -2307,7 +2309,7 @@ export default function MarketplaceApp() {
         <div className="space-collage">
           <figure className="space-tile tile-wide">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/roadside-farm-stand.jpg" alt="Roadside farm stand" />
+            <img src="/photos/roadside-farm-stand.jpg" alt="Roadside farm stand" loading="lazy" decoding="async" />
             <figcaption>
               <strong>Roadside farm stand</strong>
               <span>Dinuba, CA · from $2/day</span>
@@ -2315,7 +2317,7 @@ export default function MarketplaceApp() {
           </figure>
           <figure className="space-tile">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/small-town-barber.jpg" alt="Small-town barber shop" />
+            <img src="/photos/small-town-barber.jpg" alt="Small-town barber shop" loading="lazy" decoding="async" />
             <figcaption>
               <strong>Barber waiting bench</strong>
               <span>Lanesboro, MN · $10/week</span>
@@ -2323,7 +2325,7 @@ export default function MarketplaceApp() {
           </figure>
           <figure className="space-tile">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/rural-market.jpg" alt="Rural Main Street market" />
+            <img src="/photos/rural-market.jpg" alt="Rural Main Street market" loading="lazy" decoding="async" />
             <figcaption>
               <strong>Market counter card</strong>
               <span>Mercer, WI · $12/week</span>
@@ -2362,7 +2364,7 @@ export default function MarketplaceApp() {
                 <div className="profile-gallery-preview" aria-label={`${person.display_name} photos`}>
                   {person.gallery_urls?.slice(0, 3).map((url, index) => (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img key={`${url}-${index}`} src={url} alt="" />
+                    <img key={`${url}-${index}`} src={url} alt="" loading="lazy" decoding="async" />
                   ))}
                 </div>
               )}
@@ -2830,6 +2832,8 @@ export default function MarketplaceApp() {
                       <img
                         src={listing.image_url || "/photos/market-creator.jpg"}
                         alt={`${listing.title} listing`}
+                        loading="lazy"
+                        decoding="async"
                       />
                       <div>
                         <span className={`listing-status status-${listing.status}`}>
@@ -3267,7 +3271,7 @@ export default function MarketplaceApp() {
                   <div className="saved-media-grid field-wide">
                     {profile?.gallery_urls?.map((url, index) => (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img key={url} src={url} alt={`Saved profile photo ${index + 1}`} />
+                      <img key={url} src={url} alt={`Saved profile photo ${index + 1}`} loading="lazy" decoding="async" />
                     ))}
                   </div>
                 )}
@@ -3343,7 +3347,7 @@ export default function MarketplaceApp() {
                       Boolean(igAvatar) && (
                         <span className="ig-avatar-preview">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={igAvatar} alt="Instagram profile preview" />
+                          <img src={igAvatar} alt="Instagram profile preview" loading="lazy" decoding="async" />
                           <small>
                             Synced from Instagram — upload a photo in step 2 to
                             use a different one.
@@ -3695,7 +3699,7 @@ export default function MarketplaceApp() {
                       aria-label={`View photo ${index + 1}`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt="" />
+                      <img src={url} alt="" loading="lazy" decoding="async" />
                     </button>
                   ))}
                 </div>
