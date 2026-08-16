@@ -1288,25 +1288,6 @@ h2 em {
   max-width: 850px;
 }
 
-.pricing-intro > div:last-child > p {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
-  line-height: 1.65;
-  margin: 14px 0 0;
-}
-
-.pricing-kicker {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  display: inline-flex;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.07em;
-  padding: 8px 10px;
-  text-transform: uppercase;
-}
-
 .pricing-grid {
   display: grid;
   gap: 12px;

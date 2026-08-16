@@ -377,6 +377,20 @@ const demoListings: Listing[] = listingSeeds.map((listing) => ({
   )!,
 }));
 
+// Members type their handle with or without the @ (or paste a whole URL);
+// display it one way regardless of what was stored.
+function displayHandle(raw: string) {
+  const cleaned = raw
+    .trim()
+    .replace(/^https?:\/\/(www\.)?instagram\.com\//i, "")
+    .replace(/^@+/, "")
+    .replace(/\/+$/, "");
+  if (!cleaned) return "";
+  // Multi-word "handles" are really display names (the QA fixtures); an @
+  // would just make them look broken.
+  return /\s/.test(cleaned) ? cleaned : `@${cleaned}`;
+}
+
 function compactNumber(value: number) {
   return Intl.NumberFormat("en", {
     notation: "compact",
@@ -1063,6 +1077,15 @@ export default function MarketplaceApp() {
     () => new Set(listings.map((listing) => listing.owner.id)),
     [listings],
   );
+
+  // Live listing count per member, for the showcase cards.
+  const listingCountByOwner = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const listing of listings) {
+      counts.set(listing.owner.id, (counts.get(listing.owner.id) ?? 0) + 1);
+    }
+    return counts;
+  }, [listings]);
 
   /** 0 = real member with listings, 1 = real member without, 2 = sample. */
   function rankPerson(person: Profile) {
@@ -2381,7 +2404,7 @@ export default function MarketplaceApp() {
           <a href="#how">How it works</a>
           <a href="#market">Marketplace</a>
           <a href="#spaces">Physical spaces</a>
-          <a href="#creators">Creators</a>
+          <a href="#creators">Creators &amp; businesses</a>
         </nav>
         <div className="header-actions">
           <button className="text-button" onClick={openInbox}>
@@ -3123,12 +3146,13 @@ export default function MarketplaceApp() {
       <section className="people-section" id="creators">
         <div className="section-top">
           <div>
-            <p className="section-label">Creators and hosts</p>
+            <p className="section-label">Creators, hosts and businesses</p>
             <h2>Small town. <em>Real influence.</em></h2>
           </div>
           <p>
-            Rent a creator’s Instagram Story, TikTok reach, or newsletter—or
-            book a shopkeeper’s window, counter, vehicle, or land.
+            Rent a creator’s Instagram Story, TikTok reach, or newsletter. Book
+            a shopkeeper’s window, counter, vehicle, or land. Or meet the
+            businesses looking to buy that space.
           </p>
         </div>
         <div className="people-row">
@@ -3141,7 +3165,7 @@ export default function MarketplaceApp() {
                 <span className="person-verified">Verified by SideSpace</span>
               )}
               <h3>{person.display_name}</h3>
-              <p>{person.handle || person.city}</p>
+              <p>{displayHandle(person.handle ?? "") || person.city}</p>
               <SocialLinks profile={person} compact />
               {Boolean(person.gallery_urls?.length) && (
                 <div className="profile-gallery-preview" aria-label={`${person.display_name} photos`}>
@@ -3151,7 +3175,12 @@ export default function MarketplaceApp() {
                   ))}
                 </div>
               )}
-              {Boolean(person.followers || person.avg_views || person.audience_age) && (
+              {Boolean(
+                person.followers ||
+                  person.avg_views ||
+                  person.audience_age ||
+                  listingCountByOwner.get(person.id),
+              ) && (
                 // The row is bordered top and bottom, so drop it entirely rather
                 // than framing a "0 weekly looks" for someone who has not filled it in.
                 <div className="person-stats">
@@ -3159,6 +3188,14 @@ export default function MarketplaceApp() {
                     <span>
                       <b>{compactNumber(person.followers || person.avg_views)}</b>
                       {person.followers ? " followers" : " weekly looks"}
+                    </span>
+                  )}
+                  {Boolean(listingCountByOwner.get(person.id)) && (
+                    <span>
+                      <b>{listingCountByOwner.get(person.id)}</b>
+                      {listingCountByOwner.get(person.id) === 1
+                        ? " listing live"
+                        : " listings live"}
                     </span>
                   )}
                   {Boolean(person.audience_age) && <span>{person.audience_age}</span>}
@@ -3177,14 +3214,6 @@ export default function MarketplaceApp() {
           <div>
             <p className="eyebrow">Pricing</p>
             <h2>Start free. Grow when you are ready.</h2>
-          </div>
-          <div>
-            <span className="pricing-kicker">Planned launch pricing</span>
-            <p>
-              Early access is free while payments are being built. When paid
-              campaigns launch, occasional advertisers can pay per campaign and
-              frequent advertisers can lower their fees with Pro.
-            </p>
           </div>
         </div>
 
@@ -3300,7 +3329,7 @@ export default function MarketplaceApp() {
           <a href="#how">How it works</a>
           <a href="#market">Marketplace</a>
           <a href="#spaces">Physical spaces</a>
-          <a href="#creators">Creators</a>
+          <a href="#creators">Creators &amp; businesses</a>
           <a href="#pricing">Pricing</a>
           <button onClick={openInbox}>Messages</button>
         </nav>
