@@ -1830,6 +1830,65 @@ export default function MarketplaceApp() {
     setToast("Signed out.");
   }
 
+  /** Public storage URLs look like .../object/public/marketplace-media/<path>. */
+  function storagePathFromUrl(url: string) {
+    const marker = "/marketplace-media/";
+    const index = url.indexOf(marker);
+    if (index === -1) return null;
+    return decodeURIComponent(url.slice(index + marker.length).split("?")[0]);
+  }
+
+  async function removeProfilePhoto(url: string, kind: "gallery" | "avatar") {
+    if (!supabase || !profile) return;
+    if (
+      !window.confirm(
+        kind === "avatar"
+          ? "Remove your profile photo?"
+          : "Remove this photo from your profile?",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const nextGallery =
+        kind === "gallery"
+          ? (profile.gallery_urls ?? []).filter((item) => item !== url)
+          : profile.gallery_urls ?? [];
+      const patch =
+        kind === "gallery"
+          ? { gallery_urls: nextGallery }
+          : { avatar_url: "" };
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .update(patch)
+        .eq("id", profile.id)
+        .select()
+        .single();
+      if (error) throw error;
+      setProfile(data as Profile);
+
+      // Remove the underlying file so it stops being publicly reachable.
+      // Only files we uploaded live under this bucket; external URLs are
+      // simply dropped from the profile.
+      const path = storagePathFromUrl(url);
+      if (path) {
+        await supabase.storage.from("marketplace-media").remove([path]);
+      }
+      setToast(
+        kind === "avatar" ? "Profile photo removed." : "Photo removed.",
+      );
+      await loadMarketplace();
+    } catch (error) {
+      setToast(
+        error instanceof Error ? error.message : "Could not remove that photo.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function resetIgAvatarSync() {
     igAvatarSeqRef.current += 1;
     igAvatarPromiseRef.current = null;
@@ -3371,6 +3430,67 @@ export default function MarketplaceApp() {
                 </form>
               </div>
 
+              <div className="photo-manager">
+                <strong>Your photos</strong>
+                <p>
+                  Remove anything you no longer want on your profile. Deleted
+                  photos are erased from storage, not just hidden.
+                </p>
+                <div className="photo-manager-grid">
+                  {profile.avatar_url && (
+                    <figure className="saved-media">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={profile.avatar_url}
+                        alt="Your profile photo"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <figcaption>Profile photo</figcaption>
+                      <button
+                        type="button"
+                        className="saved-media-remove"
+                        disabled={busy}
+                        aria-label="Remove profile photo"
+                        title="Remove profile photo"
+                        onClick={() =>
+                          void removeProfilePhoto(profile.avatar_url, "avatar")
+                        }
+                      >
+                        ×
+                      </button>
+                    </figure>
+                  )}
+                  {(profile.gallery_urls ?? []).map((url, index) => (
+                    <figure className="saved-media" key={url}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={url}
+                        alt={`Profile photo ${index + 1}`}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <button
+                        type="button"
+                        className="saved-media-remove"
+                        disabled={busy}
+                        aria-label={`Remove photo ${index + 1}`}
+                        title="Remove photo"
+                        onClick={() => void removeProfilePhoto(url, "gallery")}
+                      >
+                        ×
+                      </button>
+                    </figure>
+                  ))}
+                </div>
+                {!profile.avatar_url &&
+                  !(profile.gallery_urls ?? []).length && (
+                    <p className="photo-manager-empty">
+                      No photos yet. Add them from Edit profile.
+                    </p>
+                  )}
+              </div>
+
               {blockedProfiles.length > 0 && (
                 <div className="blocked-list">
                   <strong>Blocked members</strong>
@@ -3665,8 +3785,25 @@ export default function MarketplaceApp() {
                 {Boolean(profile?.gallery_urls?.length) && (
                   <div className="saved-media-grid field-wide">
                     {profile?.gallery_urls?.map((url, index) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img key={url} src={url} alt={`Saved profile photo ${index + 1}`} loading="lazy" decoding="async" />
+                      <figure className="saved-media" key={url}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`Saved profile photo ${index + 1}`}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                        <button
+                          type="button"
+                          className="saved-media-remove"
+                          disabled={busy}
+                          aria-label={`Remove photo ${index + 1}`}
+                          title="Remove photo"
+                          onClick={() => void removeProfilePhoto(url, "gallery")}
+                        >
+                          ×
+                        </button>
+                      </figure>
                     ))}
                   </div>
                 )}

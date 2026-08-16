@@ -5233,3 +5233,105 @@ html.reveal-ready [data-reveal].is-visible {
 .danger-zone {
   margin-top: 14px;
 }
+
+/* ===== Photo management ===== */
+
+.photo-manager {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  grid-column: 1 / -1;
+  margin-top: 18px;
+  padding: 18px 20px;
+}
+
+.photo-manager > strong {
+  display: block;
+  font-size: 14px;
+}
+
+.photo-manager > p {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  margin: 4px 0 14px;
+  max-width: 460px;
+}
+
+.photo-manager-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+}
+
+.photo-manager-empty {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.saved-media {
+  border-radius: 12px;
+  margin: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.saved-media img {
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.saved-media figcaption {
+  background: color-mix(in srgb, var(--ink) 82%, transparent);
+  bottom: 0;
+  color: var(--white);
+  font-size: 10.5px;
+  left: 0;
+  padding: 4px 6px;
+  position: absolute;
+  right: 0;
+  text-align: center;
+}
+
+.saved-media-remove {
+  align-items: center;
+  background: color-mix(in srgb, var(--ink) 86%, transparent);
+  border: 0;
+  border-radius: 50%;
+  color: var(--white);
+  display: flex;
+  font-size: 16px;
+  height: 28px;
+  justify-content: center;
+  line-height: 1;
+  opacity: 0;
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  transition: opacity 0.15s ease-out, background 0.15s ease-out;
+  width: 28px;
+}
+
+.saved-media:hover .saved-media-remove,
+.saved-media-remove:focus-visible {
+  opacity: 1;
+}
+
+.saved-media-remove:hover {
+  background: #c2401f;
+}
+
+.saved-media-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* No hover on touch: keep the control permanently visible. */
+@media (hover: none) {
+  .saved-media-remove {
+    opacity: 1;
+  }
+}
