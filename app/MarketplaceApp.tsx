@@ -4002,6 +4002,7 @@ export default function MarketplaceApp() {
             </div>
             <label className="field-wide">
               Listing title
+              <small>A short name people will see first, like &quot;Cafe window, Main Street&quot;.</small>
               <input
                 name="title"
                 required
@@ -4010,7 +4011,8 @@ export default function MarketplaceApp() {
               />
             </label>
             <label>
-              Channel or space
+              Where does it appear?
+              <small>The kind of space or platform this runs on.</small>
               <select
                 name="channel"
                 required
@@ -4029,7 +4031,8 @@ export default function MarketplaceApp() {
               </select>
             </label>
             <label>
-              Deliverable / format
+              What the buyer gets
+              <small>The actual deliverable, like &quot;one poster, 18 by 24 inches&quot;.</small>
               <input
                 name="format"
                 required
@@ -4054,7 +4057,8 @@ export default function MarketplaceApp() {
               <small>Start at $2, or set any higher price that fits your placement.</small>
             </label>
             <label>
-              Price unit
+              Priced per
+              <small>What one unit of your price covers.</small>
               <select
                 name="price_unit"
                 defaultValue={editingListing?.price_unit ?? "campaign"}
@@ -4075,7 +4079,8 @@ export default function MarketplaceApp() {
               <p>Pulled from your profile where possible — adjust if this listing differs.</p>
             </div>
             <label className="field-wide">
-              Location or service area
+              Where is it?
+              <small>City or the area you cover. Prefilled from your profile.</small>
               <input
                 name="location_area"
                 required
@@ -4092,7 +4097,7 @@ export default function MarketplaceApp() {
               />
             </label>
             <label>
-              Available through
+              Available until
               <input
                 name="available_to"
                 type="date"
@@ -4100,7 +4105,8 @@ export default function MarketplaceApp() {
               />
             </label>
             <label>
-              Lead time in days
+              How much notice you need
+              <small>Days between someone booking and you starting.</small>
               <input
                 name="lead_time_days"
                 type="number"
@@ -4109,7 +4115,8 @@ export default function MarketplaceApp() {
               />
             </label>
             <label>
-              Minimum booking
+              Smallest booking you accept
+              <small>Leave blank if you have no minimum.</small>
               <input
                 name="minimum_booking"
                 defaultValue={editingListing?.minimum_booking ?? ""}
@@ -4121,7 +4128,8 @@ export default function MarketplaceApp() {
               <h4>What buyers will read.</h4>
             </div>
             <label className="field-wide">
-              Description
+              Describe it
+              <small>What it is, where exactly it sits, and who walks past.</small>
               <textarea
                 name="description"
                 required
@@ -4130,7 +4138,8 @@ export default function MarketplaceApp() {
               />
             </label>
             <label className="field-wide">
-              What the customer receives
+              What happens after they book
+              <small>The proof or finished work you hand back, like photos of the placement.</small>
               <textarea
                 name="deliverables"
                 required
@@ -4139,7 +4148,8 @@ export default function MarketplaceApp() {
               />
             </label>
             <label className="field-wide">
-              Availability notes
+              Anything else about timing?
+              <small>Optional. For example weekday mornings only, or closed in August.</small>
               <input
                 name="availability_notes"
                 defaultValue={editingListing?.availability_notes ?? ""}
@@ -4147,7 +4157,8 @@ export default function MarketplaceApp() {
               />
             </label>
             <label className="field-wide">
-              Cancellation policy
+              If someone cancels
+              <small>Optional. For example free cancellation up to 48 hours before.</small>
               <input
                 name="cancellation_policy"
                 defaultValue={editingListing?.cancellation_policy ?? ""}
@@ -4159,7 +4170,7 @@ export default function MarketplaceApp() {
               <h4>Show them who they reach.</h4>
             </div>
             <label>
-              Audience / demographics
+              Who will see it?
               <input
                 name="demographics"
                 defaultValue={

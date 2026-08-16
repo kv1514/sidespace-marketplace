@@ -5335,3 +5335,51 @@ html.reveal-ready [data-reveal].is-visible {
     opacity: 1;
   }
 }
+
+/* ===== Readable form labels =====
+   Labels were 11px uppercase mono with letter-spacing, which scans poorly
+   for anything longer than one word. Sentence case at a normal size reads
+   far faster, with helper text sitting quietly underneath. */
+.field-grid label,
+.stack-form label {
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 500;
+  gap: 6px;
+  letter-spacing: -0.005em;
+  text-transform: none;
+}
+
+.field-grid label > small,
+.stack-form label > small {
+  color: var(--ink-soft);
+  font-family: var(--display);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.45;
+  margin-top: -2px;
+  order: 2;
+  text-transform: none;
+}
+
+/* Helper text belongs under the label, above the input. */
+.field-grid label > input,
+.field-grid label > textarea,
+.field-grid label > select {
+  order: 3;
+}
+
+.listing-form .form-subsection h4 {
+  font-size: 17px;
+}
+
+.listing-form .form-subsection p {
+  font-size: 13px;
+  max-width: 52ch;
+}
+
+/* A little more air between fields so the form reads as groups. */
+.listing-form.field-grid {
+  gap: 20px 18px;
+}
