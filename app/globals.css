@@ -4338,3 +4338,62 @@ html {
   color: var(--ink-soft);
   font-size: 12px;
 }
+
+/* ===== Audit fixes: modal height, brand lockup, tap targets, strip ===== */
+
+/* iOS Safari reports 100vh as the LARGE viewport while the fixed overlay is
+   the small one, so vh-sized cards overflow and clip their own heading. */
+.modal-card {
+  max-height: 100%;
+}
+
+.modal-layer {
+  padding: 16px;
+}
+
+/* The tap-target layer turned the footer logo into an inline-block, which
+   killed the flex gap and collided the mark with the wordmark. */
+@media (max-width: 820px) {
+  .site-footer a.brand,
+  .site-footer .brand {
+    display: inline-flex;
+  }
+}
+
+/* "Share listing" / "Report listing" / "Block member" were 14px tall. */
+.detail-safety-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.detail-safety-actions button {
+  min-height: 40px;
+  padding: 8px 0;
+}
+
+/* Three action buttons never fit one row inside a mobile card column. */
+.my-listing-actions {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 620px) {
+  /* The only way back to the thread list was a 28x22px control. */
+  .mobile-back {
+    align-items: center;
+    display: inline-flex;
+    justify-content: center;
+    min-height: 40px;
+    min-width: 40px;
+  }
+
+  /* The strip clipped mid-word and hid most of its labels. */
+  .signal-strip {
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    justify-content: center;
+    overflow: visible;
+    white-space: normal;
+  }
+}

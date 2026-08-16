@@ -116,7 +116,9 @@ type CampaignRequest = {
   counter_message: string;
   created_at: string;
   updated_at: string;
-  listing: Pick<Listing, "id" | "title" | "channel" | "price" | "price_unit">;
+  // Null once the listing is paused or removed: RLS only exposes active
+  // listings to the requester, so the embed comes back empty.
+  listing: Pick<Listing, "id" | "title" | "channel" | "price" | "price_unit"> | null;
   requester: Pick<Profile, "id" | "display_name" | "avatar_url" | "city">;
   owner: Pick<Profile, "id" | "display_name" | "avatar_url" | "city">;
 };
@@ -705,9 +707,11 @@ export default function MarketplaceApp() {
         setOwnListings([]);
       }
       setProfile(own);
+      // Always seed the picker from the stored profile so no opener can
+      // submit a stale role.
+      setSelectedRole((own?.role as Role | undefined) ?? "business");
       setExtraRoles((own?.extra_roles as Role[] | undefined) ?? []);
       if (!own?.onboarding_complete) {
-        setSelectedRole((own?.role as Role | undefined) ?? "business");
         setOnboardingStep(1);
         setOnboardingOpen(true);
       }
@@ -1063,9 +1067,9 @@ export default function MarketplaceApp() {
       const syncedIgAvatar = igAvatarPromiseRef.current
         ? await igAvatarPromiseRef.current
         : igAvatar;
-      const primaryRole = profile?.onboarding_complete
-        ? profile.role
-        : selectedRole;
+      // Every opener seeds selectedRole from the stored profile, so the
+      // picker is authoritative and members can genuinely change role.
+      const primaryRole = selectedRole;
       const payload = {
         auth_user_id: user.id,
         role: primaryRole,
@@ -1107,7 +1111,11 @@ export default function MarketplaceApp() {
         social_links: values.has("social_instagram")
           ? socialLinks
           : profile?.social_links ?? {},
-        gallery_urls: [...(profile?.gallery_urls ?? []), ...galleryUploads].slice(0, 6),
+        // New uploads win the 6-photo cap; otherwise a full gallery would
+        // silently swallow (and still bill for) every later upload.
+        gallery_urls: Array.from(
+          new Set([...galleryUploads, ...(profile?.gallery_urls ?? [])]),
+        ).slice(0, 6),
         onboarding_complete: true,
         is_demo: false,
       };
@@ -1540,7 +1548,9 @@ export default function MarketplaceApp() {
     setBlockedProfileIds((current) =>
       current.includes(target.id) ? current : [...current, target.id],
     );
-    setSelectedListing(null);
+    // closeListing() also drops ?listing= from the URL; leaving it would let
+    // the deep-link effect immediately reopen the listing just blocked.
+    closeListing();
     setToast(`${target.display_name} is now hidden from your marketplace.`);
   }
 
@@ -2706,7 +2716,9 @@ export default function MarketplaceApp() {
                             <small>{incoming ? "Incoming request" : "Your request"}</small>
                             <h4>{request.campaign_name}</h4>
                             <p>
-                              {request.listing.title} · {other.display_name}
+                              {request.listing?.title ?? "Listing no longer available"}
+                              {" · "}
+                              {other.display_name}
                             </p>
                           </div>
                           <span className={`request-status status-${request.status}`}>
@@ -2727,10 +2739,16 @@ export default function MarketplaceApp() {
                             <b>{request.requested_deliverables}</b>
                           </span>
                         </div>
-                        {request.status === "countered" && (
+                        {request.counter_budget != null && (
                           <div className="counter-summary">
-                            <strong>Counteroffer: ${request.counter_budget ?? request.budget}</strong>
-                            <p>{request.counter_message}</p>
+                            <strong>
+                              {request.status === "accepted"
+                                ? `Agreed at $${request.counter_budget}`
+                                : `Counteroffer: $${request.counter_budget}`}
+                            </strong>
+                            {request.counter_message && (
+                              <p>{request.counter_message}</p>
+                            )}
                           </div>
                         )}
                         <div className="campaign-request-actions">
