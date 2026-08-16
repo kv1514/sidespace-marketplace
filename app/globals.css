@@ -4594,7 +4594,7 @@ html {
 
 /* ===== Widget motion ===== */
 
-[data-reveal] {
+html.reveal-ready [data-reveal] {
   opacity: 0;
   transform: translateY(26px);
   transition:
@@ -4603,7 +4603,7 @@ html {
   will-change: opacity, transform;
 }
 
-[data-reveal].is-visible {
+html.reveal-ready [data-reveal].is-visible {
   opacity: 1;
   transform: none;
 }
@@ -4673,7 +4673,7 @@ html {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-reveal] {
+  html.reveal-ready [data-reveal] {
     opacity: 1;
     transform: none;
     transition: none;

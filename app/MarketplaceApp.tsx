@@ -916,6 +916,10 @@ export default function MarketplaceApp() {
       targets.forEach((element) => element.classList.add("is-visible"));
       return;
     }
+    // Content is visible by default; only opt into the hidden start state
+    // once we know the observer is running, so a failure can never leave
+    // real content invisible.
+    document.documentElement.classList.add("reveal-ready");
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -928,7 +932,15 @@ export default function MarketplaceApp() {
       { rootMargin: "0px 0px -10% 0px", threshold: 0.15 },
     );
     targets.forEach((element) => observer.observe(element));
-    return () => observer.disconnect();
+    // Backstop: whatever has not revealed within a few seconds is shown
+    // anyway, so a stuck observer never hides the page.
+    const failsafe = window.setTimeout(() => {
+      targets.forEach((element) => element.classList.add("is-visible"));
+    }, 3000);
+    return () => {
+      window.clearTimeout(failsafe);
+      observer.disconnect();
+    };
   }, [listings, user, profile]);
 
   useEffect(() => {
