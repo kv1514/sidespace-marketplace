@@ -533,6 +533,9 @@ export default function MarketplaceApp() {
   const [selectedRole, setSelectedRole] = useState<Role>("business");
   const [listingOpen, setListingOpen] = useState(false);
   const [listingFeedback, setListingFeedback] = useState("");
+  const [editingListing, setEditingListing] = useState<Listing | null>(null);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState("");
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [inboxOpen, setInboxOpen] = useState(false);
@@ -720,6 +723,11 @@ export default function MarketplaceApp() {
         setVerificationRequest(null);
         setBlockedProfileIds([]);
         setAccountOpen(false);
+        setThreads([]);
+        setActiveThread(null);
+        setActiveContact(null);
+        setMessages([]);
+        setInboxOpen(false);
       }
       },
     );
@@ -957,6 +965,11 @@ export default function MarketplaceApp() {
       return;
     }
 
+    if (selectedRole === "consumer") {
+      form.requestSubmit();
+      return;
+    }
+
     setOnboardingStep(3);
   }
 
@@ -1009,17 +1022,29 @@ export default function MarketplaceApp() {
         handle: String(values.get("handle") ?? "").trim() || null,
         city: String(values.get("city") ?? "").trim(),
         bio: String(values.get("bio") ?? "").trim(),
-        categories,
-        followers: Number(values.get("followers") ?? 0) || 0,
-        avg_views: Number(values.get("avg_views") ?? 0) || 0,
-        audience_age: String(values.get("audience_age") ?? "").trim(),
-        website: String(values.get("website") ?? "").trim(),
+        categories: values.has("categories")
+          ? categories
+          : profile?.categories ?? [],
+        followers: values.has("followers")
+          ? Number(values.get("followers") ?? 0) || 0
+          : profile?.followers ?? 0,
+        avg_views: values.has("avg_views")
+          ? Number(values.get("avg_views") ?? 0) || 0
+          : profile?.avg_views ?? 0,
+        audience_age: values.has("audience_age")
+          ? String(values.get("audience_age") ?? "").trim()
+          : profile?.audience_age ?? "",
+        website: values.has("website")
+          ? String(values.get("website") ?? "").trim()
+          : profile?.website ?? "",
         avatar_url:
           avatarUploads[0] ||
           String(values.get("avatar_url") ?? "").trim() ||
           profile?.avatar_url ||
           "",
-        social_links: socialLinks,
+        social_links: values.has("social_instagram")
+          ? socialLinks
+          : profile?.social_links ?? {},
         gallery_urls: [...(profile?.gallery_urls ?? []), ...galleryUploads].slice(0, 6),
         onboarding_complete: true,
         is_demo: false,
@@ -1048,57 +1073,68 @@ export default function MarketplaceApp() {
     }
   }
 
-  async function createListing(event: FormEvent<HTMLFormElement>) {
+  async function saveListing(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !profile) return;
     const values = new FormData(event.currentTarget);
     const listingFiles = values
       .getAll("listing_photos")
       .filter((value): value is File => value instanceof File && value.size > 0);
-    const linkedImage = String(values.get("image_url") ?? "").trim();
     const fallbackImage =
-      linkedImage ||
+      editingListing?.image_url ||
       profile.gallery_urls?.[0] ||
       profile.avatar_url ||
       "/photos/market-creator.jpg";
     setListingFeedback("");
     setBusy(true);
     try {
-      const inserted = await supabase
-        .from("listings")
-        .insert({
-          owner_profile_id: profile.id,
-          title: String(values.get("title") ?? "").trim(),
-          channel: String(values.get("channel") ?? "").trim(),
-          format: String(values.get("format") ?? "").trim(),
-          price: Number(values.get("price") ?? 0),
-          price_unit: String(values.get("price_unit") ?? "campaign").trim(),
-          description: String(values.get("description") ?? "").trim(),
-          demographics: String(values.get("demographics") ?? "").trim(),
-          location_area: String(values.get("location_area") ?? "").trim(),
-          availability_notes: String(
-            values.get("availability_notes") ?? "",
-          ).trim(),
-          available_from: String(values.get("available_from") ?? "") || null,
-          available_to: String(values.get("available_to") ?? "") || null,
-          lead_time_days: Number(values.get("lead_time_days") ?? 0) || 0,
-          minimum_booking: String(
-            values.get("minimum_booking") ?? "",
-          ).trim(),
-          deliverables: String(values.get("deliverables") ?? "").trim(),
-          cancellation_policy: String(
-            values.get("cancellation_policy") ?? "",
-          ).trim(),
-          image_url: fallbackImage,
-          image_urls: [fallbackImage],
-          status: "active",
-        })
-        .select("*")
-        .single();
-      if (inserted.error) throw inserted.error;
+      const fields = {
+        title: String(values.get("title") ?? "").trim(),
+        channel: String(values.get("channel") ?? "").trim(),
+        format: String(values.get("format") ?? "").trim(),
+        price: Number(values.get("price") ?? 0),
+        price_unit: String(values.get("price_unit") ?? "campaign").trim(),
+        description: String(values.get("description") ?? "").trim(),
+        demographics: String(values.get("demographics") ?? "").trim(),
+        location_area: String(values.get("location_area") ?? "").trim(),
+        availability_notes: String(
+          values.get("availability_notes") ?? "",
+        ).trim(),
+        available_from: String(values.get("available_from") ?? "") || null,
+        available_to: String(values.get("available_to") ?? "") || null,
+        lead_time_days: Number(values.get("lead_time_days") ?? 0) || 0,
+        minimum_booking: String(
+          values.get("minimum_booking") ?? "",
+        ).trim(),
+        deliverables: String(values.get("deliverables") ?? "").trim(),
+        cancellation_policy: String(
+          values.get("cancellation_policy") ?? "",
+        ).trim(),
+      };
+
+      const saved = editingListing
+        ? await supabase
+            .from("listings")
+            .update(fields)
+            .eq("id", editingListing.id)
+            .eq("owner_profile_id", profile.id)
+            .select("*")
+            .single()
+        : await supabase
+            .from("listings")
+            .insert({
+              ...fields,
+              owner_profile_id: profile.id,
+              image_url: fallbackImage,
+              image_urls: [fallbackImage],
+              status: "active",
+            })
+            .select("*")
+            .single();
+      if (saved.error) throw saved.error;
 
       let savedListing = {
-        ...(inserted.data as Omit<Listing, "owner">),
+        ...(saved.data as Omit<Listing, "owner">),
         owner: profile,
       } as Listing;
       setOwnListings((current) => [
@@ -1110,10 +1146,19 @@ export default function MarketplaceApp() {
       if (listingFiles.length) {
         try {
           const uploadedImages = await uploadImages(listingFiles, "listings");
-          const imageUrls = [
-            ...uploadedImages,
-            ...(linkedImage ? [linkedImage] : []),
-          ].slice(0, 6);
+          const placeholderImages = new Set(
+            [
+              "/photos/market-creator.jpg",
+              profile.avatar_url,
+              ...(profile.gallery_urls ?? []),
+            ].filter(Boolean),
+          );
+          const existingImages = editingListing
+            ? listingImages(savedListing).filter(
+                (url) => !placeholderImages.has(url),
+              )
+            : [];
+          const imageUrls = [...uploadedImages, ...existingImages].slice(0, 6);
           if (imageUrls.length) {
             const updated = await supabase
               .from("listings")
@@ -1135,19 +1180,25 @@ export default function MarketplaceApp() {
           }
         } catch {
           photoWarning =
-            " The listing is saved, but the photos could not upload. You can add a photo link from your profile later.";
+            " The listing is saved, but the photos could not upload. You can try uploading them again from Edit listing.";
         }
       }
 
+      const wasEditing = Boolean(editingListing);
       setListingOpen(false);
+      setEditingListing(null);
       setAccountOpen(true);
-      setToast(`Your listing is live and saved to My listings.${photoWarning}`);
+      setToast(
+        wasEditing
+          ? `Your listing changes are saved.${photoWarning}`
+          : `Your listing is live and saved to My listings.${photoWarning}`,
+      );
       await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "Could not publish your listing. Please try again.";
+          : "Could not save your listing. Please try again.";
       setListingFeedback(message);
       setToast(message);
     } finally {
@@ -1506,16 +1557,85 @@ export default function MarketplaceApp() {
     await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
   }
 
-  async function signOut() {
-    await supabase?.auth.signOut();
-    setAccountOpen(false);
-    setOnboardingOpen(false);
+  function clearSessionState() {
     setProfile(null);
     setOwnListings([]);
     setCampaignRequests([]);
     setVerificationRequest(null);
     setBlockedProfileIds([]);
+    setThreads([]);
+    setActiveThread(null);
+    setActiveContact(null);
+    setMessages([]);
+    setInboxOpen(false);
+    setAccountOpen(false);
+    setOnboardingOpen(false);
+  }
+
+  async function signOut() {
+    await supabase?.auth.signOut();
+    clearSessionState();
     setToast("Signed out.");
+  }
+
+  function passwordCapable(account: User) {
+    return (account.identities ?? []).some(
+      (identity) => identity.provider === "email",
+    );
+  }
+
+  async function deleteAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user) return;
+    const values = new FormData(event.currentTarget);
+    const usesPassword = passwordCapable(user);
+    const body = usesPassword
+      ? { password: String(values.get("delete_password") ?? "") }
+      : { confirmation: String(values.get("delete_confirmation") ?? "").trim() };
+
+    setDeleteAccountError("");
+    if (!usesPassword && body.confirmation !== "DELETE") {
+      setDeleteAccountError("Type DELETE exactly to confirm.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("delete-account", {
+        body,
+      });
+      if (error) {
+        let message = "Could not delete your account. Please try again.";
+        try {
+          const context = (error as { context?: Response }).context;
+          if (context) {
+            const parsed = await context.json();
+            if (parsed?.error) message = String(parsed.error);
+          }
+        } catch {
+          /* keep default message */
+        }
+        throw new Error(message);
+      }
+      if (data && typeof data === "object" && "error" in data && data.error) {
+        throw new Error(String(data.error));
+      }
+
+      await supabase.auth.signOut();
+      setDeleteAccountOpen(false);
+      setUser(null);
+      clearSessionState();
+      setToast("Your account and all of its data have been deleted.");
+      await loadMarketplace();
+    } catch (error) {
+      setDeleteAccountError(
+        error instanceof Error
+          ? error.message
+          : "Could not delete your account. Please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   function openInbox() {
@@ -1534,8 +1654,16 @@ export default function MarketplaceApp() {
         return;
       }
       setListingFeedback("");
+      setEditingListing(null);
       setListingOpen(true);
     });
+  }
+
+  function openListingEdit(listing: Listing) {
+    setListingFeedback("");
+    setEditingListing(listing);
+    setAccountOpen(false);
+    setListingOpen(true);
   }
 
   function openListingChat(listing: Listing) {
@@ -1604,15 +1732,20 @@ export default function MarketplaceApp() {
         <div className="hero-orbit orbit-one" />
         <div className="hero-orbit orbit-two" />
         <div className="hero-copy">
-          <h1>
-            Get seen
+          <p className="hero-slogan">
+            Local reach, lifted off the ground
+          </p>
+          <h1 className="hero-headline">
+            The Airbnb for
             <br />
-            <em>where it matters.</em>
+            <em>affordable, everyday</em>
+            <br />
+            advertising space.
           </h1>
           <p className="hero-lede">
-            Find local creators, social media placements, storefronts,
-            vehicles, land, and other real-world spaces. Browse what is
-            available and message the owner directly.
+            SideSpace turns everyday attention into bookable ad space: local
+            creators, storefront windows, vehicles, land, and more. Browse
+            what is available and message the owner directly.
           </p>
           <div className="hero-actions">
             <a className="button button-dark" href="#market">
@@ -2057,9 +2190,9 @@ export default function MarketplaceApp() {
       <section className="final-cta">
         <div>
           <h2>
-            Ready to get
+            Ready for
             <br />
-            <em>noticed locally?</em>
+            <em>liftoff, locally?</em>
           </h2>
         </div>
         <div>
@@ -2412,6 +2545,9 @@ export default function MarketplaceApp() {
                           >
                             View
                           </button>
+                          <button onClick={() => openListingEdit(listing)}>
+                            Edit
+                          </button>
                           <button
                             disabled={busy}
                             onClick={() => void updateListingStatus(listing)}
@@ -2562,12 +2698,101 @@ export default function MarketplaceApp() {
                   </button>
                 </form>
               </div>
+
+              <div className="danger-zone">
+                <div>
+                  <strong>Delete account</strong>
+                  <p>
+                    Permanently removes your profile, listings, conversations,
+                    and campaign requests. This cannot be undone.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="button button-danger button-small"
+                  onClick={() => {
+                    setDeleteAccountError("");
+                    setDeleteAccountOpen(true);
+                  }}
+                >
+                  Delete my account
+                </button>
+              </div>
             </section>
 
             <button className="signout-link account-signout" onClick={signOut}>
               Sign out of this account
             </button>
           </div>
+        </Modal>
+      )}
+
+      {deleteAccountOpen && user && (
+        <Modal
+          onClose={() => {
+            if (!busy) {
+              setDeleteAccountOpen(false);
+              setDeleteAccountError("");
+            }
+          }}
+        >
+          <div className="modal-heading">
+            <p className="eyebrow">Delete account</p>
+            <h2>This is permanent.</h2>
+            <p>
+              Deleting your account removes your profile, every listing you
+              have published, your conversations, and your campaign requests.
+              There is no way to recover them afterward.
+            </p>
+          </div>
+          {deleteAccountError && (
+            <div className="form-feedback" role="alert">
+              <p>{deleteAccountError}</p>
+            </div>
+          )}
+          <form className="stack-form" onSubmit={deleteAccount}>
+            {passwordCapable(user) ? (
+              <label>
+                Confirm your password to continue
+                <input
+                  name="delete_password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  placeholder="Your current password"
+                />
+              </label>
+            ) : (
+              <label>
+                Type DELETE to confirm
+                <input
+                  name="delete_confirmation"
+                  required
+                  autoComplete="off"
+                  placeholder="DELETE"
+                />
+                <small>
+                  Your account does not use an email + password login, so
+                  typing DELETE confirms it is really you.
+                </small>
+              </label>
+            )}
+            <div className="form-submit">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setDeleteAccountOpen(false);
+                  setDeleteAccountError("");
+                }}
+              >
+                Keep my account
+              </button>
+              <button className="button button-danger" disabled={busy}>
+                {busy ? "Deleting..." : "Permanently delete"}
+              </button>
+            </div>
+          </form>
         </Modal>
       )}
 
@@ -2581,8 +2806,12 @@ export default function MarketplaceApp() {
             <div className="step-count">
               <span className={onboardingStep >= 1 ? "active" : ""} />
               <span className={onboardingStep >= 2 ? "active" : ""} />
-              <span className={onboardingStep >= 3 ? "active" : ""} />
-              <small>Step {onboardingStep} of 3</small>
+              {selectedRole !== "consumer" && (
+                <span className={onboardingStep >= 3 ? "active" : ""} />
+              )}
+              <small>
+                Step {onboardingStep} of {selectedRole === "consumer" ? 2 : 3}
+              </small>
             </div>
           </div>
           <form className="onboarding-form" onSubmit={saveOnboarding}>
@@ -2649,21 +2878,16 @@ export default function MarketplaceApp() {
                   />
                 </label>
                 <label>
-                  Profile photo URL
-                  <input
-                    name="avatar_url"
-                    defaultValue={profile?.avatar_url ?? ""}
-                    placeholder="https://..."
-                  />
-                </label>
-                <label>
-                  Or upload a profile photo
+                  Profile photo
                   <input
                     name="avatar_file"
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
                   />
-                  <small>JPG, PNG, or WebP. Maximum 8 MB.</small>
+                  <small>
+                    JPG, PNG, or WebP up to 8 MB.
+                    {profile?.avatar_url ? " Leave empty to keep your current photo." : ""}
+                  </small>
                 </label>
                 <label className="field-wide">
                   Short introduction
@@ -2674,16 +2898,18 @@ export default function MarketplaceApp() {
                     placeholder="Tell people about your audience, business, or space."
                   />
                 </label>
-                <label className="field-wide media-upload-field">
-                  Space, land, storefront, or portfolio photos
-                  <input
-                    name="gallery_files"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    multiple
-                  />
-                  <small>Upload up to 6 clear photos. You can add listing-specific photos later.</small>
-                </label>
+                {selectedRole !== "consumer" && (
+                  <label className="field-wide media-upload-field">
+                    Space, land, storefront, or portfolio photos
+                    <input
+                      name="gallery_files"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                    />
+                    <small>Upload up to 6 clear photos. You can add listing-specific photos later.</small>
+                  </label>
+                )}
                 {Boolean(profile?.gallery_urls?.length) && (
                   <div className="saved-media-grid field-wide">
                     {profile?.gallery_urls?.map((url, index) => (
@@ -2700,23 +2926,33 @@ export default function MarketplaceApp() {
                 <button
                   type="button"
                   className="button button-dark"
+                  disabled={busy}
                   onClick={(event) =>
                     continueOnboardingDetails(event.currentTarget.form)
                   }
                 >
-                  Continue <span>→</span>
+                  {selectedRole === "consumer"
+                    ? busy
+                      ? "Saving..."
+                      : "Finish my profile"
+                    : "Continue"}{" "}
+                  <span>{selectedRole === "consumer" ? "✓" : "→"}</span>
                 </button>
               </div>
             </div>
-            <div className={onboardingStep === 3 ? "form-step active" : "form-step"}>
+            <div
+              className={
+                selectedRole !== "consumer" && onboardingStep === 3
+                  ? "form-step active"
+                  : "form-step"
+              }
+            >
               <h3>
                 {selectedRole === "business"
                   ? "What kind of partners fit your brand?"
                   : selectedRole === "creator"
                     ? "Help brands understand your audience."
-                    : selectedRole === "space_owner"
-                      ? "Help people picture your reach."
-                      : "What are you interested in finding?"}
+                    : "Help people picture your reach."}
               </h3>
               <p>Useful details make better matches and fewer awkward messages.</p>
               <div className="field-grid">
@@ -2808,16 +3044,24 @@ export default function MarketplaceApp() {
         <Modal
           onClose={() => {
             setListingOpen(false);
+            setEditingListing(null);
             setListingFeedback("");
           }}
           wide
         >
           <div className="modal-heading">
-            <p className="eyebrow">Create a listing</p>
-            <h2>What can people book?</h2>
+            <p className="eyebrow">
+              {editingListing ? "Edit listing" : "Create a listing"}
+            </p>
+            <h2>
+              {editingListing
+                ? "Update what people can book."
+                : "What can people book?"}
+            </h2>
             <p>
-              List a social placement, creator package, business brief, wall,
-              window, vehicle, room, or anything else with useful attention.
+              {editingListing
+                ? "Change any detail below. Your listing keeps its history, conversations, and campaign requests."
+                : "List a social placement, creator package, business brief, wall, window, vehicle, room, or anything else with useful attention."}
             </p>
           </div>
           {listingFeedback && (
@@ -2826,14 +3070,27 @@ export default function MarketplaceApp() {
               <p>{listingFeedback}</p>
             </div>
           )}
-          <form className="field-grid listing-form" onSubmit={createListing}>
+          <form
+            key={editingListing?.id ?? "new-listing"}
+            className="field-grid listing-form"
+            onSubmit={saveListing}
+          >
             <label className="field-wide">
               Listing title
-              <input name="title" required placeholder="Three-story launch package" />
+              <input
+                name="title"
+                required
+                defaultValue={editingListing?.title ?? ""}
+                placeholder="Three-story launch package"
+              />
             </label>
             <label>
               Channel or space
-              <select name="channel" required defaultValue="Instagram">
+              <select
+                name="channel"
+                required
+                defaultValue={editingListing?.channel ?? "Instagram"}
+              >
                 <option>Instagram</option>
                 <option>TikTok</option>
                 <option>YouTube</option>
@@ -2848,16 +3105,31 @@ export default function MarketplaceApp() {
             </label>
             <label>
               Deliverable / format
-              <input name="format" required placeholder="3 frames · 48 hours" />
+              <input
+                name="format"
+                required
+                defaultValue={editingListing?.format ?? ""}
+                placeholder="3 frames · 48 hours"
+              />
             </label>
             <label>
               Price
-              <input name="price" type="number" min="2" required placeholder="2" />
+              <input
+                name="price"
+                type="number"
+                min="2"
+                required
+                defaultValue={editingListing?.price ?? ""}
+                placeholder="2"
+              />
               <small>Start at $2, or set any higher price that fits your placement.</small>
             </label>
             <label>
               Price unit
-              <select name="price_unit" defaultValue="campaign">
+              <select
+                name="price_unit"
+                defaultValue={editingListing?.price_unit ?? "campaign"}
+              >
                 <option value="campaign">campaign</option>
                 <option value="day">day</option>
                 <option value="week">week</option>
@@ -2873,17 +3145,25 @@ export default function MarketplaceApp() {
               <input
                 name="location_area"
                 required
-                defaultValue={profile?.city ?? ""}
+                defaultValue={editingListing?.location_area || profile?.city || ""}
                 placeholder="Brea, CA · within 10 miles"
               />
             </label>
             <label>
               Available from
-              <input name="available_from" type="date" />
+              <input
+                name="available_from"
+                type="date"
+                defaultValue={editingListing?.available_from ?? ""}
+              />
             </label>
             <label>
               Available through
-              <input name="available_to" type="date" />
+              <input
+                name="available_to"
+                type="date"
+                defaultValue={editingListing?.available_to ?? ""}
+              />
             </label>
             <label>
               Lead time in days
@@ -2891,18 +3171,23 @@ export default function MarketplaceApp() {
                 name="lead_time_days"
                 type="number"
                 min="0"
-                defaultValue="2"
+                defaultValue={editingListing?.lead_time_days ?? 2}
               />
             </label>
             <label>
               Minimum booking
-              <input name="minimum_booking" placeholder="1 story, 3 days, or one run" />
+              <input
+                name="minimum_booking"
+                defaultValue={editingListing?.minimum_booking ?? ""}
+                placeholder="1 story, 3 days, or one run"
+              />
             </label>
             <label className="field-wide">
               Description
               <textarea
                 name="description"
                 required
+                defaultValue={editingListing?.description ?? ""}
                 placeholder="What’s included, where it appears, and what makes the audience valuable?"
               />
             </label>
@@ -2911,6 +3196,7 @@ export default function MarketplaceApp() {
               <textarea
                 name="deliverables"
                 required
+                defaultValue={editingListing?.deliverables ?? ""}
                 placeholder="Describe the post, placement, proof photos, links, or other finished deliverables."
               />
             </label>
@@ -2918,6 +3204,7 @@ export default function MarketplaceApp() {
               Availability notes
               <input
                 name="availability_notes"
+                defaultValue={editingListing?.availability_notes ?? ""}
                 placeholder="Weekdays after 3 PM, weekends, seasonal, or flexible"
               />
             </label>
@@ -2925,39 +3212,50 @@ export default function MarketplaceApp() {
               Cancellation policy
               <input
                 name="cancellation_policy"
+                defaultValue={editingListing?.cancellation_policy ?? ""}
                 placeholder="Example: Free cancellation up to 48 hours before the start date"
               />
             </label>
             <label>
               Audience / demographics
-              <input name="demographics" placeholder="68% ages 21–34 · local" />
-            </label>
-            <label>
-              Optional image link
-              <input name="image_url" placeholder="https://..." />
+              <input
+                name="demographics"
+                defaultValue={editingListing?.demographics ?? ""}
+                placeholder="68% ages 21–34 · local"
+              />
             </label>
             <label className="field-wide media-upload-field">
-              Upload listing photos
+              {editingListing ? "Add or replace photos" : "Upload listing photos"}
               <input
                 name="listing_photos"
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 multiple
               />
-              <small>Add up to 6 photos of the land, wall, room, vehicle, storefront, or placement.</small>
+              <small>
+                {editingListing
+                  ? "New photos go first and replace older ones past the 6-photo limit. Leave empty to keep current photos."
+                  : "Add up to 6 photos of the land, wall, room, vehicle, storefront, or placement."}
+              </small>
             </label>
             <div className="form-submit field-wide">
               <button
                 type="button"
                 onClick={() => {
                   setListingOpen(false);
+                  setEditingListing(null);
                   setListingFeedback("");
                 }}
               >
                 Cancel
               </button>
               <button className="button button-coral" disabled={busy}>
-                {busy ? "Saving listing..." : "Publish listing"} <span>↗</span>
+                {busy
+                  ? "Saving listing..."
+                  : editingListing
+                    ? "Save changes"
+                    : "Publish listing"}{" "}
+                <span>↗</span>
               </button>
             </div>
           </form>
