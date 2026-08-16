@@ -4048,3 +4048,87 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== Beauty pass: chrome, cards, media, a11y ===== */
+
+.topbar {
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.signal-strip {
+  border-bottom: 1px solid var(--line-soft);
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--mono);
+}
+
+.site-footer {
+  border-top: 1px solid var(--line-soft);
+}
+
+.listing-card img,
+.my-listing-card img {
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  width: 100%;
+}
+
+.listing-card,
+.my-listing-card {
+  overflow: hidden;
+}
+
+.pricing-card {
+  border-radius: 16px;
+}
+
+input,
+textarea,
+select {
+  border-radius: 10px;
+}
+
+.button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 2px;
+}
+
+.close-button:hover {
+  background: var(--paper-2);
+}
+
+.toast {
+  background: var(--ink);
+  border: 1px solid var(--line);
+  color: var(--white);
+}
+
+.toast span {
+  background: var(--coral);
+  color: var(--white);
+}
+
+.ig-avatar-preview {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.ig-avatar-preview img {
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  height: 44px;
+  object-fit: cover;
+  width: 44px;
+}
+
+.ig-avatar-preview small {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+html {
+  scrollbar-color: rgba(21, 19, 14, 0.3) transparent;
+}

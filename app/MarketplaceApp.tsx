@@ -536,6 +536,8 @@ export default function MarketplaceApp() {
   const [editingListing, setEditingListing] = useState<Listing | null>(null);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteAccountError, setDeleteAccountError] = useState("");
+  const [igAvatar, setIgAvatar] = useState("");
+  const [igAvatarBusy, setIgAvatarBusy] = useState(false);
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [inboxOpen, setInboxOpen] = useState(false);
@@ -1045,6 +1047,10 @@ export default function MarketplaceApp() {
           avatarUploads[0] ||
           String(values.get("avatar_url") ?? "").trim() ||
           profile?.avatar_url ||
+          igAvatar ||
+          String(
+            user.user_metadata.avatar_url ?? user.user_metadata.picture ?? "",
+          ) ||
           "",
         social_links: values.has("social_instagram")
           ? socialLinks
@@ -1580,6 +1586,36 @@ export default function MarketplaceApp() {
     await supabase?.auth.signOut();
     clearSessionState();
     setToast("Signed out.");
+  }
+
+  async function syncInstagramAvatar(rawHandle: string) {
+    if (!supabase) return;
+    const handle = rawHandle.trim();
+    if (!handle) {
+      setIgAvatar("");
+      return;
+    }
+    // An uploaded or existing photo always wins; the sync only fills a gap.
+    if (profile?.avatar_url) return;
+    setIgAvatarBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("ig-avatar", {
+        body: { handle },
+      });
+      if (error) throw error;
+      const url =
+        data && typeof data === "object" && "url" in data
+          ? String(data.url ?? "")
+          : "";
+      if (url) {
+        setIgAvatar(url);
+        setToast("Found your Instagram photo — it will be your profile photo.");
+      }
+    } catch {
+      setIgAvatar("");
+    } finally {
+      setIgAvatarBusy(false);
+    }
   }
 
   function passwordCapable(account: User) {
@@ -3146,7 +3182,28 @@ export default function MarketplaceApp() {
                           ? "@yourtiktok"
                           : `@your${platform.key}`
                       }
+                      onBlur={
+                        platform.key === "instagram"
+                          ? (event) =>
+                              void syncInstagramAvatar(event.currentTarget.value)
+                          : undefined
+                      }
                     />
+                    {platform.key === "instagram" && igAvatarBusy && (
+                      <small>Looking up your Instagram photo...</small>
+                    )}
+                    {platform.key === "instagram" &&
+                      !igAvatarBusy &&
+                      Boolean(igAvatar) && (
+                        <span className="ig-avatar-preview">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={igAvatar} alt="Instagram profile preview" />
+                          <small>
+                            Synced from Instagram — upload a photo in step 2 to
+                            use a different one.
+                          </small>
+                        </span>
+                      )}
                   </label>
                 ))}
                 <label className="field-wide">
