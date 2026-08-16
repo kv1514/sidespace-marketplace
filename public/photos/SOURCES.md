@@ -17,3 +17,5 @@ under the Unsplash License.
 - `small-town-coffee.jpg`: https://unsplash.com/photos/dFcYq0UOBZA
 
 - `suburban-street.jpg`: https://www.pexels.com/photo/15048771/ (Pexels License, free for commercial use)
+
+- `youshi-chen.png`: supplied by the listing owner (Youshi Chen), used with permission.
