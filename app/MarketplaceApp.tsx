@@ -588,6 +588,7 @@ export default function MarketplaceApp() {
     Array<{ id: string; display_name: string }>
   >([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [activeStep, setActiveStep] = useState(0);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [channelFilter, setChannelFilter] = useState("All");
@@ -900,6 +901,44 @@ export default function MarketplaceApp() {
       return roleMatches && channelMatches && (!normalized || text.includes(normalized));
     });
   }, [blockedProfileIds, channelFilter, listings, query, roleFilter]);
+
+  // Reveal widgets as they scroll into view, and cycle the how-it-works steps
+  // so the section reads as something live rather than static copy.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const targets = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-reveal]"),
+    );
+    if (reduceMotion || !("IntersectionObserver" in window)) {
+      targets.forEach((element) => element.classList.add("is-visible"));
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { rootMargin: "0px 0px -10% 0px", threshold: 0.15 },
+    );
+    targets.forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [listings, user, profile]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => {
+      setActiveStep((current) => (current + 1) % 3);
+    }, 2600);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // The callback route exchanges the recovery code server-side, so the client
   // never sees a PASSWORD_RECOVERY event. The ?recovery=1 marker it redirects
@@ -2074,7 +2113,7 @@ export default function MarketplaceApp() {
             </div>
           </div>
 
-          <div className="dashboard-paths">
+          <div className="dashboard-paths" data-reveal>
             <a
               className="dashboard-path"
               href="#market"
@@ -2161,7 +2200,7 @@ export default function MarketplaceApp() {
                 },
               ];
               return cards.map((card) => (
-                <div className="dashboard-stat" key={card.label}>
+                <div className="dashboard-stat" data-reveal key={card.label}>
                   <div className="dashboard-stat-top">
                     <small>{card.label}</small>
                     <span className={`dashboard-stat-icon ${card.tone}`}>
@@ -2175,7 +2214,7 @@ export default function MarketplaceApp() {
             })()}
           </div>
 
-          <ol className="dashboard-checklist">
+          <ol className="dashboard-checklist" data-reveal>
             <li className={profile.onboarding_complete ? "done" : ""}>
               <span>{profile.onboarding_complete ? "✓" : "1"}</span>
               <div>
@@ -2322,24 +2361,112 @@ export default function MarketplaceApp() {
           <h2>Find it. Message. <em>Make it happen.</em></h2>
         </div>
         <div className="steps">
-          <article>
-            <span>01</span>
-            <div className="step-icon">⌕</div>
-            <h3>Discover</h3>
-            <p>Filter creators, businesses, and spaces by the reach you need.</p>
-          </article>
-          <article>
-            <span>02</span>
-            <div className="step-icon">@</div>
-            <h3>Message privately</h3>
-            <p>Talk through the idea, timeline, price, and creative details.</p>
-          </article>
-          <article>
-            <span>03</span>
-            <div className="step-icon">✓</div>
-            <h3>Make it happen</h3>
-            <p>Agree on the work and build a local campaign people remember.</p>
-          </article>
+          {[
+            {
+              icon: "⌕",
+              title: "Discover",
+              copy: "Filter creators, businesses, and spaces by the reach you need.",
+              widget: (
+                <div className="mock mock-search" aria-hidden="true">
+                  <div className="mock-field">
+                    <span>⌕</span>
+                    <em>cafe window, Brea</em>
+                    <i className="mock-caret" />
+                  </div>
+                  <div className="mock-chips">
+                    <b>Storefront</b>
+                    <b>Instagram</b>
+                    <b>Vehicle</b>
+                  </div>
+                  <ul className="mock-results">
+                    <li>
+                      <span className="mock-thumb" />
+                      <div>
+                        <strong>Main Street window</strong>
+                        <small>$4 / week</small>
+                      </div>
+                    </li>
+                    <li>
+                      <span className="mock-thumb" />
+                      <div>
+                        <strong>Counter card</strong>
+                        <small>$3 / week</small>
+                      </div>
+                    </li>
+                    <li>
+                      <span className="mock-thumb" />
+                      <div>
+                        <strong>Rear-window decal</strong>
+                        <small>$5 / week</small>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+              ),
+            },
+            {
+              icon: "@",
+              title: "Message privately",
+              copy: "Talk through the idea, timeline, price, and creative details.",
+              widget: (
+                <div className="mock mock-chat" aria-hidden="true">
+                  <div className="mock-bubble them">
+                    Hi! Is the window free the first week of March?
+                  </div>
+                  <div className="mock-bubble me">
+                    It is. I can hold it for you.
+                  </div>
+                  <div className="mock-bubble them">
+                    Perfect, sending a request now.
+                  </div>
+                  <div className="mock-typing">
+                    <i />
+                    <i />
+                    <i />
+                  </div>
+                </div>
+              ),
+            },
+            {
+              icon: "✓",
+              title: "Make it happen",
+              copy: "Agree on the work and build a local campaign people remember.",
+              widget: (
+                <div className="mock mock-deal" aria-hidden="true">
+                  <div className="mock-deal-head">
+                    <strong>Spring launch</strong>
+                    <span className="mock-status">Accepted</span>
+                  </div>
+                  <dl className="mock-deal-facts">
+                    <div>
+                      <dt>Dates</dt>
+                      <dd>Mar 1 – Mar 8</dd>
+                    </div>
+                    <div>
+                      <dt>Agreed</dt>
+                      <dd>$32</dd>
+                    </div>
+                  </dl>
+                  <div className="mock-deal-check">✓</div>
+                </div>
+              ),
+            },
+          ].map((step, index) => (
+            <article
+              key={step.title}
+              data-reveal
+              className={activeStep === index ? "step-active" : ""}
+              style={{ ["--reveal-delay" as string]: `${index * 90}ms` }}
+              onMouseEnter={() => setActiveStep(index)}
+            >
+              <span>{`0${index + 1}`}</span>
+              <div className="step-icon">{step.icon}</div>
+              <h3>{step.title}</h3>
+              <p>{step.copy}</p>
+              <div className="step-widget">{step.widget}</div>
+              <i className="step-progress" aria-hidden="true" />
+            </article>
+          ))}
         </div>
       </section>
 
