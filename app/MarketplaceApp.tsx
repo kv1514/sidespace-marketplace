@@ -1728,6 +1728,144 @@ export default function MarketplaceApp() {
         </div>
       </header>
 
+      {user && profile ? (
+        <section className="dashboard" aria-label="Your SideSpace dashboard">
+          <div className="dashboard-head">
+            <div>
+              <p className="eyebrow">Your dashboard</p>
+              <h1 className="dashboard-title">
+                Welcome back,{" "}
+                <em>{profile.display_name.split(" ")[0] || "there"}.</em>
+              </h1>
+              <p className="dashboard-sub">
+                {profile.onboarding_complete
+                  ? "Here is where your marketplace presence stands today."
+                  : "Finish your profile to go live on the marketplace."}
+              </p>
+            </div>
+            <div className="dashboard-actions">
+              {profile.role !== "consumer" && (
+                <button className="button button-dark" onClick={openListingEditor}>
+                  New listing <span>＋</span>
+                </button>
+              )}
+              <button className="button button-ghost" onClick={openInbox}>
+                Messages <span>→</span>
+              </button>
+              <button
+                className="button button-ghost"
+                onClick={() => setAccountOpen(true)}
+              >
+                Account <span>→</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="dashboard-grid">
+            <div className="dashboard-stat">
+              <strong>
+                {ownListings.filter((item) => item.status === "active").length}
+              </strong>
+              <small>Active listings</small>
+            </div>
+            <div className="dashboard-stat">
+              <strong>
+                {ownListings.filter((item) => item.status === "paused").length}
+              </strong>
+              <small>Paused listings</small>
+            </div>
+            <div className="dashboard-stat">
+              <strong>
+                {
+                  campaignRequests.filter(
+                    (request) =>
+                      request.owner_profile_id === profile.id &&
+                      request.status === "pending",
+                  ).length
+                }
+              </strong>
+              <small>Requests awaiting your reply</small>
+            </div>
+            <div className="dashboard-stat">
+              <strong>
+                {
+                  campaignRequests.filter(
+                    (request) =>
+                      request.requester_profile_id === profile.id &&
+                      (request.status === "pending" ||
+                        request.status === "countered"),
+                  ).length
+                }
+              </strong>
+              <small>Requests you sent</small>
+            </div>
+          </div>
+
+          <ol className="dashboard-checklist">
+            <li className={profile.onboarding_complete ? "done" : ""}>
+              <span>{profile.onboarding_complete ? "✓" : "1"}</span>
+              <div>
+                <strong>Complete your profile</strong>
+                <p>Role, city, and a short introduction.</p>
+              </div>
+              {!profile.onboarding_complete && (
+                <button
+                  className="button button-coral button-small"
+                  onClick={() => setOnboardingOpen(true)}
+                >
+                  Finish setup
+                </button>
+              )}
+            </li>
+            <li className={profile.avatar_url ? "done" : ""}>
+              <span>{profile.avatar_url ? "✓" : "2"}</span>
+              <div>
+                <strong>Add a profile photo</strong>
+                <p>Profiles with a face or logo get far more replies.</p>
+              </div>
+              {!profile.avatar_url && (
+                <button
+                  className="button button-ghost button-small"
+                  onClick={() => {
+                    setOnboardingStep(2);
+                    setOnboardingOpen(true);
+                  }}
+                >
+                  Add photo
+                </button>
+              )}
+            </li>
+            {profile.role !== "consumer" ? (
+              <li className={ownListings.length ? "done" : ""}>
+                <span>{ownListings.length ? "✓" : "3"}</span>
+                <div>
+                  <strong>Publish your first listing</strong>
+                  <p>Your space or audience cannot be booked until it is listed.</p>
+                </div>
+                {!ownListings.length && (
+                  <button
+                    className="button button-coral button-small"
+                    onClick={openListingEditor}
+                  >
+                    Create listing
+                  </button>
+                )}
+              </li>
+            ) : (
+              <li>
+                <span>3</span>
+                <div>
+                  <strong>Find your first placement</strong>
+                  <p>Browse creators and spaces, then message the owner directly.</p>
+                </div>
+                <a className="button button-ghost button-small" href="#market">
+                  Browse
+                </a>
+              </li>
+            )}
+          </ol>
+        </section>
+      ) : (
       <section className="hero">
         <div className="hero-orbit orbit-one" />
         <div className="hero-orbit orbit-two" />
@@ -1788,6 +1926,7 @@ export default function MarketplaceApp() {
           </div>
         </div>
       </section>
+      )}
 
       <section className="signal-strip" aria-label="Marketplace highlights">
         <span>Instagram Stories</span>
@@ -3071,6 +3210,10 @@ export default function MarketplaceApp() {
             className="field-grid listing-form"
             onSubmit={saveListing}
           >
+            <div className="form-subsection field-wide">
+              <span>The basics</span>
+              <h4>What are you offering?</h4>
+            </div>
             <label className="field-wide">
               Listing title
               <input
@@ -3108,6 +3251,10 @@ export default function MarketplaceApp() {
                 placeholder="3 frames · 48 hours"
               />
             </label>
+            <div className="form-subsection field-wide">
+              <span>Pricing</span>
+              <h4>What does it cost?</h4>
+            </div>
             <label>
               Price
               <input
@@ -3136,6 +3283,11 @@ export default function MarketplaceApp() {
                 <option value="partner">partner</option>
               </select>
             </label>
+            <div className="form-subsection field-wide">
+              <span>Where and when</span>
+              <h4>Location and availability.</h4>
+              <p>Pulled from your profile where possible — adjust if this listing differs.</p>
+            </div>
             <label className="field-wide">
               Location or service area
               <input
@@ -3178,6 +3330,10 @@ export default function MarketplaceApp() {
                 placeholder="1 story, 3 days, or one run"
               />
             </label>
+            <div className="form-subsection field-wide">
+              <span>Details</span>
+              <h4>What buyers will read.</h4>
+            </div>
             <label className="field-wide">
               Description
               <textarea
@@ -3212,13 +3368,22 @@ export default function MarketplaceApp() {
                 placeholder="Example: Free cancellation up to 48 hours before the start date"
               />
             </label>
+            <div className="form-subsection field-wide">
+              <span>Audience and photos</span>
+              <h4>Show them who they reach.</h4>
+            </div>
             <label>
               Audience / demographics
               <input
                 name="demographics"
-                defaultValue={editingListing?.demographics ?? ""}
+                defaultValue={
+                  editingListing?.demographics ??
+                  profile?.audience_age ??
+                  ""
+                }
                 placeholder="68% ages 21–34 · local"
               />
+              <small>Prefilled from your profile — edit if this listing reaches a different audience.</small>
             </label>
             <label className="field-wide media-upload-field">
               {editingListing ? "Add or replace photos" : "Upload listing photos"}
