@@ -8,3 +8,6 @@ node_modules/
 
 # Business outreach data is operational, not application source.
 outreach/
+
+# Local tool config, not application source.
+.claude/
