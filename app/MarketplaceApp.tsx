@@ -23,6 +23,7 @@ type Profile = {
   id: string;
   auth_user_id: string | null;
   role: Role;
+  extra_roles?: Role[];
   display_name: string;
   handle: string | null;
   bio: string;
@@ -371,6 +372,25 @@ function roleLabel(role: Role) {
   return roleCopy[role].label;
 }
 
+/** Every role a profile acts as, primary first. */
+function profileRoles(profile: Pick<Profile, "role" | "extra_roles">): Role[] {
+  const extras = (profile.extra_roles ?? []).filter(
+    (role): role is Role => role !== profile.role,
+  );
+  return [profile.role, ...extras];
+}
+
+function profileHasRole(
+  profile: Pick<Profile, "role" | "extra_roles">,
+  role: Role,
+) {
+  return profileRoles(profile).includes(role);
+}
+
+function rolesLabel(profile: Pick<Profile, "role" | "extra_roles">) {
+  return profileRoles(profile).map(roleLabel).join(" · ");
+}
+
 function initials(name: string) {
   return name
     .split(" ")
@@ -532,6 +552,7 @@ export default function MarketplaceApp() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [selectedRole, setSelectedRole] = useState<Role>("business");
+  const [extraRoles, setExtraRoles] = useState<Role[]>([]);
   const [listingOpen, setListingOpen] = useState(false);
   const [listingFeedback, setListingFeedback] = useState("");
   const [editingListing, setEditingListing] = useState<Listing | null>(null);
@@ -684,6 +705,7 @@ export default function MarketplaceApp() {
         setOwnListings([]);
       }
       setProfile(own);
+      setExtraRoles((own?.extra_roles as Role[] | undefined) ?? []);
       if (!own?.onboarding_complete) {
         setSelectedRole((own?.role as Role | undefined) ?? "business");
         setOnboardingStep(1);
@@ -820,9 +842,9 @@ export default function MarketplaceApp() {
       const roleMatches =
         roleFilter === "all" ||
         (roleFilter === "supply"
-          ? listing.owner.role === "creator" ||
-            listing.owner.role === "space_owner"
-          : listing.owner.role === roleFilter);
+          ? profileHasRole(listing.owner, "creator") ||
+            profileHasRole(listing.owner, "space_owner")
+          : profileHasRole(listing.owner, roleFilter));
       const channelMatches =
         channelFilter === "All" || listing.channel === channelFilter;
       const text = `${listing.title} ${listing.channel} ${listing.description} ${listing.demographics} ${listing.owner.display_name} ${listing.owner.city}`.toLowerCase();
@@ -1041,9 +1063,19 @@ export default function MarketplaceApp() {
       const syncedIgAvatar = igAvatarPromiseRef.current
         ? await igAvatarPromiseRef.current
         : igAvatar;
+      const primaryRole = profile?.onboarding_complete
+        ? profile.role
+        : selectedRole;
       const payload = {
         auth_user_id: user.id,
-        role: profile?.onboarding_complete ? profile.role : selectedRole,
+        role: primaryRole,
+        extra_roles: Array.from(
+          new Set(
+            extraRoles.filter(
+              (role) => role !== primaryRole && role !== "consumer",
+            ),
+          ),
+        ),
         display_name: String(values.get("display_name") ?? "").trim(),
         handle: String(values.get("handle") ?? "").trim() || null,
         city: String(values.get("city") ?? "").trim(),
@@ -1764,9 +1796,9 @@ export default function MarketplaceApp() {
         </a>
         <nav aria-label="Primary navigation">
           <a href="#market">Marketplace</a>
-          <a href="#creators">Creators</a>
-          <a href="#spaces">Physical spaces</a>
           <a href="#how">How it works</a>
+          <a href="#spaces">Physical spaces</a>
+          <a href="#creators">Creators</a>
         </nav>
         <div className="header-actions">
           <button className="text-button" onClick={openInbox}>
@@ -2073,32 +2105,6 @@ export default function MarketplaceApp() {
         <span>Local boards</span>
       </section>
 
-      <section className="how-section" id="how">
-        <div className="how-intro">
-          <h2>Find it. Message. <em>Make it happen.</em></h2>
-        </div>
-        <div className="steps">
-          <article>
-            <span>01</span>
-            <div className="step-icon">⌕</div>
-            <h3>Discover</h3>
-            <p>Filter creators, businesses, and spaces by the reach you need.</p>
-          </article>
-          <article>
-            <span>02</span>
-            <div className="step-icon">@</div>
-            <h3>Message privately</h3>
-            <p>Talk through the idea, timeline, price, and creative details.</p>
-          </article>
-          <article>
-            <span>03</span>
-            <div className="step-icon">✓</div>
-            <h3>Make it happen</h3>
-            <p>Agree on the work and build a local campaign people remember.</p>
-          </article>
-        </div>
-      </section>
-
       <section className="market-section" id="market">
         <div className="section-top">
           <div>
@@ -2184,7 +2190,7 @@ export default function MarketplaceApp() {
                       )}
                     </strong>
                     <small>
-                      {roleLabel(listing.owner.role)} · {listing.owner.city}
+                      {rolesLabel(listing.owner)} · {listing.owner.city}
                     </small>
                   </div>
                 </div>
@@ -2194,16 +2200,17 @@ export default function MarketplaceApp() {
                 >
                   {listing.title}
                 </button>
-                <p>{listing.description}</p>
-                <div className="listing-meta">
-                  <span>{listing.format}</span>
-                  <span>{listing.demographics}</span>
-                  <span>
-                    {listing.availability_notes ||
-                      listing.location_area ||
-                      "Flexible availability"}
-                  </span>
+                <p className="listing-blurb">{listing.description}</p>
+                <div className="listing-offer">
+                  <span className="listing-offer-label">You get</span>
+                  <span className="listing-offer-value">{listing.format}</span>
                 </div>
+                <button
+                  className="listing-more"
+                  onClick={() => openListing(listing)}
+                >
+                  Learn more <span>→</span>
+                </button>
                 <footer>
                   <div>
                     <strong>${listing.price}</strong>
@@ -2234,6 +2241,32 @@ export default function MarketplaceApp() {
             </button>
           </div>
         )}
+      </section>
+
+      <section className="how-section" id="how">
+        <div className="how-intro">
+          <h2>Find it. Message. <em>Make it happen.</em></h2>
+        </div>
+        <div className="steps">
+          <article>
+            <span>01</span>
+            <div className="step-icon">⌕</div>
+            <h3>Discover</h3>
+            <p>Filter creators, businesses, and spaces by the reach you need.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <div className="step-icon">@</div>
+            <h3>Message privately</h3>
+            <p>Talk through the idea, timeline, price, and creative details.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <div className="step-icon">✓</div>
+            <h3>Make it happen</h3>
+            <p>Agree on the work and build a local campaign people remember.</p>
+          </article>
+        </div>
       </section>
 
       <section className="spaces-section" id="spaces">
@@ -2317,7 +2350,7 @@ export default function MarketplaceApp() {
             .map((person) => (
             <article key={person.id} className="person-card">
               <Avatar profile={person} size="large" />
-              <span className="person-role">{roleLabel(person.role)}</span>
+              <span className="person-role">{rolesLabel(person)}</span>
               {person.is_demo && <span className="person-demo">Demo profile</span>}
               {!person.is_demo && person.verified && (
                 <span className="person-verified">Verified by SideSpace</span>
@@ -2489,8 +2522,9 @@ export default function MarketplaceApp() {
         <p>Local reach, made bookable.</p>
         <nav>
           <a href="#market">Marketplace</a>
-          <a href="#creators">Creators</a>
+          <a href="#how">How it works</a>
           <a href="#spaces">Physical spaces</a>
+          <a href="#creators">Creators</a>
           <a href="#pricing">Pricing</a>
           <button onClick={openInbox}>Messages</button>
         </nav>
@@ -2600,7 +2634,7 @@ export default function MarketplaceApp() {
                 <p className="eyebrow">Your SideSpace account</p>
                 <h2>{profile.display_name}</h2>
                 <p>
-                  {user.email} <span>•</span> {roleLabel(profile.role)} <span>•</span>{" "}
+                  {user.email} <span>•</span> {rolesLabel(profile)} <span>•</span>{" "}
                   {profile.city || "Location not added"}
                 </p>
               </div>
@@ -3099,7 +3133,12 @@ export default function MarketplaceApp() {
                     key={role}
                     type="button"
                     className={selectedRole === role ? "active" : ""}
-                    onClick={() => setSelectedRole(role)}
+                    onClick={() => {
+                      setSelectedRole(role);
+                      setExtraRoles((current) =>
+                        current.filter((extra) => extra !== role),
+                      );
+                    }}
                   >
                     <span>{roleCopy[role].icon}</span>
                     <small>{roleCopy[role].eyebrow}</small>
@@ -3108,6 +3147,45 @@ export default function MarketplaceApp() {
                   </button>
                 ))}
               </div>
+
+              {selectedRole !== "consumer" && (
+                <div className="role-extra">
+                  <p className="role-extra-title">
+                    Do you do anything else on SideSpace?
+                  </p>
+                  <p className="role-extra-help">
+                    Pick as many as apply. You will show up in each of these
+                    searches, and you can list and book with one account.
+                  </p>
+                  <div className="role-extra-options">
+                    {(["business", "creator", "space_owner"] as Role[])
+                      .filter((role) => role !== selectedRole)
+                      .map((role) => {
+                        const active = extraRoles.includes(role);
+                        return (
+                          <button
+                            key={role}
+                            type="button"
+                            className={active ? "active" : ""}
+                            aria-pressed={active}
+                            onClick={() =>
+                              setExtraRoles((current) =>
+                                active
+                                  ? current.filter((extra) => extra !== role)
+                                  : [...current, role],
+                              )
+                            }
+                          >
+                            <span>{active ? "✓" : roleCopy[role].icon}</span>
+                            <strong>{roleCopy[role].label}</strong>
+                            <small>{roleCopy[role].short}</small>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
               <div className="onboarding-actions">
                 <span />
                 <button
@@ -3634,7 +3712,7 @@ export default function MarketplaceApp() {
                     )}
                   </strong>
                   <small>
-                    {roleLabel(selectedListing.owner.role)} ·{" "}
+                    {rolesLabel(selectedListing.owner)} ·{" "}
                     {selectedListing.owner.city}
                   </small>
                 </div>

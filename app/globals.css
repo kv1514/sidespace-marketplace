@@ -4208,3 +4208,133 @@ html {
     font-size: 16px;
   }
 }
+
+/* ===== Compact listing cards + dual-role picker ===== */
+
+.listing-blurb {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin: 6px 0 0;
+  overflow: hidden;
+}
+
+.listing-offer {
+  align-items: baseline;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.listing-offer-label {
+  color: var(--ink-soft);
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.listing-offer-value {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.listing-more {
+  background: none;
+  border: 0;
+  color: var(--coral);
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: 10px;
+  padding: 4px 0;
+  text-align: left;
+  width: fit-content;
+}
+
+.listing-more span {
+  display: inline-block;
+  transition: transform 0.15s ease-out;
+}
+
+.listing-more:hover span {
+  transform: translateX(3px);
+}
+
+.role-extra {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 22px;
+  padding-top: 18px;
+}
+
+.role-extra-title {
+  font-size: 15px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.role-extra-help {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 4px 0 14px;
+}
+
+.role-extra-options {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.role-extra-options button {
+  align-items: center;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 2px 12px;
+  grid-template-columns: auto 1fr;
+  padding: 12px 14px;
+  text-align: left;
+  transition: border-color 0.15s ease-out, background 0.15s ease-out;
+}
+
+.role-extra-options button:hover {
+  border-color: var(--ink);
+}
+
+.role-extra-options button.active {
+  background: color-mix(in srgb, var(--coral) 8%, var(--white));
+  border-color: var(--coral);
+}
+
+.role-extra-options button > span {
+  align-items: center;
+  background: var(--paper-2);
+  border-radius: 50%;
+  display: inline-flex;
+  font-size: 14px;
+  grid-row: span 2;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.role-extra-options button.active > span {
+  background: var(--coral);
+  color: var(--white);
+}
+
+.role-extra-options button strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.role-extra-options button small {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
