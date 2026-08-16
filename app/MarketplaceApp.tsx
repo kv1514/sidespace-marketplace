@@ -1064,12 +1064,42 @@ export default function MarketplaceApp() {
     [listings],
   );
 
-  /** 0 = real member with listings, 1 = sample, 2 = signed up but empty. */
+  /** 0 = real member with listings, 1 = real member without, 2 = sample. */
   function rankPerson(person: Profile) {
-    if (!person.is_demo && ownerIdsWithListings.has(person.id)) return 0;
-    if (person.is_demo) return 1;
-    return 2;
+    if (person.is_demo) return 2;
+    return ownerIdsWithListings.has(person.id) ? 0 : 1;
   }
+
+  // The QA fixtures and the support login are for testing the product, not
+  // part of the community, so the showcase must not present them as members.
+  function isInternalAccount(person: Profile) {
+    const name = person.display_name.trim().toLowerCase();
+    return name.startsWith("sidespace qa") || name === "support";
+  }
+
+  // Every real member, listings first and bigger audiences first; demo
+  // profiles only pad the row while the community is still smaller than one
+  // screen of cards.
+  const showcasePeople = useMemo(() => {
+    const visible = profiles.filter(
+      (person) =>
+        !blockedProfileIds.includes(person.id) && !isInternalAccount(person),
+    );
+    const ranked = visible
+      .slice()
+      .sort(
+        (a, b) =>
+          rankPerson(a) - rankPerson(b) ||
+          (b.followers || b.avg_views) - (a.followers || a.avg_views) ||
+          a.display_name.localeCompare(b.display_name),
+      );
+    const real = ranked.filter((person) => !person.is_demo);
+    const demoFill = ranked
+      .filter((person) => person.is_demo)
+      .slice(0, Math.max(0, 8 - real.length));
+    return [...real, ...demoFill];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles, blockedProfileIds, ownerIdsWithListings]);
 
   const channels = useMemo(
     () => ["All", ...Array.from(new Set(listings.map((item) => item.channel)))],
@@ -3102,15 +3132,7 @@ export default function MarketplaceApp() {
           </p>
         </div>
         <div className="people-row">
-          {profiles
-            .filter((person) => !blockedProfileIds.includes(person.id))
-            // Lead with members who actually have something listed, then
-            // samples, then anyone who signed up but has not listed yet. The
-            // showcase was otherwise entirely sample profiles.
-            .slice()
-            .sort((a, b) => rankPerson(a) - rankPerson(b))
-            .slice(0, 8)
-            .map((person) => (
+          {showcasePeople.map((person) => (
             <article key={person.id} className="person-card">
               <Avatar profile={person} size="large" />
               <span className="person-role">{rolesLabel(person)}</span>
