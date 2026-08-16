@@ -982,6 +982,18 @@ export default function MarketplaceApp() {
     };
   }, [activeThread, supabase]);
 
+  const ownerIdsWithListings = useMemo(
+    () => new Set(listings.map((listing) => listing.owner.id)),
+    [listings],
+  );
+
+  /** 0 = real member with listings, 1 = sample, 2 = signed up but empty. */
+  function rankPerson(person: Profile) {
+    if (!person.is_demo && ownerIdsWithListings.has(person.id)) return 0;
+    if (person.is_demo) return 1;
+    return 2;
+  }
+
   const channels = useMemo(
     () => ["All", ...Array.from(new Set(listings.map((item) => item.channel)))],
     [listings],
@@ -2867,6 +2879,11 @@ export default function MarketplaceApp() {
         <div className="people-row">
           {profiles
             .filter((person) => !blockedProfileIds.includes(person.id))
+            // Lead with members who actually have something listed, then
+            // samples, then anyone who signed up but has not listed yet. The
+            // showcase was otherwise entirely sample profiles.
+            .slice()
+            .sort((a, b) => rankPerson(a) - rankPerson(b))
             .slice(0, 8)
             .map((person) => (
             <article key={person.id} className="person-card">
