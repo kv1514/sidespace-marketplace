@@ -374,6 +374,23 @@ function roleLabel(role: Role) {
   return roleCopy[role].label;
 }
 
+/**
+ * Tidy free-text offers so the card reads as a sentence. Members type things
+ * like "24/7" or "100 Hours"; this lowercases a leading capital when the rest
+ * of the word is lowercase, and trims stray punctuation, without touching
+ * deliberate capitals like "Instagram".
+ */
+function formatOffer(raw: string) {
+  const text = raw.trim().replace(/[.\s]+$/, "");
+  if (!text) return "";
+  const [first, ...rest] = text.split(" ");
+  const looksLikeSentenceStart =
+    /^[A-Z][a-z]*$/.test(first) && !/^(I|Instagram|TikTok|YouTube)$/.test(first);
+  return [looksLikeSentenceStart ? first.toLowerCase() : first, ...rest].join(
+    " ",
+  );
+}
+
 /** Every role a profile acts as, primary first. */
 function profileRoles(profile: Pick<Profile, "role" | "extra_roles">): Role[] {
   const extras = (profile.extra_roles ?? []).filter(
@@ -641,6 +658,7 @@ export default function MarketplaceApp() {
   const [extraRoles, setExtraRoles] = useState<Role[]>([]);
   const [listingOpen, setListingOpen] = useState(false);
   const [listingFeedback, setListingFeedback] = useState("");
+  const [formatPreview, setFormatPreview] = useState("");
   const [editingListing, setEditingListing] = useState<Listing | null>(null);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteAccountError, setDeleteAccountError] = useState("");
@@ -2102,6 +2120,7 @@ export default function MarketplaceApp() {
         return;
       }
       setListingFeedback("");
+      setFormatPreview("");
       setEditingListing(null);
       setListingOpen(true);
     });
@@ -2109,6 +2128,7 @@ export default function MarketplaceApp() {
 
   function openListingEdit(listing: Listing) {
     setListingFeedback("");
+    setFormatPreview(listing.format ?? "");
     setEditingListing(listing);
     setAccountOpen(false);
     setListingOpen(true);
@@ -2728,7 +2748,9 @@ export default function MarketplaceApp() {
                 <p className="listing-blurb">{listing.description}</p>
                 <div className="listing-offer">
                   <span className="listing-offer-label">You get</span>
-                  <span className="listing-offer-value">{listing.format}</span>
+                  <span className="listing-offer-value">
+                    {formatOffer(listing.format)}
+                  </span>
                 </div>
                 <button
                   className="listing-more"
@@ -4118,13 +4140,48 @@ export default function MarketplaceApp() {
             </label>
             <label>
               What the buyer gets
-              <small>The actual deliverable, like &quot;one poster, 18 by 24 inches&quot;.</small>
+              <small>
+                Finish the sentence <b>&ldquo;You get&hellip;&rdquo;</b> exactly
+                as it should read on your card.
+              </small>
               <input
                 name="format"
                 required
+                maxLength={60}
                 defaultValue={editingListing?.format ?? ""}
-                placeholder="3 frames · 48 hours"
+                placeholder="three Instagram stories over 48 hours"
+                onChange={(event) => setFormatPreview(event.target.value)}
               />
+              <span className="offer-preview" aria-live="polite">
+                Your card will read:{" "}
+                <b>
+                  You get{" "}
+                  {formatOffer(formatPreview || editingListing?.format || "") ||
+                    "…"}
+                </b>
+              </span>
+              <span className="offer-examples">
+                {[
+                  "three Instagram stories over 48 hours",
+                  "one 18 by 24 inch poster, displayed for a week",
+                  "a card on the counter for 30 days",
+                ].map((example) => (
+                  <button
+                    type="button"
+                    key={example}
+                    onClick={(event) => {
+                      const input =
+                        event.currentTarget.form?.elements.namedItem("format");
+                      if (input instanceof HTMLInputElement) {
+                        input.value = example;
+                        setFormatPreview(example);
+                      }
+                    }}
+                  >
+                    {example}
+                  </button>
+                ))}
+              </span>
             </label>
             <div className="form-subsection field-wide">
               <span>Pricing</span>
