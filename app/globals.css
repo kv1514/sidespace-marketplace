@@ -5141,3 +5141,78 @@ html.reveal-ready [data-reveal].is-visible {
     opacity: 1;
   }
 }
+
+/* Higher specificity than the earlier .step-active one-shot rules. */
+.steps article .mock-status,
+.steps article.step-active .mock-status {
+  animation: loop-status 4.6s ease-out infinite;
+}
+
+.steps article .mock-deal-check,
+.steps article.step-active .mock-deal-check {
+  animation: loop-check 4.6s cubic-bezier(0.34, 1.85, 0.64, 1) infinite;
+}
+
+.steps article .mock-field em,
+.steps article.step-active .mock-field em {
+  animation: loop-type 4.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.steps article .mock-caret,
+.steps article.step-active .mock-caret {
+  animation: loop-caret 4.6s steps(1) infinite;
+}
+
+.steps article .mock-chips b:nth-child(2),
+.steps article.step-active .mock-chips b:nth-child(2) {
+  animation: loop-chip 4.6s ease-out infinite;
+  transition: none;
+}
+
+.steps article .mock-results li,
+.steps article.step-active .mock-results li {
+  animation: loop-row 4.6s cubic-bezier(0.19, 1, 0.22, 1) infinite;
+}
+
+.steps article .mock-results li:nth-child(2),
+.steps article.step-active .mock-results li:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.steps article .mock-results li:nth-child(3),
+.steps article.step-active .mock-results li:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+.steps article .mock-bubble,
+.steps article.step-active .mock-bubble {
+  animation: loop-bubble 4.6s cubic-bezier(0.19, 1, 0.22, 1) infinite;
+}
+
+.steps article .mock-bubble:nth-of-type(2),
+.steps article.step-active .mock-bubble:nth-of-type(2) {
+  animation-delay: 0.5s;
+}
+
+.steps article .mock-bubble:nth-of-type(3),
+.steps article.step-active .mock-bubble:nth-of-type(3) {
+  animation-delay: 1s;
+}
+
+.steps article .mock-typing,
+.steps article.step-active .mock-typing {
+  animation: loop-typing 4.6s ease-out infinite;
+}
+
+/* Show the previews on tablets too; only drop them on true phone widths. */
+@media (max-width: 820px) {
+  .step-widget {
+    display: block;
+  }
+}
+
+@media (max-width: 620px) {
+  .step-widget {
+    display: none;
+  }
+}
