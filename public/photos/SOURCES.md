@@ -19,3 +19,4 @@ under the Unsplash License.
 - `suburban-street.jpg`: https://www.pexels.com/photo/15048771/ (Pexels License, free for commercial use)
 
 - `youshi-chen.png`: supplied by the listing owner (Youshi Chen), used with permission.
+- `dylan-youtube.jpg`: Dylan Nguyen's own YouTube channel avatar (youtube.com/@DylanNguyenn), used for his listing with his permission.
