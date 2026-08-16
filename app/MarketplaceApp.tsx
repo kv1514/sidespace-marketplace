@@ -842,7 +842,17 @@ export default function MarketplaceApp() {
       }, 0);
       return () => window.clearTimeout(timer);
     }
-  }, [listings, selectedListing]);
+    // The link points at a listing that is paused, removed, or hidden by a
+    // block. Say so instead of silently showing the home page.
+    if (loading || !listings.length) return;
+    const timer = window.setTimeout(() => {
+      setToast("That listing is no longer available.");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("listing");
+      window.history.replaceState({}, "", url.toString());
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [listings, loading, selectedListing]);
 
   function requireAccount(action: () => void) {
     if (!configured) {
