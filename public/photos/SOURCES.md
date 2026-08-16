@@ -15,3 +15,5 @@ under the Unsplash License.
 - `small-town-bakery.jpg`: https://unsplash.com/photos/9cz_zzcgFYg
 - `rural-market.jpg`: https://unsplash.com/photos/FJGH4Obu0TE
 - `small-town-coffee.jpg`: https://unsplash.com/photos/dFcYq0UOBZA
+
+- `suburban-street.jpg`: https://www.pexels.com/photo/15048771/ (Pexels License, free for commercial use)
