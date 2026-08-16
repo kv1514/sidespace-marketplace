@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Google+Sans+Flex&family=Google+Sans+Code:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..800&family=Google+Sans+Code:wght@400..700&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap");
 
 :root {
@@ -3941,14 +3941,14 @@ textarea::placeholder {
 /* ===== Type fix + spacing + dashboard paths ===== */
 
 body {
-  font-synthesis: none;
+  font-synthesis-weight: none;
 }
 
 h1,
 h2,
 h3,
 h4 {
-  font-synthesis: none;
+  font-synthesis-weight: none;
   font-weight: 500;
 }
 
@@ -4131,4 +4131,43 @@ a:focus-visible {
 
 html {
   scrollbar-color: rgba(21, 19, 14, 0.3) transparent;
+}
+
+/* ===== Review fixes: form headers, tracking, media ratios, hover ===== */
+
+.listing-form .form-subsection {
+  background: none;
+  border-radius: 0;
+  color: inherit;
+  padding: 18px 0 0;
+}
+
+.listing-form .form-subsection:first-child {
+  padding-top: 0;
+}
+
+.section-top h2,
+.final-cta h2 {
+  letter-spacing: -0.018em;
+  line-height: 1.02;
+  word-spacing: 0.06em;
+}
+
+.listing-image {
+  aspect-ratio: 4 / 3;
+  height: auto;
+}
+
+.listing-card .avatar img {
+  aspect-ratio: auto;
+}
+
+.my-listing-card > img {
+  aspect-ratio: 4 / 3;
+  height: auto;
+  min-height: 0;
+}
+
+.close-button:hover {
+  background: var(--line);
 }

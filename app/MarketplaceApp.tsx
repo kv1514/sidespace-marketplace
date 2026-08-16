@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
@@ -538,6 +539,8 @@ export default function MarketplaceApp() {
   const [deleteAccountError, setDeleteAccountError] = useState("");
   const [igAvatar, setIgAvatar] = useState("");
   const [igAvatarBusy, setIgAvatarBusy] = useState(false);
+  const igAvatarSeqRef = useRef(0);
+  const igAvatarPromiseRef = useRef<Promise<string> | null>(null);
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [inboxOpen, setInboxOpen] = useState(false);
@@ -672,7 +675,6 @@ export default function MarketplaceApp() {
         return;
       }
       const own = (data as Profile | null) ?? null;
-      setProfile(own);
       if (own) {
         await Promise.all([
           loadOwnListings(own),
@@ -681,6 +683,7 @@ export default function MarketplaceApp() {
       } else {
         setOwnListings([]);
       }
+      setProfile(own);
       if (!own?.onboarding_complete) {
         setSelectedRole((own?.role as Role | undefined) ?? "business");
         setOnboardingStep(1);
@@ -730,6 +733,10 @@ export default function MarketplaceApp() {
         setActiveContact(null);
         setMessages([]);
         setInboxOpen(false);
+        igAvatarSeqRef.current += 1;
+        igAvatarPromiseRef.current = null;
+        setIgAvatar("");
+        setIgAvatarBusy(false);
       }
       },
     );
@@ -1021,9 +1028,12 @@ export default function MarketplaceApp() {
           ])
           .filter(([, url]) => Boolean(url)),
       );
+      const syncedIgAvatar = igAvatarPromiseRef.current
+        ? await igAvatarPromiseRef.current
+        : igAvatar;
       const payload = {
         auth_user_id: user.id,
-        role: selectedRole,
+        role: profile?.onboarding_complete ? profile.role : selectedRole,
         display_name: String(values.get("display_name") ?? "").trim(),
         handle: String(values.get("handle") ?? "").trim() || null,
         city: String(values.get("city") ?? "").trim(),
@@ -1047,7 +1057,7 @@ export default function MarketplaceApp() {
           avatarUploads[0] ||
           String(values.get("avatar_url") ?? "").trim() ||
           profile?.avatar_url ||
-          igAvatar ||
+          syncedIgAvatar ||
           String(
             user.user_metadata.avatar_url ?? user.user_metadata.picture ?? "",
           ) ||
@@ -1074,6 +1084,7 @@ export default function MarketplaceApp() {
       setProfile(savedProfile);
       setOnboardingOpen(false);
       setOnboardingStep(1);
+      resetIgAvatarSync();
       setToast("Your profile, links, and photos are live.");
       await Promise.all([loadMarketplace(), loadOwnListings(savedProfile)]);
     } catch (error) {
@@ -1580,6 +1591,7 @@ export default function MarketplaceApp() {
     setInboxOpen(false);
     setAccountOpen(false);
     setOnboardingOpen(false);
+    resetIgAvatarSync();
   }
 
   async function signOut() {
@@ -1588,33 +1600,56 @@ export default function MarketplaceApp() {
     setToast("Signed out.");
   }
 
-  async function syncInstagramAvatar(rawHandle: string) {
+  function resetIgAvatarSync() {
+    igAvatarSeqRef.current += 1;
+    igAvatarPromiseRef.current = null;
+    setIgAvatar("");
+    setIgAvatarBusy(false);
+  }
+
+  async function syncInstagramAvatar(
+    rawHandle: string,
+    form?: HTMLFormElement | null,
+  ) {
     if (!supabase) return;
     const handle = rawHandle.trim();
+    const seq = ++igAvatarSeqRef.current;
     if (!handle) {
+      igAvatarPromiseRef.current = null;
       setIgAvatar("");
       return;
     }
     // An uploaded or existing photo always wins; the sync only fills a gap.
     if (profile?.avatar_url) return;
+    const fileInput = form?.elements.namedItem("avatar_file");
+    if (
+      fileInput instanceof HTMLInputElement &&
+      (fileInput.files?.length ?? 0) > 0
+    ) {
+      return;
+    }
     setIgAvatarBusy(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("ig-avatar", {
-        body: { handle },
-      });
-      if (error) throw error;
-      const url =
-        data && typeof data === "object" && "url" in data
+    const client = supabase;
+    const lookup = (async () => {
+      try {
+        const { data, error } = await client.functions.invoke("ig-avatar", {
+          body: { handle },
+        });
+        if (error) throw error;
+        return data && typeof data === "object" && "url" in data
           ? String(data.url ?? "")
           : "";
-      if (url) {
-        setIgAvatar(url);
-        setToast("Found your Instagram photo — it will be your profile photo.");
+      } catch {
+        return "";
       }
-    } catch {
-      setIgAvatar("");
-    } finally {
-      setIgAvatarBusy(false);
+    })();
+    igAvatarPromiseRef.current = lookup;
+    const url = await lookup;
+    if (seq !== igAvatarSeqRef.current) return;
+    setIgAvatar(url);
+    setIgAvatarBusy(false);
+    if (url) {
+      setToast("Found your Instagram photo — it will be your profile photo.");
     }
   }
 
@@ -1768,7 +1803,19 @@ export default function MarketplaceApp() {
         </div>
       </header>
 
-      {user && profile ? (
+      {user && !profile ? (
+        <section className="dashboard" aria-label="Loading your dashboard">
+          <div className="dashboard-head">
+            <div>
+              <p className="eyebrow">Your dashboard</p>
+              <h1 className="dashboard-title">
+                Setting things <em>up...</em>
+              </h1>
+              <p className="dashboard-sub">One moment while we load your account.</p>
+            </div>
+          </div>
+        </section>
+      ) : user && profile ? (
         <section className="dashboard" aria-label="Your SideSpace dashboard">
           <div className="dashboard-head">
             <div>
@@ -1902,6 +1949,7 @@ export default function MarketplaceApp() {
                 <button
                   className="button button-ghost button-small"
                   onClick={() => {
+                    setSelectedRole(profile.role);
                     setOnboardingStep(2);
                     setOnboardingOpen(true);
                   }}
@@ -2067,6 +2115,7 @@ export default function MarketplaceApp() {
             {(
               [
                 ["all", "Everything"],
+                ["supply", "Creators & spaces"],
                 ["creator", "Creators"],
                 ["space_owner", "Physical spaces"],
                 ["business", "Business briefs"],
@@ -3007,7 +3056,13 @@ export default function MarketplaceApp() {
       )}
 
       {onboardingOpen && user && (
-        <Modal onClose={() => setOnboardingOpen(false)} wide>
+        <Modal
+          onClose={() => {
+            setOnboardingOpen(false);
+            resetIgAvatarSync();
+          }}
+          wide
+        >
           <div className="onboarding-top">
             <div>
               <p className="eyebrow">Set up your profile</p>
@@ -3185,7 +3240,10 @@ export default function MarketplaceApp() {
                       onBlur={
                         platform.key === "instagram"
                           ? (event) =>
-                              void syncInstagramAvatar(event.currentTarget.value)
+                              void syncInstagramAvatar(
+                                event.currentTarget.value,
+                                event.currentTarget.form,
+                              )
                           : undefined
                       }
                     />
@@ -3254,8 +3312,16 @@ export default function MarketplaceApp() {
                 <button type="button" onClick={() => setOnboardingStep(2)}>
                   ← Back
                 </button>
-                <button className="button button-coral" disabled={busy}>
-                  {busy ? "Saving..." : "Finish my profile"} <span>✓</span>
+                <button
+                  className="button button-coral"
+                  disabled={busy || igAvatarBusy}
+                >
+                  {busy
+                    ? "Saving..."
+                    : igAvatarBusy
+                      ? "Syncing photo..."
+                      : "Finish my profile"}{" "}
+                  <span>✓</span>
                 </button>
               </div>
             </div>
