@@ -5649,3 +5649,22 @@ html.reveal-ready [data-reveal].is-visible {
     aspect-ratio: 4 / 3;
   }
 }
+
+/* ===== Direction: wanted vs available =====
+   A business brief runs the other way (the poster wants space), so it must
+   never read like an offer. */
+
+.listing-channel.is-brief {
+  background: var(--ink);
+  color: var(--lime);
+}
+
+.price-lead {
+  color: var(--ink-soft);
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  margin-bottom: 1px;
+  text-transform: uppercase;
+}

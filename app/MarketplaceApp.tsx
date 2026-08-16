@@ -391,6 +391,14 @@ function formatOffer(raw: string) {
   );
 }
 
+/**
+ * A "business brief" runs the other way: the poster WANTS space rather than
+ * offering it, so its card has to read as a request, not an offer.
+ */
+function isBrief(listing: Pick<Listing, "channel">) {
+  return listing.channel === "Business brief";
+}
+
 /** Every role a profile acts as, primary first. */
 function profileRoles(profile: Pick<Profile, "role" | "extra_roles">): Role[] {
   const extras = (profile.extra_roles ?? []).filter(
@@ -1019,12 +1027,17 @@ export default function MarketplaceApp() {
     const normalized = query.trim().toLowerCase();
     return listings.filter((listing) => {
       if (blockedProfileIds.includes(listing.owner.id)) return false;
+      // Direction matters more than who posted it: a business can offer space
+      // (Troy VEX sells Instagram posts) and a creator can want space. Only
+      // the "Business brief" channel means "wanted".
+      const wanted = isBrief(listing);
       const roleMatches =
         roleFilter === "all" ||
-        (roleFilter === "supply"
-          ? profileHasRole(listing.owner, "creator") ||
-            profileHasRole(listing.owner, "space_owner")
-          : profileHasRole(listing.owner, roleFilter));
+        (roleFilter === "business"
+          ? wanted
+          : roleFilter === "supply"
+            ? !wanted
+            : !wanted && profileHasRole(listing.owner, roleFilter));
       const channelMatches =
         channelFilter === "All" || listing.channel === channelFilter;
       const text = `${listing.title} ${listing.channel} ${listing.description} ${listing.demographics} ${listing.owner.display_name} ${listing.owner.city}`.toLowerCase();
@@ -2722,10 +2735,10 @@ export default function MarketplaceApp() {
             {(
               [
                 ["all", "Everything"],
-                ["supply", "Creators & spaces"],
+                ["supply", "Space available"],
                 ["creator", "Creators"],
                 ["space_owner", "Physical spaces"],
-                ["business", "Business briefs"],
+                ["business", "Space wanted"],
               ] as Array<[RoleFilter, string]>
             ).map(([value, label]) => (
               <button
@@ -2761,7 +2774,11 @@ export default function MarketplaceApp() {
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={listing.image_url} alt="" loading="lazy" decoding="async" />
-                <span className="listing-channel">{listing.channel}</span>
+                <span
+                  className={`listing-channel ${isBrief(listing) ? "is-brief" : ""}`}
+                >
+                  {isBrief(listing) ? "Wanted" : listing.channel}
+                </span>
                 {listingImages(listing).length > 1 && (
                   <span className="photo-count">
                     {listingImages(listing).length} photos
@@ -2796,7 +2813,9 @@ export default function MarketplaceApp() {
                 </button>
                 <p className="listing-blurb">{listing.description}</p>
                 <div className="listing-offer">
-                  <span className="listing-offer-label">You get</span>
+                  <span className="listing-offer-label">
+                    {isBrief(listing) ? "Looking for" : "You get"}
+                  </span>
                   <span className="listing-offer-value">
                     {formatOffer(listing.format)}
                   </span>
@@ -2809,11 +2828,15 @@ export default function MarketplaceApp() {
                 </button>
                 <footer>
                   <div>
+                    {isBrief(listing) && (
+                      <span className="price-lead">Budget</span>
+                    )}
                     <strong>${listing.price}</strong>
                     <small> / {listing.price_unit}</small>
                   </div>
                   <button onClick={() => openCampaignRequest(listing)}>
-                    Request <span>↗</span>
+                    {isBrief(listing) ? "Offer my space" : "Request"}{" "}
+                    <span>↗</span>
                   </button>
                 </footer>
               </div>
@@ -4543,7 +4566,10 @@ export default function MarketplaceApp() {
                     className="button button-coral"
                     onClick={() => openCampaignRequest(selectedListing)}
                   >
-                    Request this placement <span>↗</span>
+                    {isBrief(selectedListing)
+                      ? "Offer my space"
+                      : "Request this placement"}{" "}
+                    <span>↗</span>
                   </button>
                   <button
                     className="button button-dark"
