@@ -584,6 +584,9 @@ export default function MarketplaceApp() {
     listing?: Listing;
   } | null>(null);
   const [blockedProfileIds, setBlockedProfileIds] = useState<string[]>([]);
+  const [blockedProfiles, setBlockedProfiles] = useState<
+    Array<{ id: string; display_name: string }>
+  >([]);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [channelFilter, setChannelFilter] = useState("All");
@@ -660,7 +663,9 @@ export default function MarketplaceApp() {
             .maybeSingle(),
           supabase
             .from("profile_blocks")
-            .select("blocked_profile_id")
+            .select(
+              "blocked_profile_id, blocked:profiles!profile_blocks_blocked_profile_id_fkey(id,display_name,avatar_url,city)",
+            )
             .eq("blocker_profile_id", ownProfile.id),
         ]);
 
@@ -675,10 +680,16 @@ export default function MarketplaceApp() {
         );
       }
       if (!blocksResult.error) {
-        setBlockedProfileIds(
-          (blocksResult.data ?? []).map(
-            (item: { blocked_profile_id: string }) => item.blocked_profile_id,
-          ),
+        const rows = (blocksResult.data ?? []) as unknown as Array<{
+          blocked_profile_id: string;
+          blocked: { id: string; display_name: string } | null;
+        }>;
+        setBlockedProfileIds(rows.map((item) => item.blocked_profile_id));
+        setBlockedProfiles(
+          rows.map((item) => ({
+            id: item.blocked_profile_id,
+            display_name: item.blocked?.display_name ?? "Member",
+          })),
         );
       }
     },
@@ -1548,10 +1559,38 @@ export default function MarketplaceApp() {
     setBlockedProfileIds((current) =>
       current.includes(target.id) ? current : [...current, target.id],
     );
+    setBlockedProfiles((current) =>
+      current.some((item) => item.id === target.id)
+        ? current
+        : [...current, { id: target.id, display_name: target.display_name }],
+    );
     // closeListing() also drops ?listing= from the URL; leaving it would let
     // the deep-link effect immediately reopen the listing just blocked.
     closeListing();
-    setToast(`${target.display_name} is now hidden from your marketplace.`);
+    setToast(
+      `${target.display_name} is now hidden. You can undo this in Account settings.`,
+    );
+  }
+
+  async function unblockProfile(blockedId: string, name: string) {
+    if (!supabase || !profile) return;
+    setBusy(true);
+    const { error } = await supabase
+      .from("profile_blocks")
+      .delete()
+      .eq("blocker_profile_id", profile.id)
+      .eq("blocked_profile_id", blockedId);
+    setBusy(false);
+    if (error) {
+      setToast(error.message);
+      return;
+    }
+    setBlockedProfileIds((current) => current.filter((id) => id !== blockedId));
+    setBlockedProfiles((current) =>
+      current.filter((item) => item.id !== blockedId),
+    );
+    setToast(`${name} is visible again.`);
+    await loadMarketplace();
   }
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
@@ -1805,8 +1844,8 @@ export default function MarketplaceApp() {
           <span>SideSpace</span>
         </a>
         <nav aria-label="Primary navigation">
-          <a href="#market">Marketplace</a>
           <a href="#how">How it works</a>
+          <a href="#market">Marketplace</a>
           <a href="#spaces">Physical spaces</a>
           <a href="#creators">Creators</a>
         </nav>
@@ -2117,6 +2156,32 @@ export default function MarketplaceApp() {
         <span>Local boards</span>
       </section>
 
+      <section className="how-section" id="how">
+        <div className="how-intro">
+          <h2>Find it. Message. <em>Make it happen.</em></h2>
+        </div>
+        <div className="steps">
+          <article>
+            <span>01</span>
+            <div className="step-icon">⌕</div>
+            <h3>Discover</h3>
+            <p>Filter creators, businesses, and spaces by the reach you need.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <div className="step-icon">@</div>
+            <h3>Message privately</h3>
+            <p>Talk through the idea, timeline, price, and creative details.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <div className="step-icon">✓</div>
+            <h3>Make it happen</h3>
+            <p>Agree on the work and build a local campaign people remember.</p>
+          </article>
+        </div>
+      </section>
+
       <section className="market-section" id="market">
         <div className="section-top">
           <div>
@@ -2255,32 +2320,6 @@ export default function MarketplaceApp() {
         )}
       </section>
 
-      <section className="how-section" id="how">
-        <div className="how-intro">
-          <h2>Find it. Message. <em>Make it happen.</em></h2>
-        </div>
-        <div className="steps">
-          <article>
-            <span>01</span>
-            <div className="step-icon">⌕</div>
-            <h3>Discover</h3>
-            <p>Filter creators, businesses, and spaces by the reach you need.</p>
-          </article>
-          <article>
-            <span>02</span>
-            <div className="step-icon">@</div>
-            <h3>Message privately</h3>
-            <p>Talk through the idea, timeline, price, and creative details.</p>
-          </article>
-          <article>
-            <span>03</span>
-            <div className="step-icon">✓</div>
-            <h3>Make it happen</h3>
-            <p>Agree on the work and build a local campaign people remember.</p>
-          </article>
-        </div>
-      </section>
-
       <section className="spaces-section" id="spaces">
         <div className="spaces-heading">
           <h2>
@@ -2330,7 +2369,7 @@ export default function MarketplaceApp() {
             <img src="/photos/small-town-barber.jpg" alt="Small-town barber shop" loading="lazy" decoding="async" />
             <figcaption>
               <strong>Barber waiting bench</strong>
-              <span>Lanesboro, MN · $10/week</span>
+              <span>Lanesboro, MN · $3/week</span>
             </figcaption>
           </figure>
           <figure className="space-tile">
@@ -2338,7 +2377,7 @@ export default function MarketplaceApp() {
             <img src="/photos/rural-market.jpg" alt="Rural Main Street market" loading="lazy" decoding="async" />
             <figcaption>
               <strong>Market counter card</strong>
-              <span>Mercer, WI · $12/week</span>
+              <span>Mercer, WI · $4/week</span>
             </figcaption>
           </figure>
         </div>
@@ -2533,8 +2572,8 @@ export default function MarketplaceApp() {
         </a>
         <p>Local reach, made bookable.</p>
         <nav>
-          <a href="#market">Marketplace</a>
           <a href="#how">How it works</a>
+          <a href="#market">Marketplace</a>
           <a href="#spaces">Physical spaces</a>
           <a href="#creators">Creators</a>
           <a href="#pricing">Pricing</a>
@@ -3023,6 +3062,32 @@ export default function MarketplaceApp() {
                   </button>
                 </form>
               </div>
+
+              {blockedProfiles.length > 0 && (
+                <div className="blocked-list">
+                  <strong>Blocked members</strong>
+                  <p>
+                    They cannot message you or request your listings, and their
+                    listings stay hidden from you.
+                  </p>
+                  <ul>
+                    {blockedProfiles.map((blocked) => (
+                      <li key={blocked.id}>
+                        <span>{blocked.display_name}</span>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            void unblockProfile(blocked.id, blocked.display_name)
+                          }
+                        >
+                          Unblock
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="danger-zone">
                 <div>
@@ -3860,9 +3925,16 @@ export default function MarketplaceApp() {
                     </button>
                     <button
                       onClick={() =>
-                        requireAccount(() =>
-                          void blockProfile(selectedListing.owner),
-                        )
+                        requireAccount(() => {
+                          const owner = selectedListing.owner;
+                          if (
+                            window.confirm(
+                              `Block ${owner.display_name}? They will not be able to message you or request your listings, and their listings will be hidden from you. You can undo this in Account settings.`,
+                            )
+                          ) {
+                            void blockProfile(owner);
+                          }
+                        })
                       }
                     >
                       Block member
