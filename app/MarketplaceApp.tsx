@@ -43,6 +43,20 @@ type Profile = {
   onboarding_complete: boolean;
 };
 
+// What the ig-avatar edge function reports back for a handle.
+type IgStats = {
+  url?: string;
+  username?: string;
+  full_name?: string;
+  followers?: number | null;
+  posts?: number | null;
+  is_private?: boolean;
+  is_verified?: boolean;
+  photo_skipped?: string;
+  throttled?: boolean;
+  error?: string;
+};
+
 type Listing = {
   id: string;
   owner_profile_id: string;
@@ -702,6 +716,7 @@ export default function MarketplaceApp() {
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteAccountError, setDeleteAccountError] = useState("");
   const [igAvatar, setIgAvatar] = useState("");
+  const [igStats, setIgStats] = useState<IgStats | null>(null);
   const [igAvatarBusy, setIgAvatarBusy] = useState(false);
   const igAvatarSeqRef = useRef(0);
   const igAvatarPromiseRef = useRef<Promise<string> | null>(null);
@@ -931,6 +946,7 @@ export default function MarketplaceApp() {
         igAvatarSeqRef.current += 1;
         igAvatarPromiseRef.current = null;
         setIgAvatar("");
+        setIgStats(null);
         setIgAvatarBusy(false);
       }
       },
@@ -2075,7 +2091,21 @@ export default function MarketplaceApp() {
     igAvatarSeqRef.current += 1;
     igAvatarPromiseRef.current = null;
     setIgAvatar("");
+    setIgStats(null);
     setIgAvatarBusy(false);
+  }
+
+  // Fill the follower box from Instagram, but never argue with a number the
+  // member typed in themselves.
+  function prefillFollowers(
+    form: HTMLFormElement | null | undefined,
+    followers: number | null | undefined,
+  ) {
+    if (!form || typeof followers !== "number" || followers <= 0) return;
+    const input = form.elements.namedItem("followers");
+    if (!(input instanceof HTMLInputElement)) return;
+    if (input.value.trim() !== "" && Number(input.value) > 0) return;
+    input.value = String(followers);
   }
 
   async function syncInstagramAvatar(
@@ -2088,17 +2118,17 @@ export default function MarketplaceApp() {
     if (!handle) {
       igAvatarPromiseRef.current = null;
       setIgAvatar("");
+      setIgStats(null);
       return;
     }
-    // An uploaded or existing photo always wins; the sync only fills a gap.
-    if (profile?.avatar_url) return;
+    // A photo the member already has or is uploading always wins, but the
+    // follower count is worth fetching either way.
     const fileInput = form?.elements.namedItem("avatar_file");
-    if (
-      fileInput instanceof HTMLInputElement &&
-      (fileInput.files?.length ?? 0) > 0
-    ) {
-      return;
-    }
+    const photoAlreadyChosen =
+      Boolean(profile?.avatar_url) ||
+      (fileInput instanceof HTMLInputElement &&
+        (fileInput.files?.length ?? 0) > 0);
+
     setIgAvatarBusy(true);
     const client = supabase;
     const lookup = (async () => {
@@ -2106,10 +2136,23 @@ export default function MarketplaceApp() {
         const { data, error } = await client.functions.invoke("ig-avatar", {
           body: { handle },
         });
-        if (error) throw error;
-        return data && typeof data === "object" && "url" in data
-          ? String(data.url ?? "")
-          : "";
+        if (error) {
+          // invoke() treats our 404/503 as an error, so the explanation we
+          // wrote server-side only survives if we read the response body.
+          const context = (error as { context?: Response }).context;
+          const detail = context ? await context.json().catch(() => null) : null;
+          if (detail && seq === igAvatarSeqRef.current) {
+            setIgStats(detail as IgStats);
+          }
+          return "";
+        }
+        if (!data || typeof data !== "object") return "";
+        const stats = data as IgStats;
+        if (seq === igAvatarSeqRef.current) {
+          setIgStats(stats);
+          prefillFollowers(form, stats.followers);
+        }
+        return photoAlreadyChosen ? "" : String(stats.url ?? "");
       } catch {
         return "";
       }
@@ -4139,7 +4182,7 @@ export default function MarketplaceApp() {
                       }
                     />
                     {platform.key === "instagram" && igAvatarBusy && (
-                      <small>Looking up your Instagram photo...</small>
+                      <small>Checking your Instagram profile...</small>
                     )}
                     {platform.key === "instagram" &&
                       !igAvatarBusy &&
@@ -4152,6 +4195,21 @@ export default function MarketplaceApp() {
                             use a different one.
                           </small>
                         </span>
+                      )}
+                    {platform.key === "instagram" &&
+                      !igAvatarBusy &&
+                      igStats && (
+                        <small className="ig-sync-note" role="status">
+                          {igStats.throttled
+                            ? "Instagram is busy right now. Your handle is saved — try again in a minute."
+                            : igStats.error
+                              ? igStats.error
+                              : typeof igStats.followers === "number"
+                                ? `Found @${igStats.username} — ${compactNumber(igStats.followers)} followers${
+                                    igStats.is_private ? ", private account" : ""
+                                  }.`
+                                : null}
+                        </small>
                       )}
                   </label>
                 ))}

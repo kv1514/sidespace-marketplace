@@ -1024,6 +1024,10 @@ h2 em {
   background: var(--white);
   border: 1px solid var(--line);
   border-radius: 18px;
+  /* Column flex so the "Say hello" button sits on the baseline of every card
+     regardless of how much bio, gallery or stats sit above it. */
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   padding: 18px;
   text-align: center;
@@ -1034,6 +1038,8 @@ h2 em {
 }
 
 .person-role {
+  /* Hug the label: as a flex child it would otherwise stretch into a full-width bar. */
+  align-self: center;
   background: var(--lime);
   border-radius: 999px;
   display: inline-block;
@@ -1151,10 +1157,12 @@ h2 em {
   width: 30px;
 }
 
+/* Flex, not a 3-column grid: most profiles have a single photo, and a grid
+   parks that one photo in the left column instead of under the name. */
 .profile-gallery-preview {
-  display: grid;
+  display: flex;
   gap: 4px;
-  grid-template-columns: repeat(3, 1fr);
+  justify-content: center;
   margin-bottom: 13px;
   overflow: hidden;
 }
@@ -1162,12 +1170,14 @@ h2 em {
 .profile-gallery-preview img {
   aspect-ratio: 1;
   border-radius: 8px;
-  height: 100%;
+  flex: 0 0 calc((100% - 8px) / 3);
+  height: auto;
   object-fit: cover;
-  width: 100%;
+  max-width: calc((100% - 8px) / 3);
 }
 
 .person-card > button {
+  margin-top: auto;
   width: 100%;
 }
 
@@ -4125,6 +4135,14 @@ a:focus-visible {
   color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.4;
+}
+
+.ig-sync-note {
+  color: var(--ink-soft);
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 6px;
 }
 
 html {
