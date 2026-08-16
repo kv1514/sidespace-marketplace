@@ -1732,15 +1732,10 @@ export default function MarketplaceApp() {
         <div className="hero-orbit orbit-one" />
         <div className="hero-orbit orbit-two" />
         <div className="hero-copy">
-          <p className="hero-slogan">
-            Local reach, lifted off the ground
-          </p>
           <h1 className="hero-headline">
-            The Airbnb for
+            Get seen
             <br />
-            <em>affordable, everyday</em>
-            <br />
-            advertising space.
+            <em>where it matters.</em>
           </h1>
           <p className="hero-lede">
             SideSpace turns everyday attention into bookable ad space: local

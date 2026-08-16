@@ -3697,7 +3697,7 @@ textarea::placeholder {
 }
 
 .hero-copy h1.hero-headline {
-  font-size: clamp(42px, 5.6vw, 78px);
+  font-size: clamp(48px, 6.6vw, 92px);
   letter-spacing: -0.035em;
   line-height: 0.99;
 }
