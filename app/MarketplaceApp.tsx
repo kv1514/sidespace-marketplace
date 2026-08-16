@@ -587,6 +587,7 @@ export default function MarketplaceApp() {
   const [blockedProfiles, setBlockedProfiles] = useState<
     Array<{ id: string; display_name: string }>
   >([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [channelFilter, setChannelFilter] = useState("All");
@@ -645,7 +646,7 @@ export default function MarketplaceApp() {
   const loadAccountMarketplaceState = useCallback(
     async (ownProfile: Profile) => {
       if (!supabase) return;
-      const [campaignResult, verificationResult, blocksResult] =
+      const [campaignResult, verificationResult, blocksResult, unreadResult] =
         await Promise.all([
           supabase
             .from("campaign_requests")
@@ -667,7 +668,16 @@ export default function MarketplaceApp() {
               "blocked_profile_id, blocked:profiles!profile_blocks_blocked_profile_id_fkey(id,display_name,avatar_url,city)",
             )
             .eq("blocker_profile_id", ownProfile.id),
+          supabase
+            .from("messages")
+            .select("id", { count: "exact", head: true })
+            .neq("sender_profile_id", ownProfile.id)
+            .is("read_at", null),
         ]);
+
+      if (!unreadResult.error) {
+        setUnreadCount(unreadResult.count ?? 0);
+      }
 
       if (!campaignResult.error) {
         setCampaignRequests(
@@ -818,6 +828,30 @@ export default function MarketplaceApp() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  // Badge updates whether or not the inbox is open. RLS scopes the stream to
+  // conversations this member belongs to.
+  useEffect(() => {
+    if (!supabase || !profile) return;
+    const channel = supabase
+      .channel(`inbound-messages:${profile.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload: { new: Record<string, unknown> }) => {
+          const incoming = payload.new as unknown as Message;
+          if (incoming.sender_profile_id === profile.id) return;
+          if (activeThread && incoming.conversation_id === activeThread.id) {
+            return;
+          }
+          setUnreadCount((current) => current + 1);
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [activeThread, profile, supabase]);
+
   useEffect(() => {
     if (!supabase || !activeThread) return;
     const channel = supabase
@@ -866,6 +900,19 @@ export default function MarketplaceApp() {
       return roleMatches && channelMatches && (!normalized || text.includes(normalized));
     });
   }, [blockedProfileIds, channelFilter, listings, query, roleFilter]);
+
+  // The callback route exchanges the recovery code server-side, so the client
+  // never sees a PASSWORD_RECOVERY event. The ?recovery=1 marker it redirects
+  // back with is what opens the new-password form.
+  useEffect(() => {
+    if (typeof window === "undefined" || !user) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("recovery") !== "1") return;
+    setAccountOpen(true);
+    setToast("Choose a new password below.");
+    url.searchParams.delete("recovery");
+    window.history.replaceState({}, "", url.toString());
+  }, [user]);
 
   useEffect(() => {
     if (selectedListing || typeof window === "undefined") return;
@@ -1298,7 +1345,25 @@ export default function MarketplaceApp() {
       .eq("conversation_id", conversation.id)
       .order("created_at");
     setMessages((data as Message[] | null) ?? []);
+    if (profile) {
+      const unreadHere = ((data as Message[] | null) ?? []).filter(
+        (message) =>
+          message.sender_profile_id !== profile.id && !message.read_at,
+      );
+      if (unreadHere.length) {
+        await supabase
+          .from("messages")
+          .update({ read_at: new Date().toISOString() })
+          .eq("conversation_id", conversation.id)
+          .neq("sender_profile_id", profile.id)
+          .is("read_at", null);
+        setUnreadCount((current) =>
+          Math.max(0, current - unreadHere.length),
+        );
+      }
+    }
   }
+
 
   async function loadInbox() {
     if (!supabase || !profile) return;
@@ -1637,18 +1702,25 @@ export default function MarketplaceApp() {
     setToast("Your password has been updated.");
   }
 
-  async function emailPasswordReset() {
-    if (!supabase || !user?.email) return;
+  async function emailPasswordReset(explicitEmail?: string) {
+    if (!supabase) return;
+    const address = (explicitEmail ?? user?.email ?? "").trim();
+    if (!address) {
+      setToast("Enter your email address first, then choose Forgot password.");
+      return;
+    }
     setBusy(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-      redirectTo: `${window.location.origin}/auth/callback`,
+    const { error } = await supabase.auth.resetPasswordForEmail(address, {
+      // The callback exchanges the code server-side, so mark the return trip
+      // and let the client open the password form.
+      redirectTo: `${window.location.origin}/auth/callback?next=%2F%3Frecovery%3D1`,
     });
     setBusy(false);
-    setToast(
-      error
-        ? error.message
-        : `A secure reset link was sent to ${user.email}.`,
-    );
+    if (error) {
+      setToast(error.message);
+      return;
+    }
+    setToast(`A secure reset link was sent to ${address}.`);
   }
 
   async function updateListingStatus(listing: Listing) {
@@ -1682,6 +1754,7 @@ export default function MarketplaceApp() {
     setInboxOpen(false);
     setAccountOpen(false);
     setOnboardingOpen(false);
+    setUnreadCount(0);
     resetIgAvatarSync();
   }
 
@@ -1852,7 +1925,7 @@ export default function MarketplaceApp() {
         <div className="header-actions">
           <button className="text-button" onClick={openInbox}>
             Messages
-            {threads.length > 0 && <b>{threads.length}</b>}
+            {unreadCount > 0 && <b>{unreadCount > 99 ? "99+" : unreadCount}</b>}
           </button>
           {loading ? (
             <span className="account-skeleton" />
@@ -2523,21 +2596,6 @@ export default function MarketplaceApp() {
           </article>
         </div>
 
-        <div className="host-fee-callout">
-          <div>
-            <span>For creators and space hosts</span>
-            <h3>List for free. Keep 95% of every payout.</h3>
-          </div>
-          <p>
-            SideSpace plans to deduct a simple 5% service fee only when you
-            earn money. There is no monthly host subscription and no charge to
-            create or maintain a listing.
-          </p>
-          <div className="host-fee-number">
-            <strong>5%</strong>
-            <span>only when paid</span>
-          </div>
-        </div>
       </section>
 
       <section className="final-cta">
@@ -2658,6 +2716,22 @@ export default function MarketplaceApp() {
                   : "Sign in"}
               <span>↗</span>
             </button>
+            {authMode === "signin" && (
+              <button
+                type="button"
+                className="switch-auth"
+                disabled={busy || !configured}
+                onClick={(event) => {
+                  const form = event.currentTarget.form;
+                  const field = form?.elements.namedItem("email");
+                  const address =
+                    field instanceof HTMLInputElement ? field.value : "";
+                  void emailPasswordReset(address);
+                }}
+              >
+                Forgot your password?
+              </button>
+            )}
           </form>
           <button
             className="switch-auth"
@@ -3030,7 +3104,11 @@ export default function MarketplaceApp() {
                   <p>
                     Login method: {String(user.app_metadata.provider ?? "email")}
                   </p>
-                  <button type="button" onClick={emailPasswordReset} disabled={busy}>
+                  <button
+                    type="button"
+                    onClick={() => void emailPasswordReset(user.email)}
+                    disabled={busy}
+                  >
                     Email me a password reset link
                   </button>
                 </div>
