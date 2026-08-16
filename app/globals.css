@@ -5223,3 +5223,13 @@ html.reveal-ready [data-reveal].is-visible {
   display: inline-block;
   vertical-align: middle;
 }
+
+/* Log out sits above the delete zone now; keep both full-width in the grid. */
+.account-signout-button {
+  grid-column: 1 / -1;
+  margin-top: 22px;
+}
+
+.danger-zone {
+  margin-top: 14px;
+}

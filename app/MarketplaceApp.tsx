@@ -3397,6 +3397,14 @@ export default function MarketplaceApp() {
                 </div>
               )}
 
+              <button
+                className="button button-dark button-full account-signout-button"
+                onClick={signOut}
+              >
+                Log out of SideSpace <span>→</span>
+              </button>
+
+              {/* Destructive action sits last, after the everyday one. */}
               <div className="danger-zone">
                 <div>
                   <strong>Delete account</strong>
@@ -3417,13 +3425,6 @@ export default function MarketplaceApp() {
                 </button>
               </div>
             </section>
-
-            <button
-              className="button button-dark button-full account-signout-button"
-              onClick={signOut}
-            >
-              Log out of SideSpace <span>→</span>
-            </button>
           </div>
         </Modal>
       )}
