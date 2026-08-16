@@ -4,15 +4,25 @@ import "./globals.css";
 export const metadata: Metadata = {
   metadataBase: new URL("https://sidespace-marketplace.vercel.app"),
   title: {
-    default: "SideSpace - Affordable local reach",
+    default: "SideSpace - Affordable local advertising space",
     template: "%s · SideSpace",
   },
   description:
-    "Book rural creators, farm stands, cafe counters, Main Street windows, and other local ad spots from $8.",
+    "Book local creators, storefront windows, vehicles, counters, and community boards. Free to join, and listings start at $2.",
   openGraph: {
-    title: "SideSpace - Local reach from $8",
+    type: "website",
+    siteName: "SideSpace",
+    url: "https://sidespace-marketplace.vercel.app",
+    title: "SideSpace - Get seen where it matters",
     description:
-      "Affordable small-town placements for small businesses, with no broker and no minimum spend.",
+      "A marketplace for everyday advertising space: local creators, storefront windows, vehicles, and community boards. Free to join, no broker, no minimum spend.",
+    images: ["/og-local.png"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SideSpace - Get seen where it matters",
+    description:
+      "Book local creators and real-world ad space. Free to join, listings start at $2.",
     images: ["/og-local.png"],
   },
 };
