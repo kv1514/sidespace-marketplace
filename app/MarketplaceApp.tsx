@@ -16,7 +16,7 @@ import {
 } from "@/app/localMarketplaceData";
 
 type Role = "consumer" | "business" | "creator" | "space_owner";
-type RoleFilter = "all" | Exclude<Role, "consumer">;
+type RoleFilter = "all" | "supply" | Exclude<Role, "consumer">;
 
 type Profile = {
   id: string;
@@ -809,7 +809,11 @@ export default function MarketplaceApp() {
     return listings.filter((listing) => {
       if (blockedProfileIds.includes(listing.owner.id)) return false;
       const roleMatches =
-        roleFilter === "all" || listing.owner.role === roleFilter;
+        roleFilter === "all" ||
+        (roleFilter === "supply"
+          ? listing.owner.role === "creator" ||
+            listing.owner.role === "space_owner"
+          : listing.owner.role === roleFilter);
       const channelMatches =
         channelFilter === "All" || listing.channel === channelFilter;
       const text = `${listing.title} ${listing.channel} ${listing.description} ${listing.demographics} ${listing.owner.display_name} ${listing.owner.city}`.toLowerCase();
@@ -1761,6 +1765,41 @@ export default function MarketplaceApp() {
             </div>
           </div>
 
+          <div className="dashboard-paths">
+            <a
+              className="dashboard-path"
+              href="#market"
+              onClick={() => {
+                setRoleFilter("business");
+                setChannelFilter("All");
+              }}
+            >
+              <span>I&rsquo;m a creator or host</span>
+              <strong>See businesses looking for reach</strong>
+              <p>
+                Browse briefs from businesses that want creators and local
+                spaces, then message them directly.
+              </p>
+              <b>Browse business briefs →</b>
+            </a>
+            <a
+              className="dashboard-path"
+              href="#market"
+              onClick={() => {
+                setRoleFilter("supply");
+                setChannelFilter("All");
+              }}
+            >
+              <span>I&rsquo;m a business</span>
+              <strong>Pick creators and spaces to book</strong>
+              <p>
+                Every creator, window, vehicle, and board currently listed —
+                choose who fits your campaign and send a request.
+              </p>
+              <b>Browse creators and spaces →</b>
+            </a>
+          </div>
+
           <div className="dashboard-grid">
             <div className="dashboard-stat">
               <strong>
@@ -1938,6 +1977,32 @@ export default function MarketplaceApp() {
         <span>Storefront windows</span>
         <i>✦</i>
         <span>Local boards</span>
+      </section>
+
+      <section className="how-section" id="how">
+        <div className="how-intro">
+          <h2>Find it. Message. <em>Make it happen.</em></h2>
+        </div>
+        <div className="steps">
+          <article>
+            <span>01</span>
+            <div className="step-icon">⌕</div>
+            <h3>Discover</h3>
+            <p>Filter creators, businesses, and spaces by the reach you need.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <div className="step-icon">@</div>
+            <h3>Message privately</h3>
+            <p>Talk through the idea, timeline, price, and creative details.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <div className="step-icon">✓</div>
+            <h3>Make it happen</h3>
+            <p>Agree on the work and build a local campaign people remember.</p>
+          </article>
+        </div>
       </section>
 
       <section className="market-section" id="market">
@@ -2185,32 +2250,6 @@ export default function MarketplaceApp() {
               </button>
             </article>
             ))}
-        </div>
-      </section>
-
-      <section className="how-section" id="how">
-        <div className="how-intro">
-          <h2>Find it. Message. <em>Make it happen.</em></h2>
-        </div>
-        <div className="steps">
-          <article>
-            <span>01</span>
-            <div className="step-icon">⌕</div>
-            <h3>Discover</h3>
-            <p>Filter creators, businesses, and spaces by the reach you need.</p>
-          </article>
-          <article>
-            <span>02</span>
-            <div className="step-icon">@</div>
-            <h3>Message privately</h3>
-            <p>Talk through the idea, timeline, price, and creative details.</p>
-          </article>
-          <article>
-            <span>03</span>
-            <div className="step-icon">✓</div>
-            <h3>Make it happen</h3>
-            <p>Agree on the work and build a local campaign people remember.</p>
-          </article>
         </div>
       </section>
 

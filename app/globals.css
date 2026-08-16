@@ -3937,3 +3937,114 @@ textarea::placeholder {
     flex-direction: column;
   }
 }
+
+/* ===== Type fix + spacing + dashboard paths ===== */
+
+body {
+  font-synthesis: none;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-synthesis: none;
+  font-weight: 500;
+}
+
+h1 em,
+h2 em,
+h3 em {
+  font-weight: 450;
+}
+
+.hero-copy h1.hero-headline,
+.dashboard-title {
+  font-weight: 450;
+}
+
+h2 {
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+}
+
+.market-section,
+.spaces-section,
+.people-section,
+.how-section,
+.pricing-section {
+  padding-top: clamp(76px, 9vw, 132px);
+  padding-bottom: clamp(76px, 9vw, 132px);
+}
+
+.how-intro h2,
+.spaces-heading h2,
+.people-section h2,
+.pricing-intro h2 {
+  letter-spacing: -0.018em;
+  word-spacing: 0.06em;
+}
+
+.steps {
+  gap: clamp(20px, 3vw, 40px);
+}
+
+.listing-grid,
+.my-listings-grid {
+  gap: clamp(16px, 2vw, 28px);
+}
+
+.dashboard-paths {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dashboard-path {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: grid;
+  gap: 6px;
+  padding: 22px 24px;
+  transition: border-color 0.15s ease-out, transform 0.15s ease-out;
+}
+
+.dashboard-path:hover {
+  border-color: var(--ink);
+  transform: translateY(-2px);
+}
+
+.dashboard-path > span {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dashboard-path strong {
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.dashboard-path p {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.dashboard-path b {
+  color: var(--coral);
+  font-size: 13.5px;
+  font-weight: 500;
+  margin-top: 6px;
+}
+
+@media (max-width: 820px) {
+  .dashboard-paths {
+    grid-template-columns: 1fr;
+  }
+}
