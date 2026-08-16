@@ -4454,3 +4454,140 @@ html {
 .blocked-list li button:hover {
   border-color: var(--ink);
 }
+
+/* Hover affordance on listing photos */
+.listing-image {
+  position: relative;
+}
+
+.listing-image .image-hint {
+  align-items: center;
+  background: color-mix(in srgb, var(--ink) 88%, transparent);
+  border-radius: 999px;
+  bottom: 12px;
+  color: var(--white);
+  display: inline-flex;
+  font-size: 12.5px;
+  font-weight: 500;
+  gap: 7px;
+  left: 50%;
+  opacity: 0;
+  padding: 9px 16px;
+  pointer-events: none;
+  position: absolute;
+  transform: translate(-50%, 8px);
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+  white-space: nowrap;
+}
+
+.listing-image .image-hint b {
+  font-weight: 500;
+}
+
+.listing-image:hover .image-hint,
+.listing-image:focus-visible .image-hint {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.listing-image::after {
+  background: var(--ink);
+  content: "";
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 0.18s ease-out;
+}
+
+.listing-image:hover::after,
+.listing-image:focus-visible::after {
+  opacity: 0.14;
+}
+
+/* Touch devices have no hover: keep the pill visible but quiet. */
+@media (hover: none) {
+  .listing-image .image-hint {
+    display: none;
+  }
+}
+
+/* Dashboard stat cards in the Tally style */
+.dashboard-stat {
+  display: grid;
+  gap: 2px;
+}
+
+.dashboard-stat-top {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.dashboard-stat-top small {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dashboard-stat-icon {
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  display: inline-flex;
+  font-size: 14px;
+  height: 32px;
+  justify-content: center;
+  width: 32px;
+}
+
+.dashboard-stat-icon.alert {
+  background: color-mix(in srgb, var(--coral) 12%, var(--paper));
+  border-color: color-mix(in srgb, var(--coral) 35%, transparent);
+  color: #b3410a;
+}
+
+.dashboard-stat-icon.muted {
+  color: var(--ink-soft);
+}
+
+.dashboard-stat strong {
+  font-size: 34px;
+  line-height: 1.05;
+}
+
+.dashboard-stat-caption {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
+/* Header settings + log out */
+.icon-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 15px;
+  height: 40px;
+  justify-content: center;
+  transition: border-color 0.15s ease-out, background 0.15s ease-out;
+  width: 40px;
+}
+
+.icon-button:hover {
+  background: var(--paper-2);
+  border-color: var(--ink);
+}
+
+.account-signout-button {
+  margin-top: 22px;
+}
+
+@media (max-width: 820px) {
+  .icon-button {
+    display: none;
+  }
+}

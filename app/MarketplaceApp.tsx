@@ -1189,12 +1189,25 @@ export default function MarketplaceApp() {
       if (result.error) throw result.error;
 
       const savedProfile = result.data as Profile;
+      const isFirstSetup = !profile?.onboarding_complete;
       setProfile(savedProfile);
       setOnboardingOpen(false);
       setOnboardingStep(1);
       resetIgAvatarSync();
-      setToast("Your profile, links, and photos are live.");
       await Promise.all([loadMarketplace(), loadOwnListings(savedProfile)]);
+
+      // Straight from signup into the thing they actually came to do, rather
+      // than dropping them on a page and asking them to find "New listing".
+      const canList = savedProfile.role !== "consumer";
+      const hasNoListings = ownListings.length === 0;
+      if (isFirstSetup && canList && hasNoListings) {
+        setListingFeedback("");
+        setEditingListing(null);
+        setListingOpen(true);
+        setToast("Profile saved. Now put your first space or audience up.");
+      } else {
+        setToast("Your profile, links, and photos are live.");
+      }
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Could not save your profile.");
     } finally {
@@ -1909,6 +1922,39 @@ export default function MarketplaceApp() {
     requireAccount(() => void startConversation(listing.owner));
   }
 
+  function greeting() {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
+  }
+
+  /** One honest sentence about what needs attention right now. */
+  function dashboardStatus() {
+    if (!profile) return "";
+    if (!profile.onboarding_complete) {
+      return "Finish your profile to go live on the marketplace.";
+    }
+    const incoming = campaignRequests.filter(
+      (request) =>
+        request.owner_profile_id === profile.id && request.status === "pending",
+    ).length;
+    const parts: string[] = [];
+    if (incoming) {
+      parts.push(
+        `${incoming} campaign request${incoming === 1 ? "" : "s"} waiting on you`,
+      );
+    }
+    if (unreadCount) {
+      parts.push(`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`);
+    }
+    if (parts.length) return `You have ${parts.join(" and ")}.`;
+    if (profile.role !== "consumer" && !ownListings.length) {
+      return "Nothing is listed yet. Add your first space or audience to start getting requests.";
+    }
+    return "Nothing needs your attention right now.";
+  }
+
   return (
     <main>
       <header className="topbar" id="top">
@@ -1930,18 +1976,34 @@ export default function MarketplaceApp() {
           {loading ? (
             <span className="account-skeleton" />
           ) : user && profile ? (
-            <button
-              className="profile-pill"
-              onClick={() => {
-                setAccountOpen(true);
-                void loadOwnListings(profile);
-              }}
-              aria-label="Open account and settings"
-            >
-              <Avatar profile={profile} size="small" />
-              <span>{profile.display_name}</span>
-              <span className="profile-pill-settings">Account</span>
-            </button>
+            <>
+              <button
+                className="profile-pill"
+                onClick={() => {
+                  setAccountOpen(true);
+                  void loadOwnListings(profile);
+                }}
+                aria-label="Open account and settings"
+              >
+                <Avatar profile={profile} size="small" />
+                <span>{profile.display_name}</span>
+                <span className="profile-pill-settings">Account</span>
+              </button>
+              <button
+                className="icon-button"
+                onClick={() => {
+                  setAccountOpen(true);
+                  void loadOwnListings(profile);
+                }}
+                title="Settings"
+                aria-label="Account settings"
+              >
+                ⚙
+              </button>
+              <button className="button button-ghost button-small" onClick={signOut}>
+                Log out
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -1983,16 +2045,12 @@ export default function MarketplaceApp() {
         <section className="dashboard" aria-label="Your SideSpace dashboard">
           <div className="dashboard-head">
             <div>
-              <p className="eyebrow">Your dashboard</p>
+              <p className="eyebrow">{rolesLabel(profile)} · {profile.city || "Add your city"}</p>
               <h1 className="dashboard-title">
-                Welcome back,{" "}
+                {greeting()},{" "}
                 <em>{profile.display_name.split(" ")[0] || "there"}.</em>
               </h1>
-              <p className="dashboard-sub">
-                {profile.onboarding_complete
-                  ? "Here is where your marketplace presence stands today."
-                  : "Finish your profile to go live on the marketplace."}
-              </p>
+              <p className="dashboard-sub">{dashboardStatus()}</p>
             </div>
             <div className="dashboard-actions">
               {profile.role !== "consumer" && (
@@ -2001,13 +2059,17 @@ export default function MarketplaceApp() {
                 </button>
               )}
               <button className="button button-ghost" onClick={openInbox}>
-                Messages <span>→</span>
+                Messages
+                {unreadCount > 0 ? ` (${unreadCount})` : ""} <span>→</span>
               </button>
               <button
                 className="button button-ghost"
-                onClick={() => setAccountOpen(true)}
+                onClick={() => {
+                  setAccountOpen(true);
+                  void loadOwnListings(profile);
+                }}
               >
-                Account <span>→</span>
+                Settings <span>⚙</span>
               </button>
             </div>
           </div>
@@ -2048,43 +2110,69 @@ export default function MarketplaceApp() {
           </div>
 
           <div className="dashboard-grid">
-            <div className="dashboard-stat">
-              <strong>
-                {ownListings.filter((item) => item.status === "active").length}
-              </strong>
-              <small>Active listings</small>
-            </div>
-            <div className="dashboard-stat">
-              <strong>
-                {ownListings.filter((item) => item.status === "paused").length}
-              </strong>
-              <small>Paused listings</small>
-            </div>
-            <div className="dashboard-stat">
-              <strong>
+            {(() => {
+              const active = ownListings.filter(
+                (item) => item.status === "active",
+              ).length;
+              const paused = ownListings.filter(
+                (item) => item.status === "paused",
+              ).length;
+              const incoming = campaignRequests.filter(
+                (request) =>
+                  request.owner_profile_id === profile.id &&
+                  request.status === "pending",
+              ).length;
+              const outgoing = campaignRequests.filter(
+                (request) =>
+                  request.requester_profile_id === profile.id &&
+                  (request.status === "pending" ||
+                    request.status === "countered"),
+              ).length;
+              const cards = [
                 {
-                  campaignRequests.filter(
-                    (request) =>
-                      request.owner_profile_id === profile.id &&
-                      request.status === "pending",
-                  ).length
-                }
-              </strong>
-              <small>Requests awaiting your reply</small>
-            </div>
-            <div className="dashboard-stat">
-              <strong>
+                  label: "Live listings",
+                  value: active,
+                  caption: paused
+                    ? `${paused} paused`
+                    : "Visible in the marketplace",
+                  icon: "▤",
+                  tone: active ? "" : "muted",
+                },
                 {
-                  campaignRequests.filter(
-                    (request) =>
-                      request.requester_profile_id === profile.id &&
-                      (request.status === "pending" ||
-                        request.status === "countered"),
-                  ).length
-                }
-              </strong>
-              <small>Requests you sent</small>
-            </div>
+                  label: "Requests to you",
+                  value: incoming,
+                  caption: incoming ? "Waiting on your reply" : "Nothing pending",
+                  icon: "✉",
+                  tone: incoming ? "alert" : "muted",
+                },
+                {
+                  label: "Requests you sent",
+                  value: outgoing,
+                  caption: outgoing ? "Awaiting a reply" : "None open",
+                  icon: "↗",
+                  tone: "muted",
+                },
+                {
+                  label: "Unread messages",
+                  value: unreadCount,
+                  caption: unreadCount ? "In your inbox" : "All caught up",
+                  icon: "◍",
+                  tone: unreadCount ? "alert" : "muted",
+                },
+              ];
+              return cards.map((card) => (
+                <div className="dashboard-stat" key={card.label}>
+                  <div className="dashboard-stat-top">
+                    <small>{card.label}</small>
+                    <span className={`dashboard-stat-icon ${card.tone}`}>
+                      {card.icon}
+                    </span>
+                  </div>
+                  <strong>{card.value}</strong>
+                  <span className="dashboard-stat-caption">{card.caption}</span>
+                </div>
+              ));
+            })()}
           </div>
 
           <ol className="dashboard-checklist">
@@ -2327,6 +2415,9 @@ export default function MarketplaceApp() {
                   </span>
                 )}
                 <span className="save-button">♡</span>
+                <span className="image-hint" aria-hidden="true">
+                  Click to view <b>→</b>
+                </span>
               </button>
               <div className="listing-body">
                 <div className="owner-line">
@@ -3188,8 +3279,11 @@ export default function MarketplaceApp() {
               </div>
             </section>
 
-            <button className="signout-link account-signout" onClick={signOut}>
-              Sign out of this account
+            <button
+              className="button button-dark button-full account-signout-button"
+              onClick={signOut}
+            >
+              Log out of SideSpace <span>→</span>
             </button>
           </div>
         </Modal>
