@@ -391,6 +391,16 @@ function displayHandle(raw: string) {
   return /\s/.test(cleaned) ? cleaned : `@${cleaned}`;
 }
 
+// Toasts carry both good news and bad, and a green tick on "Add your city
+// before continuing" reads as if it worked. Every message is authored in this
+// file, so matching our own failure vocabulary is reliable; an unmatched
+// message just keeps the old tick rather than claiming something false.
+const PROBLEM_TOAST = /\b(could not|cannot|can't|failed|unable|must|before continuing|at least|invalid|not available|already|too (large|many|big)|expired|try again|sorry|no longer|denied|wrong|missing|did not)\b/i;
+
+function toastIsProblem(message: string) {
+  return PROBLEM_TOAST.test(message);
+}
+
 function compactNumber(value: number) {
   return Intl.NumberFormat("en", {
     notation: "compact",
@@ -750,6 +760,9 @@ export default function MarketplaceApp() {
   // The auth user whose profile state is already loaded, so background auth
   // events (token refresh, tab refocus) do not trigger redundant reloads.
   const lastAuthUserIdRef = useRef<string | null>(null);
+  // Set when the profile READ failed, so a null profile is not mistaken for
+  // "no profile exists" and turned into a doomed insert.
+  const profileLoadFailedRef = useRef(false);
   const [selectedRole, setSelectedRole] = useState<Role>("business");
   const [extraRoles, setExtraRoles] = useState<Role[]>([]);
   const [listingOpen, setListingOpen] = useState(false);
@@ -923,11 +936,17 @@ export default function MarketplaceApp() {
         .eq("auth_user_id", currentUser.id)
         .maybeSingle();
       if (error) {
+        // A failed read is NOT "this member has no profile". Leaving profile
+        // null here made the next save take the insert branch, which then dies
+        // on the auth_user_id unique constraint - locking the member out of
+        // their own profile for the rest of the session.
+        profileLoadFailedRef.current = true;
         setProfileChecked(true);
         setToast("We could not load your saved profile. Please refresh and try again.");
         return;
       }
       const own = (data as Profile | null) ?? null;
+      profileLoadFailedRef.current = false;
       setProfileChecked(true);
       if (own) {
         await Promise.all([
@@ -1275,6 +1294,24 @@ export default function MarketplaceApp() {
     window.history.replaceState({}, "", url.toString());
   }, [user]);
 
+  // The auth callback redirects here with ?authError=callback when the code
+  // exchange fails. Without this the member lands back on the signed-out page
+  // with no explanation, having just approved the Google consent screen or
+  // clicked a confirmation link, and cannot tell whether the account exists.
+  // No `user` dependency: the whole point is that they are not signed in.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("authError") !== "callback") return;
+    setToast(
+      "We could not finish signing you in. That link may have expired or been opened in a different browser. Try again below.",
+    );
+    setAuthMode("signin");
+    setAuthOpen(true);
+    url.searchParams.delete("authError");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
   useEffect(() => {
     if (selectedListing || typeof window === "undefined") return;
     const listingId = new URL(window.location.href).searchParams.get("listing");
@@ -1454,6 +1491,17 @@ export default function MarketplaceApp() {
 
   async function saveOnboarding(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Step 3 is only display:none, never unmounted, so its "Finish my profile"
+    // button is still the form's default submit control. Pressing Enter in any
+    // step-2 field therefore submits the whole form. Treat that as "Continue"
+    // rather than publishing a profile with every audience field left at its
+    // default and onboarding_complete set, which the member could never be
+    // re-prompted to fix.
+    const finalStep = selectedRole === "consumer" ? 2 : 3;
+    if (onboardingStep < finalStep) {
+      continueOnboardingDetails(event.currentTarget);
+      return;
+    }
     if (!supabase || !user) return;
     const values = new FormData(event.currentTarget);
     const categories = String(values.get("categories") ?? "")
@@ -1539,18 +1587,37 @@ export default function MarketplaceApp() {
         is_demo: false,
       };
 
-      const result = profile
+      // If the earlier read failed we cannot tell "no profile yet" from "we
+      // just could not see it", and guessing insert would hit the
+      // auth_user_id unique constraint. Re-read once and decide on the truth.
+      let existing = profile;
+      if (!existing && profileLoadFailedRef.current) {
+        const { data: recheck, error: recheckError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("auth_user_id", user.id)
+          .maybeSingle();
+        if (recheckError) {
+          throw new Error(
+            "We could not reach your profile just now. Check your connection and try again — nothing was lost.",
+          );
+        }
+        existing = (recheck as Profile | null) ?? null;
+        profileLoadFailedRef.current = false;
+      }
+
+      const result = existing
         ? await supabase
             .from("profiles")
             .update(payload)
-            .eq("id", profile.id)
+            .eq("id", existing.id)
             .select()
             .single()
         : await supabase.from("profiles").insert(payload).select().single();
       if (result.error) throw result.error;
 
       const savedProfile = result.data as Profile;
-      const isFirstSetup = !profile?.onboarding_complete;
+      const isFirstSetup = !existing?.onboarding_complete;
       setProfile(savedProfile);
       setOnboardingOpen(false);
       setOnboardingStep(1);
@@ -2258,6 +2325,10 @@ export default function MarketplaceApp() {
     // onBlur fires whether or not the field changed, and every lookup that
     // wants a photo costs an upload, so only re-run when the handle is new.
     if (handle === igSyncedHandleRef.current) {
+      // A lookup for a handle the member has since reverted may still be in
+      // flight, and it resolves "" once superseded. Drop it, or the save would
+      // block on it and then discard the photo the preview is still showing.
+      igAvatarPromiseRef.current = null;
       setIgAvatarBusy(false);
       return;
     }
@@ -4083,6 +4154,12 @@ export default function MarketplaceApp() {
         <Modal
           onClose={() => {
             setOnboardingOpen(false);
+            // Closing unmounts the modal and the fields are uncontrolled, so
+            // everything typed is gone. Leaving the wizard on step 3 would
+            // reopen onto the audience pane with the required name/city/bio
+            // empty and display:none, which makes the browser abort the submit
+            // silently and turns "Finish my profile" into a dead button.
+            setOnboardingStep(1);
             resetIgAvatarSync();
           }}
           wide
@@ -4413,8 +4490,14 @@ export default function MarketplaceApp() {
                   ← Back
                 </button>
                 <button
+                  type="submit"
                   className="button button-coral"
-                  disabled={busy || igAvatarBusy}
+                  // Only `busy` may disable this. Blur fires on mousedown, so
+                  // gating on igAvatarBusy too meant clicking straight from the
+                  // Instagram field disabled the button between mousedown and
+                  // mouseup and the browser never produced a click at all. The
+                  // save already awaits the in-flight lookup before using it.
+                  disabled={busy}
                 >
                   {busy
                     ? "Saving..."
@@ -5239,8 +5322,8 @@ export default function MarketplaceApp() {
           only honoured on a region that already exists in the DOM. */}
       <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">
         {toast && (
-          <div className="toast">
-            <span aria-hidden="true">✓</span>
+          <div className={`toast ${toastIsProblem(toast) ? "toast-problem" : ""}`}>
+            <span aria-hidden="true">{toastIsProblem(toast) ? "!" : "✓"}</span>
             {toast}
           </div>
         )}

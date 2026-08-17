@@ -5807,3 +5807,9 @@ html.reveal-ready [data-reveal].is-visible {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* A toast that reports a problem must not wear the success tick's colour. */
+.toast-problem span {
+  background: #b3300f;
+  color: var(--white);
+}
