@@ -1734,7 +1734,18 @@ export default function MarketplaceApp() {
 
   async function saveListing(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !profile) return;
+    if (!supabase) return;
+    if (!profile) {
+      // The session ended while they were typing. The form is uncontrolled and
+      // still mounted, so everything they wrote is intact - say so and offer
+      // the way back, rather than letting Publish do nothing forever.
+      setListingFeedback(
+        "Your session ended. Sign in again, then press Publish — everything you typed is still here.",
+      );
+      setAuthMode("signin");
+      setAuthOpen(true);
+      return;
+    }
     const values = new FormData(event.currentTarget);
     const listingFiles = values
       .getAll("listing_photos")
@@ -1743,7 +1754,7 @@ export default function MarketplaceApp() {
       editingListing?.image_url ||
       profile.gallery_urls?.[0] ||
       profile.avatar_url ||
-      "/photos/market-creator.jpg";
+      DEFAULT_LISTING_IMAGE;
     setListingFeedback("");
     setBusy(true);
     try {
@@ -1982,28 +1993,71 @@ export default function MarketplaceApp() {
 
   async function submitCampaignRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !profile || !campaignListing) return;
+    if (!supabase || !campaignListing) return;
+    if (!profile) {
+      // Session ended mid-brief; the form still holds everything they wrote.
+      setToast(
+        "Your session ended. Sign in again, then send the request — your brief is still here.",
+      );
+      setAuthMode("signin");
+      setAuthOpen(true);
+      return;
+    }
     const form = event.currentTarget;
     const values = new FormData(form);
     const startDate = String(values.get("start_date") ?? "");
     const endDate = String(values.get("end_date") ?? "");
+    if (!startDate || !endDate) {
+      setToast("Choose the dates your campaign should run.");
+      return;
+    }
     if (endDate < startDate) {
       setToast("Choose an end date on or after the start date.");
       return;
     }
 
     setBusy(true);
+    // Validate against the database's own bounds BEFORE creating anything.
+    // This used to open the conversation first, so a brief the database then
+    // rejected left a permanent empty thread in the owner's inbox and showed
+    // the member a raw constraint error.
+    const campaignName = String(values.get("campaign_name") ?? "").trim();
+    const budget = Number(values.get("budget") ?? 0);
+    const goals = String(values.get("goals") ?? "").trim();
+    const deliverables = String(
+      values.get("requested_deliverables") ?? "",
+    ).trim();
+    const notes = String(values.get("notes") ?? "").trim();
+
+    if (campaignName.length < 2 || campaignName.length > 120) {
+      setBusy(false);
+      return setToast("Give the campaign a name between 2 and 120 characters.");
+    }
+    if (goals.length < 10 || goals.length > 1500) {
+      setBusy(false);
+      return setToast(
+        "Describe your goal in at least 10 characters (1500 max).",
+      );
+    }
+    if (deliverables.length < 2 || deliverables.length > 1000) {
+      setBusy(false);
+      return setToast("Say what you are asking for (2 to 1000 characters).");
+    }
+    if (notes.length > 2000) {
+      setBusy(false);
+      return setToast("Notes are limited to 2000 characters.");
+    }
+    if (!Number.isFinite(budget) || budget < 0) {
+      setBusy(false);
+      return setToast("Enter a budget of 0 or more.");
+    }
+
     const conversation = await ensureConversation(campaignListing.owner);
     if (!conversation) {
       setBusy(false);
       return;
     }
 
-    const campaignName = String(values.get("campaign_name") ?? "").trim();
-    const budget = Number(values.get("budget") ?? 0);
-    const deliverables = String(
-      values.get("requested_deliverables") ?? "",
-    ).trim();
     const inserted = await supabase
       .from("campaign_requests")
       .insert({
@@ -2012,12 +2066,12 @@ export default function MarketplaceApp() {
         owner_profile_id: campaignListing.owner.id,
         conversation_id: conversation.id,
         campaign_name: campaignName,
-        goals: String(values.get("goals") ?? "").trim(),
+        goals,
         requested_deliverables: deliverables,
         budget,
         start_date: startDate,
         end_date: endDate,
-        notes: String(values.get("notes") ?? "").trim(),
+        notes,
         status: "pending",
       })
       .select()
@@ -2025,7 +2079,7 @@ export default function MarketplaceApp() {
 
     if (inserted.error) {
       setBusy(false);
-      setToast(inserted.error.message);
+      setToast(friendlyDbError(inserted.error));
       return;
     }
 
@@ -2062,7 +2116,10 @@ export default function MarketplaceApp() {
     });
     setBusy(false);
     if (error) {
-      setToast(error.message);
+      // The definer function raises its own human-readable messages for
+      // out-of-order transitions, so pass those through unchanged.
+      setToast(friendlyDbError(error));
+      await loadAccountMarketplaceState(profile);
       return;
     }
     setToast(
@@ -3310,7 +3367,10 @@ export default function MarketplaceApp() {
               placeholder="Search Instagram, creators, spaces, cities..."
             />
           </label>
-          <div className="role-tabs" role="tablist" aria-label="Listing owner type">
+          {/* A group of filters, not tabs: these narrow one grid rather than
+              swapping panels, and role="tablist" without role="tab" children
+              left the active filter signalled by background colour alone. */}
+          <div className="role-tabs" role="group" aria-label="Listing owner type">
             {(
               [
                 ["all", "Everything"],
@@ -3322,7 +3382,9 @@ export default function MarketplaceApp() {
             ).map(([value, label]) => (
               <button
                 key={value}
+                type="button"
                 className={roleFilter === value ? "active" : ""}
+                aria-pressed={roleFilter === value}
                 onClick={() => setRoleFilter(value)}
               >
                 {label}
@@ -3331,17 +3393,23 @@ export default function MarketplaceApp() {
           </div>
         </div>
 
-        <div className="filter-row">
+        <div className="filter-row" role="group" aria-label="Channel">
           {channels.map((channel) => (
             <button
               key={channel}
+              type="button"
               className={channelFilter === channel ? "active" : ""}
+              aria-pressed={channelFilter === channel}
               onClick={() => setChannelFilter(channel)}
             >
               {channel}
             </button>
           ))}
-          <span className="result-count">{visibleListings.length} open listings</span>
+          {/* Announce the new count when a filter changes, so the result of
+              pressing a filter is not visible-only. */}
+          <span className="result-count" role="status" aria-live="polite">
+            {visibleListings.length} open listings
+          </span>
         </div>
 
         <div className="listing-grid">
