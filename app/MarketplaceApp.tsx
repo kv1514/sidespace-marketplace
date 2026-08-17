@@ -621,6 +621,12 @@ function Modal({
   wide?: boolean;
 }) {
   const cardRef = useRef<HTMLElement | null>(null);
+  // The focus effect must run exactly once per modal lifetime, but Escape
+  // still needs the freshest onClose closure; a ref bridges the two.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     const card = cardRef.current;
@@ -649,7 +655,7 @@ function Modal({
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -659,6 +665,14 @@ function Modal({
       if (!items.length) return;
       const firstItem = items[0];
       const lastItem = items[items.length - 1];
+      // If focus fell out of the dialog (its content was swapped under it,
+      // e.g. an onboarding step change), bring Tab back to the top instead of
+      // letting it wander behind the overlay.
+      if (!card!.contains(document.activeElement)) {
+        event.preventDefault();
+        firstItem.focus();
+        return;
+      }
       // Keep Tab inside the dialog rather than wandering behind it.
       if (event.shiftKey && document.activeElement === firstItem) {
         event.preventDefault();
@@ -678,7 +692,13 @@ function Modal({
         opener.focus({ preventScroll: true });
       }
     };
-  }, [onClose]);
+    // Deliberately run once per modal lifetime. Depending on onClose meant
+    // every parent re-render (toasts, the 4.6s step-widget timer, realtime
+    // updates) re-ran this effect: the cleanup handed focus to the opener
+    // BEHIND the dialog and the restarted grab-timer then pulled it onto the
+    // card - stealing the caret from whatever field the member was typing in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="modal-layer" role="presentation" onMouseDown={onClose}>
