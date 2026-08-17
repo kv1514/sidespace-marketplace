@@ -1503,7 +1503,8 @@ export default function MarketplaceApp() {
       return;
     }
     if (!supabase || !user) return;
-    const values = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const values = new FormData(form);
     const categories = String(values.get("categories") ?? "")
       .split(",")
       .map((item) => item.trim())
@@ -1534,6 +1535,18 @@ export default function MarketplaceApp() {
       const syncedIgAvatar = igAvatarPromiseRef.current
         ? await igAvatarPromiseRef.current
         : igAvatar;
+      // FormData was snapshotted before that await. If the member hit Finish
+      // while the Instagram lookup was still running, the follower count it
+      // prefilled landed in the live input after the snapshot, so re-read it
+      // rather than saving the 0 the snapshot captured.
+      const followersField = form.elements.namedItem("followers");
+      if (
+        followersField instanceof HTMLInputElement &&
+        !String(values.get("followers") ?? "").trim() &&
+        followersField.value.trim()
+      ) {
+        values.set("followers", followersField.value);
+      }
       // Every opener seeds selectedRole from the stored profile, so the
       // picker is authoritative and members can genuinely change role.
       const primaryRole = selectedRole;
