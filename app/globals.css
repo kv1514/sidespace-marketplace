@@ -5813,3 +5813,31 @@ html.reveal-ready [data-reveal].is-visible {
   background: #b3300f;
   color: var(--white);
 }
+
+/* ===== Overlay and message-bubble corrections ===== */
+
+/* .toast-region is position:fixed, which creates a stacking context, so the
+   toast's own z-index could never lift it above the modal (100) or the inbox
+   drawer (110). Every message shown while a dialog was open - including the
+   validation errors that tell a member why their save was refused - was
+   painted underneath it. */
+.toast-region {
+  z-index: 300;
+}
+
+/* A pasted link has no soft break opportunity, so it ran straight out of the
+   chat bubble and turned the conversation into a horizontal scroller. */
+.message p {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* The close button was absolutely positioned inside the scrolling card, so on
+   a phone - where the modal is taller than the screen - the only visible
+   dismiss control scrolled off the top with the content. */
+.modal-card .close-button {
+  position: sticky;
+  float: right;
+  top: 0;
+  margin-bottom: -36px;
+}

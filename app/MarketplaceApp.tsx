@@ -395,6 +395,40 @@ function displayHandle(raw: string) {
 // when a listing's photo is deleted from the member's profile.
 const DEFAULT_LISTING_IMAGE = "/photos/market-creator.jpg";
 
+/**
+ * Members should never be shown Postgres internals. supabase-js returns
+ * PostgrestError as a plain object, not an Error, so `instanceof Error` misses
+ * every database failure and the real reason gets thrown away.
+ */
+function friendlyDbError(error: unknown): string {
+  const raw =
+    typeof error === "string"
+      ? error
+      : ((error as { message?: string } | null)?.message ?? "");
+  const code = (error as { code?: string } | null)?.code ?? "";
+
+  if (/row-level security/i.test(raw)) {
+    return "You do not have access to do that. If you blocked this member, or they blocked you, unblock first.";
+  }
+  if (code === "23505" || /duplicate key/i.test(raw)) {
+    return "That already exists.";
+  }
+  if (code === "23514" || /violates check constraint/i.test(raw)) {
+    return "Some of those details are too short or too long. Check the highlighted fields and try again.";
+  }
+  if (code === "23503" || /foreign key/i.test(raw)) {
+    return "Something this refers to is no longer available. Refresh and try again.";
+  }
+  if (/fetch|network|Failed to fetch/i.test(raw)) {
+    return "We could not reach the server. Check your connection and try again.";
+  }
+  // Anything already written for humans (our own thrown Errors) passes through.
+  if (raw && !/violates|constraint|relation |column |syntax error/i.test(raw)) {
+    return raw;
+  }
+  return "Something went wrong. Please try again.";
+}
+
 // Toasts carry both good news and bad, and a green tick on "Add your city
 // before continuing" reads as if it worked. Every message is authored in this
 // file, so matching our own failure vocabulary is reliable; an unmatched
@@ -772,6 +806,7 @@ export default function MarketplaceApp() {
   // In-flight guard for the message composer, so a double click cannot send
   // the same message twice.
   const sendingMessageRef = useRef(false);
+  const inboxCardRef = useRef<HTMLElement | null>(null);
   const [selectedRole, setSelectedRole] = useState<Role>("business");
   const [extraRoles, setExtraRoles] = useState<Role[]>([]);
   const [listingOpen, setListingOpen] = useState(false);
@@ -1029,25 +1064,12 @@ export default function MarketplaceApp() {
           setToast("Choose a new password in Account settings.");
         }
       } else {
+        // A background sign-out must wipe exactly what an explicit one wipes.
+        // This branch used to clear a smaller set, leaving the previous
+        // member's unread badge on screen for the next person.
         lastAuthUserIdRef.current = null;
-        setProfile(null);
-        setOwnListings([]);
-        setCampaignRequests([]);
-        setVerificationRequest(null);
-        setBlockedProfileIds([]);
-        setAccountOpen(false);
-        setThreads([]);
-        setActiveThread(null);
-        setActiveContact(null);
-        setMessages([]);
-        setInboxOpen(false);
-        igAvatarSeqRef.current += 1;
-        igAvatarPromiseRef.current = null;
-        igSyncedHandleRef.current = "";
-        igSyncedUrlRef.current = "";
-        setIgAvatar("");
-        setIgStats(null);
-        setIgAvatarBusy(false);
+        threadSeqRef.current += 1;
+        clearSessionState();
       }
       },
     );
@@ -1600,11 +1622,15 @@ export default function MarketplaceApp() {
       // while the Instagram lookup was still running, the follower count it
       // prefilled landed in the live input after the snapshot, so re-read it
       // rather than saving the 0 the snapshot captured.
+      // The field defaults to "0", not empty, so "was it blank?" has to treat
+      // 0 as unset - otherwise this guard could never fire and the synced
+      // count was still saved as 0.
       const followersField = form.elements.namedItem("followers");
+      const snapshotFollowers = Number(values.get("followers") ?? 0) || 0;
       if (
         followersField instanceof HTMLInputElement &&
-        !String(values.get("followers") ?? "").trim() &&
-        followersField.value.trim()
+        snapshotFollowers === 0 &&
+        (Number(followersField.value) || 0) > 0
       ) {
         values.set("followers", followersField.value);
       }
@@ -1700,7 +1726,7 @@ export default function MarketplaceApp() {
         setToast("Your profile, links, and photos are live.");
       }
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "Could not save your profile.");
+      setToast(friendlyDbError(error) || "Could not save your profile.");
     } finally {
       setBusy(false);
     }
@@ -1829,9 +1855,7 @@ export default function MarketplaceApp() {
       await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Could not save your listing. Please try again.";
+        friendlyDbError(error) || "Could not save your listing. Please try again.";
       setListingFeedback(message);
       setToast(message);
     } finally {
@@ -1848,12 +1872,18 @@ export default function MarketplaceApp() {
     setActiveThread(conversation);
     setActiveContact(contact);
     setMessages([]);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("messages")
       .select("*")
       .eq("conversation_id", conversation.id)
       .order("created_at");
     if (seq !== threadSeqRef.current) return;
+    if (error) {
+      // Without this an existing conversation renders as permanently empty,
+      // which reads as "they never replied" rather than "we could not load it".
+      setToast(friendlyDbError(error) || "We could not load that conversation.");
+      return;
+    }
     setMessages((data as Message[] | null) ?? []);
     if (profile) {
       const unreadHere = ((data as Message[] | null) ?? []).filter(
@@ -1925,7 +1955,7 @@ export default function MarketplaceApp() {
         })
         .select()
         .single();
-      if (inserted.error) return setToast(inserted.error.message);
+      if (inserted.error) return setToast(friendlyDbError(inserted.error));
       data = inserted.data;
     }
     return data as Conversation;
@@ -2298,7 +2328,18 @@ export default function MarketplaceApp() {
   }
 
   async function signOut() {
-    await supabase?.auth.signOut();
+    const { error } = (await supabase?.auth.signOut()) ?? { error: null };
+    if (error) {
+      // Never claim to have signed someone out while their session cookie is
+      // still valid: on a shared machine the next person would be restored
+      // into this account. Say it failed and leave them signed in.
+      setToast(
+        "We could not sign you out. Check your connection and try again — you are still signed in.",
+      );
+      return;
+    }
+    setUser(null);
+    lastAuthUserIdRef.current = null;
     clearSessionState();
     setToast("Signed out.");
   }
@@ -2394,7 +2435,7 @@ export default function MarketplaceApp() {
       await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
     } catch (error) {
       setToast(
-        error instanceof Error ? error.message : "Could not remove that photo.",
+        friendlyDbError(error) || "Could not remove that photo.",
       );
     } finally {
       setBusy(false);
@@ -2591,6 +2632,56 @@ export default function MarketplaceApp() {
       void loadInbox();
     });
   }
+
+  // The inbox is a full-screen overlay but was the one surface not built on
+  // Modal, so it had no dialog role, no focus entry, no Escape and no focus
+  // trap: a keyboard user who opened Messages had to tab through the whole
+  // page hidden behind the scrim to reach it, and a screen reader announced
+  // nothing at all. This gives it the same treatment every other overlay has.
+  useEffect(() => {
+    if (!inboxOpen) return;
+    const card = inboxCardRef.current;
+    if (!card) return;
+    const opener = document.activeElement as HTMLElement | null;
+    card.focus({ preventScroll: true });
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (!card) return;
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        closeInbox();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = Array.from(
+        card.querySelectorAll<HTMLElement>(FOCUSABLE),
+      ).filter((element) => element.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!card.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+        return;
+      }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      if (opener && document.contains(opener)) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inboxOpen]);
 
   // The global unread listener treats activeThread as "already on screen" and
   // skips the badge for it. Leaving it set after the drawer closes meant the
@@ -5359,13 +5450,23 @@ export default function MarketplaceApp() {
 
       {inboxOpen && (
         <div className="drawer-layer" onMouseDown={closeInbox}>
-          <aside className="inbox-drawer" onMouseDown={(event) => event.stopPropagation()}>
+          <aside
+            ref={inboxCardRef}
+            className="inbox-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Messages"
+            tabIndex={-1}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
             <header>
               <div>
                 <p className="eyebrow">Private conversations</p>
                 <h2>Messages</h2>
               </div>
-              <button onClick={closeInbox}>×</button>
+              <button onClick={closeInbox} aria-label="Close messages">
+                ×
+              </button>
             </header>
             <div className="inbox-layout">
               <div className={`thread-list ${activeContact ? "mobile-hide" : ""}`}>
