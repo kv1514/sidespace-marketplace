@@ -74,8 +74,14 @@ export default function PrivacyPage() {
       <p>
         Only the service providers that make the site run: Supabase (database,
         authentication, file storage), Vercel (hosting and analytics), and
-        Google (only if you choose Google sign-in). We do not sell or rent
-        personal data to anyone.
+        Google. We do not sell or rent personal data to anyone.
+      </p>
+      <p>
+        Two things reach Google. If you choose Google sign-in, Google shares
+        your name, email, and profile photo with us. Separately, our fonts are
+        served by Google Fonts, so loading any page on SideSpace sends your IP
+        address and browser details to Google, whether or not you have an
+        account. We plan to serve the fonts ourselves to remove that.
       </p>
 
       <h2>6. Keeping and deleting data</h2>

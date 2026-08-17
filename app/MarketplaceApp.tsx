@@ -396,6 +396,52 @@ function displayHandle(raw: string) {
 const DEFAULT_LISTING_IMAGE = "/photos/market-creator.jpg";
 
 /**
+ * Shrink an image in the browser before uploading. Falls back to the original
+ * file if anything about the canvas path fails, so a save never breaks over an
+ * optimisation. Only jpeg/png/webp reach here, all of which the bucket accepts.
+ */
+async function downscaleForUpload(
+  file: File,
+  maxEdge: number,
+): Promise<{ body: Blob; contentType: string; extension: string }> {
+  const original = {
+    body: file as Blob,
+    contentType: file.type,
+    extension: file.name.split(".").pop()?.toLowerCase() || "jpg",
+  };
+  if (typeof document === "undefined" || typeof createImageBitmap !== "function") {
+    return original;
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const longest = Math.max(bitmap.width, bitmap.height);
+    // Already small enough, and small files are not worth re-encoding.
+    if (longest <= maxEdge && file.size <= 600_000) {
+      bitmap.close();
+      return original;
+    }
+    const scale = Math.min(1, maxEdge / longest);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) {
+      bitmap.close();
+      return original;
+    }
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/webp", 0.82),
+    );
+    if (!blob || blob.size >= file.size) return original;
+    return { body: blob, contentType: "image/webp", extension: "webp" };
+  } catch {
+    return original;
+  }
+}
+
+/**
  * Members should never be shown Postgres internals. supabase-js returns
  * PostgrestError as a plain object, not an Error, so `instanceof Error` misses
  * every database failure and the real reason gets thrown away.
@@ -1421,11 +1467,22 @@ export default function MarketplaceApp() {
         throw new Error(`${file.name} is larger than 8 MB.`);
       }
 
-      const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      // A phone photo is several thousand pixels wide; nothing on the site
+      // paints one larger than ~520px. Uploading the original meant every
+      // visitor downloaded megabytes to fill a 42px avatar circle. Downscale
+      // in the browser before it ever leaves the device.
+      const prepared = await downscaleForUpload(
+        file,
+        folder === "profiles" ? 1024 : 1600,
+      );
+      const extension = prepared.extension;
       const path = `${user.id}/${folder}/${crypto.randomUUID()}.${extension}`;
       const { error } = await supabase.storage
         .from("marketplace-media")
-        .upload(path, file, { contentType: file.type, upsert: false });
+        .upload(path, prepared.body, {
+          contentType: prepared.contentType,
+          upsert: false,
+        });
       if (error) throw error;
 
       const { data } = supabase.storage
@@ -3156,9 +3213,16 @@ export default function MarketplaceApp() {
                   <article className="hero-app-card" key={listing.id}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={listing.image_url || "/photos/market-creator.jpg"}
+                      src={listing.image_url || DEFAULT_LISTING_IMAGE}
                       alt=""
-                      fetchPriority="high"
+                      width={92}
+                      height={69}
+                      // The first paint renders demo placeholders that are
+                      // thrown away as soon as the real listings load. Claiming
+                      // high priority for those made the browser fetch a set it
+                      // was about to discard, ahead of the real one.
+                      fetchPriority={listing.owner.is_demo ? "low" : "high"}
+                      loading={listing.owner.is_demo ? "lazy" : "eager"}
                       decoding="async"
                     />
                     <div>
