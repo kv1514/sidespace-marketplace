@@ -721,6 +721,15 @@ export default function MarketplaceApp() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(1);
+  // Mirrors onboardingOpen for callbacks with stale closures (loadOwnProfile
+  // is memoized against supabase only).
+  const onboardingOpenRef = useRef(false);
+  useEffect(() => {
+    onboardingOpenRef.current = onboardingOpen;
+  }, [onboardingOpen]);
+  // The auth user whose profile state is already loaded, so background auth
+  // events (token refresh, tab refocus) do not trigger redundant reloads.
+  const lastAuthUserIdRef = useRef<string | null>(null);
   const [selectedRole, setSelectedRole] = useState<Role>("business");
   const [extraRoles, setExtraRoles] = useState<Role[]>([]);
   const [listingOpen, setListingOpen] = useState(false);
@@ -909,13 +918,19 @@ export default function MarketplaceApp() {
         setOwnListings([]);
       }
       setProfile(own);
-      // Always seed the picker from the stored profile so no opener can
-      // submit a stale role.
-      setSelectedRole((own?.role as Role | undefined) ?? "business");
-      setExtraRoles((own?.extra_roles as Role[] | undefined) ?? []);
-      if (!own?.onboarding_complete) {
-        setOnboardingStep(1);
-        setOnboardingOpen(true);
+      // This reload runs on every auth event, and Supabase fires those in the
+      // background (token refresh, tab refocus). If the member is mid-way
+      // through onboarding, resetting the step or the role picker here
+      // unmounts the very fields they are typing into and throws their input
+      // away - which is exactly what "it kicked me out while typing" was.
+      // Only seed the picker and open the modal when it is not already open.
+      if (!onboardingOpenRef.current) {
+        setSelectedRole((own?.role as Role | undefined) ?? "business");
+        setExtraRoles((own?.extra_roles as Role[] | undefined) ?? []);
+        if (!own?.onboarding_complete) {
+          setOnboardingStep(1);
+          setOnboardingOpen(true);
+        }
       }
     },
     [loadAccountMarketplaceState, loadOwnListings, supabase],
@@ -931,7 +946,10 @@ export default function MarketplaceApp() {
           if (!mounted) return;
           const currentUser = authResult.data.user;
           setUser(currentUser);
-          if (currentUser) void loadOwnProfile(currentUser);
+          if (currentUser) {
+            lastAuthUserIdRef.current = currentUser.id;
+            void loadOwnProfile(currentUser);
+          }
           setLoading(false);
         },
       );
@@ -944,12 +962,26 @@ export default function MarketplaceApp() {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
-        window.setTimeout(() => void loadOwnProfile(currentUser), 0);
+        // Supabase fires TOKEN_REFRESHED in the background and re-fires
+        // SIGNED_IN whenever the tab regains focus. Those say nothing new
+        // about the profile, and reloading on them churned state underneath
+        // open modals - resetting onboarding mid-typing. Reload only when
+        // the signed-in user actually changes or their account was updated.
+        const isDifferentUser = lastAuthUserIdRef.current !== currentUser.id;
+        lastAuthUserIdRef.current = currentUser.id;
+        if (
+          isDifferentUser ||
+          event === "USER_UPDATED" ||
+          event === "PASSWORD_RECOVERY"
+        ) {
+          window.setTimeout(() => void loadOwnProfile(currentUser), 0);
+        }
         if (event === "PASSWORD_RECOVERY") {
           setAccountOpen(true);
           setToast("Choose a new password in Account settings.");
         }
       } else {
+        lastAuthUserIdRef.current = null;
         setProfile(null);
         setOwnListings([]);
         setCampaignRequests([]);

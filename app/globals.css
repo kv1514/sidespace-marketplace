@@ -5728,3 +5728,16 @@ html.reveal-ready [data-reveal].is-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== Listing form as a single-column list ===== */
+
+/* One question per line: two side-by-side columns made the form read as a
+   zig-zag. :has() scopes the narrower shell to the listing modal only, so
+   other wide modals keep their width. */
+.modal-wide:has(.listing-form) {
+  max-width: 680px;
+}
+
+.listing-form.field-grid {
+  grid-template-columns: 1fr;
+}
