@@ -391,6 +391,10 @@ function displayHandle(raw: string) {
   return /\s/.test(cleaned) ? cleaned : `@${cleaned}`;
 }
 
+// Cover photo used when a listing has none of its own, and the repair target
+// when a listing's photo is deleted from the member's profile.
+const DEFAULT_LISTING_IMAGE = "/photos/market-creator.jpg";
+
 // Toasts carry both good news and bad, and a green tick on "Add your city
 // before continuing" reads as if it worked. Every message is authored in this
 // file, so matching our own failure vocabulary is reliable; an unmatched
@@ -1222,7 +1226,22 @@ export default function MarketplaceApp() {
             : !wanted && profileHasRole(listing.owner, roleFilter));
       const channelMatches =
         channelFilter === "All" || listing.channel === channelFilter;
-      const text = `${listing.title} ${listing.channel} ${listing.description} ${listing.demographics} ${listing.owner.display_name} ${listing.owner.city}`.toLowerCase();
+      // Includes the listing's own location and offer line: both are shown on
+      // the card, so searching "Walnut" or "decal" should find them. Optional
+      // fields are coalesced so the literal string "undefined" never becomes
+      // searchable text.
+      const text = [
+        listing.title,
+        listing.channel,
+        listing.description,
+        listing.demographics,
+        listing.format,
+        listing.location_area ?? "",
+        listing.owner.display_name,
+        listing.owner.city,
+      ]
+        .join(" ")
+        .toLowerCase();
       return roleMatches && channelMatches && (!normalized || text.includes(normalized));
     })
       // Members first, samples last; within each band the order is mixed
@@ -1321,7 +1340,14 @@ export default function MarketplaceApp() {
     if (selectedListing || typeof window === "undefined") return;
     const listingId = new URL(window.location.href).searchParams.get("listing");
     if (!listingId) return;
-    const linkedListing = listings.find((listing) => listing.id === listingId);
+    // Resolve against the blocked filter too, or a deep link would open a
+    // listing from someone the member blocked - which the branch below already
+    // claims to handle.
+    const linkedListing = listings.find(
+      (listing) =>
+        listing.id === listingId &&
+        !blockedProfileIds.includes(listing.owner.id),
+    );
     if (linkedListing) {
       const timer = window.setTimeout(() => {
         setSelectedPhotoIndex(0);
@@ -1339,7 +1365,7 @@ export default function MarketplaceApp() {
       window.history.replaceState({}, "", url.toString());
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [listings, loading, selectedListing]);
+  }, [blockedProfileIds, listings, loading, selectedListing]);
 
   function requireAccount(action: () => void) {
     if (!configured) {
@@ -1516,12 +1542,42 @@ export default function MarketplaceApp() {
       .filter(Boolean);
     setBusy(true);
     try {
+      // Resolve whether a profile row already exists BEFORE building the
+      // payload: it decides both insert-vs-update and whether the Google
+      // identity photo may be used as a fallback. If the earlier read failed we
+      // cannot tell "no profile yet" from "we could not see it", and guessing
+      // insert would hit the auth_user_id unique constraint.
+      let existing = profile;
+      if (!existing && profileLoadFailedRef.current) {
+        const { data: recheck, error: recheckError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("auth_user_id", user.id)
+          .maybeSingle();
+        if (recheckError) {
+          throw new Error(
+            "We could not reach your profile just now. Check your connection and try again — nothing was lost.",
+          );
+        }
+        existing = (recheck as Profile | null) ?? null;
+        profileLoadFailedRef.current = false;
+      }
+
       const avatarFiles = values
         .getAll("avatar_file")
         .filter((value): value is File => value instanceof File && value.size > 0);
       const galleryFiles = values
         .getAll("gallery_files")
         .filter((value): value is File => value instanceof File && value.size > 0);
+      // Refuse before uploading anything rather than silently dropping photos
+      // past the cap: the old behaviour discarded existing photos to make room
+      // and told nobody, so members lost images they had already published.
+      const existingGalleryCount = (existing?.gallery_urls ?? []).length;
+      if (existingGalleryCount + galleryFiles.length > 6) {
+        throw new Error(
+          `You can keep 6 photos. You have ${existingGalleryCount} and picked ${galleryFiles.length}. Remove some first, or choose fewer.`,
+        );
+      }
       const [avatarUploads, galleryUploads] = await Promise.all([
         uploadImages(avatarFiles.slice(0, 1), "profiles"),
         uploadImages(galleryFiles, "profiles"),
@@ -1589,40 +1645,29 @@ export default function MarketplaceApp() {
           String(values.get("avatar_url") ?? "").trim() ||
           profile?.avatar_url ||
           syncedIgAvatar ||
-          String(
-            user.user_metadata.avatar_url ?? user.user_metadata.picture ?? "",
-          ) ||
+          // Only seed from the Google identity on FIRST setup. For an existing
+          // member an empty avatar means they deliberately deleted it, and
+          // re-reading the identity here silently resurrected the photo on
+          // their next save.
+          (existing
+            ? ""
+            : String(
+                user.user_metadata.avatar_url ??
+                  user.user_metadata.picture ??
+                  "",
+              )) ||
           "",
         social_links: values.has("social_instagram")
           ? socialLinks
           : profile?.social_links ?? {},
-        // New uploads win the 6-photo cap; otherwise a full gallery would
-        // silently swallow (and still bill for) every later upload.
+        // Existing photos first: the guard above already refused anything that
+        // would exceed the cap, so nothing is dropped here.
         gallery_urls: Array.from(
-          new Set([...galleryUploads, ...(profile?.gallery_urls ?? [])]),
+          new Set([...(existing?.gallery_urls ?? []), ...galleryUploads]),
         ).slice(0, 6),
         onboarding_complete: true,
         is_demo: false,
       };
-
-      // If the earlier read failed we cannot tell "no profile yet" from "we
-      // just could not see it", and guessing insert would hit the
-      // auth_user_id unique constraint. Re-read once and decide on the truth.
-      let existing = profile;
-      if (!existing && profileLoadFailedRef.current) {
-        const { data: recheck, error: recheckError } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("auth_user_id", user.id)
-          .maybeSingle();
-        if (recheckError) {
-          throw new Error(
-            "We could not reach your profile just now. Check your connection and try again — nothing was lost.",
-          );
-        }
-        existing = (recheck as Profile | null) ?? null;
-        profileLoadFailedRef.current = false;
-      }
 
       const result = existing
         ? await supabase
@@ -2297,6 +2342,41 @@ export default function MarketplaceApp() {
       if (error) throw error;
       setProfile(data as Profile);
 
+      // A listing published without photos of its own is seeded with the
+      // member's profile image, so the same URL can be a live listing's cover.
+      // Repoint those listings BEFORE destroying the file, or they render a
+      // dead image forever with no way to recover the original.
+      const { data: owned } = await supabase
+        .from("listings")
+        .select("id,image_url,image_urls")
+        .eq("owner_profile_id", profile.id);
+      const affected = (owned ?? []).filter(
+        (listing: { image_url: string | null; image_urls: string[] | null }) =>
+          listing.image_url === url || (listing.image_urls ?? []).includes(url),
+      );
+      for (const listing of affected as Array<{
+        id: string;
+        image_url: string | null;
+        image_urls: string[] | null;
+      }>) {
+        const remaining = (
+          listing.image_urls?.length
+            ? listing.image_urls
+            : [listing.image_url ?? ""]
+        ).filter((item) => item && item !== url);
+        const { error: repairError } = await supabase
+          .from("listings")
+          .update({
+            image_url: remaining[0] ?? DEFAULT_LISTING_IMAGE,
+            image_urls: remaining,
+          })
+          .eq("id", listing.id)
+          .eq("owner_profile_id", profile.id);
+        // Leave the file in place if a listing could not be repaired; a photo
+        // that outlives its use is recoverable, a broken listing is not.
+        if (repairError) throw repairError;
+      }
+
       // Remove the underlying file so it stops being publicly reachable.
       // Only files we uploaded live under this bucket; external URLs are
       // simply dropped from the profile.
@@ -2305,9 +2385,13 @@ export default function MarketplaceApp() {
         await supabase.storage.from("marketplace-media").remove([path]);
       }
       setToast(
-        kind === "avatar" ? "Profile photo removed." : "Photo removed.",
+        affected.length
+          ? `Photo removed. ${affected.length} listing${affected.length === 1 ? "" : "s"} using it now show the default cover.`
+          : kind === "avatar"
+            ? "Profile photo removed."
+            : "Photo removed.",
       );
-      await loadMarketplace();
+      await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
     } catch (error) {
       setToast(
         error instanceof Error ? error.message : "Could not remove that photo.",
