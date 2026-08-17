@@ -40,6 +40,8 @@ type Profile = {
   verified: boolean;
   verification_status?: "unverified" | "pending" | "verified" | "rejected";
   is_demo: boolean;
+  /** Test/QA login. Real row, but never presented to visitors as a member. */
+  is_internal?: boolean;
   onboarding_complete: boolean;
 };
 
@@ -394,6 +396,20 @@ function displayHandle(raw: string) {
 // Cover photo used when a listing has none of its own, and the repair target
 // when a listing's photo is deleted from the member's profile.
 const DEFAULT_LISTING_IMAGE = "/photos/market-creator.jpg";
+
+/**
+ * Accounts that exist only to exercise the product. They are real logins with
+ * real rows, so every flow can be tested end to end, but a visitor must never
+ * be shown one as a member - and that means hiding their LISTINGS too, not just
+ * their profile card. Driven by the is_internal column rather than the display
+ * name, which broke the moment a test account was renamed. The name check stays
+ * as a belt-and-braces fallback for rows predating the column.
+ */
+function isInternalAccount(person: Profile) {
+  if (person.is_internal) return true;
+  const name = person.display_name.trim().toLowerCase();
+  return name.startsWith("sidespace qa") || name === "support";
+}
 
 /**
  * Shrink an image in the browser before uploading. Falls back to the original
@@ -1215,7 +1231,7 @@ export default function MarketplaceApp() {
   const heroListings = useMemo(
     () =>
       listings
-        .slice()
+        .filter((listing) => !isInternalAccount(listing.owner))
         .sort((a, b) => Number(a.owner.is_demo) - Number(b.owner.is_demo))
         .slice(0, 4),
     [listings],
@@ -1239,13 +1255,6 @@ export default function MarketplaceApp() {
   function rankPerson(person: Profile) {
     if (person.is_demo) return 2;
     return ownerIdsWithListings.has(person.id) ? 0 : 1;
-  }
-
-  // The QA fixtures and the support login are for testing the product, not
-  // part of the community, so the showcase must not present them as members.
-  function isInternalAccount(person: Profile) {
-    const name = person.display_name.trim().toLowerCase();
-    return name.startsWith("sidespace qa") || name === "support";
   }
 
   // Every real member, listings first and bigger audiences first; demo
@@ -1273,7 +1282,18 @@ export default function MarketplaceApp() {
   }, [profiles, blockedProfileIds, ownerIdsWithListings]);
 
   const channels = useMemo(
-    () => ["All", ...Array.from(new Set(listings.map((item) => item.channel)))],
+    () => [
+      "All",
+      // Built from live data, so a test account's channel would otherwise add
+      // its own filter chip to the marketplace.
+      ...Array.from(
+        new Set(
+          listings
+            .filter((item) => !isInternalAccount(item.owner))
+            .map((item) => item.channel),
+        ),
+      ),
+    ],
     [listings],
   );
 
@@ -1281,6 +1301,9 @@ export default function MarketplaceApp() {
     const normalized = query.trim().toLowerCase();
     return listings.filter((listing) => {
       if (blockedProfileIds.includes(listing.owner.id)) return false;
+      // A test account's listings must not appear in the marketplace, the
+      // channel filters, or the "N open listings" count.
+      if (isInternalAccount(listing.owner)) return false;
       // Direction matters more than who posted it: a business can offer space
       // (Troy VEX sells Instagram posts) and a creator can want space. Only
       // the "Business brief" channel means "wanted".
