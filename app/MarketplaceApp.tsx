@@ -763,6 +763,11 @@ export default function MarketplaceApp() {
   // Set when the profile READ failed, so a null profile is not mistaken for
   // "no profile exists" and turned into a doomed insert.
   const profileLoadFailedRef = useRef(false);
+  // Guards against a slower earlier thread fetch overwriting a newer one.
+  const threadSeqRef = useRef(0);
+  // In-flight guard for the message composer, so a double click cannot send
+  // the same message twice.
+  const sendingMessageRef = useRef(false);
   const [selectedRole, setSelectedRole] = useState<Role>("business");
   const [extraRoles, setExtraRoles] = useState<Role[]>([]);
   const [listingOpen, setListingOpen] = useState(false);
@@ -1791,13 +1796,19 @@ export default function MarketplaceApp() {
 
   async function loadMessages(conversation: Conversation, contact: Profile) {
     if (!supabase) return;
+    // Opening B while A's fetch is still running must not paint A's private
+    // messages under B's name and photo - the member would be reading one
+    // person's words while every reply they typed went to a different person.
+    const seq = ++threadSeqRef.current;
     setActiveThread(conversation);
     setActiveContact(contact);
+    setMessages([]);
     const { data } = await supabase
       .from("messages")
       .select("*")
       .eq("conversation_id", conversation.id)
       .order("created_at");
+    if (seq !== threadSeqRef.current) return;
     setMessages((data as Message[] | null) ?? []);
     if (profile) {
       const unreadHere = ((data as Message[] | null) ?? []).filter(
@@ -2115,17 +2126,45 @@ export default function MarketplaceApp() {
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !profile || !activeThread) return;
+    // Nothing disables the composer while the insert is in flight, so without
+    // this a second click sends the same message twice - and the first thing a
+    // listing owner sees is the same pitch pasted twice.
+    if (sendingMessageRef.current) return;
     const form = event.currentTarget;
     const values = new FormData(form);
     const body = String(values.get("body") ?? "").trim();
     if (!body) return;
-    const { error } = await supabase.from("messages").insert({
-      conversation_id: activeThread.id,
-      sender_profile_id: profile.id,
-      body,
-    });
-    if (error) return setToast(error.message);
-    form.reset();
+    sendingMessageRef.current = true;
+    const thread = activeThread;
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: thread.id,
+          sender_profile_id: profile.id,
+          body,
+        })
+        .select()
+        .single();
+      if (error) {
+        // Keep what they typed so it can be retried rather than retyped.
+        setToast(error.message);
+        return;
+      }
+      form.reset();
+      // Show it immediately rather than waiting on the realtime round trip,
+      // which otherwise makes a sent message look like it vanished.
+      const saved = data as Message | null;
+      if (saved && threadSeqRef.current > 0) {
+        setMessages((current) =>
+          current.some((message) => message.id === saved.id)
+            ? current
+            : [...current, saved],
+        );
+      }
+    } finally {
+      sendingMessageRef.current = false;
+    }
   }
 
   async function updatePassword(event: FormEvent<HTMLFormElement>) {
@@ -2467,6 +2506,17 @@ export default function MarketplaceApp() {
       setInboxOpen(true);
       void loadInbox();
     });
+  }
+
+  // The global unread listener treats activeThread as "already on screen" and
+  // skips the badge for it. Leaving it set after the drawer closes meant the
+  // last conversation you opened never notified you again all session.
+  function closeInbox() {
+    setInboxOpen(false);
+    threadSeqRef.current += 1;
+    setActiveThread(null);
+    setActiveContact(null);
+    setMessages([]);
   }
 
   function openListingEditor() {
@@ -5224,14 +5274,14 @@ export default function MarketplaceApp() {
       )}
 
       {inboxOpen && (
-        <div className="drawer-layer" onMouseDown={() => setInboxOpen(false)}>
+        <div className="drawer-layer" onMouseDown={closeInbox}>
           <aside className="inbox-drawer" onMouseDown={(event) => event.stopPropagation()}>
             <header>
               <div>
                 <p className="eyebrow">Private conversations</p>
                 <h2>Messages</h2>
               </div>
-              <button onClick={() => setInboxOpen(false)}>×</button>
+              <button onClick={closeInbox}>×</button>
             </header>
             <div className="inbox-layout">
               <div className={`thread-list ${activeContact ? "mobile-hide" : ""}`}>
