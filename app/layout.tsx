@@ -4,6 +4,9 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://sidespace-marketplace.vercel.app"),
+  verification: {
+    google: "-tVSDszKSbYFpt-rw-F18V4FtwnhWrxmSrjOFy4ZRns",
+  },
   title: {
     default: "SideSpace - Affordable local advertising space",
     template: "%s · SideSpace",
