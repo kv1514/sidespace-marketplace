@@ -3383,6 +3383,8 @@ export default function MarketplaceApp() {
           <a href="#spaces">Physical spaces</a>
           <a href="#creators">Creators &amp; businesses</a>
           <a href="#pricing">Pricing</a>
+          <a href="/terms">Terms</a>
+          <a href="/privacy">Privacy</a>
           <button onClick={openInbox}>Messages</button>
         </nav>
         <small>© {new Date().getFullYear()} SideSpace</small>

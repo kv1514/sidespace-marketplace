@@ -5741,3 +5741,69 @@ html.reveal-ready [data-reveal].is-visible {
 .listing-form.field-grid {
   grid-template-columns: 1fr;
 }
+
+/* ===== Legal pages (/terms, /privacy) ===== */
+
+.legal-page {
+  background: var(--paper);
+  color: var(--ink);
+  margin: 0 auto;
+  max-width: 720px;
+  padding: 48px 20px 90px;
+}
+
+.legal-home {
+  color: var(--ink-soft);
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-bottom: 28px;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.legal-home:hover {
+  color: var(--ink);
+}
+
+.legal-page h1 {
+  font-size: clamp(30px, 5vw, 44px);
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+}
+
+.legal-updated {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  margin: 0 0 34px;
+}
+
+.legal-page h2 {
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  margin: 32px 0 8px;
+}
+
+.legal-page p,
+.legal-page li {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.65;
+  margin: 0 0 12px;
+}
+
+.legal-page ul {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.legal-page li {
+  margin-bottom: 8px;
+}
+
+.legal-page a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
