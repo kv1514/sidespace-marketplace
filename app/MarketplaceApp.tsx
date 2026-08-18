@@ -587,11 +587,26 @@ function rolesLabel(profile: Pick<Profile, "role" | "extra_roles">) {
   return profileRoles(profile).map(roleLabel).join(" · ");
 }
 
+/** Characters as a person counts them, matching Postgres char_length. */
+function charCount(value: string) {
+  return Array.from(value).length;
+}
+
+/** Today in the viewer's own local day, as YYYY-MM-DD for date inputs. */
+function todayIso() {
+  return new Date().toLocaleDateString("en-CA");
+}
+
 function initials(name: string) {
   return name
-    .split(" ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
     .slice(0, 2)
-    .map((part) => part[0])
+    // Array.from, not [0]: indexing a string splits a surrogate pair down the
+    // middle, so a name starting with an emoji rendered as the replacement
+    // glyph instead of a letter.
+    .map((part) => Array.from(part)[0] ?? "")
     .join("")
     .toUpperCase();
 }
@@ -1862,6 +1877,31 @@ export default function MarketplaceApp() {
         ).trim(),
       };
 
+      // `required` is satisfied by a space, and these are trimmed to empty just
+      // above, so a nameless listing could publish. There is no CHECK on
+      // listings.title to catch it server-side.
+      const missing = (
+        [
+          ["title", "a listing title"],
+          ["channel", "where it appears"],
+          ["format", "what the buyer gets"],
+          ["description", "a description"],
+        ] as Array<[keyof typeof fields, string]>
+      ).find(([key]) => !String(fields[key] ?? "").trim());
+      if (missing) {
+        throw new Error(`Add ${missing[1]} before publishing.`);
+      }
+      if (!Number.isFinite(fields.price) || fields.price < 0) {
+        throw new Error("Enter a price of 0 or more.");
+      }
+      if (
+        fields.available_from &&
+        fields.available_to &&
+        fields.available_to < fields.available_from
+      ) {
+        throw new Error("Availability must end on or after it starts.");
+      }
+
       const saved = editingListing
         ? await supabase
             .from("listings")
@@ -1928,9 +1968,14 @@ export default function MarketplaceApp() {
               ),
             );
           }
-        } catch {
-          photoWarning =
-            " The listing is saved, but the photos could not upload. You can try uploading them again from Edit listing.";
+        } catch (photoError) {
+          // The listing row is already committed, so this is not fatal - but
+          // swallowing the reason left the member retrying a file that will
+          // never work (too large, wrong format, offline) with no way to know.
+          const why = friendlyDbError(photoError);
+          photoWarning = ` The listing is saved, but the photos could not upload${
+            why ? `: ${why}` : "."
+          } You can add them from Edit listing.`;
         }
       }
 
@@ -1996,6 +2041,19 @@ export default function MarketplaceApp() {
   }
 
 
+  /** Existing thread with this member, or null. Never creates one. */
+  async function findConversation(target: Profile) {
+    if (!supabase || !profile || target.id === profile.id) return null;
+    const [participantA, participantB] = [profile.id, target.id].sort();
+    const { data } = await supabase
+      .from("conversations")
+      .select("*")
+      .eq("participant_a", participantA)
+      .eq("participant_b", participantB)
+      .maybeSingle();
+    return (data as Conversation | null) ?? null;
+  }
+
   async function loadInbox() {
     if (!supabase || !profile) return;
     const { data: conversationData, error } = await supabase
@@ -2005,7 +2063,7 @@ export default function MarketplaceApp() {
         `participant_a.eq.${profile.id},participant_b.eq.${profile.id}`,
       )
       .order("updated_at", { ascending: false });
-    if (error) return setToast(error.message);
+    if (error) return setToast(friendlyDbError(error));
     const conversations = (conversationData as Conversation[] | null) ?? [];
     const otherIds = conversations.map((item) =>
       item.participant_a === profile.id
@@ -2095,6 +2153,15 @@ export default function MarketplaceApp() {
       setToast("Choose an end date on or after the start date.");
       return;
     }
+    // A window that has already elapsed cannot be run. The common way in is a
+    // mistyped year on the native date picker, which otherwise commits both
+    // sides to negotiating a campaign that can never happen.
+    if (endDate < todayIso()) {
+      setToast(
+        "That campaign window has already ended. Pick dates that run today or later.",
+      );
+      return;
+    }
 
     setBusy(true);
     // Validate against the database's own bounds BEFORE creating anything.
@@ -2109,21 +2176,24 @@ export default function MarketplaceApp() {
     ).trim();
     const notes = String(values.get("notes") ?? "").trim();
 
-    if (campaignName.length < 2 || campaignName.length > 120) {
+    // Count the way Postgres does. JS .length counts UTF-16 code units, so five
+    // emoji read as 10 and slipped past a minimum the database then rejected -
+    // after the conversation had already been created.
+    if (charCount(campaignName) < 2 || charCount(campaignName) > 120) {
       setBusy(false);
       return setToast("Give the campaign a name between 2 and 120 characters.");
     }
-    if (goals.length < 10 || goals.length > 1500) {
+    if (charCount(goals) < 10 || charCount(goals) > 1500) {
       setBusy(false);
       return setToast(
         "Describe your goal in at least 10 characters (1500 max).",
       );
     }
-    if (deliverables.length < 2 || deliverables.length > 1000) {
+    if (charCount(deliverables) < 2 || charCount(deliverables) > 1000) {
       setBusy(false);
       return setToast("Say what you are asking for (2 to 1000 characters).");
     }
-    if (notes.length > 2000) {
+    if (charCount(notes) > 2000) {
       setBusy(false);
       return setToast("Notes are limited to 2000 characters.");
     }
@@ -2132,11 +2202,10 @@ export default function MarketplaceApp() {
       return setToast("Enter a budget of 0 or more.");
     }
 
-    const conversation = await ensureConversation(campaignListing.owner);
-    if (!conversation) {
-      setBusy(false);
-      return;
-    }
+    // Was this pair already talking? If so the thread is pre-existing and
+    // reusing it costs nothing. If not, do NOT open one yet: a request the
+    // database still rejects would strand an empty thread in both inboxes.
+    const existingConversation = await findConversation(campaignListing.owner);
 
     const inserted = await supabase
       .from("campaign_requests")
@@ -2144,7 +2213,7 @@ export default function MarketplaceApp() {
         listing_id: campaignListing.id,
         requester_profile_id: profile.id,
         owner_profile_id: campaignListing.owner.id,
-        conversation_id: conversation.id,
+        conversation_id: existingConversation?.id ?? null,
         campaign_name: campaignName,
         goals,
         requested_deliverables: deliverables,
@@ -2163,11 +2232,23 @@ export default function MarketplaceApp() {
       return;
     }
 
-    await supabase.from("messages").insert({
-      conversation_id: conversation.id,
-      sender_profile_id: profile.id,
-      body: `Campaign request: ${campaignName}\n${displayDate(startDate)} to ${displayDate(endDate)} · Budget $${budget}\nRequested: ${deliverables}`,
-    });
+    // The request is safely stored, so a thread is now warranted. Open one if
+    // this pair had none, and attach it to the request.
+    const conversation =
+      existingConversation ?? (await ensureConversation(campaignListing.owner));
+    if (conversation) {
+      if (!existingConversation) {
+        await supabase
+          .from("campaign_requests")
+          .update({ conversation_id: conversation.id })
+          .eq("id", (inserted.data as { id: string }).id);
+      }
+      await supabase.from("messages").insert({
+        conversation_id: conversation.id,
+        sender_profile_id: profile.id,
+        body: `Campaign request: ${campaignName}\n${displayDate(startDate)} to ${displayDate(endDate)} · Budget $${budget}\nRequested: ${deliverables}`,
+      });
+    }
 
     setCampaignListing(null);
     setBusy(false);
