@@ -5841,3 +5841,28 @@ html.reveal-ready [data-reveal].is-visible {
   top: 0;
   margin-bottom: -36px;
 }
+
+/* The nav is a fixed 34px-gap flex row that is only hidden below 820px, so
+   between roughly 820px and 1000px - ordinary small-laptop territory, and the
+   width a partner may well open the site at - the links crowded the brand and
+   the account controls. Tighten the gap through that band and stop the labels
+   wrapping mid-phrase. */
+.topbar nav a {
+  white-space: nowrap;
+}
+
+@media (max-width: 1080px) {
+  .topbar nav {
+    gap: 20px;
+  }
+
+  .topbar nav a {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 940px) {
+  .topbar nav {
+    gap: 14px;
+  }
+}

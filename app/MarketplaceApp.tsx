@@ -1473,6 +1473,17 @@ export default function MarketplaceApp() {
     return () => window.clearTimeout(timer);
   }, [blockedProfileIds, listings, loading, selectedListing]);
 
+  /**
+   * Seed BOTH role pickers from the stored profile. Openers used to seed only
+   * the primary role, so extra roles toggled during an edit the member then
+   * abandoned - or left behind by the previous account on a shared device -
+   * were still in state and got written on the next save.
+   */
+  function seedRolePickers(source: Profile | null) {
+    setSelectedRole((source?.role as Role | undefined) ?? "business");
+    setExtraRoles((source?.extra_roles as Role[] | undefined) ?? []);
+  }
+
   function requireAccount(action: () => void) {
     if (!configured) {
       setToast("Connect Supabase to enable public accounts and messaging.");
@@ -1735,36 +1746,43 @@ export default function MarketplaceApp() {
       const payload = {
         auth_user_id: user.id,
         role: primaryRole,
-        extra_roles: Array.from(
-          new Set(
-            extraRoles.filter(
-              (role) => role !== primaryRole && role !== "consumer",
-            ),
-          ),
-        ),
+        // A consumer does not offer anything, and the extra-role picker is
+        // hidden for them - so keeping stale extras would advertise a member as
+        // a space owner they can no longer edit away, while the listing policy
+        // simultaneously refuses to let them publish.
+        extra_roles:
+          primaryRole === "consumer"
+            ? []
+            : Array.from(
+                new Set(
+                  extraRoles.filter(
+                    (role) => role !== primaryRole && role !== "consumer",
+                  ),
+                ),
+              ),
         display_name: String(values.get("display_name") ?? "").trim(),
         handle: String(values.get("handle") ?? "").trim() || null,
         city: String(values.get("city") ?? "").trim(),
         bio: String(values.get("bio") ?? "").trim(),
         categories: values.has("categories")
           ? categories
-          : profile?.categories ?? [],
+          : existing?.categories ?? [],
         followers: values.has("followers")
           ? Number(values.get("followers") ?? 0) || 0
-          : profile?.followers ?? 0,
+          : existing?.followers ?? 0,
         avg_views: values.has("avg_views")
           ? Number(values.get("avg_views") ?? 0) || 0
-          : profile?.avg_views ?? 0,
+          : existing?.avg_views ?? 0,
         audience_age: values.has("audience_age")
           ? String(values.get("audience_age") ?? "").trim()
-          : profile?.audience_age ?? "",
+          : existing?.audience_age ?? "",
         website: values.has("website")
           ? String(values.get("website") ?? "").trim()
-          : profile?.website ?? "",
+          : existing?.website ?? "",
         avatar_url:
           avatarUploads[0] ||
           String(values.get("avatar_url") ?? "").trim() ||
-          profile?.avatar_url ||
+          existing?.avatar_url ||
           syncedIgAvatar ||
           // Only seed from the Google identity on FIRST setup. For an existing
           // member an empty avatar means they deliberately deleted it, and
@@ -1780,7 +1798,7 @@ export default function MarketplaceApp() {
           "",
         social_links: values.has("social_instagram")
           ? socialLinks
-          : profile?.social_links ?? {},
+          : existing?.social_links ?? {},
         // Existing photos first: the guard above already refused anything that
         // would exceed the cap, so nothing is dropped here.
         gallery_urls: Array.from(
@@ -2952,9 +2970,12 @@ export default function MarketplaceApp() {
     if (!profile.onboarding_complete) {
       return "Finish your profile to go live on the marketplace.";
     }
+    // A request you countered is still waiting on you - you can accept,
+    // decline or revise it - so it must not vanish from your own status line.
     const incoming = campaignRequests.filter(
       (request) =>
-        request.owner_profile_id === profile.id && request.status === "pending",
+        request.owner_profile_id === profile.id &&
+        ["pending", "countered"].includes(request.status),
     ).length;
     const parts: string[] = [];
     if (incoming) {
@@ -3137,7 +3158,7 @@ export default function MarketplaceApp() {
               const incoming = campaignRequests.filter(
                 (request) =>
                   request.owner_profile_id === profile.id &&
-                  request.status === "pending",
+                  ["pending", "countered"].includes(request.status),
               ).length;
               const outgoing = campaignRequests.filter(
                 (request) =>
@@ -3218,7 +3239,7 @@ export default function MarketplaceApp() {
                 <button
                   className="button button-ghost button-small"
                   onClick={() => {
-                    setSelectedRole(profile.role);
+                    seedRolePickers(profile);
                     setOnboardingStep(2);
                     setOnboardingOpen(true);
                   }}
@@ -3699,7 +3720,7 @@ export default function MarketplaceApp() {
               className="button button-coral"
               onClick={() => {
                 if (user) {
-                  setSelectedRole(profile?.role ?? "business");
+                  seedRolePickers(profile);
                   setOnboardingStep(1);
                   setOnboardingOpen(true);
                 } else {
@@ -4065,7 +4086,7 @@ export default function MarketplaceApp() {
               <button
                 onClick={() => {
                   setAccountOpen(false);
-                  setSelectedRole(profile.role);
+                  seedRolePickers(profile);
                   setOnboardingStep(1);
                   setOnboardingOpen(true);
                 }}
@@ -4160,7 +4181,13 @@ export default function MarketplaceApp() {
                           </div>
                         )}
                         <div className="campaign-request-actions">
-                          {incoming && request.status === "pending" && (
+                          {/* Owners may still act after countering: the database
+                              allows pending -> accepted/declined/countered, and
+                              gating this on "pending" alone stranded the owner
+                              with an empty actions row and no way to close their
+                              own negotiation. */}
+                          {incoming &&
+                            ["pending", "countered"].includes(request.status) && (
                             <>
                               <button
                                 className="button button-dark button-small"
@@ -4169,10 +4196,15 @@ export default function MarketplaceApp() {
                                   void respondToCampaignRequest(request, "accepted")
                                 }
                               >
-                                Accept
+                                {request.status === "countered" &&
+                                request.counter_budget != null
+                                  ? `Accept at $${request.counter_budget}`
+                                  : "Accept"}
                               </button>
                               <button onClick={() => setCounteringRequest(request)}>
-                                Counteroffer
+                                {request.status === "countered"
+                                  ? "Revise counteroffer"
+                                  : "Counteroffer"}
                               </button>
                               <button
                                 disabled={busy}
