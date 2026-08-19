@@ -973,6 +973,9 @@ export default function MarketplaceApp({
     listing?: Listing;
   } | null>(null);
   const [blockedProfileIds, setBlockedProfileIds] = useState<string[]>([]);
+  // Whether the block list has been fetched at least once, so gates can wait
+  // for it rather than acting on an empty list.
+  const [blockedLoaded, setBlockedLoaded] = useState(false);
   const [blockedProfiles, setBlockedProfiles] = useState<
     Array<{ id: string; display_name: string }>
   >([]);
@@ -1089,6 +1092,7 @@ export default function MarketplaceApp({
           blocked: { id: string; display_name: string } | null;
         }>;
         setBlockedProfileIds(rows.map((item) => item.blocked_profile_id));
+        setBlockedLoaded(true);
         setBlockedProfiles(
           rows.map((item) => ({
             id: item.blocked_profile_id,
@@ -1286,6 +1290,18 @@ export default function MarketplaceApp({
               ? current
               : [...current, incoming],
           );
+          // The member is looking at this thread, so the message is read as
+          // soon as it lands. Without writing that back, the global listener's
+          // increment is never cancelled and the badge keeps a phantom unread
+          // for a message already on screen.
+          if (profile && incoming.sender_profile_id !== profile.id) {
+            void supabase
+              .from("messages")
+              .update({ read_at: new Date().toISOString() })
+              .eq("id", incoming.id)
+              .is("read_at", null)
+              .then(() => reconcileUnreadCount(profile));
+          }
         },
       )
       .subscribe();
@@ -1496,6 +1512,10 @@ export default function MarketplaceApp({
 
   useEffect(() => {
     if (selectedListing || typeof window === "undefined") return;
+    // Blocks load after the marketplace, so running before they are known
+    // would open a blocked member's listing and the early return above then
+    // stops the effect ever re-checking.
+    if (user && !blockedLoaded) return;
     const listingId = new URL(window.location.href).searchParams.get("listing");
     if (!listingId) return;
     // Resolve against the blocked filter too, or a deep link would open a
@@ -1523,7 +1543,7 @@ export default function MarketplaceApp({
       window.history.replaceState({}, "", url.toString());
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [blockedProfileIds, listings, loading, selectedListing]);
+  }, [blockedLoaded, blockedProfileIds, listings, loading, selectedListing, user]);
 
   /**
    * Seed BOTH role pickers from the stored profile. Openers used to seed only
@@ -2110,9 +2130,10 @@ export default function MarketplaceApp({
           .eq("conversation_id", conversation.id)
           .neq("sender_profile_id", profile.id)
           .is("read_at", null);
-        setUnreadCount((current) =>
-          Math.max(0, current - unreadHere.length),
-        );
+        // Recount from the database rather than subtracting locally: the two
+        // sides of this counter never saw the same set of messages, so it
+        // drifted and could reach zero with unread messages still waiting.
+        await reconcileUnreadCount(profile);
       }
     }
   }
@@ -2129,6 +2150,23 @@ export default function MarketplaceApp({
       .eq("participant_b", participantB)
       .maybeSingle();
     return (data as Conversation | null) ?? null;
+  }
+
+  /**
+   * Recount unread from the database rather than trusting the running total.
+   * The badge is incremented by the realtime listener and decremented when a
+   * thread is opened, but those two do not see the same set of messages - the
+   * listener skips anything for the thread already on screen - so the count
+   * drifted and could reach zero while unread messages were still waiting.
+   */
+  async function reconcileUnreadCount(ownProfile: Profile) {
+    if (!supabase) return;
+    const { count, error } = await supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .neq("sender_profile_id", ownProfile.id)
+      .is("read_at", null);
+    if (!error) setUnreadCount(count ?? 0);
   }
 
   async function loadInbox() {
@@ -2616,6 +2654,7 @@ export default function MarketplaceApp({
     setCampaignRequests([]);
     setVerificationRequest(null);
     setBlockedProfileIds([]);
+    setBlockedLoaded(false);
     setThreads([]);
     setActiveThread(null);
     setActiveContact(null);
@@ -2687,10 +2726,13 @@ export default function MarketplaceApp({
       // member's profile image, so the same URL can be a live listing's cover.
       // Repoint those listings BEFORE destroying the file, or they render a
       // dead image forever with no way to recover the original.
-      const { data: owned } = await supabase
+      const { data: owned, error: ownedError } = await supabase
         .from("listings")
         .select("id,image_url,image_urls")
         .eq("owner_profile_id", profile.id);
+      // Never destroy the file on a failed lookup: a listing that still
+      // points at it would render a dead image with no way back.
+      if (ownedError) throw ownedError;
       const affected = (owned ?? []).filter(
         (listing: { image_url: string | null; image_urls: string[] | null }) =>
           listing.image_url === url || (listing.image_urls ?? []).includes(url),
@@ -3041,10 +3083,23 @@ export default function MarketplaceApp({
         request.owner_profile_id === profile.id &&
         ["pending", "countered"].includes(request.status),
     ).length;
+    // A counteroffer sits with the REQUESTER: they are the only party who can
+    // accept it. Counting only owner-side rows meant the dashboard told them
+    // nothing needed their attention while a priced offer waited on them.
+    const awaitingYou = campaignRequests.filter(
+      (request) =>
+        request.requester_profile_id === profile.id &&
+        request.status === "countered",
+    ).length;
     const parts: string[] = [];
     if (incoming) {
       parts.push(
         `${incoming} campaign request${incoming === 1 ? "" : "s"} waiting on you`,
+      );
+    }
+    if (awaitingYou) {
+      parts.push(
+        `${awaitingYou} counteroffer${awaitingYou === 1 ? "" : "s"} to review`,
       );
     }
     if (unreadCount) {
@@ -5461,7 +5516,7 @@ export default function MarketplaceApp({
                 </div>
                 <div>
                   <small>Audience</small>
-                  <strong>{selectedListing.demographics}</strong>
+                  <strong>{selectedListing.demographics || "Not specified"}</strong>
                 </div>
                 <div>
                   <small>Location / service area</small>
@@ -5901,7 +5956,15 @@ export default function MarketplaceApp({
                         </div>
                       ))}
                     </div>
-                    <form className="message-form" onSubmit={sendMessage}>
+                    {/* Keyed on the thread: the textarea is uncontrolled, so
+                        without this React reuses the same DOM node when you
+                        switch conversations and an unsent draft follows you
+                        into the wrong person's chat. */}
+                    <form
+                      key={activeThread.id}
+                      className="message-form"
+                      onSubmit={sendMessage}
+                    >
                       <textarea
                         name="body"
                         required
