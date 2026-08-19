@@ -5835,12 +5835,11 @@ html.reveal-ready [data-reveal].is-visible {
 /* The close button was absolutely positioned inside the scrolling card, so on
    a phone - where the modal is taller than the screen - the only visible
    dismiss control scrolled off the top with the content. */
-.modal-card .close-button {
-  position: sticky;
-  float: right;
-  top: 0;
-  margin-bottom: -36px;
-}
+/* Reverted: an earlier attempt made this sticky+floated with a negative bottom
+   margin so it would not scroll away on a tall phone modal. Floating it took it
+   out of normal flow, so the negative margin collapsed into the content and
+   overlapped the heading. A tall modal is still dismissible by tapping the
+   backdrop or pressing Escape, so the absolute position is left as it was. */
 
 /* The nav is a fixed 34px-gap flex row that is only hidden below 820px, so
    between roughly 820px and 1000px - ordinary small-laptop territory, and the
@@ -5855,14 +5854,22 @@ html.reveal-ready [data-reveal].is-visible {
   .topbar nav {
     gap: 20px;
   }
-
-  .topbar nav a {
-    font-size: 13px;
-  }
 }
 
 @media (max-width: 940px) {
   .topbar nav {
     gap: 14px;
   }
+}
+
+/* The topbar is a 1fr auto 1fr grid, so the nav's `auto` track cannot shrink
+   below min-content: with nowrap labels the row simply overflows the page and
+   clips the "Join SideSpace" button on the right. Let the outer tracks give way
+   and the nav shrink, so nothing is ever pushed off-screen. */
+.topbar nav {
+  min-width: 0;
+}
+
+.topbar {
+  overflow-x: clip;
 }

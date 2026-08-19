@@ -470,7 +470,11 @@ function friendlyDbError(error: unknown): string {
   const code = (error as { code?: string } | null)?.code ?? "";
 
   if (/row-level security/i.test(raw)) {
-    return "You do not have access to do that. If you blocked this member, or they blocked you, unblock first.";
+    // A refusal here has several causes - a block in either direction, a
+    // listing that was just paused or removed, an account that was deleted,
+    // or an unfinished profile. Naming only blocking told people they had been
+    // blocked when nobody had blocked anyone, which is worse than vague.
+    return "That is not available any more. The listing may have been paused or removed, or one of you may have blocked the other.";
   }
   if (code === "23505" || /duplicate key/i.test(raw)) {
     return "That already exists.";
@@ -1575,7 +1579,7 @@ export default function MarketplaceApp() {
         },
       });
       setBusy(false);
-      if (error) return setToast(error.message);
+      if (error) return setToast(friendlyDbError(error));
       setAuthOpen(false);
       if (data.session) {
         setUser(data.user);
@@ -1591,7 +1595,7 @@ export default function MarketplaceApp() {
       password,
     });
     setBusy(false);
-    if (error) return setToast(error.message);
+    if (error) return setToast(friendlyDbError(error));
     setUser(data.user);
     setAuthOpen(false);
     setToast("Welcome back.");
@@ -1645,7 +1649,7 @@ export default function MarketplaceApp() {
         redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
-    if (error) setToast(error.message);
+    if (error) setToast(friendlyDbError(error));
   }
 
   async function saveOnboarding(event: FormEvent<HTMLFormElement>) {
@@ -2324,7 +2328,7 @@ export default function MarketplaceApp() {
     });
     setBusy(false);
     if (error) {
-      setToast(error.message);
+      setToast(friendlyDbError(error));
       return;
     }
     setCounteringRequest(null);
@@ -2352,7 +2356,7 @@ export default function MarketplaceApp() {
       .single();
     setBusy(false);
     if (error) {
-      setToast(error.message);
+      setToast(friendlyDbError(error));
       return;
     }
     setVerificationRequest(data as VerificationRequest);
@@ -2378,7 +2382,7 @@ export default function MarketplaceApp() {
     });
     setBusy(false);
     if (error) {
-      setToast(error.message);
+      setToast(friendlyDbError(error));
       return;
     }
     setReportTarget(null);
@@ -2394,7 +2398,7 @@ export default function MarketplaceApp() {
     });
     setBusy(false);
     if (error && error.code !== "23505") {
-      setToast(error.message);
+      setToast(friendlyDbError(error));
       return;
     }
     setBlockedProfileIds((current) =>
@@ -2423,7 +2427,7 @@ export default function MarketplaceApp() {
       .eq("blocked_profile_id", blockedId);
     setBusy(false);
     if (error) {
-      setToast(error.message);
+      setToast(friendlyDbError(error));
       return;
     }
     setBlockedProfileIds((current) => current.filter((id) => id !== blockedId));
@@ -2459,7 +2463,7 @@ export default function MarketplaceApp() {
         .single();
       if (error) {
         // Keep what they typed so it can be retried rather than retyped.
-        setToast(error.message);
+        setToast(friendlyDbError(error));
         return;
       }
       form.reset();
@@ -2499,7 +2503,7 @@ export default function MarketplaceApp() {
     const { error } = await supabase.auth.updateUser({ password });
     setBusy(false);
     if (error) {
-      setToast(error.message);
+      setToast(friendlyDbError(error));
       return;
     }
     form.reset();
@@ -2521,7 +2525,7 @@ export default function MarketplaceApp() {
     });
     setBusy(false);
     if (error) {
-      setToast(error.message);
+      setToast(friendlyDbError(error));
       return;
     }
     setToast(`A secure reset link was sent to ${address}.`);
@@ -2538,7 +2542,7 @@ export default function MarketplaceApp() {
       .eq("owner_profile_id", profile.id);
     setBusy(false);
     if (error) {
-      setToast(error.message);
+      setToast(friendlyDbError(error));
       return;
     }
     setToast(nextStatus === "active" ? "Listing is live again." : "Listing paused.");
@@ -4145,7 +4149,15 @@ export default function MarketplaceApp() {
                             <small>{incoming ? "Incoming request" : "Your request"}</small>
                             <h4>{request.campaign_name}</h4>
                             <p>
-                              {request.listing?.title ?? "Listing no longer available"}
+                              {/* A paused listing is hidden from everyone but
+                                  its owner, so the other party's embed comes
+                                  back null. The booking is still perfectly
+                                  valid, so do not tell them it is gone. */}
+                              {request.listing?.title ??
+                                (request.status === "accepted" ||
+                                request.status === "completed"
+                                  ? "This listing is not currently public"
+                                  : "Listing no longer available")}
                               {" · "}
                               {other.display_name}
                             </p>
