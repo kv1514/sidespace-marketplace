@@ -5880,3 +5880,19 @@ html.reveal-ready [data-reveal].is-visible {
 .modal-layer-top {
   z-index: 160;
 }
+
+/* The pricing cards describe rates that do not exist yet. This note carries
+   that caveat, so it has to stay legible on the dark pricing panel rather
+   than fading into it the way a normal muted paragraph would. */
+.pricing-section .pricing-note {
+  margin: 12px 0 0;
+  max-width: 46ch;
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.pricing-card li i {
+  font-style: normal;
+  opacity: 0.62;
+}

@@ -495,6 +495,9 @@ function friendlyDbError(error: unknown): string {
     // blocked when nobody had blocked anyone, which is worse than vague.
     return "That is not available any more. The listing may have been paused or removed, or one of you may have blocked the other.";
   }
+  if (/listing_cap_reached/i.test(raw)) {
+    return "You have reached the limit of 25 listings. Pause or edit an existing one to add another.";
+  }
   if (code === "23505" || /duplicate key/i.test(raw)) {
     return "That already exists.";
   }
@@ -759,6 +762,14 @@ if (typeof document !== "undefined") {
   );
 }
 
+// Every Modal listens on `document` in the capture phase, so when one dialog
+// opens on top of another (a listing editor from the account dashboard, a gate
+// from anywhere) BOTH handlers run - listeners on the same node are not
+// stopped by stopPropagation. The outer one then saw focus sitting outside its
+// own card and hauled it back, and Escape closed the parent out from under the
+// child. Only the dialog on top of this stack reacts to keys.
+const openModals: HTMLElement[] = [];
+
 function Modal({
   children,
   onClose,
@@ -782,6 +793,8 @@ function Modal({
   useEffect(() => {
     const card = cardRef.current;
     if (!card) return;
+    openModals.push(card);
+    const isTopmost = () => openModals[openModals.length - 1] === card;
     const active = document.activeElement as HTMLElement | null;
     const opener =
       active && active !== document.body ? active : lastFocusedElement;
@@ -797,13 +810,14 @@ function Modal({
     let attempts = 0;
     const focusTimer = window.setInterval(() => {
       attempts += 1;
-      if (!card.contains(document.activeElement)) {
+      if (isTopmost() && !card.contains(document.activeElement)) {
         card.focus({ preventScroll: true });
       }
       if (attempts >= 6) window.clearInterval(focusTimer);
     }, 80);
 
     function onKeyDown(event: KeyboardEvent) {
+      if (!isTopmost()) return;
       if (event.key === "Escape") {
         event.stopPropagation();
         onCloseRef.current();
@@ -838,6 +852,8 @@ function Modal({
     return () => {
       window.clearInterval(focusTimer);
       document.removeEventListener("keydown", onKeyDown, true);
+      const at = openModals.indexOf(card);
+      if (at !== -1) openModals.splice(at, 1);
       // Send focus back where it came from so the page does not lose place.
       if (opener && document.contains(opener)) {
         opener.focus({ preventScroll: true });
@@ -1006,7 +1022,8 @@ export default function MarketplaceApp({
         .from("listings")
         .select("*, owner:profiles!listings_owner_profile_id_fkey(*)")
         .eq("status", "active")
-        .order("created_at", { ascending: false }),
+        .order("created_at", { ascending: false })
+        .limit(200),
     ]);
 
     if (!profilesResult.error) {
@@ -1515,6 +1532,11 @@ export default function MarketplaceApp({
     // Blocks load after the marketplace, so running before they are known
     // would open a blocked member's listing and the early return above then
     // stops the effect ever re-checking.
+    // `user` is null on the first client render (it is only set from an
+    // async auth call), so gating on it let this run before blocks were
+    // known - and the early return above then stopped it re-checking.
+    // Wait until the session question is settled instead.
+    if (!profileChecked) return;
     if (user && !blockedLoaded) return;
     const listingId = new URL(window.location.href).searchParams.get("listing");
     if (!listingId) return;
@@ -1543,7 +1565,7 @@ export default function MarketplaceApp({
       window.history.replaceState({}, "", url.toString());
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [blockedLoaded, blockedProfileIds, listings, loading, selectedListing, user]);
+  }, [blockedLoaded, blockedProfileIds, listings, loading, profileChecked, selectedListing, user]);
 
   /**
    * Seed BOTH role pickers from the stored profile. Openers used to seed only
@@ -2549,6 +2571,9 @@ export default function MarketplaceApp({
     if (!body) return;
     sendingMessageRef.current = true;
     const thread = activeThread;
+    // Capture the thread sequence so a send that resolves after the member
+    // switched conversations is not painted into the wrong transcript.
+    const sendSeq = threadSeqRef.current;
     try {
       const { data, error } = await supabase
         .from("messages")
@@ -2568,7 +2593,7 @@ export default function MarketplaceApp({
       // Show it immediately rather than waiting on the realtime round trip,
       // which otherwise makes a sent message look like it vanished.
       const saved = data as Message | null;
-      if (saved && threadSeqRef.current > 0) {
+      if (saved && threadSeqRef.current === sendSeq) {
         setMessages((current) =>
           current.some((message) => message.id === saved.id)
             ? current
@@ -2655,6 +2680,7 @@ export default function MarketplaceApp({
     setVerificationRequest(null);
     setBlockedProfileIds([]);
     setBlockedLoaded(false);
+    setBlockedProfiles([]);
     setThreads([]);
     setActiveThread(null);
     setActiveContact(null);
@@ -3951,6 +3977,13 @@ export default function MarketplaceApp({
           <div>
             <p className="eyebrow">Pricing</p>
             <h2>Start free. Grow when you are ready.</h2>
+            {/* Nothing is charged today and SideSpace does not process
+                payments, so these rates have to read as future pricing.
+                The Terms say the same thing; the two must not disagree. */}
+            <p className="pricing-note">
+              SideSpace is free while we are in early access. Nothing below is
+              charged yet, and members arrange payment between themselves.
+            </p>
           </div>
         </div>
 
@@ -3965,7 +3998,7 @@ export default function MarketplaceApp({
               <p>For small businesses testing their first local campaigns.</p>
             </div>
             <ul>
-              <li><b>8%</b> per completed campaign</li>
+              <li><b>No fees</b> during early access</li>
               <li>Browse every creator and space</li>
               <li>Direct private messaging</li>
               <li>No minimum campaign spend</li>
@@ -3987,15 +4020,15 @@ export default function MarketplaceApp({
               <span className="plan-label">SideSpace Pro</span>
               <h3>Pro</h3>
               <p className="plan-price">
-                <strong>$49</strong><span>/month</span>
+                <strong>$49</strong><span>/month, later</span>
               </p>
               <p>Lower campaign fees and stronger tools for growing brands.</p>
             </div>
             <ul>
-              <li><b>3%</b> per completed campaign</li>
-              <li>Priority marketplace placement</li>
-              <li>Advanced campaign analytics</li>
-              <li>Smart partner recommendations</li>
+              <li>Lower campaign fee when pricing starts</li>
+              <li>Priority marketplace placement <i>(planned)</i></li>
+              <li>Advanced campaign analytics <i>(planned)</i></li>
+              <li>Smart partner recommendations <i>(planned)</i></li>
             </ul>
             <button
               className="pricing-button pricing-button-lime"
@@ -5199,6 +5232,7 @@ export default function MarketplaceApp({
               <input
                 name="title"
                 required
+                maxLength={120}
                 defaultValue={editingListing?.title ?? ""}
                 placeholder="Three-story launch package"
               />

@@ -89,7 +89,8 @@ export default function PrivacyPage() {
         We keep your data while your account exists. Deleting your account in
         Account settings permanently removes your profile, listings, messages,
         and uploaded photos, including the underlying files. You can also
-        remove individual photos and listings at any time.
+        remove individual photos at any time, and pause a listing so it is no
+        longer visible to anyone.
       </p>
 
       <h2>7. Children</h2>

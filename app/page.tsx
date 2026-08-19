@@ -32,7 +32,9 @@ export default async function Home() {
         .from("listings")
         .select("*, owner:profiles!listings_owner_profile_id_fkey(*)")
         .eq("status", "active")
-        .order("created_at", { ascending: false }),
+        .order("created_at", { ascending: false })
+        // Bound the payload: PostgREST truncates at 1000 anyway, silently.
+        .limit(200),
     ]);
     profiles = profilesResult.error ? null : profilesResult.data;
     listings = listingsResult.error ? null : listingsResult.data;
