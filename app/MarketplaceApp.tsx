@@ -397,6 +397,25 @@ function displayHandle(raw: string) {
 // when a listing's photo is deleted from the member's profile.
 const DEFAULT_LISTING_IMAGE = "/photos/market-creator.jpg";
 
+/** Channels offered in the listing editor. A listing may legitimately carry a
+ *  channel outside this list (seeded rows, or one set directly in the
+ *  database), so the editor also always offers whatever the listing already
+ *  has - otherwise editing it would rewrite the channel. */
+const LISTING_CHANNELS = [
+  "Instagram",
+  "TikTok",
+  "YouTube",
+  "Newsletter",
+  "Website",
+  "Storefront",
+  "Vehicle",
+  "Wall / mural",
+  "Room / interior",
+  "Community board",
+  "Business brief",
+  "Other",
+];
+
 /**
  * Accounts that exist only to exercise the product. They are real logins with
  * real rows, so every flow can be tested end to end, but a visitor must never
@@ -926,6 +945,10 @@ export default function MarketplaceApp({
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [inboxOpen, setInboxOpen] = useState(false);
+  // Distinguishes still-fetching and failed from genuinely empty, so the
+  // drawer stops asserting a member has no conversations before it knows,
+  // and permanently if the fetch failed.
+  const [inboxState, setInboxState] = useState("loading");
   const [threads, setThreads] = useState<
     Array<Conversation & { other: Profile; preview?: string }>
   >([]);
@@ -2096,6 +2119,7 @@ export default function MarketplaceApp({
 
   async function loadInbox() {
     if (!supabase || !profile) return;
+    setInboxState("loading");
     const { data: conversationData, error } = await supabase
       .from("conversations")
       .select("*")
@@ -2103,7 +2127,10 @@ export default function MarketplaceApp({
         `participant_a.eq.${profile.id},participant_b.eq.${profile.id}`,
       )
       .order("updated_at", { ascending: false });
-    if (error) return setToast(friendlyDbError(error));
+    if (error) {
+      setInboxState("error");
+      return setToast(friendlyDbError(error));
+    }
     const conversations = (conversationData as Conversation[] | null) ?? [];
     const otherIds = conversations.map((item) =>
       item.participant_a === profile.id
@@ -2124,6 +2151,7 @@ export default function MarketplaceApp({
         }))
         .filter((item) => item.other),
     );
+    setInboxState("ready");
   }
 
   async function ensureConversation(target: Profile) {
@@ -3619,7 +3647,7 @@ export default function MarketplaceApp({
           {/* Announce the new count when a filter changes, so the result of
               pressing a filter is not visible-only. */}
           <span className="result-count" role="status" aria-live="polite">
-            {visibleListings.length} open listings
+            {visibleListings.length} open listing{visibleListings.length === 1 ? "" : "s"}
           </span>
         </div>
 
@@ -4211,26 +4239,27 @@ export default function MarketplaceApp({
                           </div>
                         )}
                         <div className="campaign-request-actions">
-                          {/* Owners may still act after countering: the database
-                              allows pending -> accepted/declined/countered, and
-                              gating this on "pending" alone stranded the owner
-                              with an empty actions row and no way to close their
-                              own negotiation. */}
+                          {/* Owners can act after countering - the earlier gate
+                              on "pending" alone stranded them with an empty row.
+                              But Accept is deliberately NOT offered once they
+                              have countered: accepting your own counteroffer
+                              would bind the requester to a price they never
+                              agreed to. To take the original price, revise the
+                              counter back to it and let them accept. */}
+                          {incoming && request.status === "pending" && (
+                            <button
+                              className="button button-dark button-small"
+                              disabled={busy}
+                              onClick={() =>
+                                void respondToCampaignRequest(request, "accepted")
+                              }
+                            >
+                              Accept
+                            </button>
+                          )}
                           {incoming &&
                             ["pending", "countered"].includes(request.status) && (
                             <>
-                              <button
-                                className="button button-dark button-small"
-                                disabled={busy}
-                                onClick={() =>
-                                  void respondToCampaignRequest(request, "accepted")
-                                }
-                              >
-                                {request.status === "countered" &&
-                                request.counter_budget != null
-                                  ? `Accept at $${request.counter_budget}`
-                                  : "Accept"}
-                              </button>
                               <button onClick={() => setCounteringRequest(request)}>
                                 {request.status === "countered"
                                   ? "Revise counteroffer"
@@ -5113,16 +5142,19 @@ export default function MarketplaceApp({
                 required
                 defaultValue={editingListing?.channel ?? "Instagram"}
               >
-                <option>Instagram</option>
-                <option>TikTok</option>
-                <option>YouTube</option>
-                <option>Newsletter</option>
-                <option>Storefront</option>
-                <option>Vehicle</option>
-                <option>Wall / mural</option>
-                <option>Room / interior</option>
-                <option>Business brief</option>
-                <option>Other</option>
+                {/* A listing whose channel is not one of these had no
+                    matching option, so the select fell back to the first and
+                    saving ANY edit silently rewrote the channel to Instagram.
+                    Seven live listings were in that state. Always offer the
+                    listing's own value so editing never rewrites it. */}
+                {Array.from(
+                  new Set([
+                    ...LISTING_CHANNELS,
+                    ...(editingListing?.channel ? [editingListing.channel] : []),
+                  ]),
+                ).map((channel) => (
+                  <option key={channel}>{channel}</option>
+                ))}
               </select>
             </label>
             <label>
@@ -5768,7 +5800,21 @@ export default function MarketplaceApp({
             </header>
             <div className="inbox-layout">
               <div className={`thread-list ${activeContact ? "mobile-hide" : ""}`}>
-                {!threads.length ? (
+                {inboxState !== "ready" ? (
+                  <div className="inbox-empty">
+                    <span>@</span>
+                    <h3>
+                      {inboxState === "loading"
+                        ? "Loading your conversations..."
+                        : "We could not load your conversations."}
+                    </h3>
+                    <p>
+                      {inboxState === "loading"
+                        ? "One moment."
+                        : "Check your connection and reopen Messages."}
+                    </p>
+                  </div>
+                ) : !threads.length ? (
                   <div className="inbox-empty">
                     <span>@</span>
                     <h3>Your inbox is ready.</h3>
