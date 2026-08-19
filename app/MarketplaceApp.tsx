@@ -848,7 +848,25 @@ function Modal({
   );
 }
 
-export default function MarketplaceApp() {
+export default function MarketplaceApp({
+  initialProfiles = null,
+  initialListings = null,
+}: {
+  /** Server-rendered marketplace, so crawlers and link previews see real
+   *  members instead of the seeded demo set. Null when Supabase was
+   *  unreachable, in which case the demo seed is used exactly as before. */
+  initialProfiles?: unknown;
+  initialListings?: unknown;
+} = {}) {
+  const seededProfiles = useMemo(() => {
+    const loaded = safeProfiles(initialProfiles);
+    return loaded.length ? loaded : demoProfiles;
+  }, [initialProfiles]);
+  const seededListings = useMemo(() => {
+    const loaded = safeListings(initialListings);
+    return loaded.length ? loaded : demoListings;
+  }, [initialListings]);
+
   const configured = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
