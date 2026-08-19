@@ -763,10 +763,13 @@ function Modal({
   children,
   onClose,
   wide = false,
+  elevated = false,
 }: {
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  /** Gate dialogs (auth, onboarding) that must outrank any other overlay. */
+  elevated?: boolean;
 }) {
   const cardRef = useRef<HTMLElement | null>(null);
   // The focus effect must run exactly once per modal lifetime, but Escape
@@ -849,7 +852,11 @@ function Modal({
   }, []);
 
   return (
-    <div className="modal-layer" role="presentation" onMouseDown={onClose}>
+    <div
+      className={`modal-layer ${elevated ? "modal-layer-top" : ""}`}
+      role="presentation"
+      onMouseDown={onClose}
+    >
       <section
         ref={cardRef}
         className={`modal-card ${wide ? "modal-wide" : ""}`}
@@ -897,8 +904,8 @@ export default function MarketplaceApp({
 
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [profiles, setProfiles] = useState<Profile[]>(demoProfiles);
-  const [listings, setListings] = useState<Listing[]>(demoListings);
+  const [profiles, setProfiles] = useState<Profile[]>(seededProfiles);
+  const [listings, setListings] = useState<Listing[]>(seededListings);
   const [ownListings, setOwnListings] = useState<Listing[]>([]);
   const [ownListingsLoading, setOwnListingsLoading] = useState(false);
   const [loading, setLoading] = useState(configured);
@@ -1533,6 +1540,13 @@ export default function MarketplaceApp({
     if (!configured) {
       setToast("Connect Supabase to enable public accounts and messaging.");
       return;
+    }
+    // Every overlay shares one z-index and the listing detail is a later
+    // sibling, so it paints OVER any dialog opened while it is up. Without
+    // this, a signed-out visitor pressing the main CTA got an auth dialog
+    // they could not see, with focus trapped inside it.
+    if ((!user || !profile?.onboarding_complete) && selectedListing) {
+      closeListing();
     }
     if (!user) {
       setAuthMode("signup");
@@ -4007,7 +4021,7 @@ export default function MarketplaceApp({
       </footer>
 
       {authOpen && (
-        <Modal onClose={() => setAuthOpen(false)}>
+        <Modal elevated onClose={() => setAuthOpen(false)}>
           <div className="modal-heading">
             <p className="eyebrow">Your SideSpace account</p>
             <h2>
@@ -4716,7 +4730,7 @@ export default function MarketplaceApp({
       )}
 
       {onboardingOpen && user && (
-        <Modal
+        <Modal elevated
           onClose={() => {
             setOnboardingOpen(false);
             // Closing unmounts the modal and the fields are uncontrolled, so

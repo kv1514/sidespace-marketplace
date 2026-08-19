@@ -5873,3 +5873,10 @@ html.reveal-ready [data-reveal].is-visible {
 .topbar {
   overflow-x: clip;
 }
+
+/* Auth and onboarding are gates: they must never be painted over by whatever
+   the member happened to have open. Every .modal-layer otherwise shares
+   z-index 100, so the later sibling in the JSX wins purely by tree order. */
+.modal-layer-top {
+  z-index: 160;
+}
