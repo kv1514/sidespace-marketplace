@@ -5850,24 +5850,37 @@ html.reveal-ready [data-reveal].is-visible {
   white-space: nowrap;
 }
 
-@media (max-width: 1080px) {
-  .topbar nav {
-    gap: 20px;
-  }
-}
+/* Measured, not guessed: with the brand (128px), the four nowrap labels and a
+   signed-in action cluster (Messages + Account, ~300-340px), the row needs
+   about 930px. Below that the four links genuinely do not fit, so they hide -
+   they are anchors to sections the page still scrolls to, while the account
+   controls beside them are the functional half and must survive.
 
-@media (max-width: 940px) {
+   The previous attempt here set `min-width: 0` on the nav so its track could
+   shrink below min-content. Combined with nowrap that did not shrink anything,
+   it just let the last link paint straight over the account controls - 32px of
+   overlap at 880px, and the overlapping half of the link swallowed the clicks.
+   The nav now always fits at every width where it is shown. */
+@media (max-width: 1150px) {
   .topbar nav {
     gap: 14px;
+    /* Never let the last label butt flush against the account controls. */
+    padding-right: 16px;
+  }
+
+  .topbar nav a {
+    font-size: 11px;
   }
 }
 
-/* The topbar is a 1fr auto 1fr grid, so the nav's `auto` track cannot shrink
-   below min-content: with nowrap labels the row simply overflows the page and
-   clips the "Join SideSpace" button on the right. Let the outer tracks give way
-   and the nav shrink, so nothing is ever pushed off-screen. */
-.topbar nav {
-  min-width: 0;
+@media (max-width: 930px) {
+  .topbar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .topbar nav {
+    display: none;
+  }
 }
 
 .topbar {

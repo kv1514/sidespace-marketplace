@@ -4,6 +4,21 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "Terms of Service",
   description: "The terms that govern using the SideSpace marketplace.",
+  // Inherited the homepage's og:url, which Slack and LinkedIn treat as a
+  // canonical hint - so sharing this page unfurled as the homepage.
+  alternates: { canonical: "/terms" },
+  openGraph: {
+    type: "article",
+    siteName: "SideSpace",
+    url: "/terms",
+    title: "Terms of Service · SideSpace",
+    description: "The terms that govern using the SideSpace marketplace.",
+  },
+  twitter: {
+    card: "summary",
+    title: "Terms of Service · SideSpace",
+    description: "The terms that govern using the SideSpace marketplace.",
+  },
 };
 
 export default function TermsPage() {

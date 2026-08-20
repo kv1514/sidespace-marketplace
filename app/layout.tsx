@@ -4,6 +4,9 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://sidespace-marketplace.vercel.app"),
+  // Without this, no page emits rel=canonical and the legal pages have no
+  // identity of their own for crawlers to separate from the homepage.
+  alternates: { canonical: "/" },
   verification: {
     google: "-tVSDszKSbYFpt-rw-F18V4FtwnhWrxmSrjOFy4ZRns",
   },
@@ -20,14 +23,14 @@ export const metadata: Metadata = {
     title: "SideSpace - Get seen where it matters",
     description:
       "A marketplace for everyday advertising space: local creators, storefront windows, vehicles, and community boards. Free to join, no broker, no minimum spend.",
-    images: ["/og-local.jpg"],
+    images: ["/og-card.jpg"],
   },
   twitter: {
     card: "summary_large_image",
     title: "SideSpace - Get seen where it matters",
     description:
       "Book local creators and real-world ad space. Free to join, listings start at $2.",
-    images: ["/og-local.jpg"],
+    images: ["/og-card.jpg"],
   },
 };
 

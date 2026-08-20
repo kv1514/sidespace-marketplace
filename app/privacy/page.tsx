@@ -4,6 +4,21 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "Privacy Policy",
   description: "What SideSpace collects, why, and what stays private.",
+  // Inherited the homepage's og:url, which Slack and LinkedIn treat as a
+  // canonical hint - so sharing this page unfurled as the homepage.
+  alternates: { canonical: "/privacy" },
+  openGraph: {
+    type: "article",
+    siteName: "SideSpace",
+    url: "/privacy",
+    title: "Privacy Policy · SideSpace",
+    description: "What SideSpace collects, why, and what stays private.",
+  },
+  twitter: {
+    card: "summary",
+    title: "Privacy Policy · SideSpace",
+    description: "What SideSpace collects, why, and what stays private.",
+  },
 };
 
 export default function PrivacyPage() {

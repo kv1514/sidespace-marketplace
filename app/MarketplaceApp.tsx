@@ -1000,6 +1000,9 @@ export default function MarketplaceApp({
   // none" — otherwise a signed-in user without a profile row sits on the
   // loading screen forever.
   const [profileChecked, setProfileChecked] = useState(false);
+  // True once getUser() has answered, whether or not it found anyone. Stays
+  // true across sign-out: the session question is settled either way.
+  const [sessionResolved, setSessionResolved] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
@@ -1183,6 +1186,7 @@ export default function MarketplaceApp({
             lastAuthUserIdRef.current = currentUser.id;
             void loadOwnProfile(currentUser);
           }
+          setSessionResolved(true);
           setLoading(false);
         },
       );
@@ -1194,6 +1198,7 @@ export default function MarketplaceApp({
       (event: AuthChangeEvent, session: Session | null) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
+      setSessionResolved(true);
       if (currentUser) {
         // Supabase fires TOKEN_REFRESHED in the background and re-fires
         // SIGNED_IN whenever the tab regains focus. Those say nothing new
@@ -1529,14 +1534,16 @@ export default function MarketplaceApp({
 
   useEffect(() => {
     if (selectedListing || typeof window === "undefined") return;
-    // Blocks load after the marketplace, so running before they are known
-    // would open a blocked member's listing and the early return above then
-    // stops the effect ever re-checking.
-    // `user` is null on the first client render (it is only set from an
-    // async auth call), so gating on it let this run before blocks were
-    // known - and the early return above then stopped it re-checking.
-    // Wait until the session question is settled instead.
-    if (!profileChecked) return;
+    // Blocks load after the marketplace, so opening a deep link before they
+    // are known would show a blocked member's listing, and the early return
+    // above then stops the effect ever re-checking.
+    // Two separate waits, and conflating them broke one audience or the
+    // other: `user` is null on the first render whether or not anyone is
+    // signed in, and profileChecked only turns true for members WITH a
+    // profile - gating on it killed every shared link for signed-out
+    // visitors. So: wait for the session answer always, and for the block
+    // list only when there is someone whose blocks could apply.
+    if (!sessionResolved) return;
     if (user && !blockedLoaded) return;
     const listingId = new URL(window.location.href).searchParams.get("listing");
     if (!listingId) return;
@@ -1565,7 +1572,7 @@ export default function MarketplaceApp({
       window.history.replaceState({}, "", url.toString());
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [blockedLoaded, blockedProfileIds, listings, loading, profileChecked, selectedListing, user]);
+  }, [blockedLoaded, blockedProfileIds, listings, loading, selectedListing, sessionResolved, user]);
 
   /**
    * Seed BOTH role pickers from the stored profile. Openers used to seed only
