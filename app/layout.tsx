@@ -20,14 +20,14 @@ export const metadata: Metadata = {
     title: "SideSpace - Get seen where it matters",
     description:
       "A marketplace for everyday advertising space: local creators, storefront windows, vehicles, and community boards. Free to join, no broker, no minimum spend.",
-    images: ["/og-local.png"],
+    images: ["/og-local.jpg"],
   },
   twitter: {
     card: "summary_large_image",
     title: "SideSpace - Get seen where it matters",
     description:
       "Book local creators and real-world ad space. Free to join, listings start at $2.",
-    images: ["/og-local.png"],
+    images: ["/og-local.jpg"],
   },
 };
 
