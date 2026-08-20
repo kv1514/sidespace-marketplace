@@ -11,6 +11,9 @@
   --coral: #fe6e00;
   --blue: #e9e3d2;
   --lavender: #e6dcc8;
+  /* .counter-summary tints with this; without it color-mix fell back to
+     nothing and the agreed-price panel rendered fully transparent. */
+  --purple: #b9a7d6;
   --display: "Google Sans Flex", "Geist", sans-serif;
   --serif: "Google Sans Flex", "Geist", sans-serif;
   --mono: "Google Sans Code", "Geist Mono", monospace;

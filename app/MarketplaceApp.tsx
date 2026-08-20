@@ -976,6 +976,10 @@ export default function MarketplaceApp({
     Array<Conversation & { other: Profile; preview?: string }>
   >([]);
   const [activeThread, setActiveThread] = useState<Conversation | null>(null);
+  // The resync listeners are registered once per session, so they cannot
+  // close over activeThread without being torn down and rebuilt on every
+  // thread change. A ref gives them the current thread instead.
+  const activeThreadRef = useRef<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [campaignRequests, setCampaignRequests] = useState<CampaignRequest[]>([]);
@@ -1332,14 +1336,86 @@ export default function MarketplaceApp({
     };
   }, [activeThread, supabase]);
 
+  // Nothing above recovers rows missed while the websocket was down:
+  // postgres_changes delivers only what is committed while the channel is
+  // joined, and rejoining does not replay the gap. A member who closes the
+  // lid mid-conversation therefore comes back to a transcript that says the
+  // other side never replied. Re-read the open thread whenever the tab
+  // returns to the foreground or the network comes back.
+  useEffect(() => {
+    activeThreadRef.current = activeThread;
+  }, [activeThread]);
+
+  useEffect(() => {
+    if (!supabase || !profile) return;
+
+    let running = false;
+    async function resync() {
+      if (!supabase || !profile || running) return;
+      running = true;
+      try {
+        const thread = activeThreadRef.current;
+        if (thread) {
+          const { data, error } = await supabase
+            .from("messages")
+            .select("*")
+            .eq("conversation_id", thread.id)
+            .order("created_at");
+          // Ignore a resync for a thread the member has since left.
+          if (!error && activeThreadRef.current?.id === thread.id) {
+            const rows = (data as Message[] | null) ?? [];
+            setMessages((current) => {
+              // Merge rather than replace so an in-flight optimistic send is
+              // not dropped by a resync that raced it.
+              const seen = new Set(rows.map((row) => row.id));
+              const pending = current.filter((m) => !seen.has(m.id));
+              return pending.length ? [...rows, ...pending] : rows;
+            });
+            const unread = rows.filter(
+              (m) => m.sender_profile_id !== profile.id && !m.read_at,
+            );
+            if (unread.length) {
+              await supabase
+                .from("messages")
+                .update({ read_at: new Date().toISOString() })
+                .eq("conversation_id", thread.id)
+                .neq("sender_profile_id", profile.id)
+                .is("read_at", null);
+            }
+          }
+        }
+        await reconcileUnreadCount(profile);
+      } finally {
+        running = false;
+      }
+    }
+
+    function onVisible() {
+      if (document.visibilityState === "visible") void resync();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, supabase]);
+
   /** Real listings lead the hero preview; samples only pad it out. */
   const heroListings = useMemo(
     () =>
       listings
-        .filter((listing) => !isInternalAccount(listing.owner))
+        .filter(
+          (listing) =>
+            !isInternalAccount(listing.owner) &&
+            !blockedProfileIds.includes(listing.owner.id),
+        )
         .sort((a, b) => Number(a.owner.is_demo) - Number(b.owner.is_demo))
         .slice(0, 4),
-    [listings],
+    [blockedProfileIds, listings],
   );
 
   const ownerIdsWithListings = useMemo(
@@ -1394,13 +1470,31 @@ export default function MarketplaceApp({
       ...Array.from(
         new Set(
           listings
-            .filter((item) => !isInternalAccount(item.owner))
+            .filter(
+              (item) =>
+                !isInternalAccount(item.owner) &&
+                // A blocked member's chip is a filter that can only ever
+                // return nothing, and it leaks that they still have a
+                // listing in that category.
+                !blockedProfileIds.includes(item.owner.id),
+            )
             .map((item) => item.channel),
         ),
       ),
     ],
-    [listings],
+    [blockedProfileIds, listings],
   );
+
+  // A filter can outlive its chip: pause or re-channel the last listing in a
+  // category and the selected channel no longer exists. Left as-is the grid
+  // renders empty and reports "0 open listings" while every chip, "All"
+  // included, shows unpressed, so nothing on screen explains the emptiness.
+  // Derived rather than corrected in an effect, which would cost a second
+  // render and still paint one frame of the empty grid.
+  const activeChannel =
+    !listings.length || channels.includes(channelFilter)
+      ? channelFilter
+      : "All";
 
   const visibleListings = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -1421,7 +1515,7 @@ export default function MarketplaceApp({
             ? !wanted
             : !wanted && profileHasRole(listing.owner, roleFilter));
       const channelMatches =
-        channelFilter === "All" || listing.channel === channelFilter;
+        activeChannel === "All" || listing.channel === activeChannel;
       // Includes the listing's own location and offer line: both are shown on
       // the card, so searching "Walnut" or "decal" should find them. Optional
       // fields are coalesced so the literal string "undefined" never becomes
@@ -1447,7 +1541,7 @@ export default function MarketplaceApp({
           listingRank(a) - listingRank(b) ||
           shuffleKey(a.id) - shuffleKey(b.id),
       );
-  }, [blockedProfileIds, channelFilter, listings, query, roleFilter]);
+  }, [activeChannel, blockedProfileIds, listings, query, roleFilter]);
 
   // Reveal widgets as they scroll into view, and cycle the how-it-works steps
   // so the section reads as something live rather than static copy.
@@ -2159,11 +2253,14 @@ export default function MarketplaceApp({
           .eq("conversation_id", conversation.id)
           .neq("sender_profile_id", profile.id)
           .is("read_at", null);
-        // Recount from the database rather than subtracting locally: the two
-        // sides of this counter never saw the same set of messages, so it
-        // drifted and could reach zero with unread messages still waiting.
-        await reconcileUnreadCount(profile);
       }
+      // Recount unconditionally, from the database rather than subtracting
+      // locally: the two sides of this counter never saw the same set of
+      // messages, so it drifted. Gating this on unreadHere.length left the
+      // badge stuck whenever another session had already marked the thread
+      // read - opening the conversation was then the one action that could
+      // not clear it.
+      await reconcileUnreadCount(profile);
     }
   }
 
@@ -2701,7 +2798,15 @@ export default function MarketplaceApp({
 
   async function signOut() {
     const { error } = (await supabase?.auth.signOut()) ?? { error: null };
-    if (error) {
+    // auth-js clears the local session before the network call and reports
+    // an error if the server leg fails. Ask what actually happened rather
+    // than trusting the error: claiming they are still signed in when the
+    // session is already gone is the dangerous direction to be wrong in,
+    // and the Log out button they are told to retry has already unmounted.
+    const stillSignedIn = error
+      ? Boolean((await supabase?.auth.getSession())?.data.session)
+      : false;
+    if (error && stillSignedIn) {
       // Never claim to have signed someone out while their session cookie is
       // still valid: on a shared machine the next person would be restored
       // into this account. Say it failed and leave them signed in.
@@ -3739,8 +3844,8 @@ export default function MarketplaceApp({
             <button
               key={channel}
               type="button"
-              className={channelFilter === channel ? "active" : ""}
-              aria-pressed={channelFilter === channel}
+              className={activeChannel === channel ? "active" : ""}
+              aria-pressed={activeChannel === channel}
               onClick={() => setChannelFilter(channel)}
             >
               {channel}
