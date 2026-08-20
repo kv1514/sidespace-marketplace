@@ -5912,3 +5912,32 @@ html.reveal-ready [data-reveal].is-visible {
   font-style: normal;
   opacity: 0.62;
 }
+
+/* The strip is five labels plus separators, ~1063px of content. It only ever
+   wrapped below 620px, so from 621px to about 1090px it silently clipped:
+   "Storefront windows" cut mid-word and "Local boards" entirely off-screen on
+   iPad portrait. Wrapping at every width costs nothing above 1090px, where it
+   still lays out on one line, and removes the breakpoint guesswork. */
+.signal-strip {
+  align-items: center;
+  flex-wrap: wrap;
+  overflow: visible;
+  padding: 12px 24px;
+  row-gap: 6px;
+}
+
+/* A grid track defaults to min-width:auto, so the email line - one unbreakable
+   token - pushed the `1fr` column past the modal and dragged the whole panel
+   wider than a 320px screen. Everything below it then sat ~32px off-screen and
+   the panel scrolled sideways. Let the track shrink and the address break. */
+.account-hero {
+  min-width: 0;
+}
+
+.account-hero > * {
+  min-width: 0;
+}
+
+.account-hero p:last-child {
+  overflow-wrap: anywhere;
+}
