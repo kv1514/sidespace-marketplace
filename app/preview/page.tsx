@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import Motion from "./Motion";
 import styles from "./preview.module.css";
 
 export const metadata: Metadata = {
@@ -160,22 +161,22 @@ export default async function PreviewPage() {
       </nav>
 
       <header className={styles.hero}>
-        <p className={styles.eyebrow}>
+        <p className={`${styles.eyebrow} ${styles.heroLine}`}>
           <span className={styles.eyebrowDot} />
           {realListings.length} listings live · Southern California · Free during
           early access
         </p>
-        <h1>
+        <h1 className={`${styles.heroLine} ${styles.heroDelay1}`}>
           Every space
           <br />
           has an audience.
         </h1>
-        <p className={styles.lede}>
+        <p className={`${styles.lede} ${styles.heroLine} ${styles.heroDelay2}`}>
           SideSpace is a marketplace for the advertising space already around
-          you — a cafe window, a car door, a club hoodie, a story on someone&apos;s
+          you, a cafe window, a car door, a club hoodie, a story on someone&apos;s
           feed. Local businesses book it directly from the person who owns it.
         </p>
-        <div className={styles.heroCta}>
+        <div className={`${styles.heroCta} ${styles.heroLine} ${styles.heroDelay3}`}>
           <Link className={styles.btn} href="/">
             List your space
           </Link>
@@ -183,46 +184,64 @@ export default async function PreviewPage() {
             Browse the marketplace
           </a>
         </div>
-        <div className={styles.heroNotes}>
+        <div className={`${styles.heroNotes} ${styles.heroLine} ${styles.heroDelay4}`}>
           <span>No broker</span>
           <span>No minimum spend</span>
           <span>From ${cheapest}</span>
         </div>
       </header>
 
-      <div className={styles.stats}>
+      <div className={styles.marquee} aria-hidden="true">
+        {/* Two identical tracks so the -50% loop has no seam. */}
+        <div className={styles.marqueeTrack}>
+          {[...channels, ...channels].map((channel, index) => (
+            <span className={styles.marqueeItem} key={`${channel}-${index}`}>
+              {channel}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className={styles.stats} data-reveal>
         <div className={styles.stat}>
-          <b>{realListings.length}</b>
+          <b data-count={realListings.length}>{realListings.length}</b>
           <span>Listings live</span>
         </div>
         <div className={styles.stat}>
-          <b>{real.length}</b>
+          <b data-count={real.length}>{real.length}</b>
           <span>Members</span>
         </div>
         <div className={styles.stat}>
-          <b>${cheapest}</b>
+          <b data-count={cheapest} data-count-prefix="$">
+            ${cheapest}
+          </b>
           <span>Cheapest slot</span>
         </div>
         <div className={styles.stat}>
-          <b>{channels.length}</b>
+          <b data-count={channels.length}>{channels.length}</b>
           <span>Kinds of space</span>
         </div>
       </div>
 
       <section className={styles.section} id="how">
-        <p className={styles.eyebrow}>Process</p>
-        <h2 className={styles.sectionHead}>
+        <p data-reveal className={styles.eyebrow}>Process</p>
+        <h2 className={styles.sectionHead} data-reveal>
           From a window to a booking
           <br />
           in four steps.
         </h2>
-        <p className={styles.sectionSub}>
+        <p className={styles.sectionSub} data-reveal>
           No agency, no rate card, no minimum. You keep control of the price and
           of who runs on your space.
         </p>
         <div className={styles.steps}>
           {STEPS.map((step, index) => (
-            <div className={styles.step} key={step.title}>
+            <div
+              className={styles.step}
+              key={step.title}
+              data-reveal
+              data-reveal-delay={index * 70}
+            >
               <span className={styles.stepNo}>
                 {String(index + 1).padStart(2, "0")}
               </span>
@@ -234,19 +253,24 @@ export default async function PreviewPage() {
       </section>
 
       <section className={styles.section} id="why">
-        <p className={styles.eyebrow}>Why SideSpace</p>
-        <h2 className={styles.sectionHead}>
+        <p data-reveal className={styles.eyebrow}>Why SideSpace</p>
+        <h2 className={styles.sectionHead} data-reveal>
           Everything a small business
           <br />
           actually needs.
         </h2>
-        <p className={styles.sectionSub}>
+        <p className={styles.sectionSub} data-reveal>
           Paid advertising is priced for companies much bigger than the ones that
           need it most. This is the version that fits a single street.
         </p>
         <div className={styles.featureGrid}>
-          {FEATURES.map((feature) => (
-            <article className={styles.feature} key={feature.title}>
+          {FEATURES.map((feature, index) => (
+            <article
+              className={styles.feature}
+              key={feature.title}
+              data-reveal
+              data-reveal-delay={index * 60}
+            >
               <span className={styles.featureTag}>{feature.tag}</span>
               <h3>{feature.title}</h3>
               <p>{feature.body}</p>
@@ -256,22 +280,27 @@ export default async function PreviewPage() {
       </section>
 
       <section className={styles.section} id="market">
-        <p className={styles.eyebrow}>Marketplace</p>
-        <h2 className={styles.sectionHead}>
+        <p data-reveal className={styles.eyebrow}>Marketplace</p>
+        <h2 className={styles.sectionHead} data-reveal>
           Real listings, posted
           <br />
           by real neighbours.
         </h2>
-        <p className={styles.sectionSub}>
+        <p className={styles.sectionSub} data-reveal>
           Everything below is live on SideSpace right now, with the price the
           owner set.
         </p>
         <div className={styles.grid}>
-          {shown.map((listing) => {
+          {shown.map((listing, index) => {
             const owner = listing.owner as Row;
             const name = String(owner.display_name ?? "Member");
             return (
-              <article className={styles.card} key={String(listing.id)}>
+              <article
+                className={styles.card}
+                key={String(listing.id)}
+                data-reveal
+                data-reveal-delay={(index % 3) * 70}
+              >
                 <div className={styles.cardTop}>
                   <span className={styles.tag}>{String(listing.channel)}</span>
                   <span className={styles.price}>${String(listing.price)}</span>
@@ -292,22 +321,27 @@ export default async function PreviewPage() {
       </section>
 
       <section className={styles.section} id="members">
-        <p className={styles.eyebrow}>Members</p>
-        <h2 className={styles.sectionHead}>
+        <p data-reveal className={styles.eyebrow}>Members</p>
+        <h2 className={styles.sectionHead} data-reveal>
           Hosts and businesses,
           <br />
           side by side.
         </h2>
-        <p className={styles.sectionSub}>
+        <p className={styles.sectionSub} data-reveal>
           Follower counts come straight from the linked account, so nobody gets
           to round up.
         </p>
         <div className={styles.memberRow}>
-          {members.map((person) => {
+          {members.map((person, index) => {
             const name = String(person.display_name ?? "Member");
             const followers = Number(person.followers ?? 0);
             return (
-              <div className={styles.member} key={String(person.id)}>
+              <div
+                className={styles.member}
+                key={String(person.id)}
+                data-reveal
+                data-reveal-delay={(index % 4) * 60}
+              >
                 <span className={styles.avatar}>{initials(name)}</span>
                 <b>{name}</b>
                 {person.instagram ? (
@@ -327,13 +361,13 @@ export default async function PreviewPage() {
       </section>
 
       <section className={styles.section}>
-        <p className={styles.eyebrow}>Before &amp; after</p>
-        <h2 className={styles.sectionHead}>
+        <p data-reveal className={styles.eyebrow}>Before &amp; after</p>
+        <h2 className={styles.sectionHead} data-reveal>
           Local advertising, the old
           <br />
           way and this way.
         </h2>
-        <div className={styles.compare}>
+        <div className={styles.compare} data-reveal>
           <table>
             <thead>
               <tr>
@@ -358,7 +392,7 @@ export default async function PreviewPage() {
       </section>
 
       <div className={styles.cta}>
-        <h2>
+        <h2 data-reveal>
           Ready to rent out
           <br />
           your side space?
@@ -376,6 +410,8 @@ export default async function PreviewPage() {
       <footer className={styles.footer}>
         Made in Brea by Kausthubh &amp; Jeff · SideSpace 2026
       </footer>
+
+      <Motion />
     </div>
   );
 }

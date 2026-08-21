@@ -620,3 +620,164 @@
     transition: none !important;
   }
 }
+
+/* ---------------------------------------------------------------- motion */
+
+/* The reveal is opacity plus a small blur and rise, not a plain fade. The
+   blur is what makes it read as arriving rather than switching on. Elements
+   render visible by default so the page is never blank without JavaScript;
+   Motion.tsx sets data-reveal="out" on mount before observing. */
+.shell [data-reveal="out"] {
+  filter: blur(6px);
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+.shell [data-reveal] {
+  transition:
+    opacity 0.55s ease,
+    filter 0.55s ease,
+    transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.shell [data-reveal="in"] {
+  filter: blur(0);
+  opacity: 1;
+  transform: none;
+}
+
+/* Hero copy animates on load rather than on scroll: it is already in view. */
+.heroLine {
+  animation: fadeInUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.heroDelay1 {
+  animation-delay: 0.06s;
+}
+
+.heroDelay2 {
+  animation-delay: 0.14s;
+}
+
+.heroDelay3 {
+  animation-delay: 0.22s;
+}
+
+.heroDelay4 {
+  animation-delay: 0.3s;
+}
+
+@keyframes fadeInUp {
+  from {
+    filter: blur(6px);
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    filter: blur(0);
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The live dot breathes, so the "listings live" claim looks live. */
+.eyebrowDot {
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+
+/* A continuously scrolling strip of every kind of space on the marketplace.
+   Two identical tracks sit side by side and the pair translates by exactly
+   half its width, so the loop has no visible seam. */
+.marquee {
+  border-block: 1px solid var(--line);
+  overflow: hidden;
+  padding: 22px 0;
+  position: relative;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+
+.marqueeTrack {
+  animation: marquee 42s linear infinite;
+  display: flex;
+  gap: 44px;
+  white-space: nowrap;
+  width: max-content;
+}
+
+.marquee:hover .marqueeTrack {
+  animation-play-state: paused;
+}
+
+.marqueeItem {
+  color: var(--ink-4);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.marqueeItem::after {
+  color: var(--accent);
+  content: "✦";
+  margin-left: 44px;
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Cards lift very slightly on hover, at the reference's 0.15s. */
+.card,
+.feature,
+.member {
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.card:hover,
+.feature:hover,
+.member:hover {
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell [data-reveal],
+  .shell [data-reveal="out"],
+  .shell [data-reveal="in"] {
+    filter: none;
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .heroLine,
+  .eyebrowDot,
+  .marqueeTrack {
+    animation: none;
+  }
+
+  .card:hover,
+  .feature:hover,
+  .member:hover {
+    transform: none;
+  }
+}
