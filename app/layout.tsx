@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     template: "%s · SideSpace",
   },
   description:
-    "Book local creators, storefront windows, vehicles, counters, and community boards. Free to join, and listings start at $2.",
+    "Book local creators, storefront windows, vehicles, counters, and community boards. Free to join, and the owner sets the price.",
   openGraph: {
     type: "website",
     siteName: "SideSpace",
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "SideSpace - Get seen where it matters",
     description:
-      "Book local creators and real-world ad space. Free to join, listings start at $2.",
+      "Book local creators and real-world ad space. Free to join, and the owner sets the price.",
     images: ["/og-card.jpg"],
   },
 };

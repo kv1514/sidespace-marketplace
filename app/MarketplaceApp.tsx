@@ -4006,7 +4006,7 @@ export default function MarketplaceApp({
             <img src="/photos/roadside-farm-stand.jpg" alt="Roadside farm stand" loading="lazy" decoding="async" />
             <figcaption>
               <strong>Roadside farm stand</strong>
-              <span>Dinuba, CA · from $2/day</span>
+              <span>Dinuba, CA · owner sets the rate</span>
             </figcaption>
           </figure>
           <figure className="space-tile">

@@ -22,6 +22,15 @@ export const revalidate = 300;
 
 type Row = Record<string, unknown>;
 
+const FALLBACK_IMAGE = "/photos/market-creator.jpg";
+
+function listingImage(listing: Row) {
+  const gallery = listing.image_urls as string[] | null | undefined;
+  const first = gallery?.find((url) => typeof url === "string" && url);
+  const single = typeof listing.image_url === "string" ? listing.image_url : "";
+  return first || single || FALLBACK_IMAGE;
+}
+
 function initials(name: string) {
   return name
     .split(/\s+/)
@@ -55,7 +64,7 @@ const FEATURES = [
   {
     tag: "No minimum spend",
     title: "Priced for the block, not the brand",
-    body: "Listings start at $2. The point is that a two-person bakery can afford to be seen this week.",
+    body: "Rates are set by the people who own the space, so a two-person bakery can afford to be seen this week.",
   },
   {
     tag: "You approve everything",
@@ -86,7 +95,7 @@ const FEATURES = [
 
 const COMPARISON = [
   ["Getting started", "Call for a rate card, wait", "Post a listing in a minute"],
-  ["Minimum spend", "Hundreds, often more", "$2"],
+  ["Minimum spend", "Hundreds, often more", "None"],
   ["Who you deal with", "An agency or an ad platform", "The person who owns the space"],
   ["Setting the price", "Take the rate you are given", "You name it, and you can counter"],
   ["Local reach", "Sold by postcode, roughly", "A specific window on a specific street"],
@@ -130,10 +139,21 @@ export default async function PreviewPage() {
     return owner && !owner.is_internal;
   });
 
-  const prices = realListings
-    .map((l) => Number(l.price))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  const cheapest = prices.length ? Math.min(...prices) : 2;
+  const cities = Array.from(
+    new Set(
+      realListings
+        .map((l) => {
+          const owner = l.owner as Row | null;
+          // Members write their city freehand, so "Fullerton, CA" and
+          // "Fullerton" are the same place and must not count twice.
+          return String(owner?.city ?? "")
+            .split(",")[0]
+            .trim()
+            .toLowerCase();
+        })
+        .filter(Boolean),
+    ),
+  );
 
   const channels = Array.from(
     new Set(realListings.map((l) => String(l.channel)).filter(Boolean)),
@@ -213,7 +233,7 @@ export default async function PreviewPage() {
             <div className={styles.heroNotes}>
               <span>No broker</span>
               <span>No minimum spend</span>
-              <span>From ${cheapest}</span>
+              <span>You set the price</span>
             </div>
           </HeroLine>
         </header>
@@ -241,8 +261,8 @@ export default async function PreviewPage() {
             <span className={styles.statLabel}>Members</span>
           </div>
           <div className={styles.stat}>
-            <CountUp className={styles.statValue} value={cheapest} prefix="$" />
-            <span className={styles.statLabel}>Cheapest slot</span>
+            <CountUp className={styles.statValue} value={cities.length} />
+            <span className={styles.statLabel}>Cities covered</span>
           </div>
           <div className={styles.stat}>
             <CountUp className={styles.statValue} value={channels.length} />
@@ -323,18 +343,34 @@ export default async function PreviewPage() {
             const name = String(owner.display_name ?? "Member");
             return (
               <StaggerItem className={styles.card} key={String(listing.id)}>
-                <div className={styles.cardTop}>
-                  <span className={styles.tag}>{String(listing.channel)}</span>
-                  <span className={styles.price}>${String(listing.price)}</span>
+                <div className={styles.cardMedia}>
+                  {/* Plain img, matching how the marketplace renders these:
+                      the uploads are Supabase storage URLs and the demo rows
+                      are local paths, and next/image would need both
+                      configured as remote patterns for no real gain here.
+                      Decorative-ish, but the title is the caption below it,
+                      so alt stays empty rather than repeating it. */}
+                  <img
+                    src={listingImage(listing)}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                  />
                 </div>
-                <h3>{String(listing.title)}</h3>
-                <p>{String(listing.description ?? "").slice(0, 110)}</p>
-                <div className={styles.by}>
-                  <span className={styles.avatar}>{initials(name)}</span>
-                  <span>
-                    {name}
-                    {owner.city ? `, ${String(owner.city)}` : ""}
-                  </span>
+                <div className={styles.cardBody}>
+                  <div className={styles.cardTop}>
+                    <span className={styles.tag}>{String(listing.channel)}</span>
+                    <span className={styles.price}>${String(listing.price)}</span>
+                  </div>
+                  <h3>{String(listing.title)}</h3>
+                  <p>{String(listing.description ?? "").slice(0, 110)}</p>
+                  <div className={styles.by}>
+                    <span className={styles.avatar}>{initials(name)}</span>
+                    <span>
+                      {name}
+                      {owner.city ? `, ${String(owner.city)}` : ""}
+                    </span>
+                  </div>
                 </div>
               </StaggerItem>
             );

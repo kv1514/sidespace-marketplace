@@ -452,10 +452,37 @@
   border-radius: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
   height: 100%;
-  padding: 22px;
+  overflow: hidden;
   transition: border-color 0.15s ease;
+}
+
+/* Fixed ratio so a portrait phone screenshot and a wide storefront photo
+   still line the grid up. The surface tone shows through while the image
+   loads, so a slow photo leaves a card, not a hole. */
+.cardMedia {
+  aspect-ratio: 16 / 10;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  display: block;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.cardMedia img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.cardBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
 }
 
 .card:hover {
