@@ -8,7 +8,9 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: "*",
       allow: "/",
       // Auth callbacks carry one-time codes and have nothing to index.
-      disallow: ["/auth/"],
+      // /preview is a candidate design, not the product. Keep it out of
+      // search so a proposal never outranks the real homepage.
+      disallow: ["/auth/", "/preview"],
     },
     sitemap: `${SITE}/sitemap.xml`,
   };
