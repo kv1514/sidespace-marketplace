@@ -496,7 +496,10 @@ function friendlyDbError(error: unknown): string {
     return "That is not available any more. The listing may have been paused or removed, or one of you may have blocked the other.";
   }
   if (/listing_cap_reached/i.test(raw)) {
-    return "You have reached the limit of 25 listings. Pause or edit an existing one to add another.";
+    return "You have reached the limit of 25 listings. Email support and we can remove one for you.";
+  }
+  if (/out of range|numeric field overflow/i.test(raw)) {
+    return "That number is too large. Use a smaller amount.";
   }
   if (code === "23505" || /duplicate key/i.test(raw)) {
     return "That already exists.";
@@ -521,7 +524,8 @@ function friendlyDbError(error: unknown): string {
 // before continuing" reads as if it worked. Every message is authored in this
 // file, so matching our own failure vocabulary is reliable; an unmatched
 // message just keeps the old tick rather than claiming something false.
-const PROBLEM_TOAST = /\b(could not|cannot|can't|failed|unable|must|before continuing|at least|invalid|not available|already|too (large|many|big)|expired|try again|sorry|no longer|denied|wrong|missing|did not)\b/i;
+const PROBLEM_TOAST =
+  /\b(could not|cannot|can't|failed|unable|must|before continuing|at least|invalid|not available|already|too (large|many|big|long|short)|expired|try again|sorry|no longer|denied|wrong|missing|did not|needs?|add your|enter a|pick a|choose a|keep it|limit|reached|not enough)\b/i;
 
 function toastIsProblem(message: string) {
   return PROBLEM_TOAST.test(message);
@@ -1148,6 +1152,13 @@ export default function MarketplaceApp({
       }
       const own = (data as Profile | null) ?? null;
       profileLoadFailedRef.current = false;
+      // Publish the profile BEFORE the account queries, not after. The two
+      // calls below are five more round trips, and for their whole duration
+      // profileChecked was true while profile was still null - which is
+      // exactly the state the signed-out marketing hero renders on. Every
+      // returning member was shown 'Join SideSpace' and a marketing page
+      // until those finished.
+      setProfile(own);
       setProfileChecked(true);
       if (own) {
         await Promise.all([
@@ -1157,7 +1168,6 @@ export default function MarketplaceApp({
       } else {
         setOwnListings([]);
       }
-      setProfile(own);
       // This reload runs on every auth event, and Supabase fires those in the
       // background (token refresh, tab refocus). If the member is mid-way
       // through onboarding, resetting the step or the role picker here
@@ -4440,6 +4450,23 @@ export default function MarketplaceApp({
                             <b>{request.requested_deliverables}</b>
                           </span>
                         </div>
+                        {/* The request modal makes the goal mandatory and
+                            promises the owner a clear brief, but nothing
+                            ever rendered it - owners were accepting and
+                            countering without the one thing the requester
+                            was required to write. */}
+                        {request.goals && (
+                          <p className="campaign-request-brief">
+                            <small>Goal</small>
+                            {request.goals}
+                          </p>
+                        )}
+                        {request.notes && (
+                          <p className="campaign-request-brief">
+                            <small>Notes</small>
+                            {request.notes}
+                          </p>
+                        )}
                         {request.counter_budget != null && (
                           <div className="counter-summary">
                             <strong>
@@ -4968,6 +4995,7 @@ export default function MarketplaceApp({
                   <button
                     key={role}
                     type="button"
+                    aria-pressed={selectedRole === role}
                     className={selectedRole === role ? "active" : ""}
                     onClick={() => {
                       setSelectedRole(role);
@@ -5234,6 +5262,7 @@ export default function MarketplaceApp({
                   <input
                     name="followers"
                     type="number"
+                    max="2000000000"
                     min="0"
                     defaultValue={profile?.followers ?? 0}
                   />
@@ -5243,6 +5272,7 @@ export default function MarketplaceApp({
                   <input
                     name="avg_views"
                     type="number"
+                    max="2000000000"
                     min="0"
                     defaultValue={profile?.avg_views ?? 0}
                   />
@@ -5426,6 +5456,7 @@ export default function MarketplaceApp({
               <input
                 name="price"
                 type="number"
+                max="2000000000"
                 min="2"
                 required
                 defaultValue={editingListing?.price ?? ""}
@@ -5487,6 +5518,7 @@ export default function MarketplaceApp({
               <input
                 name="lead_time_days"
                 type="number"
+                max="2000000000"
                 min="0"
                 defaultValue={editingListing?.lead_time_days ?? 2}
               />
@@ -5826,6 +5858,7 @@ export default function MarketplaceApp({
               <input
                 name="budget"
                 type="number"
+                max="2000000000"
                 min="0"
                 required
                 defaultValue={campaignListing.price}
@@ -5888,9 +5921,15 @@ export default function MarketplaceApp({
               <input
                 name="counter_budget"
                 type="number"
+                max="2000000000"
                 min="0"
                 required
-                defaultValue={counteringRequest.budget}
+                // The standing counteroffer when there is one: pre-filling
+                // the requester's original number meant an owner revising
+                // only the wording silently withdrew their own price.
+                defaultValue={
+                  counteringRequest.counter_budget ?? counteringRequest.budget
+                }
               />
             </label>
             <label>
@@ -6085,13 +6124,21 @@ export default function MarketplaceApp({
                           </p>
                         </div>
                       )}
-                      {messages.map((message) => (
+                      {messages.map((message) => {
+                        const mine =
+                          message.sender_profile_id === profile?.id;
+                        const sender = mine
+                          ? "You"
+                          : activeContact?.display_name ?? "Them";
+                        return (
                         <div
                           key={message.id}
-                          className={`message ${
-                            message.sender_profile_id === profile?.id ? "mine" : ""
-                          }`}
+                          className={`message ${mine ? "mine" : ""}`}
                         >
+                          {/* Position and bubble colour were the only
+                              signal for who sent this, so a thread was
+                              unreadable without sight. */}
+                          <span className="sr-only">{sender}: </span>
                           <p>{message.body}</p>
                           <small>
                             {new Intl.DateTimeFormat("en", {
@@ -6100,7 +6147,8 @@ export default function MarketplaceApp({
                             }).format(new Date(message.created_at))}
                           </small>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                     {/* Keyed on the thread: the textarea is uncontrolled, so
                         without this React reuses the same DOM node when you

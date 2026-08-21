@@ -5941,3 +5941,37 @@ html.reveal-ready [data-reveal].is-visible {
 .account-hero p:last-child {
   overflow-wrap: anywhere;
 }
+
+/* Visible to screen readers only. Message bubbles use this to name their
+   sender, which position and bubble colour alone could not convey. */
+.sr-only {
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+/* The campaign goal is mandatory for the requester and was never shown to the
+   owner. It is prose, not a fact chip, so it gets its own block. */
+.campaign-request-brief {
+  border-top: 1px solid var(--line-soft);
+  font-size: 14px;
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
+  padding-top: 10px;
+}
+
+.campaign-request-brief small {
+  color: var(--ink-soft);
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
