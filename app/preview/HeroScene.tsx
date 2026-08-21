@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useReducedMotion } from "motion/react";
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 /**
@@ -22,7 +22,6 @@ import * as THREE from "three";
 const PAPER = "#f4f0e5";
 const PAPER_2 = "#ece7d8";
 const WHITE = "#fbf8f0";
-const INK = "#15130e";
 const SIGNAL = "#ffcf03";
 const EMBER = "#fe6e00";
 
@@ -151,27 +150,27 @@ function Scene({ reduce }: { reduce: boolean }) {
 
 export default function HeroScene() {
   const reduce = useReducedMotion() ?? false;
-  const [canRender, setCanRender] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    // WebGL is not guaranteed: locked-down browsers, some embedded webviews,
-    // and machines with blocklisted drivers have none. Check before mounting
-    // a Canvas, because failing inside it takes the section down with it.
+  // WebGL is not guaranteed: locked-down browsers, some embedded webviews and
+  // machines with blocklisted drivers have none. Probe once, lazily, before a
+  // Canvas is ever mounted, because failing inside it takes the section down.
+  // Safe during render because this component is client-only (ssr: false), so
+  // `document` always exists by the time it runs.
+  const [canRender] = useState(() => {
     try {
       const canvas = document.createElement("canvas");
-      const gl =
+      return Boolean(
         canvas.getContext("webgl2") ??
-        canvas.getContext("webgl") ??
-        canvas.getContext("experimental-webgl");
-      setCanRender(Boolean(gl));
+          canvas.getContext("webgl") ??
+          canvas.getContext("experimental-webgl"),
+      );
     } catch {
-      setCanRender(false);
+      return false;
     }
-  }, []);
+  });
 
   // Renders nothing rather than something broken. The hero is designed to
   // stand on its own type, so this is a missing flourish, not a hole.
-  if (canRender === null || canRender === false) return null;
+  if (!canRender) return null;
 
   return (
     <Canvas
