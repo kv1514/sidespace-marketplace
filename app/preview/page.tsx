@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import Motion from "./Motion";
+import {
+  CountUp,
+  HeroLine,
+  Reveal,
+  Stagger,
+  StaggerItem,
+} from "./motion-primitives";
+import HeroCanvas from "./HeroCanvas";
 import styles from "./preview.module.css";
 
 export const metadata: Metadata = {
@@ -141,8 +148,8 @@ export default async function PreviewPage() {
   return (
     <div className={styles.shell}>
       <p className={styles.ribbon}>
-        Design preview · not the live site ·{" "}
-        <Link href="/">back to SideSpace</Link>
+        Design preview, not the live site.{" "}
+        <Link href="/">Back to SideSpace</Link>
       </p>
 
       <nav className={styles.nav}>
@@ -160,36 +167,57 @@ export default async function PreviewPage() {
         </Link>
       </nav>
 
-      <header className={styles.hero}>
-        <p className={`${styles.eyebrow} ${styles.heroLine}`}>
-          <span className={styles.eyebrowDot} />
-          {realListings.length} listings live · Southern California · Free during
-          early access
-        </p>
-        <h1 className={`${styles.heroLine} ${styles.heroDelay1}`}>
-          Every space
-          <br />
-          has an audience.
-        </h1>
-        <p className={`${styles.lede} ${styles.heroLine} ${styles.heroDelay2}`}>
-          SideSpace is a marketplace for the advertising space already around
-          you, a cafe window, a car door, a club hoodie, a story on someone&apos;s
-          feed. Local businesses book it directly from the person who owns it.
-        </p>
-        <div className={`${styles.heroCta} ${styles.heroLine} ${styles.heroDelay3}`}>
-          <Link className={styles.btn} href="/">
-            List your space
-          </Link>
-          <a className={`${styles.btn} ${styles.btnGhost}`} href="#market">
-            Browse the marketplace
-          </a>
+      <div className={styles.heroWrap}>
+        <div className={styles.heroCanvas}>
+          <HeroCanvas />
         </div>
-        <div className={`${styles.heroNotes} ${styles.heroLine} ${styles.heroDelay4}`}>
-          <span>No broker</span>
-          <span>No minimum spend</span>
-          <span>From ${cheapest}</span>
-        </div>
-      </header>
+
+        <header className={styles.hero}>
+          <HeroLine>
+            <p className={styles.eyebrow}>
+              <span className={styles.eyebrowDot} />
+              {realListings.length} listings live, Southern California, free
+              during early access
+            </p>
+          </HeroLine>
+
+          <HeroLine delay={0.08}>
+            <h1 className={styles.heroTitle}>
+              Every space
+              <br />
+              has an audience.
+            </h1>
+          </HeroLine>
+
+          <HeroLine delay={0.16}>
+            <p className={styles.lede}>
+              SideSpace is a marketplace for the advertising space already
+              around you, a cafe window, a car door, a club hoodie, a story on
+              someone&apos;s feed. Local businesses book it directly from the
+              person who owns it.
+            </p>
+          </HeroLine>
+
+          <HeroLine delay={0.24}>
+            <div className={styles.heroCta}>
+              <Link className={`${styles.btn} ${styles.btnAccent}`} href="/">
+                List your space
+              </Link>
+              <a className={`${styles.btn} ${styles.btnGhost}`} href="#market">
+                Browse the marketplace
+              </a>
+            </div>
+          </HeroLine>
+
+          <HeroLine delay={0.32}>
+            <div className={styles.heroNotes}>
+              <span>No broker</span>
+              <span>No minimum spend</span>
+              <span>From ${cheapest}</span>
+            </div>
+          </HeroLine>
+        </header>
+      </div>
 
       <div className={styles.marquee} aria-hidden="true">
         {/* Two identical tracks so the -50% loop has no seam. */}
@@ -202,105 +230,99 @@ export default async function PreviewPage() {
         </div>
       </div>
 
-      <div className={styles.stats} data-reveal>
-        <div className={styles.stat}>
-          <b data-count={realListings.length}>{realListings.length}</b>
-          <span>Listings live</span>
+      <Reveal>
+        <div className={styles.stats}>
+          <div className={styles.stat}>
+            <CountUp className={styles.statValue} value={realListings.length} />
+            <span className={styles.statLabel}>Listings live</span>
+          </div>
+          <div className={styles.stat}>
+            <CountUp className={styles.statValue} value={real.length} />
+            <span className={styles.statLabel}>Members</span>
+          </div>
+          <div className={styles.stat}>
+            <CountUp className={styles.statValue} value={cheapest} prefix="$" />
+            <span className={styles.statLabel}>Cheapest slot</span>
+          </div>
+          <div className={styles.stat}>
+            <CountUp className={styles.statValue} value={channels.length} />
+            <span className={styles.statLabel}>Kinds of space</span>
+          </div>
         </div>
-        <div className={styles.stat}>
-          <b data-count={real.length}>{real.length}</b>
-          <span>Members</span>
-        </div>
-        <div className={styles.stat}>
-          <b data-count={cheapest} data-count-prefix="$">
-            ${cheapest}
-          </b>
-          <span>Cheapest slot</span>
-        </div>
-        <div className={styles.stat}>
-          <b data-count={channels.length}>{channels.length}</b>
-          <span>Kinds of space</span>
-        </div>
-      </div>
+      </Reveal>
 
       <section className={styles.section} id="how">
-        <p data-reveal className={styles.eyebrow}>Process</p>
-        <h2 className={styles.sectionHead} data-reveal>
-          From a window to a booking
-          <br />
-          in four steps.
-        </h2>
-        <p className={styles.sectionSub} data-reveal>
-          No agency, no rate card, no minimum. You keep control of the price and
-          of who runs on your space.
-        </p>
-        <div className={styles.steps}>
+        <Reveal>
+          <p className={styles.eyebrow}>Process</p>
+          <h2 className={styles.sectionHead}>
+            From a window to a booking
+            <br />
+            in four steps.
+          </h2>
+          <p className={styles.sectionSub}>
+            No agency, no rate card, no minimum. You keep control of the price
+            and of who runs on your space.
+          </p>
+        </Reveal>
+
+        <Stagger className={styles.steps}>
           {STEPS.map((step, index) => (
-            <div
-              className={styles.step}
-              key={step.title}
-              data-reveal
-              data-reveal-delay={index * 70}
-            >
+            <StaggerItem className={styles.step} key={step.title}>
               <span className={styles.stepNo}>
                 {String(index + 1).padStart(2, "0")}
               </span>
               <h3>{step.title}</h3>
               <p>{step.body}</p>
-            </div>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </section>
 
       <section className={styles.section} id="why">
-        <p data-reveal className={styles.eyebrow}>Why SideSpace</p>
-        <h2 className={styles.sectionHead} data-reveal>
-          Everything a small business
-          <br />
-          actually needs.
-        </h2>
-        <p className={styles.sectionSub} data-reveal>
-          Paid advertising is priced for companies much bigger than the ones that
-          need it most. This is the version that fits a single street.
-        </p>
-        <div className={styles.featureGrid}>
-          {FEATURES.map((feature, index) => (
-            <article
-              className={styles.feature}
-              key={feature.title}
-              data-reveal
-              data-reveal-delay={index * 60}
-            >
+        <Reveal>
+          <p className={styles.eyebrow}>Why SideSpace</p>
+          <h2 className={styles.sectionHead}>
+            Everything a small business
+            <br />
+            actually needs.
+          </h2>
+          <p className={styles.sectionSub}>
+            Paid advertising is priced for companies much bigger than the ones
+            that need it most. This is the version that fits a single street.
+          </p>
+        </Reveal>
+
+        <Stagger className={styles.featureGrid}>
+          {FEATURES.map((feature) => (
+            <StaggerItem className={styles.feature} key={feature.title}>
               <span className={styles.featureTag}>{feature.tag}</span>
               <h3>{feature.title}</h3>
               <p>{feature.body}</p>
-            </article>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </section>
 
       <section className={styles.section} id="market">
-        <p data-reveal className={styles.eyebrow}>Marketplace</p>
-        <h2 className={styles.sectionHead} data-reveal>
-          Real listings, posted
-          <br />
-          by real neighbours.
-        </h2>
-        <p className={styles.sectionSub} data-reveal>
-          Everything below is live on SideSpace right now, with the price the
-          owner set.
-        </p>
-        <div className={styles.grid}>
-          {shown.map((listing, index) => {
+        <Reveal>
+          <p className={styles.eyebrow}>Marketplace</p>
+          <h2 className={styles.sectionHead}>
+            Real listings, posted
+            <br />
+            by real neighbours.
+          </h2>
+          <p className={styles.sectionSub}>
+            Everything below is live on SideSpace right now, with the price the
+            owner set.
+          </p>
+        </Reveal>
+
+        <Stagger className={styles.grid}>
+          {shown.map((listing) => {
             const owner = listing.owner as Row;
             const name = String(owner.display_name ?? "Member");
             return (
-              <article
-                className={styles.card}
-                key={String(listing.id)}
-                data-reveal
-                data-reveal-delay={(index % 3) * 70}
-              >
+              <StaggerItem className={styles.card} key={String(listing.id)}>
                 <div className={styles.cardTop}>
                   <span className={styles.tag}>{String(listing.channel)}</span>
                   <span className={styles.price}>${String(listing.price)}</span>
@@ -311,39 +333,37 @@ export default async function PreviewPage() {
                   <span className={styles.avatar}>{initials(name)}</span>
                   <span>
                     {name}
-                    {owner.city ? ` · ${String(owner.city)}` : ""}
+                    {owner.city ? `, ${String(owner.city)}` : ""}
                   </span>
                 </div>
-              </article>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       </section>
 
       <section className={styles.section} id="members">
-        <p data-reveal className={styles.eyebrow}>Members</p>
-        <h2 className={styles.sectionHead} data-reveal>
-          Hosts and businesses,
-          <br />
-          side by side.
-        </h2>
-        <p className={styles.sectionSub} data-reveal>
-          Follower counts come straight from the linked account, so nobody gets
-          to round up.
-        </p>
-        <div className={styles.memberRow}>
-          {members.map((person, index) => {
+        <Reveal>
+          <p className={styles.eyebrow}>Members</p>
+          <h2 className={styles.sectionHead}>
+            Hosts and businesses,
+            <br />
+            side by side.
+          </h2>
+          <p className={styles.sectionSub}>
+            Follower counts come straight from the linked account, so nobody
+            gets to round up.
+          </p>
+        </Reveal>
+
+        <Stagger className={styles.memberRow}>
+          {members.map((person) => {
             const name = String(person.display_name ?? "Member");
             const followers = Number(person.followers ?? 0);
             return (
-              <div
-                className={styles.member}
-                key={String(person.id)}
-                data-reveal
-                data-reveal-delay={(index % 4) * 60}
-              >
+              <StaggerItem className={styles.member} key={String(person.id)}>
                 <span className={styles.avatar}>{initials(name)}</span>
-                <b>{name}</b>
+                <span className={styles.memberName}>{name}</span>
                 {person.instagram ? (
                   <span className={styles.handle}>
                     @{String(person.instagram).replace(/^@/, "")}
@@ -354,64 +374,70 @@ export default async function PreviewPage() {
                     ? `${followers.toLocaleString("en")} followers`
                     : String(person.role ?? "Member")}
                 </span>
-              </div>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       </section>
 
       <section className={styles.section}>
-        <p data-reveal className={styles.eyebrow}>Before &amp; after</p>
-        <h2 className={styles.sectionHead} data-reveal>
-          Local advertising, the old
-          <br />
-          way and this way.
-        </h2>
-        <div className={styles.compare} data-reveal>
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Area</th>
-                <th scope="col">Traditional</th>
-                <th scope="col">
-                  SideSpace <span className={styles.star}>✦</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {COMPARISON.map(([area, before, after]) => (
-                <tr key={area}>
-                  <th scope="row">{area}</th>
-                  <td>{before}</td>
-                  <td className={styles.ours}>{after}</td>
+        <Reveal>
+          <p className={styles.eyebrow}>Before and after</p>
+          <h2 className={styles.sectionHead}>
+            Local advertising, the old
+            <br />
+            way and this way.
+          </h2>
+        </Reveal>
+
+        <Reveal delay={0.08}>
+          <div className={styles.compare}>
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Area</th>
+                  <th scope="col">Traditional</th>
+                  <th scope="col">
+                    SideSpace <span className={styles.star}>✦</span>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {COMPARISON.map(([area, before, after]) => (
+                  <tr key={area}>
+                    <th scope="row">{area}</th>
+                    <td>{before}</td>
+                    <td className={styles.ours}>{after}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Reveal>
       </section>
 
       <div className={styles.cta}>
-        <h2 data-reveal>
-          Ready to rent out
-          <br />
-          your side space?
-        </h2>
-        <p className={styles.lede}>
-          Free to list, free to browse, and you approve everything before it runs.
-        </p>
-        <div className={styles.heroCta}>
-          <Link className={styles.btn} href="/">
-            Create a free account
-          </Link>
-        </div>
+        <Reveal>
+          <h2 className={styles.ctaTitle}>
+            Ready to rent out
+            <br />
+            your side space?
+          </h2>
+          <p className={styles.lede}>
+            Free to list, free to browse, and you approve everything before it
+            runs.
+          </p>
+          <div className={styles.heroCta}>
+            <Link className={`${styles.btn} ${styles.btnAccent}`} href="/">
+              Create a free account
+            </Link>
+          </div>
+        </Reveal>
       </div>
 
       <footer className={styles.footer}>
-        Made in Brea by Kausthubh &amp; Jeff · SideSpace 2026
+        Made in Brea by Kausthubh and Jeff, SideSpace 2026
       </footer>
-
-      <Motion />
     </div>
   );
 }
