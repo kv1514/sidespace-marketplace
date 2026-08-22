@@ -4229,6 +4229,46 @@ export default function MarketplaceApp({
         </div>
       </section>
 
+      {/* Sits immediately before pricing, because the honest argument for
+          the price is the comparison, not the number. A real table rather
+          than a grid of divs: it is tabular data, screen readers announce
+          the row and column headers, and it stays readable if the CSS never
+          loads. */}
+      <section className="compare-section" aria-labelledby="compare-heading">
+        <div className="compare-intro">
+          <p className="eyebrow">Before and after</p>
+          <h2 id="compare-heading">
+            Local advertising, the old way and <em>this way.</em>
+          </h2>
+        </div>
+        <div className="compare-scroll">
+          <table className="compare-table">
+            <thead>
+              <tr>
+                <th scope="col">Area</th>
+                <th scope="col">Traditional</th>
+                <th scope="col">SideSpace</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                ["Getting started", "Call for a rate card, wait", "Post a listing in a minute"],
+                ["Minimum spend", "Hundreds, often more", "None"],
+                ["Who you deal with", "An agency or an ad platform", "The person who owns the space"],
+                ["Setting the price", "Take the rate you are given", "You name it, and you can counter"],
+                ["Local reach", "Sold by postcode, roughly", "A specific window on a specific street"],
+                ["Cost to list", "Not an option for most spaces", "Free"],
+              ].map(([area, before, after]) => (
+                <tr key={area}>
+                  <th scope="row">{area}</th>
+                  <td>{before}</td>
+                  <td className="compare-ours">{after}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
       <section className="pricing-section" id="pricing">
         <div className="pricing-intro">
           <div>

@@ -6270,3 +6270,103 @@ html.reveal-ready [data-reveal].is-visible {
     white-space: normal;
   }
 }
+
+/* ------------------------------------------------------------------- steps
+   The process band already existed here in a richer form than the preview's,
+   with its own 01/02/03 numerals, icons and mock widgets, so this is the
+   design language applied to it rather than a second "how it works" bolted
+   on beside the first. */
+.steps article {
+  border-radius: 16px;
+  box-shadow: none;
+}
+
+.steps article > span {
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+}
+
+.steps article h3 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.steps article p {
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+/* The hovered step was marked only by a background wash. A border reads at a
+   glance without shifting the surface tone under the mock widget. */
+.steps article.step-active {
+  border-color: var(--ink-soft);
+}
+
+/* ------------------------------------------------------------ comparison
+   Tabular data in a real table. Hairlines only, no shadow, and the SideSpace
+   column carried by weight and ink rather than a coloured fill. */
+.compare-section {
+  margin: 0 auto;
+  max-width: 1180px;
+  padding: clamp(64px, 8vw, 104px) 20px;
+  width: 100%;
+}
+
+.compare-intro h2 {
+  margin: 12px 0 0;
+}
+
+/* The table has a floor width below which the three columns stop being
+   readable, so it scrolls inside its own box rather than forcing the page to. */
+.compare-scroll {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  margin-top: 40px;
+  overflow-x: auto;
+}
+
+.compare-table {
+  border-collapse: collapse;
+  min-width: 580px;
+  width: 100%;
+}
+
+.compare-table th,
+.compare-table td {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 16px 22px;
+  text-align: left;
+}
+
+.compare-table thead th {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.compare-table tbody th {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.compare-table td {
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.compare-table td.compare-ours {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.compare-table tr:last-child th,
+.compare-table tr:last-child td {
+  border-bottom: 0;
+}
