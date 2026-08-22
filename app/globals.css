@@ -6392,3 +6392,15 @@ html.reveal-ready [data-reveal].is-visible {
   position: relative;
   z-index: 1;
 }
+
+/* React Three Fiber sizes its canvas from a ResizeObserver. In a renderer
+   that is throttled or not compositing, that observer can never fire, leaving
+   the canvas at the HTML default of 300x150 sitting in the corner of a
+   full-bleed container. R3F only sets `display: block` inline on the element,
+   so a plain rule wins without !important. The drawing buffer may still be
+   stale in that case, but the field fills its box instead of collapsing into
+   a small square, which is a far better way to degrade. */
+.hero-field canvas {
+  height: 100%;
+  width: 100%;
+}

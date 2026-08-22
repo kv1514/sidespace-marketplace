@@ -755,3 +755,11 @@
     transition: none !important;
   }
 }
+
+/* Same guarantee as the homepage: if R3F never learns its size because
+   the ResizeObserver is starved, the canvas still fills its box rather
+   than collapsing to the 300x150 HTML default. */
+.heroCanvas canvas {
+  height: 100%;
+  width: 100%;
+}
