@@ -6036,6 +6036,11 @@ html.reveal-ready [data-reveal].is-visible {
    Was a condensed poster setting (weight 750+, -0.075em, 0.86 line height).
    The new direction is light and open: the size still carries the page, the
    weight no longer shouts. */
+/* .hero-copy h1.hero-headline sits at specificity (0,2,2) and was winning
+   with weight 450, so the hero alone kept the old setting while every
+   section heading had already moved to 300. Match it rather than reaching
+   for !important. */
+.hero-copy h1.hero-headline,
 .hero h1,
 .section-top h2,
 .spaces-heading h2,
