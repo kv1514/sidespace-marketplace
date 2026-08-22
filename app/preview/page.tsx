@@ -8,7 +8,7 @@ import {
   Stagger,
   StaggerItem,
 } from "./motion-primitives";
-import HeroCanvas from "./HeroCanvas";
+import HeroCanvas from "../components/HeroCanvas";
 import styles from "./preview.module.css";
 
 export const metadata: Metadata = {

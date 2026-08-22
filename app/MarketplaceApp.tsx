@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import {
   FormEvent,
   ReactNode,
@@ -396,6 +397,21 @@ function displayHandle(raw: string) {
 // Cover photo used when a listing has none of its own, and the repair target
 // when a listing's photo is deleted from the member's profile.
 const DEFAULT_LISTING_IMAGE = "/photos/market-creator.jpg";
+
+/**
+ * The hero's WebGL field: a slow drift of panels standing in for the
+ * advertising space the marketplace sells.
+ *
+ * Client-only and dynamically imported, so three.js never enters the
+ * server bundle and never blocks first paint. It replaces two decorative
+ * blobs rather than being added on top of them: the hero already carries a
+ * headline, a live listing preview and a trust row, and a third decorative
+ * layer would be noise. The component itself checks for WebGL support and
+ * renders nothing if there is none, so the hero always stands on its type.
+ */
+const HeroCanvas = dynamic(() => import("./components/HeroCanvas"), {
+  ssr: false,
+});
 
 /** Channels offered in the listing editor. A listing may legitimately carry a
  *  channel outside this list (seeded rows, or one set directly in the
@@ -3641,8 +3657,9 @@ export default function MarketplaceApp({
         </section>
       ) : (
       <section className="hero">
-        <div className="hero-orbit orbit-one" />
-        <div className="hero-orbit orbit-two" />
+        <div className="hero-field" aria-hidden="true">
+          <HeroCanvas />
+        </div>
         <div className="hero-copy">
           <h1 className="hero-headline">
             Get seen

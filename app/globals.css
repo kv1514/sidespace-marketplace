@@ -6370,3 +6370,25 @@ html.reveal-ready [data-reveal].is-visible {
 .compare-table tr:last-child td {
   border-bottom: 0;
 }
+
+/* ------------------------------------------------------------- hero field
+   The WebGL panel drift, in place of the two decorative orbit blobs. It sits
+   behind everything in the hero and is masked out at the edges so it dissolves
+   into the page rather than ending on a visible boundary. Never interactive:
+   the hero has a headline, buttons and a live listing preview on top of it. */
+.hero-field {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+  -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent 97%);
+  mask-image: linear-gradient(180deg, #000 60%, transparent 97%);
+}
+
+/* Everything in the hero has to sit above the field. The section already
+   establishes the stacking context. */
+.hero-copy,
+.hero-stage {
+  position: relative;
+  z-index: 1;
+}
