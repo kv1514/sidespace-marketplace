@@ -6404,3 +6404,83 @@ html.reveal-ready [data-reveal].is-visible {
   height: 100%;
   width: 100%;
 }
+
+/* ==========================================================================
+   FINAL CTA, recomposed
+   ==========================================================================
+   Was a 1fr / 0.44fr grid with an 80px gap and a 570px min-height. At desktop
+   that stranded the headline on the left and the paragraph and button on the
+   far right with a canyon between them, and the new weight-300 display type
+   made the headline physically narrower, which widened the gap further.
+
+   Centred stack instead, matching the rest of the direction: the eye goes
+   headline, sentence, button with nothing to traverse. */
+.final-cta {
+  align-items: center;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  grid-template-columns: none;
+  justify-content: center;
+  margin: 16px auto;
+  max-width: 1180px;
+  min-height: 0;
+  padding: clamp(64px, 9vw, 116px) clamp(20px, 6vw, 80px);
+  text-align: center;
+}
+
+.final-cta h2 {
+  font-size: clamp(40px, 6.4vw, 92px);
+  margin: 0;
+}
+
+.final-cta > div:last-child {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  margin-top: 26px;
+}
+
+.final-cta > div:last-child > p {
+  font-size: 16px;
+  margin: 0 0 28px;
+  max-width: 52ch;
+}
+
+/* ==========================================================================
+   COMPARISON, balanced
+   ==========================================================================
+   The heading sat alone above a very wide table, so the top of the section
+   read as empty. A lede gives it something to sit against, and fixed column
+   widths stop the first column hoarding space the two answer columns need. */
+.compare-intro {
+  max-width: 62ch;
+}
+
+.compare-intro p.compare-lede {
+  color: var(--ink-soft);
+  font-size: 16px;
+  margin: 16px 0 0;
+}
+
+.compare-table th:first-child,
+.compare-table td:first-child {
+  width: 22%;
+}
+
+.compare-table thead th:nth-child(2),
+.compare-table tbody td:nth-child(2) {
+  width: 36%;
+}
+
+/* The SideSpace column is the answer, so it gets the surface tone lifted off
+   the rows beside it rather than a coloured fill. */
+.compare-table td.compare-ours {
+  background: var(--paper-2);
+}
+
+.compare-table thead th:last-child {
+  background: var(--paper-2);
+  color: var(--ink);
+}

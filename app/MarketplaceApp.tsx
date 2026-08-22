@@ -4257,6 +4257,10 @@ export default function MarketplaceApp({
           <h2 id="compare-heading">
             Local advertising, the old way and <em>this way.</em>
           </h2>
+          <p className="compare-lede">
+            The same six questions every owner asks on the first call, answered
+            side by side.
+          </p>
         </div>
         <div className="compare-scroll">
           <table className="compare-table">
