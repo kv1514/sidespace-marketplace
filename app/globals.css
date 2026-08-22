@@ -6484,3 +6484,23 @@ html.reveal-ready [data-reveal].is-visible {
   background: var(--paper-2);
   color: var(--ink);
 }
+
+/* `1fr` is shorthand for `minmax(auto, 1fr)`, so a track can never shrink below
+   its content's min-content width. The middle step holds a mock widget with a
+   wide min-content, which pushed the three steps to 277 / 148 / 187px at tablet
+   widths instead of equal thirds. minmax(0, 1fr) lets the tracks shrink and
+   share the row properly. Verified at 768px: 204px each, nothing clipped. */
+.steps {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Same class of bug, same fix, for the other equal-column rows on the page. */
+.stat-band {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 760px) {
+  .stat-band {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
