@@ -1506,7 +1506,16 @@ export default function MarketplaceApp({
       ? channelFilter
       : "All";
 
+  // True while we know there is a member but not yet who they have blocked.
+  // The server-rendered markup is shared and cached, so it cannot leave
+  // blocked listings out; the client has to hold them back until it knows.
+  const blocksPending = Boolean(user) && !blockedLoaded;
+
   const visibleListings = useMemo(() => {
+    // Show nothing rather than something they asked never to see again.
+    // The grid renders a skeleton for this case, so it reads as loading
+    // rather than as an empty marketplace.
+    if (blocksPending) return [];
     const normalized = query.trim().toLowerCase();
     return listings.filter((listing) => {
       if (blockedProfileIds.includes(listing.owner.id)) return false;
@@ -1551,7 +1560,7 @@ export default function MarketplaceApp({
           listingRank(a) - listingRank(b) ||
           shuffleKey(a.id) - shuffleKey(b.id),
       );
-  }, [activeChannel, blockedProfileIds, listings, query, roleFilter]);
+  }, [activeChannel, blocksPending, blockedProfileIds, listings, query, roleFilter]);
 
   // Reveal widgets as they scroll into view, and cycle the how-it-works steps
   // so the section reads as something live rather than static copy.
@@ -1719,7 +1728,12 @@ export default function MarketplaceApp({
       throw new Error("Choose up to 6 photos at a time.");
     }
 
-    const uploaded: string[] = [];
+    // Validate the WHOLE batch before a single byte is uploaded. Checking
+    // inside the loop meant a bad third file threw only after the first two
+    // were already committed, and the bucket's SELECT policy makes anything
+    // in it publicly readable forever with no way to delete it from the
+    // product. The member was told the upload failed while their photos sat
+    // on a public URL.
     for (const file of files) {
       if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
         throw new Error(`${file.name} must be a JPG, PNG, or WebP image.`);
@@ -1727,29 +1741,52 @@ export default function MarketplaceApp({
       if (file.size > 8 * 1024 * 1024) {
         throw new Error(`${file.name} is larger than 8 MB.`);
       }
+    }
 
-      // A phone photo is several thousand pixels wide; nothing on the site
-      // paints one larger than ~520px. Uploading the original meant every
-      // visitor downloaded megabytes to fill a 42px avatar circle. Downscale
-      // in the browser before it ever leaves the device.
-      const prepared = await downscaleForUpload(
-        file,
-        folder === "profiles" ? 1024 : 1600,
-      );
-      const extension = prepared.extension;
-      const path = `${user.id}/${folder}/${crypto.randomUUID()}.${extension}`;
-      const { error } = await supabase.storage
-        .from("marketplace-media")
-        .upload(path, prepared.body, {
-          contentType: prepared.contentType,
-          upsert: false,
-        });
-      if (error) throw error;
+    const uploaded: string[] = [];
+    const paths: string[] = [];
+    try {
+      for (const file of files) {
+        // A phone photo is several thousand pixels wide; nothing on the site
+        // paints one larger than ~520px. Uploading the original meant every
+        // visitor downloaded megabytes to fill a 42px avatar circle.
+        // Downscale in the browser before it ever leaves the device.
+        const prepared = await downscaleForUpload(
+          file,
+          folder === "profiles" ? 1024 : 1600,
+        );
+        const extension = prepared.extension;
+        const path = `${user.id}/${folder}/${crypto.randomUUID()}.${extension}`;
+        const { error } = await supabase.storage
+          .from("marketplace-media")
+          .upload(path, prepared.body, {
+            contentType: prepared.contentType,
+            upsert: false,
+          });
+        if (error) throw error;
 
-      const { data } = supabase.storage
-        .from("marketplace-media")
-        .getPublicUrl(path);
-      uploaded.push(data.publicUrl);
+        paths.push(path);
+        const { data } = supabase.storage
+          .from("marketplace-media")
+          .getPublicUrl(path);
+        uploaded.push(data.publicUrl);
+      }
+    } catch (error) {
+      // Validation cannot catch everything: the network can drop, storage
+      // can reject. A half-finished batch still leaves public files behind,
+      // so take back what did land before reporting the failure. Best
+      // effort by design - if the cleanup itself fails there is nothing
+      // useful to tell the member, and the original error is the one that
+      // matters.
+      if (paths.length) {
+        try {
+          await supabase.storage.from("marketplace-media").remove(paths);
+        } catch {
+          // Swallowed on purpose. Reporting a cleanup failure on top of an
+          // upload failure tells the member nothing they can act on.
+        }
+      }
+      throw error;
     }
     return uploaded;
   }
@@ -1882,26 +1919,33 @@ export default function MarketplaceApp({
       .filter(Boolean);
     setBusy(true);
     try {
-      // Resolve whether a profile row already exists BEFORE building the
-      // payload: it decides both insert-vs-update and whether the Google
-      // identity photo may be used as a fallback. If the earlier read failed we
-      // cannot tell "no profile yet" from "we could not see it", and guessing
-      // insert would hit the auth_user_id unique constraint.
-      let existing = profile;
-      if (!existing && profileLoadFailedRef.current) {
-        const { data: recheck, error: recheckError } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("auth_user_id", user.id)
-          .maybeSingle();
-        if (recheckError) {
-          throw new Error(
-            "We could not reach your profile just now. Check your connection and try again — nothing was lost.",
-          );
-        }
-        existing = (recheck as Profile | null) ?? null;
-        profileLoadFailedRef.current = false;
+      // Re-read the stored row BEFORE building the payload, every time.
+      //
+      // It decides insert-vs-update and whether the Google identity photo
+      // may be used as a fallback, but more importantly the payload merges
+      // several fields out of it, and gallery_urls merges out of it
+      // unconditionally. Using the in-memory copy meant a tab that had been
+      // open a while wrote its stale idea of the profile over fresher data:
+      // a photo deleted in another tab came back as a broken image, a photo
+      // added there was dropped, and the member got the same success toast
+      // either way. One extra read per save is a cheap price for not losing
+      // someone's published photos.
+      const { data: fresh, error: freshError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("auth_user_id", user.id)
+        .maybeSingle();
+      if (freshError) {
+        // Do not fall back to the cached copy here. Guessing wrong means
+        // either hitting the auth_user_id unique constraint on insert, or
+        // silently overwriting fresher data on update. Asking for a retry is
+        // the only honest option.
+        throw new Error(
+          "We could not reach your profile just now. Check your connection and try again, nothing was lost.",
+        );
       }
+      const existing = (fresh as Profile | null) ?? null;
+      profileLoadFailedRef.current = false;
 
       const avatarFiles = values
         .getAll("avatar_file")
@@ -2337,7 +2381,12 @@ export default function MarketplaceApp({
             [item.participant_a, item.participant_b].includes(person.id),
           )!,
         }))
-        .filter((item) => item.other),
+        .filter((item) => item.other)
+        // Blocking is supposed to make someone disappear. Leaving their
+        // thread here left a composer that could never succeed: the send
+        // fails at the RLS layer, and the generic message blames a paused
+        // listing rather than the block the member applied themselves.
+        .filter((item) => !blockedProfileIds.includes(item.other.id)),
     );
     setInboxState("ready");
   }
@@ -2643,6 +2692,17 @@ export default function MarketplaceApp({
         ? current
         : [...current, { id: target.id, display_name: target.display_name }],
     );
+    // Blocking has to take effect everywhere at once. Without this the
+    // conversation stayed in the inbox, and an open thread kept a composer
+    // whose every send would fail at the RLS layer.
+    setThreads((current) =>
+      current.filter((thread) => thread.other.id !== target.id),
+    );
+    if (activeThread && activeContact?.id === target.id) {
+      setActiveThread(null);
+      setActiveContact(null);
+      setMessages([]);
+    }
     // closeListing() also drops ?listing= from the URL; leaving it would let
     // the deep-link effect immediately reopen the listing just blocked.
     closeListing();
@@ -3864,11 +3924,17 @@ export default function MarketplaceApp({
           {/* Announce the new count when a filter changes, so the result of
               pressing a filter is not visible-only. */}
           <span className="result-count" role="status" aria-live="polite">
-            {visibleListings.length} open listing{visibleListings.length === 1 ? "" : "s"}
+            {blocksPending
+              ? "Loading the marketplace"
+              : `${visibleListings.length} open listing${visibleListings.length === 1 ? "" : "s"}`}
           </span>
         </div>
 
         <div className="listing-grid">
+          {blocksPending &&
+            Array.from({ length: 6 }, (_, index) => (
+              <div className="listing-skeleton" key={`skeleton-${index}`} />
+            ))}
           {visibleListings.map((listing) => (
             <article className="listing-card" key={listing.id}>
               <button
@@ -3946,7 +4012,7 @@ export default function MarketplaceApp({
             </article>
           ))}
         </div>
-        {!visibleListings.length && (
+        {!visibleListings.length && !blocksPending && (
           <div className="empty-state">
             <span>⌕</span>
             <h3>No exact matches yet.</h3>
