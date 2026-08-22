@@ -6008,3 +6008,137 @@ html.reveal-ready [data-reveal].is-visible {
     animation: none;
   }
 }
+
+/* ==========================================================================
+   THE REBRAND
+   ==========================================================================
+   The visual language proven at /preview, applied to the live homepage.
+
+   Deliberately a styling layer and nothing else. The homepage is not a
+   marketing page: it carries sign-in, onboarding, listing detail, the inbox,
+   campaign requests and the account panel, all of it stabilised over twelve
+   audit passes. Restyling in CSS means the new look ships without a single
+   handler, query or flow being touched, and reverts by deleting this block.
+
+   The system: SideSpace's own palette, carried in hairline borders with no
+   shadows anywhere, and type doing the work. Display sizes drop to weight 300
+   with tight negative tracking; 600 is reserved for small labels; mono handles
+   eyebrows and figures.
+   ========================================================================== */
+
+:root {
+  /* The reference face, at the weight the whole direction rests on. */
+  --display: "Geist", "Google Sans Flex", "Helvetica Neue", sans-serif;
+  --serif: "Geist", "Google Sans Flex", "Helvetica Neue", sans-serif;
+}
+
+/* -------------------------------------------------------------- display type
+   Was a condensed poster setting (weight 750+, -0.075em, 0.86 line height).
+   The new direction is light and open: the size still carries the page, the
+   weight no longer shouts. */
+.hero h1,
+.section-top h2,
+.spaces-heading h2,
+.how-intro h2,
+.final-cta h2 {
+  font-size: clamp(42px, 6.4vw, 92px);
+  font-weight: 300;
+  letter-spacing: -0.028em;
+  line-height: 1.03;
+  text-wrap: balance;
+}
+
+.hero h1 em,
+.section-top h2 em,
+.spaces-heading h2 em,
+.how-intro h2 em,
+.final-cta h2 em {
+  font-family: var(--display);
+  font-style: normal;
+  font-weight: 300;
+}
+
+.hero-lede {
+  font-size: 17px;
+  line-height: 1.6;
+  max-width: 58ch;
+}
+
+/* ------------------------------------------------------------------ eyebrows */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------- surfaces
+   No shadows anywhere. Depth comes from the border and the surface tone, so a
+   hover changes the border rather than lifting the card off the page. */
+.listing-card,
+.person-card,
+.space-tile,
+.pricing-card,
+.step-card {
+  border-radius: 16px;
+  box-shadow: none;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.listing-card:hover,
+.person-card:hover {
+  border-color: var(--ink-soft);
+  box-shadow: none;
+  transform: translateY(-2px);
+}
+
+/* --------------------------------------------------------------------- buttons
+   Pill, solid ink, small confident label. The old setting spread the label and
+   an arrow to opposite edges of a 52px pill, which read as a banner rather
+   than a control. */
+.button {
+  font-size: 14px;
+  font-weight: 600;
+  gap: 10px;
+  justify-content: center;
+  letter-spacing: -0.01em;
+  min-height: 42px;
+  padding: 0 24px;
+}
+
+.button span {
+  opacity: 0.55;
+}
+
+.pricing-button {
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ----------------------------------------------------------------- signal strip
+   Reads as a quiet index of what the marketplace carries, matching the
+   eyebrow treatment rather than competing with the headline above it. */
+.signal-strip {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+}
+
+.signal-strip i {
+  color: var(--lime);
+  font-size: 12px;
+  font-style: normal;
+}
+
+/* -------------------------------------------------------------------- topbar */
+.brand {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.topbar nav a {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
