@@ -6147,3 +6147,126 @@ html.reveal-ready [data-reveal].is-visible {
   font-weight: 500;
   letter-spacing: -0.01em;
 }
+
+/* --------------------------------------------------------------- stat band
+   Four figures in one bordered row, hairlines between them and no shadow.
+   Weight 300 at size so the numerals read as the quiet fact they are. */
+.stat-band {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 0 auto;
+  max-width: 1180px;
+  overflow: hidden;
+  width: calc(100% - 40px);
+}
+
+.stat-cell {
+  border-right: 1px solid var(--line);
+  padding: 30px 20px;
+  text-align: center;
+}
+
+.stat-cell:last-child {
+  border-right: 0;
+}
+
+.stat-cell b {
+  display: block;
+  font-family: var(--display);
+  font-size: clamp(28px, 4vw, 42px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.stat-cell span {
+  color: var(--ink-soft);
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  margin-top: 12px;
+  text-transform: uppercase;
+}
+
+@media (max-width: 760px) {
+  .stat-band {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stat-cell:nth-child(2) {
+    border-right: 0;
+  }
+
+  .stat-cell:nth-child(1),
+  .stat-cell:nth-child(2) {
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+/* ----------------------------------------------------------------- marquee
+   The strip now scrolls. It replaces a flex row of five fixed labels, so the
+   old layout rules for it are overridden here rather than edited in place. */
+.signal-strip {
+  display: block;
+  justify-content: initial;
+  overflow: hidden;
+  padding: 20px 0;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+}
+
+.signal-track {
+  animation: signal-marquee 46s linear infinite;
+  display: flex;
+  gap: 42px;
+  width: max-content;
+}
+
+/* Pausing on hover lets someone actually read a channel that caught their eye. */
+.signal-strip:hover .signal-track {
+  animation-play-state: paused;
+}
+
+.signal-item {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.signal-item::after {
+  color: var(--lime);
+  content: "✦";
+  margin-left: 42px;
+}
+
+@keyframes signal-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signal-track {
+    animation: none;
+    /* Without the animation the track is just a very wide row, so let it wrap
+       instead of running off the side of the page. */
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 8px;
+    width: auto;
+  }
+
+  .signal-strip {
+    white-space: normal;
+  }
+}

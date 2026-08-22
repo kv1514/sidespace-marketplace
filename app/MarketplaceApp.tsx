@@ -1428,6 +1428,40 @@ export default function MarketplaceApp({
     [blockedProfileIds, listings],
   );
 
+  /**
+   * The four figures in the stat band, all derived from what is actually
+   * on the marketplace rather than written down anywhere. A hard-coded
+   * number here would drift the moment a member publishes or pauses, and
+   * this band sits directly above the grid that would contradict it.
+   */
+  const marketplaceStats = useMemo(() => {
+    const live = listings.filter(
+      (listing) =>
+        !isInternalAccount(listing.owner) &&
+        !blockedProfileIds.includes(listing.owner.id),
+    );
+    const cities = new Set(
+      live
+        .map((listing) =>
+          // Members write their city freehand, so "Fullerton, CA" and
+          // "Fullerton" are one place and must not count twice.
+          String(listing.owner.city ?? "")
+            .split(",")[0]
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean),
+    );
+    const owners = new Set(live.map((listing) => listing.owner.id));
+    const channelKinds = new Set(live.map((listing) => listing.channel));
+    return {
+      listings: live.length,
+      members: owners.size,
+      cities: cities.size,
+      channels: channelKinds.size,
+    };
+  }, [blockedProfileIds, listings]);
+
   const ownerIdsWithListings = useMemo(
     () => new Set(listings.map((listing) => listing.owner.id)),
     [listings],
@@ -3697,17 +3731,52 @@ export default function MarketplaceApp({
       </section>
       )}
 
-      <section className="signal-strip" aria-label="Marketplace highlights">
-        <span>Instagram Stories</span>
-        <i>✦</i>
-        <span>TikTok features</span>
-        <i>✦</i>
-        <span>Newsletter mentions</span>
-        <i>✦</i>
-        <span>Storefront windows</span>
-        <i>✦</i>
-        <span>Local boards</span>
+      {/* Was five hard-coded labels, three of which named channels nobody
+          had actually listed. It now scrolls the real channel list off the
+          marketplace, so it can never advertise something that is not for
+          sale. Two identical tracks translating -50% make the loop seamless;
+          aria-hidden because it is decoration and the same information is
+          in the filter chips below, which are reachable and announced. */}
+      <section
+        className="signal-strip"
+        aria-hidden="true"
+      >
+        <div className="signal-track">
+          {[...channels.filter((channel) => channel !== "All"),
+            ...channels.filter((channel) => channel !== "All")].map(
+            (channel, index) => (
+              <span className="signal-item" key={`${channel}-${index}`}>
+                {channel}
+              </span>
+            ),
+          )}
+        </div>
       </section>
+
+      {/* Sits directly above the marketplace, so every figure is derived
+          from the same listings the grid renders. Hidden entirely while
+          blocks are still loading rather than announcing counts that are
+          about to change under the reader. */}
+      {!blocksPending && marketplaceStats.listings > 0 && (
+        <section className="stat-band" aria-label="Marketplace at a glance">
+          <div className="stat-cell">
+            <b>{marketplaceStats.listings}</b>
+            <span>Listings live</span>
+          </div>
+          <div className="stat-cell">
+            <b>{marketplaceStats.members}</b>
+            <span>Members offering space</span>
+          </div>
+          <div className="stat-cell">
+            <b>{marketplaceStats.cities}</b>
+            <span>Cities covered</span>
+          </div>
+          <div className="stat-cell">
+            <b>{marketplaceStats.channels}</b>
+            <span>Kinds of space</span>
+          </div>
+        </section>
+      )}
 
       <section className="how-section" id="how">
         <div className="how-intro">
