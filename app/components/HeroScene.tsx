@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useReducedMotion } from "motion/react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 /**
@@ -168,21 +168,51 @@ export default function HeroScene() {
     }
   });
 
+  // Nothing pauses an "always" frameloop on its own: r3f keeps a rAF running
+  // for the life of the Canvas, so the hero kept compositing at full rate
+  // while scrolled a page away and while the tab sat in the background,
+  // burning battery for an animation nobody could see.
+  const [active, setActive] = useState(true);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    let onScreen = true;
+    const sync = () =>
+      setActive(onScreen && document.visibilityState === "visible");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        onScreen = entries.some((entry) => entry.isIntersecting);
+        sync();
+      },
+      { rootMargin: "120px" },
+    );
+    observer.observe(host);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, []);
+
   // Renders nothing rather than something broken. The hero is designed to
   // stand on its own type, so this is a missing flourish, not a hole.
   if (!canRender) return null;
 
   return (
-    <Canvas
-      aria-hidden="true"
-      camera={{ position: [0, 0, 8], fov: 42 }}
-      dpr={[1, 1.6]}
-      // The scene is ambient. Never let it fight the main thread for input.
-      frameloop={reduce ? "demand" : "always"}
-      gl={{ antialias: true, alpha: true, powerPreference: "low-power" }}
-      style={{ pointerEvents: "none" }}
-    >
-      <Scene reduce={reduce} />
-    </Canvas>
+    <div ref={hostRef} style={{ width: "100%", height: "100%" }}>
+      <Canvas
+        aria-hidden="true"
+        camera={{ position: [0, 0, 8], fov: 42 }}
+        dpr={[1, 1.6]}
+        // The scene is ambient. Never let it fight the main thread for input.
+        frameloop={reduce || !active ? "demand" : "always"}
+        gl={{ antialias: true, alpha: true, powerPreference: "low-power" }}
+        style={{ pointerEvents: "none" }}
+      >
+        <Scene reduce={reduce} />
+      </Canvas>
+    </div>
   );
 }

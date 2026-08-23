@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { PUBLIC_PROFILE_COLUMNS } from "@/lib/supabase/public";
 import {
   localListingSeeds,
   localProfiles,
@@ -682,14 +683,38 @@ function listingImages(listing: Listing) {
     : [listing.image_url].filter(Boolean);
 }
 
+/** Newest messages fetched per thread. See loadMessages for why this is bounded. */
+const MESSAGE_PAGE_SIZE = 100;
+
+/** Cards rendered in the people showcase row. */
+const SHOWCASE_LIMIT = 12;
+
+/**
+ * Support contact shown in-app. NOTE: app/terms/page.tsx and
+ * app/privacy/page.tsx still publish kveldanda987@gmail.com instead. Those are
+ * legal pages, so unifying them is a decision for the founders rather than a
+ * bug fix - but the two addresses should not stay divergent.
+ */
+const SUPPORT_EMAIL = "sidespacesupport@gmail.com";
+
+// Constructed once at module scope. Intl.DateTimeFormat is among the most
+// expensive built-ins to construct - locale resolution plus ICU allocation -
+// and these were being rebuilt per row inside render bodies.
+const DATE_FORMAT = new Intl.DateTimeFormat("en", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+const TIME_FORMAT = new Intl.DateTimeFormat("en", {
+  hour: "numeric",
+  minute: "2-digit",
+});
+
 function displayDate(value?: string | null) {
   if (!value) return "Flexible";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${value}T00:00:00Z`));
+  return DATE_FORMAT.format(new Date(`${value}T00:00:00Z`));
 }
 
 function safeProfiles(value: unknown): Profile[] {
@@ -698,12 +723,16 @@ function safeProfiles(value: unknown): Profile[] {
 
 function safeListings(value: unknown): Listing[] {
   if (!Array.isArray(value)) return [];
-  return (value as Array<Omit<Listing, "owner"> & { owner: Profile | Profile[] }>).map(
-    (listing) => ({
+  return (value as Array<Omit<Listing, "owner"> & { owner: Profile | Profile[] }>)
+    .map((listing) => ({
       ...listing,
       owner: Array.isArray(listing.owner) ? listing.owner[0] : listing.owner,
-    }),
-  );
+    }))
+    // The owner embed is a left join, so a listing whose owner row is hidden by
+    // RLS (or absent) arrives with owner null while the type asserts it is a
+    // Profile. Every consumer then dereferences owner.display_name unguarded
+    // and takes the whole grid down with it. Drop those rows here instead.
+    .filter((listing): listing is Listing => Boolean(listing.owner));
 }
 
 function Avatar({
@@ -793,11 +822,19 @@ const openModals: HTMLElement[] = [];
 function Modal({
   children,
   onClose,
+  label,
   wide = false,
   elevated = false,
 }: {
   children: ReactNode;
   onClose: () => void;
+  /**
+   * Accessible name for the dialog. Required: the focus effect deliberately
+   * focuses the card itself, so a screen reader announces this the moment the
+   * dialog opens. Without it every overlay in the app announced as an unnamed
+   * "dialog" and the user had to explore to find out what had appeared.
+   */
+  label: string;
   wide?: boolean;
   /** Gate dialogs (auth, onboarding) that must outrank any other overlay. */
   elevated?: boolean;
@@ -898,6 +935,7 @@ function Modal({
         className={`modal-card ${wide ? "modal-wide" : ""}`}
         role="dialog"
         aria-modal="true"
+        aria-label={label}
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -1000,6 +1038,11 @@ export default function MarketplaceApp({
   // close over activeThread without being torn down and rebuilt on every
   // thread change. A ref gives them the current thread instead.
   const activeThreadRef = useRef<Conversation | null>(null);
+  // Read through refs inside realtime handlers. Listing these as effect deps
+  // instead tore the websocket down and rejoined it on every thread open, and
+  // an INSERT committed during that gap is never replayed.
+  const profileRef = useRef<Profile | null>(null);
+  const blockedIdsRef = useRef<string[]>([]);
   const [activeContact, setActiveContact] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [campaignRequests, setCampaignRequests] = useState<CampaignRequest[]>([]);
@@ -1041,13 +1084,17 @@ export default function MarketplaceApp({
     const [profilesResult, listingsResult] = await Promise.all([
       supabase
         .from("profiles")
-        .select("*")
+        .select(PUBLIC_PROFILE_COLUMNS)
         .eq("onboarding_complete", true)
         .neq("role", "consumer")
-        .order("verified", { ascending: false }),
+        .order("verified", { ascending: false })
+        // Bounded to match the showcase row, which renders a card per profile.
+        .limit(60),
       supabase
         .from("listings")
-        .select("*, owner:profiles!listings_owner_profile_id_fkey(*)")
+        .select(
+          `*, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
+        )
         .eq("status", "active")
         .order("created_at", { ascending: false })
         .limit(200),
@@ -1084,10 +1131,39 @@ export default function MarketplaceApp({
     [supabase],
   );
 
+  /**
+   * Unread count for the badge, scoped to the same conversations the inbox
+   * actually shows. Relying on RLS alone counted messages from blocked members
+   * whose threads loadInbox filters out, so the badge could never reach zero.
+   */
+  const countUnread = useCallback(
+    async (
+      ownProfile: Profile,
+      blockedIds: string[],
+    ): Promise<{ count: number | null; error: unknown }> => {
+      if (!supabase) return { count: null, error: new Error("No client") };
+      let query = supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .neq("sender_profile_id", ownProfile.id)
+        .is("read_at", null);
+      if (blockedIds.length) {
+        query = query.not(
+          "sender_profile_id",
+          "in",
+          `(${blockedIds.join(",")})`,
+        );
+      }
+      const { count, error } = await query;
+      return { count, error };
+    },
+    [supabase],
+  );
+
   const loadAccountMarketplaceState = useCallback(
     async (ownProfile: Profile) => {
       if (!supabase) return;
-      const [campaignResult, verificationResult, blocksResult, unreadResult] =
+      const [campaignResult, verificationResult, blocksResult] =
         await Promise.all([
           supabase
             .from("campaign_requests")
@@ -1109,16 +1185,7 @@ export default function MarketplaceApp({
               "blocked_profile_id, blocked:profiles!profile_blocks_blocked_profile_id_fkey(id,display_name,avatar_url,city)",
             )
             .eq("blocker_profile_id", ownProfile.id),
-          supabase
-            .from("messages")
-            .select("id", { count: "exact", head: true })
-            .neq("sender_profile_id", ownProfile.id)
-            .is("read_at", null),
         ]);
-
-      if (!unreadResult.error) {
-        setUnreadCount(unreadResult.count ?? 0);
-      }
 
       if (!campaignResult.error) {
         setCampaignRequests(
@@ -1130,13 +1197,14 @@ export default function MarketplaceApp({
           (verificationResult.data as VerificationRequest | null) ?? null,
         );
       }
+      let blockedIds = blockedIdsRef.current;
       if (!blocksResult.error) {
         const rows = (blocksResult.data ?? []) as unknown as Array<{
           blocked_profile_id: string;
           blocked: { id: string; display_name: string } | null;
         }>;
-        setBlockedProfileIds(rows.map((item) => item.blocked_profile_id));
-        setBlockedLoaded(true);
+        blockedIds = rows.map((item) => item.blocked_profile_id);
+        setBlockedProfileIds(blockedIds);
         setBlockedProfiles(
           rows.map((item) => ({
             id: item.blocked_profile_id,
@@ -1144,8 +1212,23 @@ export default function MarketplaceApp({
           })),
         );
       }
+      // Set this even when the blocks read failed. blocksPending gates the
+      // entire marketplace grid, so leaving it false turned one transient
+      // network error into a permanent wall of skeletons with no way out.
+      blockedIdsRef.current = blockedIds;
+      setBlockedLoaded(true);
+
+      // Count unread only AFTER blocks resolve, and exclude blocked senders.
+      // loadInbox drops conversations with a blocked member, so counting their
+      // messages here left a badge above zero that nothing on screen could
+      // clear - every unread message is by definition from the other party, so
+      // filtering on sender covers exactly those hidden threads.
+      const unreadResult = await countUnread(ownProfile, blockedIds);
+      if (!unreadResult.error) {
+        setUnreadCount(unreadResult.count ?? 0);
+      }
     },
-    [supabase],
+    [countUnread, supabase],
   );
 
   const loadOwnProfile = useCallback(
@@ -1183,6 +1266,15 @@ export default function MarketplaceApp({
         ]);
       } else {
         setOwnListings([]);
+        // A signed-in member with no profile row yet cannot have blocked
+        // anyone. loadAccountMarketplaceState is the only other place that
+        // sets this, and it never runs on this branch - so without it
+        // blocksPending stayed true forever and the marketplace grid was
+        // frozen on skeletons for every user mid-signup.
+        blockedIdsRef.current = [];
+        setBlockedProfileIds([]);
+        setBlockedProfiles([]);
+        setBlockedLoaded(true);
       }
       // This reload runs on every auth event, and Supabase fires those in the
       // background (token refresh, tab refocus). If the member is mid-way
@@ -1302,16 +1394,32 @@ export default function MarketplaceApp({
   // Badge updates whether or not the inbox is open. RLS scopes the stream to
   // conversations this member belongs to.
   useEffect(() => {
-    if (!supabase || !profile) return;
+    profileRef.current = profile;
+  }, [profile]);
+
+  // Keyed on profile.id rather than the profile object, and reading everything
+  // else through refs. Listing activeThread here rejoined the websocket on
+  // every thread open and close, and postgres_changes never replays what was
+  // committed during the gap - so messages that landed mid-switch were missed
+  // by the badge entirely.
+  const profileId = profile?.id ?? null;
+  useEffect(() => {
+    if (!supabase || !profileId) return;
     const channel = supabase
-      .channel(`inbound-messages:${profile.id}`)
+      .channel(`inbound-messages:${profileId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
         (payload: { new: Record<string, unknown> }) => {
           const incoming = payload.new as unknown as Message;
-          if (incoming.sender_profile_id === profile.id) return;
-          if (activeThread && incoming.conversation_id === activeThread.id) {
+          if (incoming.sender_profile_id === profileId) return;
+          // A blocked member's thread is hidden from the inbox, so counting
+          // their message would raise a badge nothing on screen can clear.
+          if (blockedIdsRef.current.includes(incoming.sender_profile_id)) {
+            return;
+          }
+          const openThread = activeThreadRef.current;
+          if (openThread && incoming.conversation_id === openThread.id) {
             return;
           }
           setUnreadCount((current) => current + 1);
@@ -1321,7 +1429,7 @@ export default function MarketplaceApp({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [activeThread, profile, supabase]);
+  }, [profileId, supabase]);
 
   useEffect(() => {
     if (!supabase || !activeThread) return;
@@ -1386,10 +1494,14 @@ export default function MarketplaceApp({
             .from("messages")
             .select("*")
             .eq("conversation_id", thread.id)
-            .order("created_at");
+            // Same bound as loadMessages: newest-first with an explicit limit,
+            // reversed for display, so the 1000-row cap cannot truncate away
+            // the recent end of a long thread.
+            .order("created_at", { ascending: false })
+            .limit(MESSAGE_PAGE_SIZE);
           // Ignore a resync for a thread the member has since left.
           if (!error && activeThreadRef.current?.id === thread.id) {
-            const rows = (data as Message[] | null) ?? [];
+            const rows = ((data as Message[] | null) ?? []).slice().reverse();
             setMessages((current) => {
               // Merge rather than replace so an in-flight optimistic send is
               // not dropped by a resync that raced it.
@@ -1514,7 +1626,12 @@ export default function MarketplaceApp({
           (b.followers || b.avg_views) - (a.followers || a.avg_views) ||
           a.display_name.localeCompare(b.display_name),
       );
-    const real = ranked.filter((person) => !person.is_demo);
+    // Only the demo padding used to be capped, so the real-member list grew
+    // without bound - every profile in the table rendered into a single
+    // horizontal flex row, each with its own avatar request. Cap both.
+    const real = ranked
+      .filter((person) => !person.is_demo)
+      .slice(0, SHOWCASE_LIMIT);
     const demoFill = ranked
       .filter((person) => person.is_demo)
       .slice(0, Math.max(0, 8 - real.length));
@@ -1560,6 +1677,16 @@ export default function MarketplaceApp({
   // The server-rendered markup is shared and cached, so it cannot leave
   // blocked listings out; the client has to hold them back until it knows.
   const blocksPending = Boolean(user) && !blockedLoaded;
+
+  // Derived rather than filtered at load time, so a block list that resolves
+  // after the inbox opened still hides the thread. Leaving it visible left a
+  // composer whose every send failed at the RLS layer, blaming a paused
+  // listing rather than the block the member applied themselves.
+  const visibleThreads = useMemo(
+    () =>
+      threads.filter((thread) => !blockedProfileIds.includes(thread.other.id)),
+    [blockedProfileIds, threads],
+  );
 
   const visibleListings = useMemo(() => {
     // Show nothing rather than something they asked never to see again.
@@ -1725,17 +1852,50 @@ export default function MarketplaceApp({
       }, 0);
       return () => window.clearTimeout(timer);
     }
-    // The link points at a listing that is paused, removed, or hidden by a
-    // block. Say so instead of silently showing the home page.
+    // The link points at a listing that is paused, removed, hidden by a block
+    // - or simply outside the 200 most recent, which is all `listings` holds.
+    // Nothing else in the app ever fetches a listing by id, so a shared link
+    // to the 201st listing reported it "no longer available" while it was
+    // live and browsable. Ask the database before saying that.
     if (loading || !listings.length) return;
-    const timer = window.setTimeout(() => {
+    let cancelled = false;
+    void (async () => {
+      if (supabase) {
+        const { data } = await supabase
+          .from("listings")
+          .select(
+          `*, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
+        )
+          .eq("id", listingId)
+          .eq("status", "active")
+          .maybeSingle();
+        if (cancelled) return;
+        const [resolved] = safeListings(data ? [data] : []);
+        if (resolved && !blockedProfileIds.includes(resolved.owner.id)) {
+          setSelectedPhotoIndex(0);
+          setSelectedListing(resolved);
+          return;
+        }
+      }
+      if (cancelled) return;
       setToast("That listing is no longer available.");
       const url = new URL(window.location.href);
       url.searchParams.delete("listing");
       window.history.replaceState({}, "", url.toString());
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [blockedLoaded, blockedProfileIds, listings, loading, selectedListing, sessionResolved, user]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    blockedLoaded,
+    blockedProfileIds,
+    listings,
+    loading,
+    selectedListing,
+    sessionResolved,
+    supabase,
+    user,
+  ]);
 
   /**
    * Seed BOTH role pickers from the stored profile. Openers used to seed only
@@ -2336,7 +2496,13 @@ export default function MarketplaceApp({
       .from("messages")
       .select("*")
       .eq("conversation_id", conversation.id)
-      .order("created_at");
+      // Newest-first with an explicit bound, reversed below for display.
+      // Ordering ascending with no limit let PostgREST's 1000-row cap truncate
+      // from the wrong end: a long conversation rendered its oldest thousand
+      // messages and silently hid everything recent, including the reply the
+      // member had just been notified about.
+      .order("created_at", { ascending: false })
+      .limit(MESSAGE_PAGE_SIZE);
     if (seq !== threadSeqRef.current) return;
     if (error) {
       // Without this an existing conversation renders as permanently empty,
@@ -2344,9 +2510,18 @@ export default function MarketplaceApp({
       setToast(friendlyDbError(error) || "We could not load that conversation.");
       return;
     }
-    setMessages((data as Message[] | null) ?? []);
+    const rows = ((data as Message[] | null) ?? []).slice().reverse();
+    // Merge rather than replace. setActiveThread above already committed, so
+    // the per-thread realtime channel is subscribed and may have appended a
+    // message while this fetch was in flight; a wholesale replace dropped it
+    // until the next reload.
+    setMessages((current) => {
+      const seen = new Set(rows.map((row) => row.id));
+      const pending = current.filter((message) => !seen.has(message.id));
+      return pending.length ? [...rows, ...pending] : rows;
+    });
     if (profile) {
-      const unreadHere = ((data as Message[] | null) ?? []).filter(
+      const unreadHere = rows.filter(
         (message) =>
           message.sender_profile_id !== profile.id && !message.read_at,
       );
@@ -2391,11 +2566,13 @@ export default function MarketplaceApp({
    */
   async function reconcileUnreadCount(ownProfile: Profile) {
     if (!supabase) return;
-    const { count, error } = await supabase
-      .from("messages")
-      .select("id", { count: "exact", head: true })
-      .neq("sender_profile_id", ownProfile.id)
-      .is("read_at", null);
+    // Read the block list through the ref, not the state variable: this runs
+    // from realtime handlers that captured an older render, and the count has
+    // to match the set loadInbox renders or the badge never reaches zero.
+    const { count, error } = await countUnread(
+      ownProfile,
+      blockedIdsRef.current,
+    );
     if (!error) setUnreadCount(count ?? 0);
   }
 
@@ -2420,7 +2597,10 @@ export default function MarketplaceApp({
         : item.participant_a,
     );
     const { data: peopleData } = otherIds.length
-      ? await supabase.from("profiles").select("*").in("id", otherIds)
+      ? await supabase
+          .from("profiles")
+          .select(PUBLIC_PROFILE_COLUMNS)
+          .in("id", otherIds)
       : { data: [] };
     const people = safeProfiles(peopleData);
     setThreads(
@@ -2431,13 +2611,13 @@ export default function MarketplaceApp({
             [item.participant_a, item.participant_b].includes(person.id),
           )!,
         }))
-        .filter((item) => item.other)
-        // Blocking is supposed to make someone disappear. Leaving their
-        // thread here left a composer that could never succeed: the send
-        // fails at the RLS layer, and the generic message blames a paused
-        // listing rather than the block the member applied themselves.
-        .filter((item) => !blockedProfileIds.includes(item.other.id)),
+        .filter((item) => item.other),
     );
+    // Deliberately stored unfiltered. Blocking is applied by `visibleThreads`,
+    // which re-derives whenever the block list changes - filtering here instead
+    // baked in whatever blockedProfileIds happened to hold at load time, and
+    // the inbox is reachable before loadAccountMarketplaceState resolves, so a
+    // blocked member's thread stayed visible for the rest of the session.
     setInboxState("ready");
   }
 
@@ -2593,10 +2773,24 @@ export default function MarketplaceApp({
       existingConversation ?? (await ensureConversation(campaignListing.owner));
     if (conversation) {
       if (!existingConversation) {
-        await supabase
+        // Until 0013 there was no UPDATE policy on campaign_requests, so this
+        // matched zero rows and still reported success - every request opened
+        // alongside a new thread kept conversation_id null forever. Check the
+        // outcome now rather than discarding it, and confirm the write landed:
+        // RLS makes "denied" and "no such row" both look like an empty result.
+        const linked = await supabase
           .from("campaign_requests")
           .update({ conversation_id: conversation.id })
-          .eq("id", (inserted.data as { id: string }).id);
+          .eq("id", (inserted.data as { id: string }).id)
+          .is("conversation_id", null)
+          .select("id");
+        if (linked.error || !linked.data?.length) {
+          // Not fatal: the request and the thread both exist, they are just not
+          // cross-linked. Say so rather than pretending it all worked.
+          setToast(
+            "Request sent, but we could not attach it to the message thread.",
+          );
+        }
       }
       await supabase.from("messages").insert({
         conversation_id: conversation.id,
@@ -2734,20 +2928,19 @@ export default function MarketplaceApp({
       setToast(friendlyDbError(error));
       return;
     }
-    setBlockedProfileIds((current) =>
-      current.includes(target.id) ? current : [...current, target.id],
-    );
+    const nextBlocked = blockedProfileIds.includes(target.id)
+      ? blockedProfileIds
+      : [...blockedProfileIds, target.id];
+    blockedIdsRef.current = nextBlocked;
+    setBlockedProfileIds(nextBlocked);
     setBlockedProfiles((current) =>
       current.some((item) => item.id === target.id)
         ? current
         : [...current, { id: target.id, display_name: target.display_name }],
     );
-    // Blocking has to take effect everywhere at once. Without this the
-    // conversation stayed in the inbox, and an open thread kept a composer
-    // whose every send would fail at the RLS layer.
-    setThreads((current) =>
-      current.filter((thread) => thread.other.id !== target.id),
-    );
+    // The thread drops out of the inbox via `visibleThreads` as soon as the
+    // block list updates above; it is deliberately left in the raw `threads`
+    // list so unblocking restores it without a reload.
     if (activeThread && activeContact?.id === target.id) {
       setActiveThread(null);
       setActiveContact(null);
@@ -2756,6 +2949,11 @@ export default function MarketplaceApp({
     // closeListing() also drops ?listing= from the URL; leaving it would let
     // the deep-link effect immediately reopen the listing just blocked.
     closeListing();
+    // Their unread messages are still unread rows in the database, but the
+    // thread is gone from the inbox. Recount now that the ref excludes them,
+    // otherwise the badge keeps a count for conversations that no longer
+    // appear anywhere on screen.
+    await reconcileUnreadCount(profile);
     setToast(
       `${target.display_name} is now hidden. You can undo this in Account settings.`,
     );
@@ -2774,7 +2972,10 @@ export default function MarketplaceApp({
       setToast(friendlyDbError(error));
       return;
     }
-    setBlockedProfileIds((current) => current.filter((id) => id !== blockedId));
+    const nextBlocked = blockedProfileIds.filter((id) => id !== blockedId);
+    blockedIdsRef.current = nextBlocked;
+    setBlockedProfileIds(nextBlocked);
+    void reconcileUnreadCount(profile);
     setBlockedProfiles((current) =>
       current.filter((item) => item.id !== blockedId),
     );
@@ -2834,6 +3035,7 @@ export default function MarketplaceApp({
     if (!supabase || !user) return;
     const form = event.currentTarget;
     const values = new FormData(form);
+    const currentPassword = String(values.get("current_password") ?? "");
     const password = String(values.get("new_password") ?? "");
     const confirmation = String(values.get("confirm_password") ?? "");
 
@@ -2845,8 +3047,32 @@ export default function MarketplaceApp({
       setToast("The two passwords do not match.");
       return;
     }
+    if (!currentPassword) {
+      setToast("Enter your current password to confirm the change.");
+      return;
+    }
 
     setBusy(true);
+    // Reauthenticate first. updateUser({ password }) only needs a live session,
+    // so anyone reaching an unlocked, signed-in browser could set a new
+    // password without knowing the old one and lock the owner out of their own
+    // account. Supabase's secure_password_change is off for this project
+    // (supabase/config.toml), so this check is the only thing standing there.
+    if (!user.email) {
+      setBusy(false);
+      setToast("Your account has no email address, so we cannot verify it's you.");
+      return;
+    }
+    const { error: reauthError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: currentPassword,
+    });
+    if (reauthError) {
+      setBusy(false);
+      setToast("That current password is not right.");
+      return;
+    }
+
     const { error } = await supabase.auth.updateUser({ password });
     setBusy(false);
     if (error) {
@@ -2913,6 +3139,18 @@ export default function MarketplaceApp({
     setAccountOpen(false);
     setOnboardingOpen(false);
     setUnreadCount(0);
+    blockedIdsRef.current = [];
+    // These overlays render on their own state alone, with no `&& profile`
+    // guard. Leaving them mounted through a sign-out left a dialog on screen
+    // whose submit handler returns early on the now-null profile - a form that
+    // looks live, accepts input, and silently does nothing when submitted.
+    setCounteringRequest(null);
+    setReportTarget(null);
+    setSelectedListing(null);
+    setEditingListing(null);
+    setListingOpen(false);
+    setVerificationOpen(false);
+    setDeleteAccountOpen(false);
     resetIgAvatarSync();
   }
 
@@ -2978,7 +3216,8 @@ export default function MarketplaceApp({
         .select()
         .single();
       if (error) throw error;
-      setProfile(data as Profile);
+      const updatedProfile = data as Profile;
+      setProfile(updatedProfile);
 
       // A listing published without photos of its own is seeded with the
       // member's profile image, so the same URL can be a live listing's cover.
@@ -3032,7 +3271,10 @@ export default function MarketplaceApp({
             ? "Profile photo removed."
             : "Photo removed.",
       );
-      await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
+      // Pass the row the update returned, not the `profile` captured when this
+      // handler was created - that snapshot still carries the URL just deleted,
+      // so the refresh re-seeded listings with the dead image.
+      await Promise.all([loadMarketplace(), loadOwnListings(updatedProfile)]);
     } catch (error) {
       setToast(
         friendlyDbError(error) || "Could not remove that photo.",
@@ -3131,8 +3373,17 @@ export default function MarketplaceApp({
           // wrote server-side only survives if we read the response body.
           const context = (error as { context?: Response }).context;
           const detail = context ? await context.json().catch(() => null) : null;
-          if (detail && seq === igAvatarSeqRef.current) {
-            setIgStats(detail as IgStats);
+          if (seq === igAvatarSeqRef.current) {
+            // A non-JSON error body (gateway HTML, a network drop) left this
+            // null, so the busy state cleared and the note rendered nothing at
+            // all - the member saw a spinner finish and no outcome, with no
+            // hint they could just type the number in.
+            setIgStats(
+              (detail as IgStats | null) ?? {
+                error:
+                  "We could not reach Instagram just now — type your follower count in yourself.",
+              },
+            );
           }
           return "";
         }
@@ -3153,6 +3404,14 @@ export default function MarketplaceApp({
         }
         return url;
       } catch {
+        // Same reasoning as the error branch above: never clear the busy state
+        // without leaving the member something to read.
+        if (seq === igAvatarSeqRef.current) {
+          setIgStats({
+            error:
+              "We could not reach Instagram just now — type your follower count in yourself.",
+          });
+        }
         return "";
       }
     })();
@@ -4039,7 +4298,12 @@ export default function MarketplaceApp({
                     {listingImages(listing).length} photos
                   </span>
                 )}
-                <span className="save-button">♡</span>
+                {/* A 34px circular heart pill sat here on every card - the
+                    exact affordance every marketplace uses for "save" - with
+                    no handler and no favorites feature behind it. Removed
+                    rather than hidden: a control that does nothing when
+                    clicked is worse than no control. Restore it alongside a
+                    real favorites feature, not before. */}
                 <span className="image-hint" aria-hidden="true">
                   Click to view <b>→</b>
                 </span>
@@ -4374,7 +4638,7 @@ export default function MarketplaceApp({
               <li>Priority onboarding</li>
               <li>Additional reporting and service</li>
             </ul>
-            <a className="pricing-button" href="mailto:sidespacesupport@gmail.com">
+            <a className="pricing-button" href={`mailto:${SUPPORT_EMAIL}`}>
               Talk with the SideSpace team <span>↗</span>
             </a>
           </article>
@@ -4427,7 +4691,11 @@ export default function MarketplaceApp({
       </footer>
 
       {authOpen && (
-        <Modal elevated onClose={() => setAuthOpen(false)}>
+        <Modal
+          elevated
+          label={authMode === "signup" ? "Join SideSpace" : "Sign in to SideSpace"}
+          onClose={() => setAuthOpen(false)}
+        >
           <div className="modal-heading">
             <p className="eyebrow">Your SideSpace account</p>
             <h2>
@@ -4537,7 +4805,7 @@ export default function MarketplaceApp({
       )}
 
       {accountOpen && user && profile && (
-        <Modal onClose={() => setAccountOpen(false)} wide>
+        <Modal label="Account settings" onClose={() => setAccountOpen(false)} wide>
           <div className="account-dashboard">
             <header className="account-hero">
               <Avatar profile={profile} size="large" />
@@ -4890,17 +5158,27 @@ export default function MarketplaceApp({
                   </p>
                 </div>
               </div>
-              {profile.role !== "consumer" && !profile.verified && !verificationRequest && (
-                <button
-                  className="button button-dark button-small"
-                  onClick={() => setVerificationOpen(true)}
-                >
-                  Request verification <span>↗</span>
-                </button>
-              )}
+              {/* A rejected request is still a request, so gating purely on
+                  `!verificationRequest` hid this button forever after one
+                  rejection - the copy said "before resubmitting" next to no
+                  way to resubmit. Rejected members get the button back. */}
+              {profile.role !== "consumer" &&
+                !profile.verified &&
+                (!verificationRequest ||
+                  verificationRequest.status === "rejected") && (
+                  <button
+                    className="button button-dark button-small"
+                    onClick={() => setVerificationOpen(true)}
+                  >
+                    {verificationRequest?.status === "rejected"
+                      ? "Resubmit evidence"
+                      : "Request verification"}{" "}
+                    <span>↗</span>
+                  </button>
+                )}
               {verificationRequest?.status === "rejected" && (
                 <p className="trust-help">
-                  More information is needed. Contact sidespacesupport@gmail.com before resubmitting.
+                  More information is needed. Contact {SUPPORT_EMAIL} before resubmitting.
                 </p>
               )}
             </section>
@@ -4936,6 +5214,16 @@ export default function MarketplaceApp({
                   </button>
                 </div>
                 <form className="stack-form account-password-form" onSubmit={updatePassword}>
+                  <label>
+                    Current password
+                    <input
+                      name="current_password"
+                      type="password"
+                      autoComplete="current-password"
+                      required
+                      placeholder="Confirm it's you"
+                    />
+                  </label>
                   <label>
                     New password
                     <input
@@ -5085,6 +5373,7 @@ export default function MarketplaceApp({
 
       {deleteAccountOpen && user && (
         <Modal
+          label="Delete your account"
           onClose={() => {
             if (!busy) {
               setDeleteAccountOpen(false);
@@ -5154,6 +5443,7 @@ export default function MarketplaceApp({
 
       {onboardingOpen && user && (
         <Modal elevated
+          label="Complete your SideSpace profile"
           onClose={() => {
             setOnboardingOpen(false);
             // Closing unmounts the modal and the fields are uncontrolled, so
@@ -5527,6 +5817,7 @@ export default function MarketplaceApp({
 
       {listingOpen && (
         <Modal
+          label={editingListing ? "Edit listing" : "Create a listing"}
           onClose={() => {
             setListingOpen(false);
             setEditingListing(null);
@@ -5826,7 +6117,7 @@ export default function MarketplaceApp({
       )}
 
       {selectedListing && (
-        <Modal onClose={closeListing} wide>
+        <Modal label={selectedListing.title} onClose={closeListing} wide>
           <div className="detail-layout">
             <div className="detail-media">
               <figure>
@@ -5971,8 +6262,22 @@ export default function MarketplaceApp({
               <div className="detail-safety-actions">
                 <button
                   onClick={() => {
-                    void navigator.clipboard.writeText(window.location.href);
-                    setToast("Listing link copied.");
+                    // navigator.clipboard is undefined outside a secure
+                    // context, so the unguarded call threw synchronously - and
+                    // the toast claiming success ran before the write had
+                    // resolved, so a denied permission still said "copied".
+                    void (async () => {
+                      const url = window.location.href;
+                      try {
+                        if (!navigator.clipboard) throw new Error("unavailable");
+                        await navigator.clipboard.writeText(url);
+                        setToast("Listing link copied.");
+                      } catch {
+                        setToast(
+                          "Could not copy the link. Copy it from the address bar.",
+                        );
+                      }
+                    })();
                   }}
                 >
                   Share listing
@@ -6016,7 +6321,11 @@ export default function MarketplaceApp({
       )}
 
       {campaignListing && (
-        <Modal onClose={() => setCampaignListing(null)} wide>
+        <Modal
+          label={`Request ${campaignListing.title}`}
+          onClose={() => setCampaignListing(null)}
+          wide
+        >
           <div className="modal-heading">
             <p className="eyebrow">Campaign request</p>
             <h2>Request {campaignListing.title}</h2>
@@ -6105,7 +6414,10 @@ export default function MarketplaceApp({
       )}
 
       {counteringRequest && (
-        <Modal onClose={() => setCounteringRequest(null)}>
+        <Modal
+          label="Suggest different terms"
+          onClose={() => setCounteringRequest(null)}
+        >
           <div className="modal-heading">
             <p className="eyebrow">Counteroffer</p>
             <h2>Suggest different terms.</h2>
@@ -6145,7 +6457,10 @@ export default function MarketplaceApp({
       )}
 
       {verificationOpen && profile && profile.role !== "consumer" && (
-        <Modal onClose={() => setVerificationOpen(false)}>
+        <Modal
+          label="Submit verification evidence"
+          onClose={() => setVerificationOpen(false)}
+        >
           <div className="modal-heading">
             <p className="eyebrow">SideSpace verification</p>
             <h2>Submit evidence for review.</h2>
@@ -6195,7 +6510,10 @@ export default function MarketplaceApp({
       )}
 
       {reportTarget && (
-        <Modal onClose={() => setReportTarget(null)}>
+        <Modal
+          label={`Report ${reportTarget.profile.display_name}`}
+          onClose={() => setReportTarget(null)}
+        >
           <div className="modal-heading">
             <p className="eyebrow">Safety report</p>
             <h2>Report {reportTarget.profile.display_name}</h2>
@@ -6264,14 +6582,14 @@ export default function MarketplaceApp({
                         : "Check your connection and reopen Messages."}
                     </p>
                   </div>
-                ) : !threads.length ? (
+                ) : !visibleThreads.length ? (
                   <div className="inbox-empty">
                     <span>@</span>
                     <h3>Your inbox is ready.</h3>
                     <p>Message a listing owner to start a conversation.</p>
                   </div>
                 ) : (
-                  threads.map((thread) => (
+                  visibleThreads.map((thread) => (
                     <button
                       key={thread.id}
                       className={activeThread?.id === thread.id ? "active" : ""}
@@ -6293,6 +6611,7 @@ export default function MarketplaceApp({
                     <div className="conversation-head">
                       <button
                         className="mobile-back"
+                        aria-label="Back to conversations"
                         onClick={() => {
                           setActiveContact(null);
                           setActiveThread(null);
@@ -6337,10 +6656,7 @@ export default function MarketplaceApp({
                           <span className="sr-only">{sender}: </span>
                           <p>{message.body}</p>
                           <small>
-                            {new Intl.DateTimeFormat("en", {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            }).format(new Date(message.created_at))}
+                            {TIME_FORMAT.format(new Date(message.created_at))}
                           </small>
                         </div>
                         );
