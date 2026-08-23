@@ -3676,7 +3676,11 @@ select:focus-visible {
 
 input::placeholder,
 textarea::placeholder {
-  color: rgba(21, 19, 14, 0.38);
+  /* Was rgba(21, 19, 14, 0.38), which composites to roughly 2.4:1 over both
+     field backgrounds actually in use - below the 4.5:1 WCAG AA minimum for
+     body text. --ink-soft measures about 5:1 and is already the body-copy
+     colour elsewhere, so placeholders now match the rest of the type. */
+  color: var(--ink-soft);
 }
 
 .modal-card {

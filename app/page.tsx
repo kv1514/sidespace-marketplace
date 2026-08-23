@@ -1,5 +1,8 @@
 import MarketplaceApp from "./MarketplaceApp";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createPublicClient,
+  PUBLIC_PROFILE_COLUMNS,
+} from "@/lib/supabase/public";
 
 // Revalidate rather than render per request: the marketplace changes slowly and
 // this keeps the page on the CDN.
@@ -20,17 +23,26 @@ export default async function Home() {
   let listings = null;
 
   try {
-    const supabase = await createClient();
+    // Cookie-free on purpose. The session-aware server client calls cookies(),
+    // which opts this route into dynamic rendering and made `revalidate = 300`
+    // above a no-op: every request re-rendered and blocked on these queries.
+    // None of this data is per-user, so it does not need a session.
+    const supabase = createPublicClient();
     const [profilesResult, listingsResult] = await Promise.all([
       supabase
         .from("profiles")
-        .select("*")
+        .select(PUBLIC_PROFILE_COLUMNS)
         .eq("onboarding_complete", true)
         .neq("role", "consumer")
-        .order("verified", { ascending: false }),
+        .order("verified", { ascending: false })
+        // Same reasoning as the listings bound below - this fed an uncapped
+        // showcase row that rendered a card per profile.
+        .limit(60),
       supabase
         .from("listings")
-        .select("*, owner:profiles!listings_owner_profile_id_fkey(*)")
+        .select(
+          `*, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
+        )
         .eq("status", "active")
         .order("created_at", { ascending: false })
         // Bound the payload: PostgREST truncates at 1000 anyway, silently.
