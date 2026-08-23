@@ -6504,3 +6504,243 @@ html.reveal-ready [data-reveal].is-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ==========================================================================
+   THE REBRAND, PART TWO: THE APP SURFACES
+   ==========================================================================
+   The marketing page was rebranded and the product behind it was not, so a
+   member walked from a weight-300 hairline homepage straight into the old
+   poster-and-shadow language the moment they signed up. This closes that.
+
+   Still CSS only. Nothing here touches a handler, a query or a flow.
+   ========================================================================== */
+
+/* ------------------------------------------------------------ shared chrome
+   Every dialog in the app is a .modal-card, so this one rule reaches the
+   account panel, onboarding, the listing detail and every form. Depth is the
+   1px border it already carries, not a drop shadow. */
+.modal-card {
+  border-radius: 16px;
+  box-shadow: none;
+}
+
+.toast {
+  box-shadow: none;
+}
+
+.modal-heading h2,
+.onboarding-top h2 {
+  font-weight: 300;
+  letter-spacing: -0.026em;
+  line-height: 1.08;
+}
+
+/* The arrow glyph was sized for the old 11px label. */
+.button-dark span,
+.button-light span,
+.button-coral span {
+  font-size: 14px;
+}
+
+/* -------------------------------------------------------------------- inbox */
+.inbox-drawer {
+  border-left: 1px solid var(--line);
+  box-shadow: none;
+}
+
+.inbox-drawer > header h2 {
+  font-size: 28px;
+  font-weight: 300;
+  letter-spacing: -0.026em;
+  line-height: 1.12;
+  margin: 0;
+}
+
+/* An 11px chat body was the single loudest reason the inbox read as a
+   different product from the homepage. */
+.message p {
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.inbox-empty p,
+.conversation-placeholder p,
+.message-start p {
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 42ch;
+}
+
+.message-form button {
+  align-items: center;
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  color: var(--white);
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 600;
+  justify-content: center;
+  letter-spacing: -0.01em;
+  min-height: 42px;
+  padding: 0 24px;
+}
+
+/* ------------------------------------------------------------------ account */
+.account-hero h2 {
+  font-weight: 300;
+  letter-spacing: -0.028em;
+  line-height: 1.05;
+}
+
+.account-section-heading h3 {
+  font-weight: 300;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+/* Weight 800 is not in the system at all: display is 300, small labels 600. */
+.account-actions span {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* These four tiles were the only cards in the panel with no edge at rest. */
+.account-actions > button {
+  border-color: var(--line);
+  border-radius: 16px;
+}
+
+/* ----------------------------------------------------------- listing detail */
+.detail-copy h2 {
+  font-weight: 300;
+  letter-spacing: -0.028em;
+  line-height: 1.03;
+}
+
+/* The largest figure in the product, and the only one not set as one. Tabular
+   digits so the price does not jitter as a member pages between listings. */
+.detail-price strong {
+  font-family: var(--display);
+  font-variant-numeric: tabular-nums;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.owner-trust-badge {
+  font-weight: 600;
+}
+
+.detail-facts small,
+.detail-price small {
+  letter-spacing: 0.16em;
+}
+
+/* Locally resized, so this was the one place the pill spec did not land. */
+.detail-primary-actions .button {
+  min-height: 42px;
+  padding: 0 24px;
+}
+
+/* --------------------------------------------------------------- onboarding
+   The role picker is the highest-consequence control in the product, so the
+   selected state has to read instantly. Keeping the border at 2px means the
+   ink selection is unmistakable and nothing shifts by a pixel when it changes. */
+.role-choice-grid > button {
+  border: 2px solid var(--line);
+  transition: border-color 0.15s ease;
+}
+
+.role-choice-grid > button.active {
+  border-color: var(--ink);
+  box-shadow: none;
+}
+
+/* :not(.active) keeps hover from stealing the selected card's ink border. */
+.role-choice-grid > button:not(.active):hover {
+  border-color: var(--ink-soft);
+}
+
+.onboarding-form .onboarding-actions > button:not(.button) {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 600;
+  justify-content: center;
+  letter-spacing: -0.01em;
+  min-height: 42px;
+  padding: 0 24px;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+
+/* ------------------------------------------------------------ campaign flow */
+.request-status {
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  padding: 6px 8px 6px 10px;
+}
+
+/* The five states were saturated pastels from no palette in particular. These
+   carry the same information out of the brand tokens: neutral for waiting,
+   lime for agreed, ink for done, coral only for the negative ones. */
+.request-status.status-pending {
+  background: var(--white);
+  border-color: var(--line);
+  color: var(--ink-soft);
+}
+
+.request-status.status-countered {
+  background: var(--paper-2);
+  border-color: var(--ink-soft);
+  color: var(--ink);
+}
+
+.request-status.status-accepted {
+  background: color-mix(in srgb, var(--lime) 34%, var(--white));
+  border-color: color-mix(in srgb, var(--lime) 62%, var(--line));
+  color: var(--ink);
+}
+
+.request-status.status-completed {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.request-status.status-declined,
+.request-status.status-cancelled {
+  background: color-mix(in srgb, var(--coral) 12%, var(--white));
+  border-color: color-mix(in srgb, var(--coral) 40%, var(--line));
+  color: var(--ink);
+}
+
+.campaign-request-actions > button:not(.button) {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  min-height: 42px;
+  padding: 0 24px;
+}
+
+/* Was washed in a lavender that belonged to no palette. The agreed price is
+   good news, so it takes the accent, faintly. */
+.counter-summary {
+  background: color-mix(in srgb, var(--lime) 22%, var(--white));
+  border: 1px solid color-mix(in srgb, var(--lime) 55%, var(--line));
+}
+
+.counter-summary strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
