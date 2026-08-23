@@ -10,27 +10,31 @@ addresses are not application source. This file is the documentation; the data i
 
 ---
 
-## Architecture
+## Status: not yet automated
 
-The pipeline runs in two stages, and the split is forced by a platform constraint worth
-understanding before you rely on it:
+The daily routine exists but is **disabled**, because of a platform constraint worth
+understanding before relying on it.
 
 **A cron-fired Claude session in this org gets no MCP connectors.** No Gmail, no Supabase. It
-gets Bash, file tools, and web search. So a scheduled job physically cannot send your email.
+gets Bash, file tools, and web search. So a scheduled job can neither send the email nor read
+the prospect queue out of Supabase. Attaching connectors via the API is rejected outright
+(`the connectors parameter is not available for this organization`).
 
-| Stage | Runs as | When | Can it send? |
-|---|---|---|---|
-| **Prep** | Scheduled routine (`trig_01HL982CX9wovp3Q7D2yudPc`) | 9:00 AM PT daily | No — stages the batch |
-| **Send** | A Claude session with Gmail | You say "send today's SideSpace batch" | Yes |
+Routine `trig_01HL982CX9wovp3Q7D2yudPc` is therefore disabled rather than left firing daily
+into a no-op. Its prompt is already correct and will work the moment it has connectors.
 
-### Making it fully autonomous
+### To make it run
 
-Create the routine from the **claude.ai Routines UI** instead of the API, and attach the **Gmail**
-and **Supabase** connectors to it. A UI-created routine keeps its connectors when it fires, so the
-one session does research → select → send → verify → repair with no human step. The prompt to
-paste is in [Appendix: autonomous routine prompt](#appendix-autonomous-routine-prompt).
+Recreate it from the **claude.ai Routines UI**, schedule `0 16 * * *`, and attach the **Gmail**
+and **Supabase** connectors. A UI-created routine keeps its connectors when it fires, so one
+session does select → write → send → verify → repair with no human step. The prompt to paste is
+in [Appendix](#appendix-routine-prompt).
 
----
+### Until then
+
+Say **"send today's SideSpace batch"** in a Claude session that has Gmail and Supabase. It runs
+the same nine steps interactively — roughly a minute of your attention, and everything else is
+identical.
 
 ## The rule that matters most
 
@@ -190,56 +194,20 @@ Cron is UTC and has no DST awareness. Set to `0 16 * * *` = **9:00 AM PDT**.
 
 ---
 
-## Appendix: autonomous routine prompt
+## Appendix: routine prompt
 
-Paste this into a new routine in the claude.ai Routines UI, schedule `0 16 * * *`, and attach the
-**Gmail** and **Supabase** connectors.
+The authoritative prompt lives on routine `trig_01HL982CX9wovp3Q7D2yudPc` — read it with
+`list_triggers` rather than copying a duplicate that drifts out of sync. It covers, in order:
 
-<details>
-<summary>Full prompt</summary>
+1. Build the do-not-send set from Gmail `in:sent` unioned with `outreach.suppression`.
+2. Select 25 queued prospects, deduped by address *and* domain, capped at 3 per city.
+3. Write each email individually from the templates above, gated on a verified hook.
+4. Send spaced ~40s apart, CC Jeff, logging to `outreach.sent_log`.
+5. Wait 5 minutes, then match `from:mailer-daemon newer_than:1h` against the batch.
+6. Repair hard bounces with one re-researched address; never retry soft bounces.
+7. Suppress opt-outs; surface human replies for a personal answer; flag `warm_hold` rows due.
+8. Top up the queue when it drops below 50, with source URLs on every row.
+9. Report sends by city, bounces, replies needing attention, remaining depth.
 
-```
-You are running the SideSpace daily outreach job. Fully autonomous, no human watching.
-
-Context: SideSpace is a marketplace for everyday physical ad space (storefront windows, shop
-counters, community boards, car windows). Founders Kausthubh Veldanda and Jeff Sun, Brea CA.
-Site: https://sidespace-marketplace.vercel.app/
-Send from kveldanda987@gmail.com, CC jeffsun1129@gmail.com on every email.
-State lives in the `outreach` schema of Supabase project jlomjbixyemqsruycycz.
-Read OUTREACH.md in kv1514/sidespace-marketplace for the templates and rules.
-
-1. DEDUP. Query Gmail `in:sent` (paginate, THREAD_VIEW_METADATA_ONLY) for every address ever
-   contacted. Union with `select email, domain from outreach.suppression`. Collect domains too.
-2. SELECT 25 from `outreach.prospects where status='queued'` whose email AND website domain are
-   in neither set. Cap 3 per city. Fewer than 25 qualifying → send what qualifies, report short.
-3. WRITE each email individually per OUTREACH.md. DEMAND template for intent='DEMAND', SUPPLY for
-   'SUPPLY'. First sentence built from that prospect's hook, rewritten into natural prose, never
-   pasted verbatim. Salutation uses owner_first_name when set. Subject specific, lowercase, under
-   8 words. Under 150 words. Signature + opt-out line always.
-   HARD RULE: cannot write an opening unmistakably about that business → do not send it.
-4. SEND via Gmail, CC Jeff, spaced ~40s apart. Insert each into outreach.sent_log.
-5. WAIT 5 minutes (Monitor tool or background sleep, never a foreground bash sleep). Then search
-   `from:mailer-daemon newer_than:1h` and match against the batch.
-6. REPAIR hard bounces (550, address not found, DNS/MX failure): research that business for a
-   current published address on their own site. Found → send once to it, log it. Not found →
-   insert into outreach.suppression (category 'hard_bounce') and mark the prospect 'bounced'.
-   NEVER retry soft bounces (delay, inbox full, 451). A 451 "unauthenticated" is a sender
-   reputation warning — call it out prominently.
-7. REPLIES. Any reply containing "no thanks"/"unsubscribe"/"remove me"/"stop" → suppression,
-   category 'declined'. Surface genuine human replies for Kausthubh to answer personally.
-   NEVER auto-reply to a real person.
-   Check outreach.suppression for category='warm_hold' rows whose followup_due has passed and
-   flag them urgently.
-8. TOP UP. If fewer than 50 queued prospects remain, research more. Each needs a REAL published
-   email on the business's own site AND a specific verifiable hook. Missing either → do not add.
-   SUPPLY: Berkeley, Oakland, SF. DEMAND: Brea, Fullerton, Placentia, Yorba Linda, La Habra,
-   Long Beach, Torrance, El Segundo, San Pedro. Exclude chains and 5+ location businesses.
-   Record email_source_url and hook_source_url for every row.
-9. REPORT: sent count by city, bounces and what you did about each, human replies needing a
-   personal answer, remaining queue depth.
-
-NEVER: email anyone in the do-not-send set; send an email not specific to that business;
-auto-reply to a human; exceed 25 new sends; invent an email address.
-```
-
-</details>
+It opens with a precondition that halts the run if the Gmail and Supabase tools are absent,
+so a misconfigured routine reports the misconfiguration instead of half-running.
