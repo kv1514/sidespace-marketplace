@@ -18,7 +18,17 @@ import {
   localProfiles,
 } from "@/app/localMarketplaceData";
 
-type Role = "consumer" | "business" | "creator" | "space_owner";
+// `consumer` is retired from the product but stays in the union, in roleCopy and
+// in the DB CHECK. Legacy rows still carry it, roleLabel() dereferences
+// roleCopy[role] unguarded, and dropping a value from a CHECK re-validates the
+// whole table to buy nothing. It is excluded from the picker by PICKABLE_ROLES,
+// never by removing it from here.
+type Role =
+  | "consumer"
+  | "business"
+  | "creator"
+  | "space_owner"
+  | "sponsor_host";
 type RoleFilter = "all" | "supply" | Exclude<Role, "consumer">;
 
 type Profile = {
@@ -33,6 +43,13 @@ type Profile = {
   categories: string[];
   followers: number;
   avg_views: number;
+  /**
+   * What avg_views is counting. The person card used to hardcode "weekly
+   * looks", so a barbershop's daily footfall and a robotics team's season
+   * crowd both published as weekly views of something. Defaults to
+   * "weekly looks" in the DB, so every pre-existing row renders unchanged.
+   */
+  reach_unit?: string;
   audience_age: string;
   website: string;
   avatar_url: string;
@@ -86,12 +103,19 @@ type Listing = {
   owner: Profile;
 };
 
+/* social_links is free-shape jsonb with no key validation, so adding a platform
+ * here needs no migration. An empty `base` means "this is not a URL we can
+ * construct" - a newsletter or a podcast is stored as whatever the member typed
+ * (see normalizeSocialUrl). */
 const socialPlatforms = [
   { key: "instagram", label: "Instagram", short: "IG", base: "https://instagram.com/" },
   { key: "tiktok", label: "TikTok", short: "TT", base: "https://tiktok.com/@" },
   { key: "youtube", label: "YouTube", short: "YT", base: "https://youtube.com/@" },
   { key: "facebook", label: "Facebook", short: "FB", base: "https://facebook.com/" },
   { key: "x", label: "X", short: "X", base: "https://x.com/" },
+  { key: "twitch", label: "Twitch", short: "TW", base: "https://twitch.tv/" },
+  { key: "newsletter", label: "Newsletter", short: "NL", base: "" },
+  { key: "podcast", label: "Podcast", short: "PC", base: "" },
 ] as const;
 
 type Conversation = {
@@ -144,7 +168,7 @@ type CampaignRequest = {
 type VerificationRequest = {
   id: string;
   profile_id: string;
-  verification_type: "business" | "creator" | "space_owner";
+  verification_type: "business" | "creator" | "space_owner" | "sponsor_host";
   evidence_url: string;
   social_platform: string;
   social_handle: string;
@@ -157,6 +181,8 @@ const roleCopy: Record<
   Role,
   { label: string; short: string; eyebrow: string; icon: string }
 > = {
+  // Retired. Kept only so roleLabel() and the person card do not crash on a
+  // legacy row - it is not offered by the picker. See PICKABLE_ROLES.
   consumer: {
     label: "Campaign shopper",
     short: "Find and book local reach",
@@ -165,23 +191,51 @@ const roleCopy: Record<
   },
   business: {
     label: "Business",
-    short: "Find creators and neighborhood spaces",
-    eyebrow: "I represent a brand",
-    icon: "B",
+    short: "Run a campaign with creators, spaces, and local teams",
+    eyebrow: "I want to advertise",
+    icon: "◆",
   },
   creator: {
     label: "Creator",
-    short: "List your social audience",
-    eyebrow: "I have an online audience",
+    short: "Sell posts, stories, and video to local brands",
+    eyebrow: "I have an audience",
     icon: "@",
   },
   space_owner: {
     label: "Space owner",
-    short: "List a wall, window, car, or room",
-    eyebrow: "I have physical reach",
+    short: "Rent out a window, wall, vehicle, or counter",
+    eyebrow: "I have physical space",
     icon: "⌂",
   },
+  sponsor_host: {
+    label: "Sponsorship host",
+    short: "Offer sponsors a logo, a banner, or a named tier",
+    eyebrow: "I run a team or event",
+    icon: "★",
+  },
 };
+
+/**
+ * The roles a member may actually choose.
+ *
+ * Deliberately an explicit list rather than Object.keys(roleCopy): `consumer`
+ * still has an entry there for legacy rows, and iterating the object would put
+ * a retired role back in the picker.
+ */
+const PICKABLE_ROLES: Role[] = [
+  "business",
+  "creator",
+  "space_owner",
+  "sponsor_host",
+];
+
+/** Roles that can be held alongside a primary one, per profiles_extra_roles_valid. */
+const EXTRA_ROLE_OPTIONS: Role[] = [
+  "business",
+  "creator",
+  "space_owner",
+  "sponsor_host",
+];
 
 const legacyDemoProfiles: Profile[] = [
   {
@@ -430,8 +484,642 @@ const LISTING_CHANNELS = [
   "Room / interior",
   "Community board",
   "Business brief",
+  "Sponsorship",
   "Other",
 ];
+
+/* ---------------------------------------------------------------------------
+ * Onboarding taxonomies.
+ *
+ * Onboarding asks questions in chips rather than free text, and every chip has
+ * to land in a column that already exists. These tables are the mapping. They
+ * are client-side constants on purpose: `channel` and `price_unit` have no DB
+ * CHECK (the 0002 seeds carry values like "Cafe window" and "story set" that
+ * any CHECK would reject), so the taxonomy can change in a deploy rather than
+ * a migration.
+ * ------------------------------------------------------------------------- */
+
+/** Written to profiles.categories. Shared by the creator and business panes. */
+const CATEGORY_CHIPS = [
+  "Food & drink",
+  "Fashion",
+  "Fitness",
+  "Beauty",
+  "Local news",
+  "Family",
+  "Music",
+  "Sports",
+  "Tech",
+  "Home",
+  "Pets",
+  "Auto",
+];
+
+/** Creator: which socialPlatforms keys are offered, and their offer examples. */
+const CREATOR_PLATFORMS = [
+  "instagram",
+  "tiktok",
+  "youtube",
+  "x",
+  "facebook",
+  "newsletter",
+  "podcast",
+  "twitch",
+] as const;
+
+/** Suggestion chips for `format`, filtered to the platforms actually picked. */
+const CREATOR_OFFER_EXAMPLES: Record<string, string[]> = {
+  instagram: ["three Instagram stories over 48 hours", "one in-feed post"],
+  tiktok: ["a TikTok with a 24-hour pin", "a TikTok product feature"],
+  youtube: ["a dedicated YouTube segment", "a YouTube short"],
+  x: ["a pinned post for 24 hours"],
+  facebook: ["a post to my local group"],
+  newsletter: ["a newsletter mention"],
+  podcast: ["a podcast read"],
+  twitch: ["a stream shout-out"],
+};
+
+/** Space owner: chip -> the LISTING_CHANNELS value it stores. */
+const SPACE_KIND_CHIPS: Array<{ label: string; channel: string }> = [
+  { label: "Window", channel: "Storefront" },
+  { label: "Wall or mural", channel: "Wall / mural" },
+  { label: "Storefront counter", channel: "Storefront" },
+  { label: "Vehicle", channel: "Vehicle" },
+  { label: "Yard or fence", channel: "Other" },
+  { label: "Room or interior", channel: "Room / interior" },
+  { label: "Community board", channel: "Community board" },
+  { label: "A-frame sign", channel: "Other" },
+  { label: "Something else", channel: "Other" },
+];
+
+/**
+ * Foot traffic. Writes three things: a number to profiles.avg_views, a unit to
+ * profiles.reach_unit, and a human sentence to listings.demographics.
+ *
+ * "Not sure" carries a null count deliberately - it must leave whatever the
+ * member already had rather than publishing a claim of zero.
+ */
+const TRAFFIC_CHIPS: Array<{
+  label: string;
+  count: number | null;
+  sentence: string;
+}> = [
+  {
+    label: "Quiet street",
+    count: 50,
+    sentence: "A quiet street - regulars and neighbours rather than crowds.",
+  },
+  {
+    label: "Steady neighborhood",
+    count: 300,
+    sentence: "About 300 people a day, mostly local regulars.",
+  },
+  {
+    label: "Busy block",
+    count: 1200,
+    sentence: "About 1,200 people a day on a busy block.",
+  },
+  {
+    label: "Major foot traffic",
+    count: 5000,
+    sentence: "5,000+ people a day - a main pedestrian route.",
+  },
+  { label: "Not sure", count: null, sentence: "" },
+];
+
+/** Space owner availability. One chip, no date pickers. */
+const AVAILABILITY_CHIPS = [
+  "Available now",
+  "From next month",
+  "Seasonal",
+  "Ask me",
+];
+
+/** Business: what the campaign should achieve. Seeds the description draft. */
+const BUSINESS_GOAL_CHIPS: Array<{ label: string; sentence: string }> = [
+  {
+    label: "Get people into the store",
+    sentence: "We want more people through the door.",
+  },
+  {
+    label: "Launch something new",
+    sentence: "We are launching something new and want the neighbourhood to know.",
+  },
+  {
+    label: "Grow our following",
+    sentence: "We want to grow a genuinely local following.",
+  },
+  { label: "Sell out an event", sentence: "We have an event to fill." },
+  {
+    label: "Stay top of mind nearby",
+    sentence: "We want to stay top of mind with people nearby.",
+  },
+];
+
+/**
+ * Business placements. `social` decides whether the creator-facing questions
+ * render at all - a business that only wants windows never sees the word
+ * Instagram anywhere in the flow.
+ */
+const BUSINESS_PLACEMENT_CHIPS: Array<{ label: string; social: boolean }> = [
+  { label: "Instagram posts", social: true },
+  { label: "TikTok videos", social: true },
+  { label: "YouTube", social: true },
+  { label: "Newsletter mentions", social: true },
+  { label: "Storefront windows", social: false },
+  { label: "Walls & murals", social: false },
+  { label: "Vehicles", social: false },
+  { label: "Community boards", social: false },
+  { label: "Local teams & events", social: false },
+  { label: "Not sure yet", social: false },
+];
+
+/** Business timing. Sets availability_notes plus the available_from/to window. */
+const BUSINESS_TIMING_CHIPS: Array<{ label: string; days: number }> = [
+  { label: "Next 2 weeks", days: 14 },
+  { label: "This month", days: 30 },
+  { label: "Next month", days: 60 },
+  { label: "Flexible", days: 90 },
+];
+
+/** Suggestion chips for a business's `deliverables`, social placements only. */
+const DELIVERABLE_EXAMPLES = [
+  "Tag @us",
+  "Use our hashtag",
+  "Link in bio for 48h",
+  "Show the product on camera",
+];
+
+/** Sponsorship host: what kind of organisation. Seeds categories and the title. */
+const SPONSOR_ORG_CHIPS = [
+  "Robotics team",
+  "Sports team",
+  "Esports team",
+  "Hackathon",
+  "Conference",
+  "Nonprofit",
+  "Student org",
+  "School club",
+  "Festival",
+  "Band or theater",
+];
+
+/**
+ * Sponsorship reach. Same three-way write as TRAFFIC_CHIPS, but the unit
+ * differs between a season-long team and a single event - which is exactly the
+ * distinction profiles.reach_unit exists to carry.
+ */
+const SPONSOR_REACH_CHIPS: Array<{
+  label: string;
+  count: number | null;
+  unit: string;
+  sentence: string;
+}> = [
+  {
+    label: "Our team and families (~100)",
+    count: 100,
+    unit: "people a season",
+    sentence: "Around 100 people across the season - the team and their families.",
+  },
+  {
+    label: "A local crowd (~1,000)",
+    count: 1000,
+    unit: "people a season",
+    sentence: "Around 1,000 people across the season.",
+  },
+  {
+    label: "A regional event (~5,000)",
+    count: 5000,
+    unit: "people per event",
+    sentence: "Around 5,000 people at the event.",
+  },
+  {
+    label: "A big event (10,000+)",
+    count: 10000,
+    unit: "people per event",
+    sentence: "10,000+ people at the event.",
+  },
+  { label: "Not sure", count: null, unit: "", sentence: "" },
+];
+
+/** What a sponsor actually receives. First two feed `format`, all feed `deliverables`. */
+const SPONSOR_BENEFIT_CHIPS = [
+  "Logo on jerseys",
+  "Logo on the robot or kit",
+  "Banner at events",
+  "Named tier",
+  "Social shoutouts",
+  "Newsletter mention",
+  "Booth or table",
+  "Logo on our website",
+  "Announcer shout-out",
+  "Program ad",
+];
+
+/** Sponsorship window. Sets availability_notes and the date pair. */
+const SPONSOR_SEASON_CHIPS: Array<{ label: string; days: number }> = [
+  { label: "This season", days: 120 },
+  { label: "This semester", days: 150 },
+  { label: "One event", days: 30 },
+  { label: "Year-round", days: 365 },
+];
+
+/** Price presets per role. "Custom" reveals a number input. */
+const PRICE_CHIPS: Record<string, number[]> = {
+  creator: [50, 150, 300, 600],
+  space_owner: [25, 75, 150, 400],
+  sponsor_host: [250, 500, 1000, 2500],
+};
+
+const PRICE_UNIT_CHIPS: Record<string, string[]> = {
+  creator: ["post", "video", "story", "campaign"],
+  space_owner: ["week", "month", "day", "campaign"],
+};
+
+/**
+ * Every answer in the onboarding flow, in one controlled object.
+ *
+ * The old flow read its values out of FormData at submit time, which stops
+ * working the moment step 2 branches by role: `saveOnboarding` guarded each
+ * field with `values.has(...)`, so a creator who picked TikTok but not
+ * Instagram never rendered `social_instagram`, `values.has` returned false, and
+ * every handle they typed was silently discarded in favour of the stored
+ * profile. Chip groups are React state and never appear in FormData at all, so
+ * they would write nothing. Controlled state removes the whole bug class.
+ */
+type OnboardingAnswers = {
+  // Step 1 - identity, asked of every role exactly once.
+  display_name: string;
+  city: string;
+  bio: string;
+  handle: string;
+  // Creator.
+  platforms: string[];
+  socials: Record<string, string>;
+  followers: number | null;
+  // The listing every role publishes.
+  title: string;
+  format: string;
+  price: number | null;
+  price_unit: string;
+  description: string;
+  categories: string[];
+  // Space owner.
+  spaceKind: string;
+  location_area: string;
+  traffic: string;
+  availability: string;
+  // Business.
+  goal: string;
+  placements: string[];
+  deliverables: string;
+  artwork: "" | "supply" | "help";
+  timing: string;
+  // Sponsorship host.
+  orgKind: string;
+  reach: string;
+  benefits: string[];
+  season: string;
+};
+
+/**
+ * The one selection idiom in onboarding.
+ *
+ * Single- and multi-select share a component on purpose. The old flow rendered
+ * the same "pick your roles" decision twice in two different visual languages -
+ * 210px cards for the primary role, compact tinted rows for the extras -
+ * stacked one above the other. Chips are now the only multi-select control in
+ * the flow.
+ *
+ * Multi-select chips carry a leading check when active so their state does not
+ * rest on the lime fill alone.
+ */
+function ChipRow({
+  options,
+  selected,
+  onPick,
+  multi = false,
+  field,
+  label,
+}: {
+  options: string[];
+  selected: string[];
+  onPick: (value: string) => void;
+  multi?: boolean;
+  field: string;
+  label: string;
+}) {
+  return (
+    <div
+      className="filter-row onboarding-chips"
+      data-field={field}
+      role="group"
+      aria-label={label}
+    >
+      {options.map((option) => {
+        const active = selected.includes(option);
+        return (
+          <button
+            key={option}
+            type="button"
+            className={active ? "active" : ""}
+            aria-pressed={active}
+            onClick={() => onPick(option)}
+          >
+            {multi && active ? `✓ ${option}` : option}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function emptyAnswers(): OnboardingAnswers {
+  return {
+    display_name: "",
+    city: "",
+    bio: "",
+    handle: "",
+    platforms: [],
+    socials: {},
+    followers: null,
+    title: "",
+    format: "",
+    price: null,
+    price_unit: "",
+    description: "",
+    categories: [],
+    spaceKind: "",
+    location_area: "",
+    traffic: "",
+    availability: "",
+    goal: "",
+    placements: [],
+    deliverables: "",
+    artwork: "",
+    timing: "",
+    orgKind: "",
+    reach: "",
+    benefits: [],
+    season: "",
+  };
+}
+
+/** Seed the answers from a stored profile so re-entry is not a blank form. */
+function answersFromProfile(source: Profile | null): OnboardingAnswers {
+  const base = emptyAnswers();
+  if (!source) return base;
+  return {
+    ...base,
+    display_name: source.display_name ?? "",
+    city: source.city ?? "",
+    bio: source.bio ?? "",
+    handle: source.handle ?? "",
+    categories: source.categories ?? [],
+    followers: source.followers || null,
+    socials: Object.fromEntries(
+      Object.entries(source.social_links ?? {}).map(([key, value]) => [
+        key,
+        String(value ?? ""),
+      ]),
+    ),
+    platforms: Object.entries(source.social_links ?? {})
+      .filter(([, value]) => Boolean(value))
+      .map(([key]) => key),
+  };
+}
+
+/** A date N days from today, as the YYYY-MM-DD a `date` column wants. */
+function isoDaysFromToday(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** "a, b and c" - used wherever chips become a sentence fragment. */
+function joinList(items: string[]) {
+  const clean = items.filter(Boolean);
+  if (clean.length <= 1) return clean[0] ?? "";
+  return `${clean.slice(0, -1).join(", ")} and ${clean[clean.length - 1]}`;
+}
+
+/**
+ * The reach number and its unit.
+ *
+ * Returns null when the member said "Not sure" so the caller can leave whatever
+ * they already had. Publishing 0 would put "0 people a day" on their card,
+ * which is a claim they never made.
+ */
+function deriveReach(
+  role: Role,
+  answers: OnboardingAnswers,
+): { avg_views: number | null; reach_unit: string | null } {
+  if (role === "space_owner") {
+    const chip = TRAFFIC_CHIPS.find((item) => item.label === answers.traffic);
+    if (!chip || chip.count === null) return { avg_views: null, reach_unit: null };
+    return { avg_views: chip.count, reach_unit: "people a day" };
+  }
+  if (role === "sponsor_host") {
+    const chip = SPONSOR_REACH_CHIPS.find((item) => item.label === answers.reach);
+    if (!chip || chip.count === null) return { avg_views: null, reach_unit: null };
+    return { avg_views: chip.count, reach_unit: chip.unit };
+  }
+  return { avg_views: null, reach_unit: null };
+}
+
+/**
+ * The prefilled body copy for the listing.
+ *
+ * These are drafts in a real editable textarea, not fixed strings. Every branch
+ * is written to clear the 60 characters `listingIsReady` requires, because a
+ * listing that fails that check is sunk below every complete one by
+ * `listingRank` - a flow that publishes thin rows is a flow that publishes rows
+ * nobody sees.
+ */
+function composeDescription(role: Role, answers: OnboardingAnswers): string {
+  const bio = answers.bio.trim();
+  const city = answers.city.trim();
+  if (role === "creator") {
+    const platforms = answers.platforms
+      .map((key) => socialPlatforms.find((p) => p.key === key)?.label ?? key)
+      .filter(Boolean);
+    return [
+      bio,
+      platforms.length ? `I post mostly on ${joinList(platforms)}.` : "",
+      answers.format ? `This offer is ${formatOffer(answers.format)}.` : "",
+      answers.categories.length
+        ? `It suits ${joinList(answers.categories.map((c) => c.toLowerCase()))} brands${city ? ` around ${city}` : ""}.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (role === "space_owner") {
+    const traffic = TRAFFIC_CHIPS.find((item) => item.label === answers.traffic);
+    const where = answers.location_area.trim() || city;
+    return [
+      answers.spaceKind ? `${answers.spaceKind}${where ? ` at ${where}` : ""}.` : "",
+      traffic?.sentence ?? "",
+      "It suits a poster, a decal, or a printed card, and I can help put it up.",
+      answers.availability ? `Availability: ${answers.availability.toLowerCase()}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (role === "business") {
+    const goal = BUSINESS_GOAL_CHIPS.find((item) => item.label === answers.goal);
+    const artwork =
+      answers.artwork === "supply"
+        ? "We'll supply the artwork."
+        : answers.artwork === "help"
+          ? "We'd want help making the artwork."
+          : "";
+    return [
+      goal?.sentence ?? "",
+      bio,
+      answers.placements.length
+        ? `We're looking for ${joinList(answers.placements.map((p) => p.toLowerCase()))}${city ? ` around ${city}` : ""}.`
+        : "",
+      answers.price ? `Our budget is $${answers.price}.` : "",
+      artwork,
+      answers.timing ? `Timing: ${answers.timing.toLowerCase()}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (role === "sponsor_host") {
+    const reach = SPONSOR_REACH_CHIPS.find((item) => item.label === answers.reach);
+    return [
+      answers.orgKind ? `${answers.orgKind}${city ? ` in ${city}` : ""}.` : "",
+      bio,
+      reach?.sentence ?? "",
+      answers.benefits.length
+        ? `Sponsors get ${joinList(answers.benefits.map((b) => b.toLowerCase()))}.`
+        : "",
+      answers.season ? `${answers.season}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+  return bio;
+}
+
+/** The suggested `title`, regenerated as the answers that feed it change. */
+function composeTitle(role: Role, answers: OnboardingAnswers): string {
+  const name = answers.display_name.trim();
+  const city = answers.city.trim();
+  if (role === "space_owner") {
+    if (!answers.spaceKind) return "";
+    return city ? `${answers.spaceKind}, ${city}` : answers.spaceKind;
+  }
+  if (role === "creator") {
+    const primary = answers.platforms[0];
+    const label = socialPlatforms.find((p) => p.key === primary)?.label;
+    if (!label) return name;
+    return name ? `${label} — ${name}` : label;
+  }
+  if (role === "business") {
+    const month = new Intl.DateTimeFormat("en", { month: "long" }).format(
+      new Date(),
+    );
+    return name ? `${name} — ${month} campaign` : "";
+  }
+  if (role === "sponsor_host") {
+    return name ? `${name} — season sponsor` : "";
+  }
+  return "";
+}
+
+/**
+ * The `listings` row a completed onboarding publishes.
+ *
+ * Every value lands in a column that already exists. `channel` carries no DB
+ * CHECK, which is what lets "Sponsorship" ship with no migration - the
+ * marketplace's channel chips are derived from live listings, so it gets its
+ * own filter automatically. "Business brief" is the existing magic string that
+ * isBrief() renders as a Wanted card.
+ */
+function buildListingDraft(role: Role, answers: OnboardingAnswers) {
+  const base = {
+    // The generated title is a real fallback, not just a placeholder: someone
+    // who never touches the field still publishes a card with a name on it.
+    title: (answers.title.trim() || composeTitle(role, answers)).slice(0, 120),
+    description: (
+      answers.description.trim() || composeDescription(role, answers)
+    ).trim(),
+    price: answers.price ?? 0,
+    format: answers.format.trim(),
+    demographics: "",
+    location_area: "",
+    availability_notes: "",
+    available_from: null as string | null,
+    available_to: null as string | null,
+    deliverables: "",
+    channel: "Other",
+    price_unit: "campaign",
+  };
+
+  if (role === "creator") {
+    const primary = answers.platforms[0];
+    return {
+      ...base,
+      channel: socialPlatforms.find((p) => p.key === primary)?.label ?? "Other",
+      price_unit: answers.price_unit || "post",
+    };
+  }
+
+  if (role === "space_owner") {
+    const kind = SPACE_KIND_CHIPS.find((item) => item.label === answers.spaceKind);
+    const traffic = TRAFFIC_CHIPS.find((item) => item.label === answers.traffic);
+    return {
+      ...base,
+      channel: kind?.channel ?? "Other",
+      price_unit: answers.price_unit || "week",
+      location_area: answers.location_area.trim(),
+      demographics: traffic?.sentence ?? "",
+      availability_notes: answers.availability,
+      format:
+        base.format ||
+        `your ${(answers.spaceKind || "space").toLowerCase()} for a ${answers.price_unit || "week"}`,
+    };
+  }
+
+  if (role === "business") {
+    const timing = BUSINESS_TIMING_CHIPS.find(
+      (item) => item.label === answers.timing,
+    );
+    return {
+      ...base,
+      channel: "Business brief",
+      price_unit: "campaign",
+      format: joinList(answers.placements.map((p) => p.toLowerCase())),
+      deliverables: answers.deliverables.trim(),
+      availability_notes: answers.timing,
+      available_from: timing ? isoDaysFromToday(0) : null,
+      available_to: timing ? isoDaysFromToday(timing.days) : null,
+    };
+  }
+
+  if (role === "sponsor_host") {
+    const season = SPONSOR_SEASON_CHIPS.find(
+      (item) => item.label === answers.season,
+    );
+    const reach = SPONSOR_REACH_CHIPS.find((item) => item.label === answers.reach);
+    return {
+      ...base,
+      channel: "Sponsorship",
+      price_unit: "partner",
+      format: joinList(answers.benefits.slice(0, 2).map((b) => b.toLowerCase())),
+      deliverables: answers.benefits.join("\n"),
+      demographics: reach?.sentence ?? "",
+      availability_notes: answers.season,
+      available_from: season ? isoDaysFromToday(0) : null,
+      available_to: season ? isoDaysFromToday(season.days) : null,
+    };
+  }
+
+  return base;
+}
 
 /**
  * Accounts that exist only to exercise the product. They are real logins with
@@ -674,6 +1362,10 @@ function normalizeSocialUrl(
       return "";
     }
   }
+  // No base means there is no canonical URL to build - a newsletter or a
+  // podcast name is not a handle on a known host. Store what they typed rather
+  // than inventing "https://<empty>name".
+  if (!platform.base) return trimmed;
   return `${platform.base}${trimmed.replace(/^@/, "")}`;
 }
 
@@ -1002,6 +1694,35 @@ export default function MarketplaceApp({
   useEffect(() => {
     onboardingOpenRef.current = onboardingOpen;
   }, [onboardingOpen]);
+  // Pick up a listing that was left unfinished. Runs on sign-in rather than on
+  // mount because the key is per-user, and expires after a week so a stale
+  // draft never resurfaces as a surprise.
+  useEffect(() => {
+    if (!user) {
+      setOnboardingDraft(null);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(`sidespace.onboarding.${user.id}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        role?: Role | null;
+        answers?: OnboardingAnswers;
+        savedAt?: number;
+      };
+      const week = 7 * 24 * 60 * 60 * 1000;
+      if (!parsed.answers || Date.now() - (parsed.savedAt ?? 0) > week) {
+        window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
+        return;
+      }
+      setOnboardingDraft({
+        role: parsed.role ?? null,
+        answers: { ...emptyAnswers(), ...parsed.answers },
+      });
+    } catch {
+      // Unparseable or unavailable storage. The draft is a convenience.
+    }
+  }, [user]);
   // The auth user whose profile state is already loaded, so background auth
   // events (token refresh, tab refocus) do not trigger redundant reloads.
   const lastAuthUserIdRef = useRef<string | null>(null);
@@ -1014,8 +1735,56 @@ export default function MarketplaceApp({
   // the same message twice.
   const sendingMessageRef = useRef(false);
   const inboxCardRef = useRef<HTMLElement | null>(null);
-  const [selectedRole, setSelectedRole] = useState<Role>("business");
+  // Null until the member actually picks, so step 1 is a real gate. This used
+  // to default to "business": anyone who scrolled past the role cards was
+  // silently filed as a Business, and role drives the RLS policy that decides
+  // whether they may list at all.
+  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  // A returning member already answered this, and their stored role counts as
+  // an answer - otherwise "Edit profile" would refuse to advance until they
+  // re-tapped a card they chose months ago.
+  const [roleTouched, setRoleTouched] = useState(false);
   const [extraRoles, setExtraRoles] = useState<Role[]>([]);
+  /**
+   * "setup" builds a profile AND the member's first listing. "edit" is the
+   * profile editor.
+   *
+   * The same modal is both: three of the seven setOnboardingOpen(true) call
+   * sites are re-entry points for members who are already onboarded ("Edit
+   * profile", the hero CTA, and the dashboard's "Add photo"). Without this
+   * flag, turning step 2 into a listing composer would walk someone who
+   * clicked "Edit profile" through publishing a second listing, with no way
+   * left to change their bio.
+   */
+  const [onboardingMode, setOnboardingMode] = useState<"setup" | "edit">(
+    "setup",
+  );
+  const [onboardingError, setOnboardingError] = useState("");
+  const [answers, setAnswers] = useState<OnboardingAnswers>(() =>
+    emptyAnswers(),
+  );
+  // File inputs cannot be controlled, so these are read at publish time rather
+  // than mirrored into `answers`.
+  // The title and description show a generated draft that keeps updating as
+  // the chips change - until the member edits it, at which point it is theirs
+  // and we stop overwriting their words.
+  const [titleTouched, setTitleTouched] = useState(false);
+  const [descriptionTouched, setDescriptionTouched] = useState(false);
+  /**
+   * A half-finished onboarding, if there is one.
+   *
+   * Written only when the profile saved but the listing did not, and read only
+   * by the dashboard checklist. Kept for seven days: an unfinished listing is
+   * worth offering back tomorrow, not in a month.
+   */
+  const [onboardingDraft, setOnboardingDraft] = useState<{
+    role: Role | null;
+    answers: OnboardingAnswers;
+  } | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const listingPhotosRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const onboardingFormRef = useRef<HTMLFormElement | null>(null);
   const [listingOpen, setListingOpen] = useState(false);
   const [listingFeedback, setListingFeedback] = useState("");
   const [formatPreview, setFormatPreview] = useState("");
@@ -1291,9 +2060,19 @@ export default function MarketplaceApp({
       // away - which is exactly what "it kicked me out while typing" was.
       // Only seed the picker and open the modal when it is not already open.
       if (!onboardingOpenRef.current) {
-        setSelectedRole((own?.role as Role | undefined) ?? "business");
-        setExtraRoles((own?.extra_roles as Role[] | undefined) ?? []);
+        const stored = (own?.role as Role | undefined) ?? null;
+        const pickable =
+          stored && PICKABLE_ROLES.includes(stored) ? stored : null;
+        setSelectedRole(pickable);
+        setRoleTouched(Boolean(pickable));
+        setExtraRoles(
+          ((own?.extra_roles as Role[] | undefined) ?? []).filter((role) =>
+            EXTRA_ROLE_OPTIONS.includes(role),
+          ),
+        );
+        setAnswers(answersFromProfile((own as Profile | null) ?? null));
         if (!own?.onboarding_complete) {
+          setOnboardingMode("setup");
           setOnboardingStep(1);
           setOnboardingOpen(true);
         }
@@ -1647,6 +2426,22 @@ export default function MarketplaceApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profiles, blockedProfileIds, ownerIdsWithListings]);
 
+  /**
+   * Markets that already exist, for the onboarding city field.
+   *
+   * Built from profiles already in memory - no API key, no geocoder, no
+   * per-load cost - and it converges members on the exact strings the
+   * marketplace filters already match, instead of a free-text field producing
+   * "Brea", "Brea CA" and "brea, california" for one town.
+   */
+  const knownMarkets = useMemo(
+    () =>
+      Array.from(
+        new Set(profiles.map((person) => person.city.trim()).filter(Boolean)),
+      ).sort(),
+    [profiles],
+  );
+
   const channels = useMemo(
     () => [
       "All",
@@ -1912,8 +2707,57 @@ export default function MarketplaceApp({
    * were still in state and got written on the next save.
    */
   function seedRolePickers(source: Profile | null) {
-    setSelectedRole((source?.role as Role | undefined) ?? "business");
-    setExtraRoles((source?.extra_roles as Role[] | undefined) ?? []);
+    const stored = (source?.role as Role | undefined) ?? null;
+    // A retired `consumer` row has no card to highlight, so treat it as
+    // unanswered and make them choose rather than pre-selecting something they
+    // never picked.
+    const pickable = stored && PICKABLE_ROLES.includes(stored) ? stored : null;
+    setSelectedRole(pickable);
+    setRoleTouched(Boolean(pickable));
+    setExtraRoles(
+      ((source?.extra_roles as Role[] | undefined) ?? []).filter((role) =>
+        EXTRA_ROLE_OPTIONS.includes(role),
+      ),
+    );
+    setAnswers(answersFromProfile(source));
+    setOnboardingError("");
+    // Otherwise a second open keeps treating the generated title and
+    // description as hand-written, and stops regenerating them.
+    setTitleTouched(false);
+    setDescriptionTouched(false);
+  }
+
+  /**
+   * Reopen onboarding to finish a listing.
+   *
+   * The only reader of the localStorage draft. It exists for one state: the
+   * profile write succeeded and the listing write did not, so the member is on
+   * the marketplace with nothing to book. Their answers come straight back
+   * rather than being retyped into a different form.
+   */
+  function resumeOnboardingDraft() {
+    seedRolePickers(profile);
+    const draft = onboardingDraft;
+    if (draft) {
+      if (draft.role && PICKABLE_ROLES.includes(draft.role)) {
+        setSelectedRole(draft.role);
+        setRoleTouched(true);
+      }
+      setAnswers(draft.answers);
+      setTitleTouched(Boolean(draft.answers.title));
+      setDescriptionTouched(Boolean(draft.answers.description));
+    }
+    setOnboardingMode("setup");
+    setOnboardingStep(2);
+    setOnboardingOpen(true);
+  }
+
+  /** Open the modal as the profile editor rather than first-run setup. */
+  function openProfileEditor(step: 1 | 2 = 1) {
+    seedRolePickers(profile);
+    setOnboardingMode("edit");
+    setOnboardingStep(step);
+    setOnboardingOpen(true);
   }
 
   function requireAccount(action: () => void) {
@@ -1934,6 +2778,11 @@ export default function MarketplaceApp({
       return;
     }
     if (!profile?.onboarding_complete) {
+      // Always setup, never the profile editor: this gate only fires for
+      // someone who has not finished onboarding, and a stale "edit" mode would
+      // hand them the editor and no way to publish anything.
+      setOnboardingMode("setup");
+      setOnboardingStep(1);
       setOnboardingOpen(true);
       return;
     }
@@ -2046,6 +2895,8 @@ export default function MarketplaceApp({
       setAuthOpen(false);
       if (data.session) {
         setUser(data.user);
+        setOnboardingMode("setup");
+        setOnboardingStep(1);
         setOnboardingOpen(true);
       } else {
         setToast("Check your email to confirm your SideSpace account.");
@@ -2064,44 +2915,121 @@ export default function MarketplaceApp({
     setToast("Welcome back.");
   }
 
-  function continueOnboardingDetails(form: HTMLFormElement | null) {
-    if (!form) return;
-
-    const requiredFields = [
-      { name: "display_name", label: "display name" },
-      { name: "city", label: "city or market" },
-      { name: "bio", label: "short introduction" },
-    ]
-      .map(({ name, label }) => ({
-        field: form.elements.namedItem(name),
-        label,
-      }))
-      .filter(
-        (
-          item,
-        ): item is {
-          field: HTMLInputElement | HTMLTextAreaElement;
-          label: string;
-        } =>
-          item.field instanceof HTMLInputElement ||
-          item.field instanceof HTMLTextAreaElement,
-      );
-    const missingField = requiredFields.find(
-      ({ field }) => !field.value.trim(),
-    );
-
-    if (missingField) {
-      setToast(`Add your ${missingField.label} before continuing.`);
-      missingField.field.focus();
-      return;
+  /**
+   * Which controls a role must answer before it can publish.
+   *
+   * Returned as [message, fieldName] so the caller can both explain the problem
+   * and put the cursor on it. The old flow toasted and moved on; a toast is
+   * gone in four seconds and never says where to look.
+   */
+  function firstMissingAnswer(): [string, string] | null {
+    const role = selectedRole;
+    if (onboardingStep === 1) {
+      if (!roleTouched || !role) {
+        return ["Pick how you’ll use SideSpace first.", "role"];
+      }
+      if (!answers.display_name.trim()) {
+        return ["Add your display name before continuing.", "display_name"];
+      }
+      if (!answers.city.trim()) {
+        return ["Add your city or market before continuing.", "city"];
+      }
+      if (answers.bio.trim().length < 10) {
+        return ["Add one line about you — at least a few words.", "bio"];
+      }
+      return null;
     }
 
-    if (selectedRole === "consumer") {
-      form.requestSubmit();
+    // Step 2 in edit mode only ever touches profile fields, all optional.
+    if (onboardingMode === "edit" || !role) return null;
+
+    if (role === "creator") {
+      if (!answers.platforms.length) {
+        return ["Pick at least one place you post.", "platforms"];
+      }
+      if (answers.format.trim().length < 10) {
+        return ["Say what a brand actually gets.", "format"];
+      }
+    }
+    if (role === "space_owner") {
+      if (!answers.spaceKind) return ["Pick what kind of space this is.", "spaceKind"];
+      if (!answers.location_area.trim()) {
+        return ["Add the area buyers will see.", "location_area"];
+      }
+      if (!answers.traffic) return ["Pick roughly how busy it is.", "traffic"];
+    }
+    if (role === "business") {
+      // Same order the questions are rendered in, so the error scrolls forward
+      // through the pane rather than jumping back past something answered.
+      if (!answers.goal) return ["Pick what the campaign should do.", "goal"];
+      if (!answers.categories.length) {
+        return ["Pick what you’re promoting.", "categories"];
+      }
+      if (!answers.placements.length) {
+        return ["Pick where you want it to run.", "placements"];
+      }
+      if (!answers.timing) return ["Pick when you want it to run.", "timing"];
+    }
+    if (role === "sponsor_host") {
+      if (!answers.orgKind) return ["Pick what kind of organization you are.", "orgKind"];
+      if (!answers.reach) return ["Pick roughly how many people will see it.", "reach"];
+      if (!answers.benefits.length) {
+        return ["Pick what a sponsor gets.", "benefits"];
+      }
+      if (!answers.season) return ["Pick when the sponsorship runs.", "season"];
+    }
+    // Validate what the member can actually see. Both fields show a generated
+    // draft until they type over it, so checking the raw answer would refuse to
+    // publish a field that looks filled in.
+    const effectiveTitle = answers.title.trim() || composeTitle(role, answers);
+    const effectiveDescription =
+      answers.description.trim() || composeDescription(role, answers);
+    if (!effectiveTitle.trim()) return ["Give this a title.", "title"];
+    if (!answers.price || answers.price < 1) {
+      return ["Set a price of at least $1.", "price"];
+    }
+    if (effectiveDescription.trim().length < 60) {
+      return [
+        "Add a bit more detail — a sentence or two is what makes a card worth opening.",
+        "description",
+      ];
+    }
+    return null;
+  }
+
+  /**
+   * Surface a validation failure where the member is actually looking.
+   *
+   * The primary action is sticky on mobile, so someone can press Publish from
+   * below the field that is missing. Scrolling the control into view is what
+   * makes a sticky footer safe.
+   */
+  function reportMissing(problem: [string, string]) {
+    const [message, field] = problem;
+    setOnboardingError(message);
+    const form = onboardingFormRef.current;
+    const target =
+      form?.querySelector<HTMLElement>(`[data-field="${field}"]`) ??
+      form?.elements.namedItem(field);
+    if (target instanceof HTMLElement) {
+      target.scrollIntoView({ block: "center", behavior: "auto" });
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement
+      ) {
+        target.focus();
+      }
+    }
+  }
+
+  function advanceOnboarding() {
+    const problem = firstMissingAnswer();
+    if (problem) {
+      reportMissing(problem);
       return;
     }
-
-    setOnboardingStep(3);
+    setOnboardingError("");
+    setOnboardingStep(2);
   }
 
   async function signInWithGoogle() {
@@ -2115,49 +3043,54 @@ export default function MarketplaceApp({
     if (error) setToast(friendlyDbError(error));
   }
 
-  async function saveOnboarding(event: FormEvent<HTMLFormElement>) {
+  /**
+   * Finish onboarding: write the profile, and in setup mode publish the first
+   * listing too.
+   *
+   * WRITE ORDER IS LOAD-BEARING. The profile must exist with
+   * onboarding_complete = true before the listing insert, because
+   * "Members create their own listings" (0009:118-124) has
+   * `profiles.onboarding_complete` in its WITH CHECK. Insert the listing first
+   * and RLS rejects it.
+   *
+   * There is deliberately no SECURITY DEFINER RPC wrapping the two writes in a
+   * transaction. Such a function runs as the table owner, so
+   * protect_profile_trust_fields (0005:9-37) - which gates its whole body on
+   * `current_user = 'authenticated'` - would stop pinning verified,
+   * verification_status, social_verification, is_demo and auth_user_id. Trading
+   * that guard for atomicity is a bad deal when the non-atomic failure mode is
+   * recoverable, which it is: see the catch below.
+   */
+  async function publishOnboarding(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    // Step 3 is only display:none, never unmounted, so its "Finish my profile"
-    // button is still the form's default submit control. Pressing Enter in any
-    // step-2 field therefore submits the whole form. Treat that as "Continue"
-    // rather than publishing a profile with every audience field left at its
-    // default and onboarding_complete set, which the member could never be
-    // re-prompted to fix.
-    const finalStep = selectedRole === "consumer" ? 2 : 3;
-    if (onboardingStep < finalStep) {
-      continueOnboardingDetails(event.currentTarget);
+    if (!supabase || !user) return;
+
+    const problem = firstMissingAnswer();
+    if (problem) {
+      reportMissing(problem);
       return;
     }
-    if (!supabase || !user) return;
-    const form = event.currentTarget;
-    const values = new FormData(form);
-    const categories = String(values.get("categories") ?? "")
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
+    setOnboardingError("");
+
+    const role = selectedRole;
+    if (!role) {
+      reportMissing(["Pick how you’ll use SideSpace first.", "role"]);
+      return;
+    }
+
     setBusy(true);
+    let savedProfile: Profile | null = null;
     try {
-      // Re-read the stored row BEFORE building the payload, every time.
-      //
-      // It decides insert-vs-update and whether the Google identity photo
-      // may be used as a fallback, but more importantly the payload merges
-      // several fields out of it, and gallery_urls merges out of it
-      // unconditionally. Using the in-memory copy meant a tab that had been
-      // open a while wrote its stale idea of the profile over fresher data:
-      // a photo deleted in another tab came back as a broken image, a photo
-      // added there was dropped, and the member got the same success toast
-      // either way. One extra read per save is a cheap price for not losing
-      // someone's published photos.
+      // Re-read the stored row before building the payload, every time. It
+      // decides insert-vs-update, whether the Google identity photo may be used
+      // as a fallback, and gallery_urls merges out of it - so a stale in-memory
+      // copy silently overwrites fresher data from another tab.
       const { data: fresh, error: freshError } = await supabase
         .from("profiles")
         .select("*")
         .eq("auth_user_id", user.id)
         .maybeSingle();
       if (freshError) {
-        // Do not fall back to the cached copy here. Guessing wrong means
-        // either hitting the auth_user_id unique constraint on insert, or
-        // silently overwriting fresher data on update. Asking for a retry is
-        // the only honest option.
         throw new Error(
           "We could not reach your profile just now. Check your connection and try again, nothing was lost.",
         );
@@ -2165,103 +3098,79 @@ export default function MarketplaceApp({
       const existing = (fresh as Profile | null) ?? null;
       profileLoadFailedRef.current = false;
 
-      const avatarFiles = values
-        .getAll("avatar_file")
-        .filter((value): value is File => value instanceof File && value.size > 0);
-      const galleryFiles = values
-        .getAll("gallery_files")
-        .filter((value): value is File => value instanceof File && value.size > 0);
-      // Refuse before uploading anything rather than silently dropping photos
-      // past the cap: the old behaviour discarded existing photos to make room
-      // and told nobody, so members lost images they had already published.
+      const avatarFiles = Array.from(avatarInputRef.current?.files ?? []).filter(
+        (file) => file.size > 0,
+      );
+      const listingFiles = Array.from(
+        listingPhotosRef.current?.files ?? [],
+      ).filter((file) => file.size > 0);
+      const galleryFiles = Array.from(
+        galleryInputRef.current?.files ?? [],
+      ).filter((file) => file.size > 0);
+
       const existingGalleryCount = (existing?.gallery_urls ?? []).length;
       if (existingGalleryCount + galleryFiles.length > 6) {
         throw new Error(
           `You can keep 6 photos. You have ${existingGalleryCount} and picked ${galleryFiles.length}. Remove some first, or choose fewer.`,
         );
       }
-      const [avatarUploads, galleryUploads] = await Promise.all([
+
+      const [avatarUploads, galleryUploads, listingUploads] = await Promise.all([
         uploadImages(avatarFiles.slice(0, 1), "profiles"),
         uploadImages(galleryFiles, "profiles"),
+        uploadImages(listingFiles.slice(0, 6), "listings"),
       ]);
-      const socialLinks = Object.fromEntries(
-        socialPlatforms
-          .map((platform) => [
-            platform.key,
-            normalizeSocialUrl(
-              platform,
-              String(values.get(`social_${platform.key}`) ?? ""),
-            ),
-          ])
-          .filter(([, url]) => Boolean(url)),
-      );
+
+      // Only the platforms actually picked contribute a handle. This is the
+      // whole reason the flow moved off FormData: the old code guarded on
+      // `values.has("social_instagram")`, so a creator who picked TikTok and
+      // not Instagram had every handle they typed thrown away.
+      const socialLinks: Record<string, string> = {
+        ...(existing?.social_links ?? {}),
+      };
+      for (const key of answers.platforms) {
+        const platform = socialPlatforms.find((item) => item.key === key);
+        if (!platform) continue;
+        const url = normalizeSocialUrl(platform, answers.socials[key] ?? "");
+        if (url) socialLinks[key] = url;
+        else delete socialLinks[key];
+      }
+
       const syncedIgAvatar = igAvatarPromiseRef.current
         ? await igAvatarPromiseRef.current
         : igAvatar;
-      // FormData was snapshotted before that await. If the member hit Finish
-      // while the Instagram lookup was still running, the follower count it
-      // prefilled landed in the live input after the snapshot, so re-read it
-      // rather than saving the 0 the snapshot captured.
-      // The field defaults to "0", not empty, so "was it blank?" has to treat
-      // 0 as unset - otherwise this guard could never fire and the synced
-      // count was still saved as 0.
-      const followersField = form.elements.namedItem("followers");
-      const snapshotFollowers = Number(values.get("followers") ?? 0) || 0;
-      if (
-        followersField instanceof HTMLInputElement &&
-        snapshotFollowers === 0 &&
-        (Number(followersField.value) || 0) > 0
-      ) {
-        values.set("followers", followersField.value);
-      }
-      // Every opener seeds selectedRole from the stored profile, so the
-      // picker is authoritative and members can genuinely change role.
-      const primaryRole = selectedRole;
+
+      const reach = deriveReach(role, answers);
+      const handle = answers.handle.trim().replace(/^@/, "");
+
       const payload = {
         auth_user_id: user.id,
-        role: primaryRole,
-        // A consumer does not offer anything, and the extra-role picker is
-        // hidden for them - so keeping stale extras would advertise a member as
-        // a space owner they can no longer edit away, while the listing policy
-        // simultaneously refuses to let them publish.
-        extra_roles:
-          primaryRole === "consumer"
-            ? []
-            : Array.from(
-                new Set(
-                  extraRoles.filter(
-                    (role) => role !== primaryRole && role !== "consumer",
-                  ),
-                ),
-              ),
-        display_name: String(values.get("display_name") ?? "").trim(),
-        handle: String(values.get("handle") ?? "").trim() || null,
-        city: String(values.get("city") ?? "").trim(),
-        bio: String(values.get("bio") ?? "").trim(),
-        categories: values.has("categories")
-          ? categories
-          : existing?.categories ?? [],
-        followers: values.has("followers")
-          ? Number(values.get("followers") ?? 0) || 0
-          : existing?.followers ?? 0,
-        avg_views: values.has("avg_views")
-          ? Number(values.get("avg_views") ?? 0) || 0
-          : existing?.avg_views ?? 0,
-        audience_age: values.has("audience_age")
-          ? String(values.get("audience_age") ?? "").trim()
-          : existing?.audience_age ?? "",
-        website: values.has("website")
-          ? String(values.get("website") ?? "").trim()
-          : existing?.website ?? "",
+        role,
+        extra_roles: Array.from(
+          new Set(
+            extraRoles.filter(
+              (extra) => extra !== role && EXTRA_ROLE_OPTIONS.includes(extra),
+            ),
+          ),
+        ),
+        display_name: answers.display_name.trim(),
+        handle: handle || null,
+        city: answers.city.trim(),
+        bio: answers.bio.trim(),
+        categories: answers.categories,
+        // A null follower count means "not answered", and must not overwrite a
+        // number they gave earlier with 0.
+        followers: answers.followers ?? existing?.followers ?? 0,
+        avg_views: reach.avg_views ?? existing?.avg_views ?? 0,
+        reach_unit: reach.reach_unit ?? existing?.reach_unit ?? "weekly looks",
+        audience_age: existing?.audience_age ?? "",
+        website: existing?.website ?? "",
         avatar_url:
           avatarUploads[0] ||
-          String(values.get("avatar_url") ?? "").trim() ||
           existing?.avatar_url ||
           syncedIgAvatar ||
           // Only seed from the Google identity on FIRST setup. For an existing
-          // member an empty avatar means they deliberately deleted it, and
-          // re-reading the identity here silently resurrected the photo on
-          // their next save.
+          // member an empty avatar means they deliberately deleted it.
           (existing
             ? ""
             : String(
@@ -2270,11 +3179,7 @@ export default function MarketplaceApp({
                   "",
               )) ||
           "",
-        social_links: values.has("social_instagram")
-          ? socialLinks
-          : existing?.social_links ?? {},
-        // Existing photos first: the guard above already refused anything that
-        // would exceed the cap, so nothing is dropped here.
+        social_links: socialLinks,
         gallery_urls: Array.from(
           new Set([...(existing?.gallery_urls ?? []), ...galleryUploads]),
         ).slice(0, 6),
@@ -2292,28 +3197,79 @@ export default function MarketplaceApp({
         : await supabase.from("profiles").insert(payload).select().single();
       if (result.error) throw result.error;
 
-      const savedProfile = result.data as Profile;
-      const isFirstSetup = !existing?.onboarding_complete;
+      savedProfile = result.data as Profile;
       setProfile(savedProfile);
+
+      if (onboardingMode === "setup") {
+        const draft = buildListingDraft(role, answers);
+        // Listing photos are written to the listing ONLY, never mirrored into
+        // profiles.gallery_urls. removeProfilePhoto already exists to repair
+        // listings that share a URL with a deleted gallery photo, re-pointing
+        // them at the default cover; double-writing would make that the
+        // guaranteed fate of every listing this flow creates.
+        const cover =
+          listingUploads[0] ||
+          payload.avatar_url ||
+          payload.gallery_urls[0] ||
+          DEFAULT_LISTING_IMAGE;
+        const inserted = await supabase
+          .from("listings")
+          .insert({
+            ...draft,
+            owner_profile_id: savedProfile.id,
+            image_url: cover,
+            image_urls: listingUploads.length ? listingUploads : [cover],
+            status: "active",
+          })
+          .select("*")
+          .single();
+        if (inserted.error) throw inserted.error;
+
+        window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
+        setOnboardingDraft(null);
+        setOnboardingOpen(false);
+        setOnboardingStep(1);
+        resetIgAvatarSync();
+        await Promise.all([loadMarketplace(), loadOwnListings(savedProfile)]);
+        setToast(
+          role === "business"
+            ? "Your brief is live. We’ll tell you the moment someone answers."
+            : `You’re live. “${draft.title}” is on the marketplace.`,
+        );
+        return;
+      }
+
       setOnboardingOpen(false);
       setOnboardingStep(1);
       resetIgAvatarSync();
       await Promise.all([loadMarketplace(), loadOwnListings(savedProfile)]);
-
-      // Straight from signup into the thing they actually came to do, rather
-      // than dropping them on a page and asking them to find "New listing".
-      const canList = savedProfile.role !== "consumer";
-      const hasNoListings = ownListings.length === 0;
-      if (isFirstSetup && canList && hasNoListings) {
-        setListingFeedback("");
-        setEditingListing(null);
-        setListingOpen(true);
-        setToast("Profile saved. Now put your first space or audience up.");
-      } else {
-        setToast("Your profile, links, and photos are live.");
-      }
+      setToast("Saved. Your profile is up to date.");
     } catch (error) {
-      setToast(friendlyDbError(error) || "Could not save your profile.");
+      // The profile write succeeding and the listing write failing is a real
+      // state, and it is recoverable: they are on the marketplace, and the
+      // draft survives. Rolling the profile back would be worse - it would
+      // take away the thing that did work.
+      if (savedProfile) {
+        try {
+          window.localStorage.setItem(
+            `sidespace.onboarding.${user.id}`,
+            JSON.stringify({ role: selectedRole, answers, savedAt: Date.now() }),
+          );
+          setOnboardingDraft({ role: selectedRole, answers });
+        } catch {
+          // Private browsing, or storage full. The draft is a convenience.
+        }
+        setOnboardingOpen(false);
+        setOnboardingStep(1);
+        await Promise.all([loadMarketplace(), loadOwnListings(savedProfile)]);
+        setToast(
+          "Your profile is saved, but the listing didn’t post. Nothing you typed is lost — open it again from your dashboard.",
+        );
+      } else {
+        setOnboardingError(
+          friendlyDbError(error) || "Could not save your profile.",
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -3306,15 +4262,21 @@ export default function MarketplaceApp({
 
   // Fill the follower box from Instagram, but never argue with a number the
   // member typed in themselves.
-  function prefillFollowers(
-    form: HTMLFormElement | null | undefined,
-    followers: number | null | undefined,
-  ) {
-    if (!form || typeof followers !== "number" || followers <= 0) return;
-    const input = form.elements.namedItem("followers");
-    if (!(input instanceof HTMLInputElement)) return;
-    if (input.value.trim() !== "" && Number(input.value) > 0) return;
-    input.value = String(followers);
+  /**
+   * Fill in the follower count from a successful Instagram lookup, without
+   * overwriting a number the member typed themselves.
+   *
+   * This used to poke the value straight into a form input, which forced
+   * saveOnboarding to re-read the live DOM at submit time because the FormData
+   * snapshot predated the await. Now that followers is controlled state - and
+   * genuinely null rather than the string "0" when unanswered - "did they
+   * already answer?" is just a null check.
+   */
+  function prefillFollowers(followers: number | null | undefined) {
+    if (typeof followers !== "number" || followers <= 0) return;
+    setAnswers((current) =>
+      current.followers ? current : { ...current, followers },
+    );
   }
 
   // A photo fetched for a handle the member then changed away from is dead
@@ -3363,7 +4325,11 @@ export default function MarketplaceApp({
     // A photo the member already has or is uploading always wins, but the
     // follower count is worth fetching either way. Tell the server, so it
     // reads the stats without downloading and storing a photo we would bin.
-    const fileInput = form?.elements.namedItem("avatar_file");
+    // The avatar input is a ref now rather than a named form control, because
+    // onboarding's fields are controlled state and the lookup is triggered by
+    // an explicit button instead of a blur on the form.
+    const fileInput =
+      avatarInputRef.current ?? form?.elements.namedItem("avatar_file");
     const photoAlreadyChosen =
       Boolean(profile?.avatar_url) ||
       (fileInput instanceof HTMLInputElement &&
@@ -3404,7 +4370,7 @@ export default function MarketplaceApp({
           return "";
         }
         setIgStats(stats);
-        prefillFollowers(form, stats.followers);
+        prefillFollowers(stats.followers);
         igSyncedHandleRef.current = handle;
         if (url) {
           void discardSyncedIgPhoto(igSyncedUrlRef.current);
@@ -3867,7 +4833,11 @@ export default function MarketplaceApp({
               {!profile.onboarding_complete && (
                 <button
                   className="button button-coral button-small"
-                  onClick={() => setOnboardingOpen(true)}
+                  onClick={() => {
+                    setOnboardingMode("setup");
+                    setOnboardingStep(1);
+                    setOnboardingOpen(true);
+                  }}
                 >
                   Finish setup
                 </button>
@@ -3882,11 +4852,7 @@ export default function MarketplaceApp({
               {!profile.avatar_url && (
                 <button
                   className="button button-ghost button-small"
-                  onClick={() => {
-                    seedRolePickers(profile);
-                    setOnboardingStep(2);
-                    setOnboardingOpen(true);
-                  }}
+                  onClick={() => openProfileEditor(1)}
                 >
                   Add photo
                 </button>
@@ -3897,14 +4863,22 @@ export default function MarketplaceApp({
                 <span>{ownListings.length ? "✓" : "3"}</span>
                 <div>
                   <strong>Publish your first listing</strong>
-                  <p>Your space or audience cannot be booked until it is listed.</p>
+                  <p>
+                    {onboardingDraft
+                      ? "Everything you typed is still here."
+                      : "Your space or audience cannot be booked until it is listed."}
+                  </p>
                 </div>
                 {!ownListings.length && (
                   <button
                     className="button button-coral button-small"
-                    onClick={openListingEditor}
+                    // Resume onboarding rather than opening the 16-control
+                    // listing form this redesign exists to replace. If the
+                    // profile saved but the listing insert failed, the answers
+                    // are still in localStorage and come straight back.
+                    onClick={resumeOnboardingDraft}
                   >
-                    Create listing
+                    {onboardingDraft ? "Finish my listing" : "Create listing"}
                   </button>
                 )}
               </li>
@@ -4411,9 +5385,7 @@ export default function MarketplaceApp({
               className="button button-coral"
               onClick={() => {
                 if (user) {
-                  seedRolePickers(profile);
-                  setOnboardingStep(1);
-                  setOnboardingOpen(true);
+                  openProfileEditor(1);
                 } else {
                   setAuthMode("signup");
                   setAuthOpen(true);
@@ -4496,7 +5468,9 @@ export default function MarketplaceApp({
                   {Boolean(person.followers || person.avg_views) && (
                     <span>
                       <b>{compactNumber(person.followers || person.avg_views)}</b>
-                      {person.followers ? " followers" : " weekly looks"}
+                      {person.followers
+                        ? " followers"
+                        : ` ${person.reach_unit || "weekly looks"}`}
                     </span>
                   )}
                   {Boolean(listingCountByOwner.get(person.id)) && (
@@ -4832,9 +5806,7 @@ export default function MarketplaceApp({
               <button
                 onClick={() => {
                   setAccountOpen(false);
-                  seedRolePickers(profile);
-                  setOnboardingStep(1);
-                  setOnboardingOpen(true);
+                  openProfileEditor(1);
                 }}
               >
                 <span>Edit profile</span>
@@ -5450,367 +6422,1064 @@ export default function MarketplaceApp({
       )}
 
       {onboardingOpen && user && (
-        <Modal elevated
-          label="Complete your SideSpace profile"
+        <Modal
+          elevated
+          label={
+            onboardingMode === "edit"
+              ? "Edit your SideSpace profile"
+              : "Set up your SideSpace account"
+          }
           onClose={() => {
             setOnboardingOpen(false);
-            // Closing unmounts the modal and the fields are uncontrolled, so
-            // everything typed is gone. Leaving the wizard on step 3 would
-            // reopen onto the audience pane with the required name/city/bio
-            // empty and display:none, which makes the browser abort the submit
-            // silently and turns "Finish my profile" into a dead button.
             setOnboardingStep(1);
+            setOnboardingError("");
             resetIgAvatarSync();
           }}
           wide
         >
           <div className="onboarding-top">
             <div>
-              <p className="eyebrow">Set up your profile</p>
-              <h2>Let’s make the right introductions.</h2>
+              <p className="eyebrow">
+                {onboardingMode === "edit"
+                  ? "Edit your profile"
+                  : "Set up your account"}
+              </p>
+              <h2>
+                {onboardingMode === "edit"
+                  ? "Update your details."
+                  : "Let’s get you on the marketplace."}
+              </h2>
             </div>
             <div className="step-count">
               <span className={onboardingStep >= 1 ? "active" : ""} />
               <span className={onboardingStep >= 2 ? "active" : ""} />
-              {selectedRole !== "consumer" && (
-                <span className={onboardingStep >= 3 ? "active" : ""} />
-              )}
-              <small>
-                Step {onboardingStep} of {selectedRole === "consumer" ? 2 : 3}
-              </small>
+              <small>Step {onboardingStep} of 2</small>
             </div>
           </div>
-          <form className="onboarding-form" onSubmit={saveOnboarding}>
-            <div className={onboardingStep === 1 ? "form-step active" : "form-step"}>
-              <h3>How will you use SideSpace?</h3>
-              <p>Choose your main role. You can still browse and message everyone.</p>
-              <div className="role-choice-grid">
-                {(Object.keys(roleCopy) as Role[]).map((role) => (
-                  <button
-                    key={role}
-                    type="button"
-                    aria-pressed={selectedRole === role}
-                    className={selectedRole === role ? "active" : ""}
-                    onClick={() => {
-                      setSelectedRole(role);
-                      setExtraRoles((current) =>
-                        current.filter((extra) => extra !== role),
-                      );
-                    }}
-                  >
-                    <span>{roleCopy[role].icon}</span>
-                    <small>{roleCopy[role].eyebrow}</small>
-                    <strong>{roleCopy[role].label}</strong>
-                    <p>{roleCopy[role].short}</p>
-                  </button>
-                ))}
-              </div>
 
-              {selectedRole !== "consumer" && (
-                <div className="role-extra">
-                  <p className="role-extra-title">
-                    Do you do anything else on SideSpace?
-                  </p>
-                  <p className="role-extra-help">
-                    Pick as many as apply. You will show up in each of these
-                    searches, and you can list and book with one account.
-                  </p>
-                  <div className="role-extra-options">
-                    {(["business", "creator", "space_owner"] as Role[])
-                      .filter((role) => role !== selectedRole)
-                      .map((role) => {
-                        const active = extraRoles.includes(role);
-                        return (
-                          <button
-                            key={role}
-                            type="button"
-                            className={active ? "active" : ""}
-                            aria-pressed={active}
-                            onClick={() =>
-                              setExtraRoles((current) =>
-                                active
-                                  ? current.filter((extra) => extra !== role)
-                                  : [...current, role],
-                              )
-                            }
-                          >
-                            <span>{active ? "✓" : roleCopy[role].icon}</span>
-                            <strong>{roleCopy[role].label}</strong>
-                            <small>{roleCopy[role].short}</small>
-                          </button>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
-
-              <div className="onboarding-actions">
-                <span />
-                <button
-                  type="button"
-                  className="button button-dark"
-                  onClick={() => setOnboardingStep(2)}
-                >
-                  Continue <span>→</span>
-                </button>
-              </div>
+          {onboardingMode === "setup" && (
+            <div className="setup-notice">
+              <strong>Nobody can see you yet.</strong>
+              <p>
+                Your profile appears in search once you finish this. It is two
+                screens.
+              </p>
             </div>
-            <div className={onboardingStep === 2 ? "form-step active" : "form-step"}>
-              <h3>Give your profile a human face.</h3>
-              <p>These details help other members know who they’re talking to.</p>
-              <div className="field-grid">
-                <label>
-                  Display name
-                  <input
-                    name="display_name"
-                    required
-                    defaultValue={
-                      profile?.display_name ||
-                      String(user.user_metadata.display_name ?? "")
-                    }
-                    placeholder="Maya Alvarez"
-                  />
-                </label>
-                <label>
-                  Handle or organization
-                  <input
-                    name="handle"
-                    defaultValue={profile?.handle ?? ""}
-                    placeholder="@yourhandle"
-                  />
-                </label>
-                <label>
-                  City / market
-                  <input
-                    name="city"
-                    required
-                    defaultValue={profile?.city ?? ""}
-                    placeholder="Oakland, CA"
-                  />
-                </label>
-                <label>
-                  Profile photo
-                  <input
-                    name="avatar_file"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                  />
-                  <small>
-                    JPG, PNG, or WebP up to 8 MB.
-                    {profile?.avatar_url ? " Leave empty to keep your current photo." : ""}
-                  </small>
-                </label>
-                <label className="field-wide">
-                  Short introduction
-                  <textarea
-                    name="bio"
-                    required
-                    defaultValue={profile?.bio ?? ""}
-                    placeholder="Tell people about your audience, business, or space."
-                  />
-                </label>
-                {selectedRole !== "consumer" && (
-                  <label className="field-wide media-upload-field">
-                    Space, land, storefront, or portfolio photos
+          )}
+
+          <form
+            ref={onboardingFormRef}
+            className="onboarding-form"
+            onSubmit={publishOnboarding}
+          >
+            {onboardingError && (
+              <div className="form-feedback" role="alert">
+                <p>{onboardingError}</p>
+              </div>
+            )}
+
+            {/* ---------------------------------------------------------------
+                STEP 1 - identity. Identical for all four roles.
+                --------------------------------------------------------------- */}
+            {onboardingStep === 1 && (
+              <div className="form-step active">
+                <h3>Which of these is you?</h3>
+                <p>This changes what we ask next. You can add more later.</p>
+                <div className="role-choice-grid" data-field="role">
+                  {PICKABLE_ROLES.map((role) => (
+                    <button
+                      key={role}
+                      type="button"
+                      aria-pressed={selectedRole === role}
+                      className={selectedRole === role ? "active" : ""}
+                      onClick={() => {
+                        const switching =
+                          selectedRole !== null && selectedRole !== role;
+                        setSelectedRole(role);
+                        setRoleTouched(true);
+                        setOnboardingError("");
+                        setExtraRoles((current) =>
+                          current.filter((extra) => extra !== role),
+                        );
+                        // Changing role changes what step 2 asks, and the four
+                        // shapes are not interchangeable. Keep the identity
+                        // answers - they are role-independent - and drop the
+                        // role-shaped ones, or a creator inherits the space
+                        // owner's "per week" price unit and a half-built space.
+                        if (switching) {
+                          setTitleTouched(false);
+                          setDescriptionTouched(false);
+                          setAnswers((current) => ({
+                            ...emptyAnswers(),
+                            display_name: current.display_name,
+                            city: current.city,
+                            bio: current.bio,
+                            handle: current.handle,
+                            categories: current.categories,
+                            platforms: current.platforms,
+                            socials: current.socials,
+                            followers: current.followers,
+                          }));
+                        }
+                      }}
+                    >
+                      <span>{roleCopy[role].icon}</span>
+                      <small>{roleCopy[role].eyebrow}</small>
+                      <strong>{roleCopy[role].label}</strong>
+                      <p>{roleCopy[role].short}</p>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="field-grid">
+                  <label>
+                    {selectedRole === "business"
+                      ? "Business name"
+                      : selectedRole === "sponsor_host"
+                        ? "Team or organization name"
+                        : selectedRole === "space_owner"
+                          ? "Your name or business"
+                          : "Your name"}
                     <input
-                      name="gallery_files"
+                      name="display_name"
+                      data-field="display_name"
+                      maxLength={80}
+                      value={answers.display_name}
+                      onChange={(event) =>
+                        setAnswers((current) => ({
+                          ...current,
+                          display_name: event.target.value,
+                        }))
+                      }
+                      placeholder={
+                        selectedRole === "business"
+                          ? "Brea Coffee Bar"
+                          : selectedRole === "sponsor_host"
+                            ? "Brea Robotics 4414"
+                            : selectedRole === "space_owner"
+                              ? "Maya’s Barbershop"
+                              : "Maya Alvarez"
+                      }
+                    />
+                  </label>
+                  <label>
+                    Where are you based?
+                    <small>City and state. This is how buyers filter.</small>
+                    <input
+                      name="city"
+                      data-field="city"
+                      maxLength={80}
+                      list="onboarding-market-list"
+                      value={answers.city}
+                      onChange={(event) =>
+                        setAnswers((current) => ({
+                          ...current,
+                          city: event.target.value,
+                        }))
+                      }
+                      placeholder="Brea, CA"
+                    />
+                  </label>
+                  <datalist id="onboarding-market-list">
+                    {knownMarkets.map((market) => (
+                      <option key={market} value={market} />
+                    ))}
+                  </datalist>
+                  <label className="field-wide">
+                    One line about you
+                    <input
+                      name="bio"
+                      data-field="bio"
+                      maxLength={160}
+                      value={answers.bio}
+                      onChange={(event) =>
+                        setAnswers((current) => ({
+                          ...current,
+                          bio: event.target.value,
+                        }))
+                      }
+                      placeholder={
+                        selectedRole === "business"
+                          ? "Third-wave coffee bar on Birch, open since 2019."
+                          : selectedRole === "sponsor_host"
+                            ? "High school robotics team, 28 students, competes statewide."
+                            : selectedRole === "space_owner"
+                              ? "Corner barbershop with a 6-foot street-facing window."
+                              : "Analog fashion and honest city guides for East LA."
+                      }
+                    />
+                  </label>
+                  <label className="field-wide media-upload-field">
+                    {selectedRole === "business" || selectedRole === "sponsor_host"
+                      ? "Add your logo"
+                      : "Add a profile photo"}
+                    <input
+                      ref={avatarInputRef}
+                      name="avatar_file"
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
-                      multiple
                     />
-                    <small>Upload up to 6 clear photos. You can add listing-specific photos later.</small>
+                    <small>
+                      Profiles with a face or a logo get far more replies.
+                      {profile?.avatar_url
+                        ? " Leave empty to keep your current photo."
+                        : ""}
+                    </small>
                   </label>
-                )}
-                {Boolean(profile?.gallery_urls?.length) && (
-                  <div className="saved-media-grid field-wide">
-                    {profile?.gallery_urls?.map((url, index) => (
-                      <figure className="saved-media" key={url}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={url}
-                          alt={`Saved profile photo ${index + 1}`}
-                          loading="lazy"
-                          decoding="async"
-                        />
-                        <button
-                          type="button"
-                          className="saved-media-remove"
-                          disabled={busy}
-                          aria-label={`Remove photo ${index + 1}`}
-                          title="Remove photo"
-                          onClick={() => void removeProfilePhoto(url, "gallery")}
-                        >
-                          ×
-                        </button>
-                      </figure>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="onboarding-actions">
-                <button type="button" onClick={() => setOnboardingStep(1)}>
-                  ← Back
-                </button>
-                <button
-                  type="button"
-                  className="button button-dark"
-                  disabled={busy}
-                  onClick={(event) =>
-                    continueOnboardingDetails(event.currentTarget.form)
-                  }
-                >
-                  {selectedRole === "consumer"
-                    ? busy
-                      ? "Saving..."
-                      : "Finish my profile"
-                    : "Continue"}{" "}
-                  <span>{selectedRole === "consumer" ? "✓" : "→"}</span>
-                </button>
-              </div>
-            </div>
-            <div
-              className={
-                selectedRole !== "consumer" && onboardingStep === 3
-                  ? "form-step active"
-                  : "form-step"
-              }
-            >
-              <h3>
-                {selectedRole === "business"
-                  ? "What kind of partners fit your brand?"
-                  : selectedRole === "creator"
-                    ? "Help brands understand your audience."
-                    : "Help people picture your reach."}
-              </h3>
-              <p>Useful details make better matches and fewer awkward messages.</p>
-              <div className="field-grid">
-                <div className="form-subsection field-wide">
-                  <span>Social accounts</span>
-                  <h4>Let people verify your real audience.</h4>
-                  <p>Paste a full profile link or just your @handle.</p>
-                </div>
-                {socialPlatforms.map((platform) => (
-                  <label key={platform.key}>
-                    {platform.label}
+                  <label className="field-wide">
+                    Public @handle <small>Optional. Letters, numbers, dashes.</small>
                     <input
-                      name={`social_${platform.key}`}
-                      defaultValue={profile?.social_links?.[platform.key] ?? ""}
-                      placeholder={
-                        platform.key === "tiktok"
-                          ? "@yourtiktok"
-                          : `@your${platform.key}`
+                      name="handle"
+                      data-field="handle"
+                      value={answers.handle}
+                      onChange={(event) =>
+                        setAnswers((current) => ({
+                          ...current,
+                          handle: event.target.value,
+                        }))
                       }
-                      onBlur={
-                        platform.key === "instagram"
-                          ? (event) =>
-                              void syncInstagramAvatar(
-                                event.currentTarget.value,
-                                event.currentTarget.form,
-                              )
-                          : undefined
+                      placeholder="@yourhandle"
+                    />
+                  </label>
+                </div>
+
+                <div className="onboarding-actions">
+                  <span />
+                  <button
+                    type="button"
+                    className="button button-dark"
+                    onClick={advanceOnboarding}
+                  >
+                    {onboardingMode === "edit"
+                      ? "Next: your details"
+                      : selectedRole === "business"
+                        ? "Next: your campaign"
+                        : selectedRole === "creator"
+                          ? "Next: what you sell"
+                          : selectedRole === "space_owner"
+                            ? "Next: your space"
+                            : selectedRole === "sponsor_host"
+                              ? "Next: your sponsorship"
+                              : "Next"}{" "}
+                    <span>→</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ---------------------------------------------------------------
+                STEP 2 - the thing they came to publish.
+                Conditionally RENDERED, not display:none, so an unchosen role's
+                controls are genuinely absent from the DOM.
+                --------------------------------------------------------------- */}
+            {onboardingStep === 2 && (
+              <div className="form-step active">
+                {onboardingMode === "edit" ? (
+                  <>
+                    <h3>Your details</h3>
+                    <p>This is what people see on your profile card.</p>
+                    <div className="form-subsection field-wide">
+                      <span>Your audience</span>
+                      <h4>Where do people follow you?</h4>
+                      <p>Only the ones you pick get a field.</p>
+                    </div>
+                    <ChipRow
+                      field="platforms"
+                      label="Platforms you post on"
+                      multi
+                      options={CREATOR_PLATFORMS.map(
+                        (key) =>
+                          socialPlatforms.find((p) => p.key === key)?.label ?? key,
+                      )}
+                      selected={answers.platforms.map(
+                        (key) =>
+                          socialPlatforms.find((p) => p.key === key)?.label ?? key,
+                      )}
+                      onPick={(label) => {
+                        const key =
+                          socialPlatforms.find((p) => p.label === label)?.key ?? "";
+                        if (!key) return;
+                        setAnswers((current) => ({
+                          ...current,
+                          platforms: current.platforms.includes(key)
+                            ? current.platforms.filter((item) => item !== key)
+                            : [...current.platforms, key],
+                        }));
+                      }}
+                    />
+                    <div className="field-grid">
+                      {answers.platforms.map((key) => {
+                        const platform = socialPlatforms.find(
+                          (item) => item.key === key,
+                        );
+                        if (!platform) return null;
+                        return (
+                          <label key={key}>
+                            {platform.label}
+                            <input
+                              value={answers.socials[key] ?? ""}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  socials: {
+                                    ...current.socials,
+                                    [key]: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="@yourhandle"
+                            />
+                          </label>
+                        );
+                      })}
+                      <label>
+                        Your following on your biggest platform
+                        <small>Roughly is fine.</small>
+                        <input
+                          type="number"
+                          min={0}
+                          max={2000000000}
+                          value={answers.followers ?? ""}
+                          onChange={(event) =>
+                            setAnswers((current) => ({
+                              ...current,
+                              followers: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            }))
+                          }
+                          placeholder="18400"
+                        />
+                      </label>
+                      <label className="field-wide media-upload-field">
+                        Profile photos
+                        <input
+                          ref={galleryInputRef}
+                          name="gallery_files"
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          multiple
+                        />
+                        <small>Up to 6 photos on your profile.</small>
+                      </label>
+                    </div>
+                    <div className="form-subsection field-wide">
+                      <span>About you</span>
+                      <h4>What kind of work is this?</h4>
+                    </div>
+                    <ChipRow
+                      field="categories"
+                      label="Categories"
+                      multi
+                      options={CATEGORY_CHIPS}
+                      selected={answers.categories}
+                      onPick={(value) =>
+                        setAnswers((current) => ({
+                          ...current,
+                          categories: current.categories.includes(value)
+                            ? current.categories.filter((item) => item !== value)
+                            : [...current.categories, value],
+                        }))
                       }
                     />
-                    {platform.key === "instagram" && igAvatarBusy && (
-                      <small>Checking your Instagram profile...</small>
+                  </>
+                ) : (
+                  <>
+                    <h3>
+                      {selectedRole === "creator"
+                        ? "What can a brand book from you?"
+                        : selectedRole === "space_owner"
+                          ? "What space can someone rent?"
+                          : selectedRole === "business"
+                            ? "What do you want to run?"
+                            : "What can a sponsor get?"}
+                    </h3>
+                    <p>
+                      {selectedRole === "creator"
+                        ? "One offer is enough to start. You can add more in a minute."
+                        : selectedRole === "space_owner"
+                          ? "Start with one. A photo and a clear price are what make it bookable."
+                          : selectedRole === "business"
+                            ? "We’ll post this as a brief. Creators, spaces and local teams answer it — you pick who."
+                            : "Sponsors want to know who they’d be backing and what their logo goes on."}
+                    </p>
+
+                    {/* ---------------- CREATOR ---------------- */}
+                    {selectedRole === "creator" && (
+                      <>
+                        <div className="form-subsection field-wide">
+                          <span>Your audience</span>
+                          <h4>Where do people follow you?</h4>
+                          <p>Pick your platforms. Only those get a field.</p>
+                        </div>
+                        <ChipRow
+                          field="platforms"
+                          label="Platforms you post on"
+                          multi
+                          options={CREATOR_PLATFORMS.map(
+                            (key) =>
+                              socialPlatforms.find((p) => p.key === key)?.label ??
+                              key,
+                          )}
+                          selected={answers.platforms.map(
+                            (key) =>
+                              socialPlatforms.find((p) => p.key === key)?.label ??
+                              key,
+                          )}
+                          onPick={(label) => {
+                            const key =
+                              socialPlatforms.find((p) => p.label === label)?.key ??
+                              "";
+                            if (!key) return;
+                            setAnswers((current) => ({
+                              ...current,
+                              platforms: current.platforms.includes(key)
+                                ? current.platforms.filter((item) => item !== key)
+                                : [...current.platforms, key],
+                            }));
+                          }}
+                        />
+                        <div className="field-grid">
+                          {answers.platforms.map((key) => {
+                            const platform = socialPlatforms.find(
+                              (item) => item.key === key,
+                            );
+                            if (!platform) return null;
+                            return (
+                              <label key={key}>
+                                {platform.label}
+                                <input
+                                  value={answers.socials[key] ?? ""}
+                                  onChange={(event) =>
+                                    setAnswers((current) => ({
+                                      ...current,
+                                      socials: {
+                                        ...current.socials,
+                                        [key]: event.target.value,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="@yourhandle"
+                                />
+                                {key === "instagram" && (
+                                  <button
+                                    type="button"
+                                    className="button button-small button-ghost"
+                                    disabled={igAvatarBusy}
+                                    onClick={() =>
+                                      void syncInstagramAvatar(
+                                        answers.socials.instagram ?? "",
+                                      )
+                                    }
+                                  >
+                                    {igAvatarBusy ? "Checking…" : "Check"}
+                                  </button>
+                                )}
+                                {key === "instagram" && igAvatar && (
+                                  <span className="ig-avatar-preview">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={igAvatar} alt="" />
+                                    <small>
+                                      Synced from Instagram — upload your own photo
+                                      in step 1 to use a different one.
+                                    </small>
+                                  </span>
+                                )}
+                                {key === "instagram" && igStats && (
+                                  <small className="ig-sync-note" role="status">
+                                    {igStats.throttled
+                                      ? "Instagram is rate-limiting us right now. Enter your following below and carry on."
+                                      : igStats.error
+                                        ? "We couldn’t read that profile. Enter your following below and carry on."
+                                        : `Found @${igStats.username} — ${compactNumber(igStats.followers ?? 0)} followers.`}
+                                  </small>
+                                )}
+                              </label>
+                            );
+                          })}
+                          <label>
+                            Your following on your biggest platform
+                            <small>Roughly is fine. Optional.</small>
+                            <input
+                              type="number"
+                              min={0}
+                              max={2000000000}
+                              value={answers.followers ?? ""}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  followers: event.target.value
+                                    ? Number(event.target.value)
+                                    : null,
+                                }))
+                              }
+                              placeholder="18400"
+                            />
+                          </label>
+                        </div>
+
+                        <div className="form-subsection field-wide">
+                          <span>Your first offer</span>
+                          <h4>What does a brand actually get?</h4>
+                        </div>
+                        <div className="offer-examples">
+                          {answers.platforms
+                            .flatMap((key) => CREATOR_OFFER_EXAMPLES[key] ?? [])
+                            .slice(0, 6)
+                            .map((example) => (
+                              <button
+                                key={example}
+                                type="button"
+                                onClick={() =>
+                                  setAnswers((current) => ({
+                                    ...current,
+                                    format: example,
+                                  }))
+                                }
+                              >
+                                {example}
+                              </button>
+                            ))}
+                        </div>
+                        <div className="field-grid">
+                          <label className="field-wide">
+                            What they get
+                            <input
+                              data-field="format"
+                              maxLength={60}
+                              value={answers.format}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  format: event.target.value,
+                                }))
+                              }
+                              placeholder="three Instagram stories over 48 hours"
+                            />
+                          </label>
+                          {answers.format.trim() && (
+                            <p className="offer-preview field-wide">
+                              Your card will read:{" "}
+                              <strong>You get {formatOffer(answers.format)}</strong>
+                            </p>
+                          )}
+                        </div>
+                        <ChipRow
+                          field="categories"
+                          label="Categories"
+                          multi
+                          options={CATEGORY_CHIPS}
+                          selected={answers.categories}
+                          onPick={(value) =>
+                            setAnswers((current) => ({
+                              ...current,
+                              categories: current.categories.includes(value)
+                                ? current.categories.filter((item) => item !== value)
+                                : [...current.categories, value],
+                            }))
+                          }
+                        />
+                        <div className="field-grid">
+                          <label className="field-wide media-upload-field">
+                            Photos of your work
+                            <input
+                              ref={listingPhotosRef}
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              multiple
+                            />
+                            <small>
+                              Add 1–3 photos. Without one, your card uses your
+                              profile photo.
+                            </small>
+                          </label>
+                        </div>
+                      </>
                     )}
-                    {platform.key === "instagram" &&
-                      !igAvatarBusy &&
-                      Boolean(igAvatar) && (
-                        <span className="ig-avatar-preview">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={igAvatar} alt="Instagram profile preview" loading="lazy" decoding="async" />
-                          <small>
-                            Synced from Instagram — upload a photo in step 2 to
-                            use a different one.
-                          </small>
-                        </span>
+
+                    {/* ---------------- SPACE OWNER ---------------- */}
+                    {selectedRole === "space_owner" && (
+                      <>
+                        <div className="form-subsection field-wide">
+                          <span>The space</span>
+                          <h4>What kind of space is it?</h4>
+                        </div>
+                        <ChipRow
+                          field="spaceKind"
+                          label="Kind of space"
+                          options={SPACE_KIND_CHIPS.map((item) => item.label)}
+                          selected={answers.spaceKind ? [answers.spaceKind] : []}
+                          onPick={(value) =>
+                            setAnswers((current) => ({
+                              ...current,
+                              spaceKind: value,
+                            }))
+                          }
+                        />
+                        <div className="field-grid">
+                          <label className="field-wide">
+                            What buyers see on the card
+                            <small>A street, a neighborhood, or just the city.</small>
+                            <input
+                              data-field="location_area"
+                              value={answers.location_area}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  location_area: event.target.value,
+                                }))
+                              }
+                              placeholder={answers.city || "Downtown Brea"}
+                            />
+                          </label>
+                          <label className="field-wide media-upload-field">
+                            Photos of the space
+                            <input
+                              ref={listingPhotosRef}
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              multiple
+                            />
+                            <small>
+                              One good photo roughly doubles your requests. Take one
+                              now if it’s in front of you.
+                            </small>
+                          </label>
+                        </div>
+
+                        <div className="form-subsection field-wide">
+                          <span>How busy is it?</span>
+                          <h4>People who walk past on a normal day.</h4>
+                        </div>
+                        <ChipRow
+                          field="traffic"
+                          label="Foot traffic"
+                          options={TRAFFIC_CHIPS.map((item) => item.label)}
+                          selected={answers.traffic ? [answers.traffic] : []}
+                          onPick={(value) =>
+                            setAnswers((current) => ({ ...current, traffic: value }))
+                          }
+                        />
+
+                        <div className="form-subsection field-wide">
+                          <span>Price and availability</span>
+                          <h4>What does it cost to book?</h4>
+                        </div>
+                        <ChipRow
+                          field="availability"
+                          label="Availability"
+                          options={AVAILABILITY_CHIPS}
+                          selected={
+                            answers.availability ? [answers.availability] : []
+                          }
+                          onPick={(value) =>
+                            setAnswers((current) => ({
+                              ...current,
+                              availability: value,
+                            }))
+                          }
+                        />
+                      </>
+                    )}
+
+                    {/* ---------------- BUSINESS ---------------- */}
+                    {selectedRole === "business" && (
+                      <>
+                        <div className="form-subsection field-wide">
+                          <span>The campaign</span>
+                          <h4>What should it do?</h4>
+                        </div>
+                        <ChipRow
+                          field="goal"
+                          label="Campaign goal"
+                          options={BUSINESS_GOAL_CHIPS.map((item) => item.label)}
+                          selected={answers.goal ? [answers.goal] : []}
+                          onPick={(value) =>
+                            setAnswers((current) => ({ ...current, goal: value }))
+                          }
+                        />
+                        <ChipRow
+                          field="categories"
+                          label="What you are promoting"
+                          multi
+                          options={CATEGORY_CHIPS}
+                          selected={answers.categories}
+                          onPick={(value) =>
+                            setAnswers((current) => ({
+                              ...current,
+                              categories: current.categories.includes(value)
+                                ? current.categories.filter((item) => item !== value)
+                                : [...current.categories, value],
+                            }))
+                          }
+                        />
+
+                        <div className="form-subsection field-wide">
+                          <span>Where you want it</span>
+                          <h4>Pick the placements you’d actually use.</h4>
+                        </div>
+                        <ChipRow
+                          field="placements"
+                          label="Placements"
+                          multi
+                          options={BUSINESS_PLACEMENT_CHIPS.map((item) => item.label)}
+                          selected={answers.placements}
+                          onPick={(value) =>
+                            setAnswers((current) => ({
+                              ...current,
+                              placements: current.placements.includes(value)
+                                ? current.placements.filter((item) => item !== value)
+                                : [...current.placements, value],
+                            }))
+                          }
+                        />
+
+                        {/* Only a business that wants social placements is asked
+                            anything about social. Pick windows and boards only and
+                            the word Instagram never appears in the flow. */}
+                        {answers.placements.some(
+                          (label) =>
+                            BUSINESS_PLACEMENT_CHIPS.find(
+                              (item) => item.label === label,
+                            )?.social,
+                        ) && (
+                          <>
+                            <div className="offer-examples">
+                              {DELIVERABLE_EXAMPLES.map((example) => (
+                                <button
+                                  key={example}
+                                  type="button"
+                                  onClick={() =>
+                                    setAnswers((current) => ({
+                                      ...current,
+                                      deliverables: current.deliverables
+                                        ? `${current.deliverables}, ${example}`
+                                        : example,
+                                    }))
+                                  }
+                                >
+                                  {example}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="field-grid">
+                              <label className="field-wide">
+                                Anything a creator must include?
+                                <input
+                                  value={answers.deliverables}
+                                  onChange={(event) =>
+                                    setAnswers((current) => ({
+                                      ...current,
+                                      deliverables: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="Tag @us, link in bio for 48h"
+                                />
+                              </label>
+                            </div>
+                          </>
+                        )}
+
+                        {answers.placements.some(
+                          (label) =>
+                            BUSINESS_PLACEMENT_CHIPS.find(
+                              (item) => item.label === label,
+                            )?.social === false,
+                        ) && (
+                          <ChipRow
+                            field="artwork"
+                            label="Artwork"
+                            options={["I’ll supply the artwork", "I need help making it"]}
+                            selected={
+                              answers.artwork === "supply"
+                                ? ["I’ll supply the artwork"]
+                                : answers.artwork === "help"
+                                  ? ["I need help making it"]
+                                  : []
+                            }
+                            onPick={(value) =>
+                              setAnswers((current) => ({
+                                ...current,
+                                artwork:
+                                  value === "I’ll supply the artwork"
+                                    ? "supply"
+                                    : "help",
+                              }))
+                            }
+                          />
+                        )}
+
+                        <div className="form-subsection field-wide">
+                          <span>Budget and timing</span>
+                          <h4>When do you want this to run?</h4>
+                        </div>
+                        <ChipRow
+                          field="timing"
+                          label="Timing"
+                          options={BUSINESS_TIMING_CHIPS.map((item) => item.label)}
+                          selected={answers.timing ? [answers.timing] : []}
+                          onPick={(value) =>
+                            setAnswers((current) => ({ ...current, timing: value }))
+                          }
+                        />
+                      </>
+                    )}
+
+                    {/* ---------------- SPONSORSHIP HOST ---------------- */}
+                    {selectedRole === "sponsor_host" && (
+                      <>
+                        <div className="form-subsection field-wide">
+                          <span>Your organization</span>
+                          <h4>What are you?</h4>
+                        </div>
+                        <ChipRow
+                          field="orgKind"
+                          label="Organization type"
+                          options={SPONSOR_ORG_CHIPS}
+                          selected={answers.orgKind ? [answers.orgKind] : []}
+                          onPick={(value) =>
+                            setAnswers((current) => ({ ...current, orgKind: value }))
+                          }
+                        />
+                        <div className="form-subsection field-wide">
+                          <span>Your reach</span>
+                          <h4>How many people will see it?</h4>
+                        </div>
+                        <ChipRow
+                          field="reach"
+                          label="Reach"
+                          options={SPONSOR_REACH_CHIPS.map((item) => item.label)}
+                          selected={answers.reach ? [answers.reach] : []}
+                          onPick={(value) =>
+                            setAnswers((current) => ({ ...current, reach: value }))
+                          }
+                        />
+                        <ChipRow
+                          field="season"
+                          label="When it runs"
+                          options={SPONSOR_SEASON_CHIPS.map((item) => item.label)}
+                          selected={answers.season ? [answers.season] : []}
+                          onPick={(value) =>
+                            setAnswers((current) => ({ ...current, season: value }))
+                          }
+                        />
+
+                        <div className="form-subsection field-wide">
+                          <span>The sponsorship</span>
+                          <h4>What does a sponsor get?</h4>
+                        </div>
+                        <ChipRow
+                          field="benefits"
+                          label="Sponsor benefits"
+                          multi
+                          options={SPONSOR_BENEFIT_CHIPS}
+                          selected={answers.benefits}
+                          onPick={(value) =>
+                            setAnswers((current) => ({
+                              ...current,
+                              benefits: current.benefits.includes(value)
+                                ? current.benefits.filter((item) => item !== value)
+                                : [...current.benefits, value],
+                            }))
+                          }
+                        />
+                        <div className="field-grid">
+                          <label className="field-wide media-upload-field">
+                            Photos
+                            <input
+                              ref={listingPhotosRef}
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              multiple
+                            />
+                            <small>
+                              A photo of the team, the robot, or last year’s event.
+                            </small>
+                          </label>
+                        </div>
+                      </>
+                    )}
+
+                    {/* ---------------- shared: title, price, description ------- */}
+                    <div className="form-subsection field-wide">
+                      <span>The listing</span>
+                      <h4>Name it and price it.</h4>
+                    </div>
+                    <div className="field-grid">
+                      <label className="field-wide">
+                        {selectedRole === "business" ? "Name this campaign" : "Title"}
+                        <input
+                          data-field="title"
+                          maxLength={120}
+                          value={
+                            titleTouched
+                              ? answers.title
+                              : composeTitle(selectedRole ?? "creator", answers)
+                          }
+                          onChange={(event) => {
+                            setTitleTouched(true);
+                            setAnswers((current) => ({
+                              ...current,
+                              title: event.target.value,
+                            }));
+                          }}
+                          placeholder="Cafe window, Brea"
+                        />
+                      </label>
+                      <label>
+                        {selectedRole === "business"
+                          ? "Your budget"
+                          : selectedRole === "sponsor_host"
+                            ? "What does one sponsor pay?"
+                            : "Price"}
+                        <input
+                          type="number"
+                          min={1}
+                          data-field="price"
+                          value={answers.price ?? ""}
+                          onChange={(event) =>
+                            setAnswers((current) => ({
+                              ...current,
+                              price: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            }))
+                          }
+                          placeholder="150"
+                        />
+                      </label>
+                      {selectedRole === "sponsor_host" ? (
+                        <p className="offer-preview">per sponsor</p>
+                      ) : selectedRole === "business" ? (
+                        <p className="offer-preview">per campaign</p>
+                      ) : (
+                        <label>
+                          Per
+                          <select
+                            value={
+                              answers.price_unit ||
+                              (selectedRole === "space_owner" ? "week" : "post")
+                            }
+                            onChange={(event) =>
+                              setAnswers((current) => ({
+                                ...current,
+                                price_unit: event.target.value,
+                              }))
+                            }
+                          >
+                            {(
+                              PRICE_UNIT_CHIPS[selectedRole ?? "creator"] ?? [
+                                "campaign",
+                              ]
+                            ).map((unit) => (
+                              <option key={unit} value={unit}>
+                                {unit}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                       )}
-                    {platform.key === "instagram" &&
-                      !igAvatarBusy &&
-                      igStats && (
-                        <small className="ig-sync-note" role="status">
-                          {igStats.throttled
-                            ? "Instagram did not answer just now. Carry on and finish your profile — you can type your follower count in yourself, or come back and sync later."
-                            : igStats.error
-                              ? igStats.error
-                              : typeof igStats.followers === "number"
-                                ? `Found @${igStats.username} — ${compactNumber(igStats.followers)} followers${
-                                    igStats.is_private ? ", private account" : ""
-                                  }.`
-                                : null}
+                    </div>
+                    {Boolean(PRICE_CHIPS[selectedRole ?? ""]) && (
+                      <ChipRow
+                        field="price_presets"
+                        label="Suggested prices"
+                        options={(PRICE_CHIPS[selectedRole ?? ""] ?? []).map(
+                          (amount) => `$${amount}`,
+                        )}
+                        selected={answers.price ? [`$${answers.price}`] : []}
+                        onPick={(value) =>
+                          setAnswers((current) => ({
+                            ...current,
+                            price: Number(value.replace("$", "")),
+                          }))
+                        }
+                      />
+                    )}
+                    <div className="field-grid">
+                      <label className="field-wide">
+                        Describe it
+                        <small>
+                          At least a sentence or two. This is the body of your card.
                         </small>
-                      )}
-                  </label>
-                ))}
-                <label className="field-wide">
-                  Categories
-                  <input
-                    name="categories"
-                    defaultValue={profile?.categories.join(", ") ?? ""}
-                    placeholder="Food, Local, Lifestyle"
-                  />
-                  <small>Separate with commas</small>
-                </label>
-                <label>
-                  Followers
-                  <input
-                    name="followers"
-                    type="number"
-                    max="2000000000"
-                    min="0"
-                    defaultValue={profile?.followers ?? 0}
-                  />
-                </label>
-                <label>
-                  Average views / weekly looks
-                  <input
-                    name="avg_views"
-                    type="number"
-                    max="2000000000"
-                    min="0"
-                    defaultValue={profile?.avg_views ?? 0}
-                  />
-                </label>
-                <label>
-                  Audience / demographics
-                  <input
-                    name="audience_age"
-                    defaultValue={profile?.audience_age ?? ""}
-                    placeholder="Mostly ages 21–34"
-                  />
-                </label>
-                <label>
-                  Website
-                  <input
-                    name="website"
-                    defaultValue={profile?.website ?? ""}
-                    placeholder="yourwebsite.com"
-                  />
-                </label>
+                        <textarea
+                          data-field="description"
+                          value={
+                            descriptionTouched
+                              ? answers.description
+                              : composeDescription(
+                                  selectedRole ?? "creator",
+                                  answers,
+                                )
+                          }
+                          onChange={(event) => {
+                            setDescriptionTouched(true);
+                            setAnswers((current) => ({
+                              ...current,
+                              description: event.target.value,
+                            }));
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="form-subsection field-wide">
+                      <span>Anything else?</span>
+                      <h4>Do you do more than one of these?</h4>
+                      <p>
+                        You’ll show up in each of these searches, from one account.
+                      </p>
+                    </div>
+                    <ChipRow
+                      field="extra_roles"
+                      label="Other things you do"
+                      multi
+                      options={EXTRA_ROLE_OPTIONS.filter(
+                        (role) => role !== selectedRole,
+                      ).map((role) => roleCopy[role].label)}
+                      selected={extraRoles.map((role) => roleCopy[role].label)}
+                      onPick={(label) => {
+                        const role = EXTRA_ROLE_OPTIONS.find(
+                          (item) => roleCopy[item].label === label,
+                        );
+                        if (!role) return;
+                        setExtraRoles((current) =>
+                          current.includes(role)
+                            ? current.filter((item) => item !== role)
+                            : [...current, role],
+                        );
+                      }}
+                    />
+                  </>
+                )}
+
+                <div className="onboarding-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOnboardingError("");
+                      setOnboardingStep(1);
+                    }}
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="submit"
+                    className="button button-coral"
+                    disabled={busy}
+                  >
+                    {busy
+                      ? "Publishing…"
+                      : onboardingMode === "edit"
+                        ? "Save changes"
+                        : selectedRole === "business"
+                          ? "Post my brief"
+                          : "Publish and finish"}{" "}
+                    <span>✓</span>
+                  </button>
+                </div>
               </div>
-              <div className="onboarding-actions">
-                <button type="button" onClick={() => setOnboardingStep(2)}>
-                  ← Back
-                </button>
-                <button
-                  type="submit"
-                  className="button button-coral"
-                  // Only `busy` may disable this. Blur fires on mousedown, so
-                  // gating on igAvatarBusy too meant clicking straight from the
-                  // Instagram field disabled the button between mousedown and
-                  // mouseup and the browser never produced a click at all. The
-                  // save already awaits the in-flight lookup before using it.
-                  disabled={busy}
-                >
-                  {busy
-                    ? "Saving..."
-                    : igAvatarBusy
-                      ? "Syncing photo..."
-                      : "Finish my profile"}{" "}
-                  <span>✓</span>
-                </button>
-              </div>
-            </div>
+            )}
           </form>
           {profile && (
             <button
