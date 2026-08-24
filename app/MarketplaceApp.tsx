@@ -686,8 +686,16 @@ function listingImages(listing: Listing) {
 /** Newest messages fetched per thread. See loadMessages for why this is bounded. */
 const MESSAGE_PAGE_SIZE = 100;
 
-/** Cards rendered in the people showcase row. */
-const SHOWCASE_LIMIT = 12;
+/**
+ * Upper bound on people-showcase cards, matching the query limit so the fetch
+ * is the single real bound.
+ *
+ * This exists to stop an unbounded render, NOT to curate. It was briefly set to
+ * 12 while the marketplace had 14 real members, which quietly hid two of them -
+ * the opposite of what the showcase is for. Keep it at or above the profiles
+ * query limit; if that limit changes, change this with it.
+ */
+const SHOWCASE_LIMIT = 60;
 
 /**
  * Support contact shown in-app. NOTE: app/terms/page.tsx and
