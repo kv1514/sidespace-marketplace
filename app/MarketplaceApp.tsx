@@ -1031,6 +1031,37 @@ function composeTitle(role: Role, answers: OnboardingAnswers): string {
 }
 
 /**
+ * What the title field actually contains.
+ *
+ * Display, validation and publish MUST agree on this. They used to differ: the
+ * field rendered `touched ? answers.title : composeTitle(...)` while publish
+ * used `answers.title.trim() || composeTitle(...)`. So a member who typed a
+ * title and then cleared it saw an empty box and published the generated one -
+ * and a business that deleted its description specifically to keep the budget
+ * off the card published the budget anyway.
+ *
+ * Untouched means "show them the draft and mean it". Touched means the words
+ * are theirs, including when they are none.
+ */
+function effectiveTitle(
+  role: Role,
+  answers: OnboardingAnswers,
+  touched: { title: boolean },
+) {
+  return touched.title ? answers.title.trim() : composeTitle(role, answers);
+}
+
+function effectiveDescription(
+  role: Role,
+  answers: OnboardingAnswers,
+  touched: { description: boolean },
+) {
+  return touched.description
+    ? answers.description.trim()
+    : composeDescription(role, answers).trim();
+}
+
+/**
  * The `listings` row a completed onboarding publishes.
  *
  * Every value lands in a column that already exists. `channel` carries no DB
@@ -1039,14 +1070,14 @@ function composeTitle(role: Role, answers: OnboardingAnswers): string {
  * own filter automatically. "Business brief" is the existing magic string that
  * isBrief() renders as a Wanted card.
  */
-function buildListingDraft(role: Role, answers: OnboardingAnswers) {
+function buildListingDraft(
+  role: Role,
+  answers: OnboardingAnswers,
+  touched: { title: boolean; description: boolean },
+) {
   const base = {
-    // The generated title is a real fallback, not just a placeholder: someone
-    // who never touches the field still publishes a card with a name on it.
-    title: (answers.title.trim() || composeTitle(role, answers)).slice(0, 120),
-    description: (
-      answers.description.trim() || composeDescription(role, answers)
-    ).trim(),
+    title: effectiveTitle(role, answers, touched).slice(0, 120),
+    description: effectiveDescription(role, answers, touched),
     price: answers.price ?? 0,
     format: answers.format.trim(),
     demographics: "",
@@ -1781,9 +1812,20 @@ export default function MarketplaceApp({
     role: Role | null;
     answers: OnboardingAnswers;
   } | null>(null);
+  /**
+   * Chosen files, captured on change instead of read from the DOM at submit.
+   *
+   * A file input cannot be controlled, but it CAN be unmounted - and only one
+   * step is mounted at a time now. The avatar input lives on step 1 while the
+   * only submit button lives on step 2, so reading `ref.current.files` at
+   * publish time always found a detached input and silently dropped the photo.
+   * The listing photo inputs had the mirror-image bug: pressing "← Back" to fix
+   * a typo unmounted them and threw the selection away without saying so.
+   */
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [listingFiles, setListingFiles] = useState<File[]>([]);
+  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
-  const listingPhotosRef = useRef<HTMLInputElement | null>(null);
-  const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const onboardingFormRef = useRef<HTMLFormElement | null>(null);
   const [listingOpen, setListingOpen] = useState(false);
   const [listingFeedback, setListingFeedback] = useState("");
@@ -2725,6 +2767,9 @@ export default function MarketplaceApp({
     // description as hand-written, and stops regenerating them.
     setTitleTouched(false);
     setDescriptionTouched(false);
+    setAvatarFile(null);
+    setListingFiles([]);
+    setGalleryFiles([]);
   }
 
   /**
@@ -2978,17 +3023,17 @@ export default function MarketplaceApp({
       }
       if (!answers.season) return ["Pick when the sponsorship runs.", "season"];
     }
-    // Validate what the member can actually see. Both fields show a generated
-    // draft until they type over it, so checking the raw answer would refuse to
-    // publish a field that looks filled in.
-    const effectiveTitle = answers.title.trim() || composeTitle(role, answers);
-    const effectiveDescription =
-      answers.description.trim() || composeDescription(role, answers);
-    if (!effectiveTitle.trim()) return ["Give this a title.", "title"];
+    // Validate exactly what the member can see, via the same helpers publish
+    // uses - so an emptied field fails here instead of silently republishing
+    // the draft they deleted.
+    const touched = { title: titleTouched, description: descriptionTouched };
+    const shownTitle = effectiveTitle(role, answers, touched);
+    const shownDescription = effectiveDescription(role, answers, touched);
+    if (!shownTitle.trim()) return ["Give this a title.", "title"];
     if (!answers.price || answers.price < 1) {
       return ["Set a price of at least $1.", "price"];
     }
-    if (effectiveDescription.trim().length < 60) {
+    if (shownDescription.trim().length < 60) {
       return [
         "Add a bit more detail — a sentence or two is what makes a card worth opening.",
         "description",
@@ -3098,42 +3143,41 @@ export default function MarketplaceApp({
       const existing = (fresh as Profile | null) ?? null;
       profileLoadFailedRef.current = false;
 
-      const avatarFiles = Array.from(avatarInputRef.current?.files ?? []).filter(
-        (file) => file.size > 0,
-      );
-      const listingFiles = Array.from(
-        listingPhotosRef.current?.files ?? [],
-      ).filter((file) => file.size > 0);
-      const galleryFiles = Array.from(
-        galleryInputRef.current?.files ?? [],
-      ).filter((file) => file.size > 0);
+      const avatarFiles = avatarFile && avatarFile.size > 0 ? [avatarFile] : [];
+      const chosenListingFiles = listingFiles.filter((file) => file.size > 0);
+      const chosenGalleryFiles = galleryFiles.filter((file) => file.size > 0);
 
       const existingGalleryCount = (existing?.gallery_urls ?? []).length;
-      if (existingGalleryCount + galleryFiles.length > 6) {
+      if (existingGalleryCount + chosenGalleryFiles.length > 6) {
         throw new Error(
-          `You can keep 6 photos. You have ${existingGalleryCount} and picked ${galleryFiles.length}. Remove some first, or choose fewer.`,
+          `You can keep 6 photos. You have ${existingGalleryCount} and picked ${chosenGalleryFiles.length}. Remove some first, or choose fewer.`,
         );
       }
 
-      const [avatarUploads, galleryUploads, listingUploads] = await Promise.all([
-        uploadImages(avatarFiles.slice(0, 1), "profiles"),
-        uploadImages(galleryFiles, "profiles"),
-        uploadImages(listingFiles.slice(0, 6), "listings"),
+      const [avatarUploads, galleryUploads] = await Promise.all([
+        uploadImages(avatarFiles, "profiles"),
+        uploadImages(chosenGalleryFiles, "profiles"),
       ]);
 
       // Only the platforms actually picked contribute a handle. This is the
       // whole reason the flow moved off FormData: the old code guarded on
       // `values.has("social_instagram")`, so a creator who picked TikTok and
       // not Instagram had every handle they typed thrown away.
+      // Iterate the catalogue, not the selection. Visiting only the selected
+      // platforms meant a member who unticked TikTok kept their old TikTok URL
+      // from `existing` - and since the platform chips are re-derived from
+      // social_links on reopen, the chip ticked itself again. The deselection
+      // was both invisible and self-reverting. Keys outside the catalogue
+      // (anything legacy) are left untouched.
       const socialLinks: Record<string, string> = {
         ...(existing?.social_links ?? {}),
       };
-      for (const key of answers.platforms) {
-        const platform = socialPlatforms.find((item) => item.key === key);
-        if (!platform) continue;
-        const url = normalizeSocialUrl(platform, answers.socials[key] ?? "");
-        if (url) socialLinks[key] = url;
-        else delete socialLinks[key];
+      for (const platform of socialPlatforms) {
+        const url = answers.platforms.includes(platform.key)
+          ? normalizeSocialUrl(platform, answers.socials[platform.key] ?? "")
+          : "";
+        if (url) socialLinks[platform.key] = url;
+        else delete socialLinks[platform.key];
       }
 
       const syncedIgAvatar = igAvatarPromiseRef.current
@@ -3160,8 +3204,15 @@ export default function MarketplaceApp({
         categories: answers.categories,
         // A null follower count means "not answered", and must not overwrite a
         // number they gave earlier with 0.
-        followers: answers.followers ?? existing?.followers ?? 0,
-        avg_views: reach.avg_views ?? existing?.avg_views ?? 0,
+        //
+        // Clamped here rather than trusting the input: the field that enforces
+        // min={0} is only mounted in the creator branch, and a role switch
+        // carries `followers` across. A negative number typed as a creator and
+        // then switched to Space owner otherwise reaches profiles_followers_check
+        // and fails the ENTIRE profile write, with an error naming a field that
+        // is no longer on screen.
+        followers: Math.max(0, answers.followers ?? existing?.followers ?? 0),
+        avg_views: Math.max(0, reach.avg_views ?? existing?.avg_views ?? 0),
         reach_unit: reach.reach_unit ?? existing?.reach_unit ?? "weekly looks",
         audience_age: existing?.audience_age ?? "",
         website: existing?.website ?? "",
@@ -3201,7 +3252,20 @@ export default function MarketplaceApp({
       setProfile(savedProfile);
 
       if (onboardingMode === "setup") {
-        const draft = buildListingDraft(role, answers);
+        // Uploaded only after the profile write succeeds. Uploading first meant
+        // a failed profile save left the photos sitting in a public bucket with
+        // nothing referencing them and no way to reach them again.
+        //
+        // Not sliced to 6: uploadImages enforces its own cap and reports it,
+        // where slicing here would silently publish 6 of the 8 someone picked.
+        const listingUploads = await uploadImages(
+          chosenListingFiles,
+          "listings",
+        );
+        const draft = buildListingDraft(role, answers, {
+          title: titleTouched,
+          description: descriptionTouched,
+        });
         // Listing photos are written to the listing ONLY, never mirrored into
         // profiles.gallery_urls. removeProfilePhoto already exists to repair
         // listings that share a URL with a deleted gallery photo, re-pointing
@@ -3262,8 +3326,21 @@ export default function MarketplaceApp({
         setOnboardingOpen(false);
         setOnboardingStep(1);
         await Promise.all([loadMarketplace(), loadOwnListings(savedProfile)]);
+        // Include the actual reason. This branch swallowed it, so a listing
+        // rejected for a fixable reason (a number too large, a title too long)
+        // read as an unexplained failure and Publish looped on the same value.
+        const why = friendlyDbError(error);
         setToast(
-          "Your profile is saved, but the listing didn’t post. Nothing you typed is lost — open it again from your dashboard.",
+          `Your profile is saved, but the listing didn’t post.${why ? ` ${why}` : ""} Nothing you typed is lost — open it again from your dashboard.`,
+        );
+      } else if ((error as { code?: string })?.code === "23505") {
+        // A duplicate @handle. profiles_handle_unique is a unique index on
+        // lower(handle), and the generic message for it is "That already
+        // exists." - shown above step 2, while the handle field is on step 1
+        // and not even in the DOM. Send them back to the field that is wrong.
+        setOnboardingStep(1);
+        window.requestAnimationFrame(() =>
+          reportMissing(["That @handle is taken. Try another.", "handle"]),
         );
       } else {
         setOnboardingError(
@@ -4328,10 +4405,12 @@ export default function MarketplaceApp({
     // The avatar input is a ref now rather than a named form control, because
     // onboarding's fields are controlled state and the lookup is triggered by
     // an explicit button instead of a blur on the form.
-    const fileInput =
-      avatarInputRef.current ?? form?.elements.namedItem("avatar_file");
+    // Read the captured file, not the input: onboarding's avatar field lives on
+    // step 1 and this runs from step 2, where that input is unmounted.
+    const fileInput = form?.elements.namedItem("avatar_file");
     const photoAlreadyChosen =
       Boolean(profile?.avatar_url) ||
+      Boolean(avatarFile) ||
       (fileInput instanceof HTMLInputElement &&
         (fileInput.files?.length ?? 0) > 0);
 
@@ -5383,14 +5462,12 @@ export default function MarketplaceApp({
             </button>
             <button
               className="button button-coral"
-              onClick={() => {
-                if (user) {
-                  openProfileEditor(1);
-                } else {
-                  setAuthMode("signup");
-                  setAuthOpen(true);
-                }
-              }}
+              // Through requireAccount, not straight to the editor. This
+              // section renders for a signed-in member whose profile is still
+              // null, and edit mode skips the listing insert while still
+              // writing onboarding_complete = true - which would mint exactly
+              // the unbookable ghost profile this flow exists to stop.
+              onClick={() => requireAccount(() => openProfileEditor(1))}
             >
               {user ? "Edit my profile" : "Sign up free"} <span>↗</span>
             </button>
@@ -6618,6 +6695,9 @@ export default function MarketplaceApp({
                       name="avatar_file"
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
+                      onChange={(event) =>
+                        setAvatarFile(event.target.files?.[0] ?? null)
+                      }
                     />
                     <small>
                       Profiles with a face or a logo get far more replies.
@@ -6754,11 +6834,13 @@ export default function MarketplaceApp({
                       <label className="field-wide media-upload-field">
                         Profile photos
                         <input
-                          ref={galleryInputRef}
                           name="gallery_files"
                           type="file"
                           accept="image/jpeg,image/png,image/webp"
                           multiple
+                          onChange={(event) =>
+                            setGalleryFiles(Array.from(event.target.files ?? []))
+                          }
                         />
                         <small>Up to 6 photos on your profile.</small>
                       </label>
@@ -6983,10 +7065,14 @@ export default function MarketplaceApp({
                           <label className="field-wide media-upload-field">
                             Photos of your work
                             <input
-                              ref={listingPhotosRef}
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
                               multiple
+                              onChange={(event) =>
+                                setListingFiles(
+                                  Array.from(event.target.files ?? []),
+                                )
+                              }
                             />
                             <small>
                               Add 1–3 photos. Without one, your card uses your
@@ -7035,10 +7121,14 @@ export default function MarketplaceApp({
                           <label className="field-wide media-upload-field">
                             Photos of the space
                             <input
-                              ref={listingPhotosRef}
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
                               multiple
+                              onChange={(event) =>
+                                setListingFiles(
+                                  Array.from(event.target.files ?? []),
+                                )
+                              }
                             />
                             <small>
                               One good photo roughly doubles your requests. Take one
@@ -7287,10 +7377,14 @@ export default function MarketplaceApp({
                           <label className="field-wide media-upload-field">
                             Photos
                             <input
-                              ref={listingPhotosRef}
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
                               multiple
+                              onChange={(event) =>
+                                setListingFiles(
+                                  Array.from(event.target.files ?? []),
+                                )
+                              }
                             />
                             <small>
                               A photo of the team, the robot, or last year’s event.
@@ -7335,6 +7429,10 @@ export default function MarketplaceApp({
                         <input
                           type="number"
                           min={1}
+                          // listings.price is an integer column; without this a
+                          // budget of 3000000000 reaches Postgres as "integer
+                          // out of range". Matches every other numeric input.
+                          max={2000000000}
                           data-field="price"
                           value={answers.price ?? ""}
                           onChange={(event) =>
@@ -7423,35 +7521,40 @@ export default function MarketplaceApp({
                       </label>
                     </div>
 
-                    <div className="form-subsection field-wide">
-                      <span>Anything else?</span>
-                      <h4>Do you do more than one of these?</h4>
-                      <p>
-                        You’ll show up in each of these searches, from one account.
-                      </p>
-                    </div>
-                    <ChipRow
-                      field="extra_roles"
-                      label="Other things you do"
-                      multi
-                      options={EXTRA_ROLE_OPTIONS.filter(
-                        (role) => role !== selectedRole,
-                      ).map((role) => roleCopy[role].label)}
-                      selected={extraRoles.map((role) => roleCopy[role].label)}
-                      onPick={(label) => {
-                        const role = EXTRA_ROLE_OPTIONS.find(
-                          (item) => roleCopy[item].label === label,
-                        );
-                        if (!role) return;
-                        setExtraRoles((current) =>
-                          current.includes(role)
-                            ? current.filter((item) => item !== role)
-                            : [...current, role],
-                        );
-                      }}
-                    />
                   </>
                 )}
+
+                {/* Outside the setup/edit ternary on purpose. Secondary roles
+                    drive the role badge and the marketplace filter, and if this
+                    only rendered during setup an established member could never
+                    add or drop one - the old flow offered it in both modes. */}
+                <div className="form-subsection field-wide">
+                  <span>Anything else?</span>
+                  <h4>Do you do more than one of these?</h4>
+                  <p>
+                    You’ll show up in each of these searches, from one account.
+                  </p>
+                </div>
+                <ChipRow
+                  field="extra_roles"
+                  label="Other things you do"
+                  multi
+                  options={EXTRA_ROLE_OPTIONS.filter(
+                    (role) => role !== selectedRole,
+                  ).map((role) => roleCopy[role].label)}
+                  selected={extraRoles.map((role) => roleCopy[role].label)}
+                  onPick={(label) => {
+                    const role = EXTRA_ROLE_OPTIONS.find(
+                      (item) => roleCopy[item].label === label,
+                    );
+                    if (!role) return;
+                    setExtraRoles((current) =>
+                      current.includes(role)
+                        ? current.filter((item) => item !== role)
+                        : [...current, role],
+                    );
+                  }}
+                />
 
                 <div className="onboarding-actions">
                   <button
@@ -7466,7 +7569,11 @@ export default function MarketplaceApp({
                   <button
                     type="submit"
                     className="button button-coral"
-                    disabled={busy}
+                    // Also gated on the Instagram lookup: publishOnboarding
+                    // snapshots `answers` before it awaits that promise, so a
+                    // follower count the lookup fills in afterwards would be
+                    // saved as 0 while the member reads "Found @you - 18.4K".
+                    disabled={busy || igAvatarBusy}
                   >
                     {busy
                       ? "Publishing…"
