@@ -1,0 +1,27 @@
+-- Reverts the anon column-grant narrowing from 0013.
+--
+-- WHY: 0013 revoked table-level SELECT on public.profiles from anon and granted
+-- back only the public column set, to stop auth_user_id being readable by
+-- anonymous callers. Anon can indeed still SELECT those columns from profiles
+-- directly -- but NOT through the listings -> profiles join the homepage
+-- depends on:
+--
+--   set local role anon;
+--   select l.id, p.display_name
+--     from public.listings l
+--     join public.profiles p on p.id = l.owner_profile_id;
+--   -- ERROR: 42501: permission denied for table profiles
+--
+-- So the homepage's listings query returned an error, page.tsx fell through to
+-- nulls, and MarketplaceApp seeded itself from local demo data. The live
+-- marketplace served twelve invented businesses in Ohio, Montana and Arizona
+-- and none of the fourteen real listings. Nothing threw; nothing was logged.
+--
+-- This broke production twice. The exposure it was closing is real but minor:
+-- auth_user_id is a UUID, not a credential, and it was readable by anon for the
+-- entire life of the project before 0013 tried to change that.
+--
+-- If this is worth revisiting, the right shape is a VIEW over profiles that
+-- omits the sensitive columns, with the app reading the view -- not column
+-- grants on the base table, which cannot express "readable through a join".
+grant select on public.profiles to anon;
