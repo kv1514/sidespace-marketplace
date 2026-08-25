@@ -1,14 +1,25 @@
 
+/* Palette retuned toward the pleurat.com direction: a brighter cream sheet,
+   one amber mark instead of two competing accents, and warmer neutrals.
+   The variable NAMES are unchanged on purpose - --lime and --coral are read in
+   several hundred places, and renaming them would be a mechanical diff with
+   no visual meaning. What changed is what they hold:
+     --lime  was #ffcf03 acid yellow  -> amber, the single accent fill
+     --coral was #fe6e00 orange       -> deep amber, used for text and CTAs
+   The deeper amber also fixes a real contrast problem: #fe6e00 under white
+   text sat around 3.0:1, below the 4.5:1 body-text floor. */
 :root {
-  --ink: #15130e;
-  --ink-soft: #6b6659;
-  --paper: #f4f0e5;
-  --paper-2: #ece7d8;
-  --white: #fbf8f0;
-  --line: rgba(21, 19, 14, 0.14);
-  --line-soft: rgba(21, 19, 14, 0.07);
-  --lime: #ffcf03;
-  --coral: #fe6e00;
+  --ink: #16140e;
+  --ink-soft: #57534a;
+  --ink-mute: #8b8577;
+  --paper: #fbf7e6;
+  --paper-2: #f3edd6;
+  --page: #fffcf0;
+  --white: #fffdf3;
+  --line: rgba(22, 20, 14, 0.16);
+  --line-soft: rgba(22, 20, 14, 0.08);
+  --lime: #f3b44a;
+  --coral: #c77e0a;
   --blue: #e9e3d2;
   --lavender: #e6dcc8;
   --display: "Google Sans Flex", "Geist", sans-serif;
@@ -6727,15 +6738,14 @@ html.reveal-ready [data-reveal].is-visible {
   padding: 8px 10px;
 }
 
-/* The publish button is sticky on a long pane, so someone can press it from
-   below the field that is missing. Validation always scrolls the offending
-   control into view, which is what makes that safe. */
+/* NOT sticky. A sticky footer pins itself to the bottom of the scrolling
+   modal body and paints straight over whatever is last in the pane - which is
+   the live preview card, the one thing worth seeing before you publish. The
+   footer sits at the end of the flow instead; validation already scrolls the
+   offending control into view, so nothing depends on the button being in
+   permanent reach. */
 .onboarding-form .onboarding-actions {
-  background: var(--white);
-  border-top: 1px solid var(--line-soft);
-  bottom: 0;
   padding-bottom: env(safe-area-inset-bottom);
-  position: sticky;
 }
 
 @media (max-width: 620px) {
@@ -6902,4 +6912,276 @@ html.reveal-ready [data-reveal].is-visible {
   .scope-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ===== Onboarding v3 — the pleurat.com direction, applied to step 2 =======
+   Step 2 was five to seven solid ink slabs stacked down a 680px column. Each
+   .form-subsection is a black card, so a business saw six of them on one pane
+   and the questions between them read as gaps rather than content.
+
+   The reference direction (pleurat.com) does the opposite: a cream sheet, one
+   amber mark, hairline rules, and mono micro-labels carrying the structure.
+   Same markup, no JSX churn - the section header stops being a slab and
+   becomes a ruled heading with a number. */
+
+.onboarding-form {
+  counter-reset: onboarding-section;
+}
+
+/* The slab becomes a rule. This single block is what turns the pane from a
+   stack of black cards into a document. */
+.onboarding-form .form-subsection {
+  background: none;
+  border-radius: 0;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  counter-increment: onboarding-section;
+  margin-top: 34px;
+  padding: 18px 0 0;
+  position: relative;
+}
+
+.onboarding-form .form-subsection:first-of-type {
+  border-top: 0;
+  margin-top: 6px;
+  padding-top: 0;
+}
+
+/* Eyebrow: amber mono micro-label, numbered. The sections ARE a sequence, so
+   the number encodes something true rather than decorating. */
+.onboarding-form .form-subsection span {
+  align-items: center;
+  color: var(--coral);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  gap: 8px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.onboarding-form .form-subsection span::before {
+  content: counter(onboarding-section, decimal-leading-zero);
+  color: var(--ink-soft);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+.onboarding-form .form-subsection h4 {
+  font-size: 21px;
+  letter-spacing: -0.022em;
+  line-height: 1.2;
+  margin: 9px 0 0;
+  text-wrap: balance;
+}
+
+.onboarding-form .form-subsection p {
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  line-height: 1.45;
+  margin: 6px 0 0;
+}
+
+/* Chips sit under a heading, not floating between slabs. */
+.onboarding-form .onboarding-chips {
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* The pane needs room to breathe between question groups. */
+.onboarding-form .form-step > h3 {
+  font-size: 24px;
+  letter-spacing: -0.025em;
+  margin-bottom: 4px;
+}
+
+.onboarding-form .form-step > p {
+  color: var(--ink-soft);
+  font-size: 14.5px;
+  margin-bottom: 10px;
+}
+
+/* ---- Live preview: what you are about to publish ----------------------- */
+.onboarding-preview {
+  border-top: 1px solid var(--line);
+  margin-top: 34px;
+  padding-top: 18px;
+}
+
+.onboarding-preview > span {
+  color: var(--ink-soft);
+  display: block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+}
+
+.preview-card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.preview-card-top {
+  align-items: center;
+  background: var(--paper-2);
+  display: flex;
+  gap: 9px;
+  padding: 11px 15px;
+}
+
+.preview-chip {
+  background: var(--ink);
+  border-radius: 999px;
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  padding: 4px 9px;
+  text-transform: uppercase;
+}
+
+.preview-chip.is-brief {
+  background: var(--coral);
+  color: var(--white);
+}
+
+.preview-card-body {
+  display: grid;
+  gap: 7px;
+  padding: 15px;
+}
+
+.preview-card-body strong {
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.preview-card-body .preview-offer {
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.preview-card-foot {
+  align-items: baseline;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 11px;
+}
+
+.preview-card-foot b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.preview-card-foot small {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
+.preview-card-foot .preview-lead {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  margin-right: 2px;
+  text-transform: uppercase;
+}
+
+@media (max-width: 620px) {
+  .onboarding-form .form-subsection {
+    margin-top: 26px;
+  }
+  .onboarding-form .form-subsection h4 {
+    font-size: 19px;
+  }
+}
+
+/* --- Onboarding header: the h2 was competing with the questions ---------- */
+.onboarding-form + .signout-link,
+.onboarding-top {
+  align-items: flex-start;
+}
+
+.modal-card:has(.onboarding-form) .onboarding-top h2 {
+  font-size: clamp(21px, 2.4vw, 27px);
+  letter-spacing: -0.022em;
+  line-height: 1.14;
+  margin: 6px 0 0;
+  max-width: 22ch;
+}
+
+.modal-card:has(.onboarding-form) .onboarding-top .eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+}
+
+/* Step dots belong beside the eyebrow, not floating against a huge headline. */
+.modal-card:has(.onboarding-form) .step-count {
+  padding-top: 3px;
+}
+
+/* The pane intro needs to clear the first ruled section. */
+.onboarding-form .form-step > p {
+  margin-bottom: 22px;
+  max-width: 56ch;
+}
+
+/* The sticky footer floats over whatever is last in the pane, so the pane
+   needs a landing strip under its final block. */
+.onboarding-form .form-step {
+  padding-bottom: 8px;
+}
+
+.onboarding-form .onboarding-preview {
+  margin-bottom: 26px;
+}
+
+/* The footer is a bar, so it should read as one rather than as a stray white
+   rectangle floating over the sheet. */
+.onboarding-form .onboarding-actions {
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  padding-top: 14px;
+}
+
+/* --- Order inside a field label -----------------------------------------
+   `.field-grid label` is a grid, and it assigns order 2 to the helper text and
+   order 3 to the control. Everything else defaults to order 0, so anything
+   appended after the input - the Instagram "Check" button, its result note,
+   the Google Maps link - jumped to the TOP of the field, above its own label.
+   The Check button rendered as a full-width slab above the box it checks.
+   These give the trailing elements a place in the sequence. */
+.onboarding-form .field-grid label > .button {
+  justify-self: start;
+  margin-top: 8px;
+  order: 4;
+  width: auto;
+}
+
+.onboarding-form .field-grid label > .map-preview-link {
+  order: 4;
+}
+
+.onboarding-form .field-grid label > .ig-avatar-preview {
+  order: 5;
+}
+
+/* Beats the generic `label > small { order: 2 }` - the sync result is an
+   answer to the button, so it belongs under it, not above the input. */
+.onboarding-form .field-grid label > small.ig-sync-note {
+  order: 6;
 }
