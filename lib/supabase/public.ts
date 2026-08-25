@@ -11,7 +11,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
  * naming columns explicitly costs nothing and stops sending them.
  */
 export const PUBLIC_PROFILE_COLUMNS =
-  "id,role,display_name,handle,bio,city,categories,followers,avg_views,audience_age,website,avatar_url,verified,is_demo,is_internal,onboarding_complete,extra_roles,social_links,gallery_urls,created_at,updated_at";
+  "id,role,display_name,handle,bio,city,categories,followers,avg_views,reach_unit,audience_age,website,avatar_url,verified,is_demo,is_internal,onboarding_complete,extra_roles,social_links,gallery_urls,created_at,updated_at";
 
 /**
  * Anonymous, cookie-free Supabase client for public data.

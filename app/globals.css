@@ -2268,16 +2268,22 @@ h2 em {
   max-width: 630px;
 }
 
+/* Flex, not grid: this was repeat(3, 25px), so the two-step flow rendered two
+   dots into three slots and read two-thirds complete forever. Flex renders
+   exactly as many dots as there are steps, and the caption still spans the
+   full width - which grid-column: 1 / -1 cannot do over an implicit grid. */
 .step-count {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 5px;
-  grid-template-columns: repeat(3, 25px);
+  justify-content: flex-end;
 }
 
 .step-count > span {
   background: var(--paper-2);
   border-radius: 999px;
-  height: 4px;
+  flex: 0 0 25px;
+  height: 6px;
 }
 
 .step-count > span.active {
@@ -2286,8 +2292,8 @@ h2 em {
 
 .step-count small {
   color: var(--ink-soft);
+  flex: 1 0 100%;
   font-size: 10px;
-  grid-column: 1 / -1;
   text-align: right;
 }
 
@@ -4264,78 +4270,6 @@ html {
   transform: translateX(3px);
 }
 
-.role-extra {
-  border-top: 1px solid var(--line-soft);
-  margin-top: 22px;
-  padding-top: 18px;
-}
-
-.role-extra-title {
-  font-size: 15px;
-  font-weight: 500;
-  margin: 0;
-}
-
-.role-extra-help {
-  color: var(--ink-soft);
-  font-size: 13px;
-  margin: 4px 0 14px;
-}
-
-.role-extra-options {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.role-extra-options button {
-  align-items: center;
-  background: var(--white);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  display: grid;
-  gap: 2px 12px;
-  grid-template-columns: auto 1fr;
-  padding: 12px 14px;
-  text-align: left;
-  transition: border-color 0.15s ease-out, background 0.15s ease-out;
-}
-
-.role-extra-options button:hover {
-  border-color: var(--ink);
-}
-
-.role-extra-options button.active {
-  background: color-mix(in srgb, var(--coral) 8%, var(--white));
-  border-color: var(--coral);
-}
-
-.role-extra-options button > span {
-  align-items: center;
-  background: var(--paper-2);
-  border-radius: 50%;
-  display: inline-flex;
-  font-size: 14px;
-  grid-row: span 2;
-  height: 34px;
-  justify-content: center;
-  width: 34px;
-}
-
-.role-extra-options button.active > span {
-  background: var(--coral);
-  color: var(--white);
-}
-
-.role-extra-options button strong {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.role-extra-options button small {
-  color: var(--ink-soft);
-  font-size: 12px;
-}
 
 /* ===== Audit fixes: modal height, brand lockup, tap targets, strip ===== */
 
@@ -6743,4 +6677,89 @@ html.reveal-ready [data-reveal].is-visible {
 .counter-summary strong {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+/* ===== Onboarding v2 =====================================================
+   The two-step flow that ends by publishing a real listing. Everything here
+   is additive: the role cards, chips, section headers, upload fields, footer
+   and preview card all reuse classes that already existed. These rules only
+   fix what breaks when those classes are used inside a narrower, longer
+   onboarding pane. */
+
+/* One question per line, matching what the listing form already does. A
+   680px column is also what makes the 2x2 role grid below hold together. */
+.modal-wide:has(.onboarding-form) {
+  max-width: 680px;
+}
+
+/* .role-choice-grid is repeat(4, 1fr). Inside a 680px shell, minus padding
+   and three gaps, each card is ~138px wide - "Sponsorship host" wraps and
+   the short line runs to five rows. 2x2 also puts all four roles above the
+   fold on a 375px viewport, which the 1-column mobile rule does not. */
+.onboarding-form .role-choice-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* Chips are the flow's only selection idiom, so they must not carry the
+   marketplace filter bar's outer spacing. */
+.onboarding-chips {
+  margin-bottom: 0;
+}
+
+.onboarding-form .form-subsection {
+  margin-top: 22px;
+}
+
+/* The Instagram result line. globals.css previously carried a comment saying
+   .ig-sync-note deliberately had no rules and inherited `label > small`;
+   now that the lookup is an explicit button rather than a blur handler, its
+   result is something the member asked for and should be able to find. */
+.ig-sync-note {
+  background: color-mix(in srgb, var(--coral) 9%, var(--white));
+  border: 1px solid color-mix(in srgb, var(--coral) 28%, var(--line));
+  border-radius: 8px;
+  color: var(--ink);
+  display: block;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  margin-top: 8px;
+  padding: 8px 10px;
+}
+
+/* The publish button is sticky on a long pane, so someone can press it from
+   below the field that is missing. Validation always scrolls the offending
+   control into view, which is what makes that safe. */
+.onboarding-form .onboarding-actions {
+  background: var(--white);
+  border-top: 1px solid var(--line-soft);
+  bottom: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  position: sticky;
+}
+
+@media (max-width: 620px) {
+  /* Four roles, two rows, all visible at once on a phone. The short line is
+     the first thing to go - the label and eyebrow carry the meaning. */
+  .onboarding-form .role-choice-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .onboarding-form .role-choice-grid > button {
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .onboarding-form .role-choice-grid > button p {
+    display: none;
+  }
+}
+
+/* Thumb-sized targets, and a check on active multi-select chips so their
+   state does not rest on the lime fill alone. */
+@media (hover: none) {
+  .onboarding-chips button {
+    min-height: 44px;
+    padding: 12px 15px;
+  }
 }
