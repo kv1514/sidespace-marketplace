@@ -43,6 +43,10 @@ type Profile = {
   categories: string[];
   followers: number;
   avg_views: number;
+  /** The human behind a business account, when display_name is the business. */
+  contact_name?: string;
+  /** Reply-to address. Replaces the @handle question for most roles. */
+  contact_email?: string;
   /**
    * What avg_views is counting. The person card used to hardcode "weekly
    * looks", so a barbershop's daily footfall and a robotics team's season
@@ -91,6 +95,14 @@ type Listing = {
   image_url: string;
   image_urls?: string[];
   location_area?: string;
+  /** Upper end of a budget range; `price` stays the lower end. */
+  price_max?: number | null;
+  /** Business brief: 'physical' | 'virtual' | 'both'. */
+  brief_scope?: string | null;
+  /** Social platforms a brief wants to target. */
+  target_platforms?: string[];
+  /** Exact address of a physical space, so a booker can find it. */
+  street_address?: string;
   availability_notes?: string;
   available_from?: string | null;
   available_to?: string | null;
@@ -202,9 +214,9 @@ const roleCopy: Record<
     icon: "@",
   },
   space_owner: {
-    label: "Space owner",
-    short: "Rent out a window, wall, vehicle, or counter",
-    eyebrow: "I have physical space",
+    label: "Physical space",
+    short: "Rent out a window, wall, vehicle, counter, or room",
+    eyebrow: "I own a space people walk past",
     icon: "⌂",
   },
   sponsor_host: {
@@ -616,22 +628,63 @@ const BUSINESS_GOAL_CHIPS: Array<{ label: string; sentence: string }> = [
   },
 ];
 
+
 /**
- * Business placements. `social` decides whether the creator-facing questions
- * render at all - a business that only wants windows never sees the word
- * Instagram anywhere in the flow.
+ * What a business is shopping for. This is the fork the whole brief hangs off:
+ * pick Physical and the words Instagram and TikTok never appear; pick Virtual
+ * and nobody is asked what neighbourhood they want.
  */
-const BUSINESS_PLACEMENT_CHIPS: Array<{ label: string; social: boolean }> = [
-  { label: "Instagram posts", social: true },
-  { label: "TikTok videos", social: true },
-  { label: "YouTube", social: true },
-  { label: "Newsletter mentions", social: true },
-  { label: "Storefront windows", social: false },
-  { label: "Walls & murals", social: false },
-  { label: "Vehicles", social: false },
-  { label: "Community boards", social: false },
-  { label: "Local teams & events", social: false },
-  { label: "Not sure yet", social: false },
+const BRIEF_SCOPE_CHIPS: Array<{
+  label: string;
+  value: "physical" | "virtual" | "both";
+  help: string;
+}> = [
+  {
+    label: "Physical space",
+    value: "physical",
+    help: "Windows, walls, counters, vehicles, boards",
+  },
+  {
+    label: "Virtual / social",
+    value: "virtual",
+    help: "Posts, reels, stories, newsletters",
+  },
+  { label: "Both", value: "both", help: "Whatever reaches people locally" },
+];
+
+/** Physical placements a brief can ask for. Only shown for physical/both. */
+const BRIEF_PHYSICAL_CHIPS = [
+  "Storefront windows",
+  "Walls & murals",
+  "Counters & registers",
+  "Vehicles",
+  "Community boards",
+  "Yards & fences",
+  "A-frame signs",
+  "Event booths",
+  "Local teams & events",
+];
+
+/** Social platforms a brief can target. Only shown for virtual/both. */
+const BRIEF_PLATFORM_CHIPS = [
+  "Instagram",
+  "TikTok",
+  "YouTube",
+  "X",
+  "Facebook",
+  "Newsletter",
+  "Podcast",
+  "Twitch",
+  "LinkedIn",
+];
+
+/** Budget range presets: [low, high]. A range beats one number for a brief. */
+const BUDGET_RANGE_CHIPS: Array<{ label: string; min: number; max: number }> = [
+  { label: "$50 – $150", min: 50, max: 150 },
+  { label: "$150 – $500", min: 150, max: 500 },
+  { label: "$500 – $1,500", min: 500, max: 1500 },
+  { label: "$1,500 – $5,000", min: 1500, max: 5000 },
+  { label: "$5,000+", min: 5000, max: 25000 },
 ];
 
 /** Business timing. Sets availability_notes plus the available_from/to window. */
@@ -753,6 +806,10 @@ type OnboardingAnswers = {
   city: string;
   bio: string;
   handle: string;
+  /** Business only: the owner behind the business name. */
+  contact_name: string;
+  /** Everyone except business: how a booker reaches them. */
+  contact_email: string;
   // Creator.
   platforms: string[];
   socials: Record<string, string>;
@@ -766,6 +823,8 @@ type OnboardingAnswers = {
   categories: string[];
   // Space owner.
   spaceKind: string;
+  /** The exact address. A physical listing is worth nothing without it. */
+  streetAddress: string;
   location_area: string;
   traffic: string;
   availability: string;
@@ -775,6 +834,14 @@ type OnboardingAnswers = {
   deliverables: string;
   artwork: "" | "supply" | "help";
   timing: string;
+  /** Physical space, virtual placements, or both. Forks the whole brief. */
+  briefScope: "" | "physical" | "virtual" | "both";
+  /** Upper end of the budget range; `price` holds the lower end. */
+  priceMax: number | null;
+  /** Which social platforms a virtual brief wants to reach. */
+  targetPlatforms: string[];
+  /** Where the business wants physical space, which is not where THEY are. */
+  wantedArea: string;
   // Sponsorship host.
   orgKind: string;
   reach: string;
@@ -840,6 +907,8 @@ function emptyAnswers(): OnboardingAnswers {
     city: "",
     bio: "",
     handle: "",
+    contact_name: "",
+    contact_email: "",
     platforms: [],
     socials: {},
     followers: null,
@@ -850,6 +919,7 @@ function emptyAnswers(): OnboardingAnswers {
     description: "",
     categories: [],
     spaceKind: "",
+    streetAddress: "",
     location_area: "",
     traffic: "",
     availability: "",
@@ -858,6 +928,10 @@ function emptyAnswers(): OnboardingAnswers {
     deliverables: "",
     artwork: "",
     timing: "",
+    briefScope: "",
+    priceMax: null,
+    targetPlatforms: [],
+    wantedArea: "",
     orgKind: "",
     reach: "",
     benefits: [],
@@ -875,6 +949,8 @@ function answersFromProfile(source: Profile | null): OnboardingAnswers {
     city: source.city ?? "",
     bio: source.bio ?? "",
     handle: source.handle ?? "",
+    contact_name: source.contact_name ?? "",
+    contact_email: source.contact_email ?? "",
     categories: source.categories ?? [],
     followers: source.followers || null,
     socials: Object.fromEntries(
@@ -1079,9 +1155,13 @@ function buildListingDraft(
     title: effectiveTitle(role, answers, touched).slice(0, 120),
     description: effectiveDescription(role, answers, touched),
     price: answers.price ?? 0,
+    price_max: null as number | null,
     format: answers.format.trim(),
     demographics: "",
     location_area: "",
+    street_address: "",
+    brief_scope: null as string | null,
+    target_platforms: [] as string[],
     availability_notes: "",
     available_from: null as string | null,
     available_to: null as string | null,
@@ -1107,6 +1187,7 @@ function buildListingDraft(
       channel: kind?.channel ?? "Other",
       price_unit: answers.price_unit || "week",
       location_area: answers.location_area.trim(),
+      street_address: answers.streetAddress.trim(),
       demographics: traffic?.sentence ?? "",
       availability_notes: answers.availability,
       format:
@@ -1119,12 +1200,27 @@ function buildListingDraft(
     const timing = BUSINESS_TIMING_CHIPS.find(
       (item) => item.label === answers.timing,
     );
+    const scope = answers.briefScope || null;
+    // What the card reads after "Looking for". A physical-only brief must not
+    // advertise platforms it never asked about, and vice versa.
+    const wants = [
+      ...(scope !== "virtual" ? answers.placements : []),
+      ...(scope !== "physical" ? answers.targetPlatforms : []),
+    ].map((item) => item.toLowerCase());
     return {
       ...base,
       channel: "Business brief",
       price_unit: "campaign",
-      format: joinList(answers.placements.map((p) => p.toLowerCase())),
+      format: joinList(wants),
       deliverables: answers.deliverables.trim(),
+      brief_scope: scope,
+      target_platforms: scope !== "physical" ? answers.targetPlatforms : [],
+      // Where they want the space, which is not necessarily where they are.
+      location_area:
+        scope !== "virtual"
+          ? answers.wantedArea.trim() || answers.city.trim()
+          : "",
+      price_max: answers.priceMax ?? null,
       availability_notes: answers.timing,
       available_from: timing ? isoDaysFromToday(0) : null,
       available_to: timing ? isoDaysFromToday(timing.days) : null,
@@ -1299,6 +1395,22 @@ function formatOffer(raw: string) {
  * A "business brief" runs the other way: the poster WANTS space rather than
  * offering it, so its card has to read as a request, not an offer.
  */
+/**
+ * What a listing costs, as a card should read it.
+ *
+ * A business brief now carries a budget RANGE - `price` is the low end and
+ * `price_max` the high end - because "what's your budget" is a band, not a
+ * number. Every other listing has a single price and renders unchanged.
+ */
+function priceLabel(listing: Pick<Listing, "price" | "price_max">) {
+  const low = listing.price;
+  const high = listing.price_max;
+  if (typeof high === "number" && high > low) {
+    return `$${low}–$${high}`;
+  }
+  return `$${low}`;
+}
+
 function isBrief(listing: Pick<Listing, "channel">) {
   return listing.channel === "Business brief";
 }
@@ -2982,6 +3094,16 @@ export default function MarketplaceApp({
       if (answers.bio.trim().length < 10) {
         return ["Add one line about you — at least a few words.", "bio"];
       }
+      if (role === "business" && !answers.contact_name.trim()) {
+        return ["Add your name, so people know who they're writing to.", "contact_name"];
+      }
+      if (
+        role !== "business" &&
+        answers.contact_email.trim() &&
+        !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(answers.contact_email.trim())
+      ) {
+        return ["That email doesn't look right.", "contact_email"];
+      }
       return null;
     }
 
@@ -2998,8 +3120,11 @@ export default function MarketplaceApp({
     }
     if (role === "space_owner") {
       if (!answers.spaceKind) return ["Pick what kind of space this is.", "spaceKind"];
+      if (!answers.streetAddress.trim()) {
+        return ["Add the address so people can find it.", "streetAddress"];
+      }
       if (!answers.location_area.trim()) {
-        return ["Add the area buyers will see.", "location_area"];
+        return ["Add the area buyers will see on the card.", "location_area"];
       }
       if (!answers.traffic) return ["Pick roughly how busy it is.", "traffic"];
     }
@@ -3010,8 +3135,19 @@ export default function MarketplaceApp({
       if (!answers.categories.length) {
         return ["Pick what you’re promoting.", "categories"];
       }
-      if (!answers.placements.length) {
-        return ["Pick where you want it to run.", "placements"];
+      if (!answers.briefScope) {
+        return ["Pick whether you want physical space, social, or both.", "briefScope"];
+      }
+      if (answers.briefScope !== "virtual") {
+        if (!answers.placements.length) {
+          return ["Pick the kind of space you want.", "placements"];
+        }
+        if (!answers.wantedArea.trim()) {
+          return ["Say where you want the space.", "wantedArea"];
+        }
+      }
+      if (answers.briefScope !== "physical" && !answers.targetPlatforms.length) {
+        return ["Pick at least one platform to target.", "targetPlatforms"];
       }
       if (!answers.timing) return ["Pick when you want it to run.", "timing"];
     }
@@ -3185,7 +3321,12 @@ export default function MarketplaceApp({
         : igAvatar;
 
       const reach = deriveReach(role, answers);
-      const handle = answers.handle.trim().replace(/^@/, "");
+      // Onboarding no longer asks for a handle - a business gives its business
+      // name and everyone else an email - but an existing handle is preserved
+      // rather than blanked out from under a legacy member.
+      const handle = (answers.handle || existing?.handle || "")
+        .trim()
+        .replace(/^@/, "");
 
       const payload = {
         auth_user_id: user.id,
@@ -3199,6 +3340,8 @@ export default function MarketplaceApp({
         ),
         display_name: answers.display_name.trim(),
         handle: handle || null,
+        contact_name: answers.contact_name.trim(),
+        contact_email: answers.contact_email.trim(),
         city: answers.city.trim(),
         bio: answers.bio.trim(),
         categories: answers.categories,
@@ -5055,7 +5198,7 @@ export default function MarketplaceApp({
                         {listing.owner.city ? ` · ${listing.owner.city}` : ""}
                       </small>
                       <b>
-                        ${listing.price}
+                        {priceLabel(listing)}
                         <span> / {listing.price_unit}</span>
                       </b>
                     </div>
@@ -5411,7 +5554,7 @@ export default function MarketplaceApp({
                     {isBrief(listing) && (
                       <span className="price-lead">Budget</span>
                     )}
-                    <strong>${listing.price}</strong>
+                    <strong>{priceLabel(listing)}</strong>
                     <small> / {listing.price_unit}</small>
                   </div>
                   <button onClick={() => openCampaignRequest(listing)}>
@@ -6120,7 +6263,7 @@ export default function MarketplaceApp({
                         </span>
                         <h4>{listing.title}</h4>
                         <p>
-                          {listing.channel} • ${listing.price}/{listing.price_unit}
+                          {listing.channel} • {priceLabel(listing)}/{listing.price_unit}
                         </p>
                         <div className="my-listing-actions">
                           <button
@@ -6706,21 +6849,50 @@ export default function MarketplaceApp({
                         : ""}
                     </small>
                   </label>
-                  <label className="field-wide">
-                    Public @handle <small>Optional. Letters, numbers, dashes.</small>
-                    <input
-                      name="handle"
-                      data-field="handle"
-                      value={answers.handle}
-                      onChange={(event) =>
-                        setAnswers((current) => ({
-                          ...current,
-                          handle: event.target.value,
-                        }))
-                      }
-                      placeholder="@yourhandle"
-                    />
-                  </label>
+                  {/* A business gives the person behind the name; everyone
+                      else gives an email. Nobody is asked for an @handle any
+                      more - it was a unique-indexed field that meant nothing
+                      to the person filling it in. */}
+                  {selectedRole === "business" ? (
+                    <label>
+                      Your name
+                      <small>Who a booker is actually writing to.</small>
+                      <input
+                        name="contact_name"
+                        data-field="contact_name"
+                        maxLength={80}
+                        value={answers.contact_name}
+                        onChange={(event) =>
+                          setAnswers((current) => ({
+                            ...current,
+                            contact_name: event.target.value,
+                          }))
+                        }
+                        placeholder="Kausthubh Veldanda"
+                      />
+                    </label>
+                  ) : (
+                    <label>
+                      Email
+                      <small>How people reach you about a booking.</small>
+                      <input
+                        name="contact_email"
+                        data-field="contact_email"
+                        type="email"
+                        inputMode="email"
+                        autoComplete="email"
+                        maxLength={120}
+                        value={answers.contact_email}
+                        onChange={(event) =>
+                          setAnswers((current) => ({
+                            ...current,
+                            contact_email: event.target.value,
+                          }))
+                        }
+                        placeholder="you@example.com"
+                      />
+                    </label>
+                  )}
                 </div>
 
                 <div className="onboarding-actions">
@@ -7104,8 +7276,46 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label className="field-wide">
+                            Exact address
+                            <small>
+                              Where the space actually is. Bookers need this to
+                              judge the spot and to turn up.
+                            </small>
+                            <input
+                              data-field="streetAddress"
+                              maxLength={240}
+                              value={answers.streetAddress}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  streetAddress: event.target.value,
+                                }))
+                              }
+                              placeholder="1398 Solano Ave, Albany, CA 94706"
+                            />
+                            {answers.streetAddress.trim().length > 6 && (
+                              /* A plain Maps link, not an embed: the Maps
+                                 Embed and Street View APIs both need a billed
+                                 key in the client bundle, and this gives the
+                                 same "let me look at the block" for nothing. */
+                              <a
+                                className="map-preview-link"
+                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                                  answers.streetAddress.trim(),
+                                )}`}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                              >
+                                See this spot on Google Maps ↗
+                              </a>
+                            )}
+                          </label>
+                          <label className="field-wide">
                             What buyers see on the card
-                            <small>A street, a neighborhood, or just the city.</small>
+                            <small>
+                              A street or neighborhood. Shown publicly instead of
+                              the full address.
+                            </small>
                             <input
                               data-field="location_area"
                               value={answers.location_area}
@@ -7204,104 +7414,270 @@ export default function MarketplaceApp({
                           }
                         />
 
+                        {/* The fork. Everything below reshapes around it: pick
+                            Physical and no platform is ever mentioned; pick
+                            Virtual and nobody is asked what block they want. */}
                         <div className="form-subsection field-wide">
-                          <span>Where you want it</span>
-                          <h4>Pick the placements you’d actually use.</h4>
+                          <span>What are you after?</span>
+                          <h4>Physical space, social, or both?</h4>
+                        </div>
+                        <div
+                          className="scope-grid"
+                          data-field="briefScope"
+                          role="group"
+                          aria-label="What kind of space you want"
+                        >
+                          {BRIEF_SCOPE_CHIPS.map((chip) => (
+                            <button
+                              key={chip.value}
+                              type="button"
+                              aria-pressed={answers.briefScope === chip.value}
+                              className={
+                                answers.briefScope === chip.value ? "active" : ""
+                              }
+                              onClick={() =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  briefScope: chip.value,
+                                }))
+                              }
+                            >
+                              <strong>{chip.label}</strong>
+                              <small>{chip.help}</small>
+                            </button>
+                          ))}
+                        </div>
+
+                        {answers.briefScope !== "" &&
+                          answers.briefScope !== "virtual" && (
+                            <>
+                              <div className="form-subsection field-wide">
+                                <span>The space</span>
+                                <h4>What kind, and where?</h4>
+                              </div>
+                              <ChipRow
+                                field="placements"
+                                label="Kinds of space"
+                                multi
+                                options={BRIEF_PHYSICAL_CHIPS}
+                                selected={answers.placements}
+                                onPick={(value) =>
+                                  setAnswers((current) => ({
+                                    ...current,
+                                    placements: current.placements.includes(value)
+                                      ? current.placements.filter(
+                                          (item) => item !== value,
+                                        )
+                                      : [...current.placements, value],
+                                  }))
+                                }
+                              />
+                              <div className="field-grid">
+                                <label className="field-wide">
+                                  Where do you want it?
+                                  <small>
+                                    The neighborhood or street you want to be
+                                    seen on — not necessarily where you are.
+                                  </small>
+                                  <input
+                                    data-field="wantedArea"
+                                    maxLength={120}
+                                    value={answers.wantedArea}
+                                    onChange={(event) =>
+                                      setAnswers((current) => ({
+                                        ...current,
+                                        wantedArea: event.target.value,
+                                      }))
+                                    }
+                                    placeholder={
+                                      answers.city
+                                        ? `Downtown ${answers.city.split(",")[0]}`
+                                        : "Downtown Brea"
+                                    }
+                                  />
+                                </label>
+                              </div>
+                            </>
+                          )}
+
+                        {answers.briefScope !== "" &&
+                          answers.briefScope !== "physical" && (
+                            <>
+                              <div className="form-subsection field-wide">
+                                <span>The audience</span>
+                                <h4>Which platforms should it run on?</h4>
+                              </div>
+                              <ChipRow
+                                field="targetPlatforms"
+                                label="Platforms to target"
+                                multi
+                                options={BRIEF_PLATFORM_CHIPS}
+                                selected={answers.targetPlatforms}
+                                onPick={(value) =>
+                                  setAnswers((current) => ({
+                                    ...current,
+                                    targetPlatforms:
+                                      current.targetPlatforms.includes(value)
+                                        ? current.targetPlatforms.filter(
+                                            (item) => item !== value,
+                                          )
+                                        : [...current.targetPlatforms, value],
+                                  }))
+                                }
+                              />
+                              <div className="offer-examples">
+                                {DELIVERABLE_EXAMPLES.map((example) => (
+                                  <button
+                                    key={example}
+                                    type="button"
+                                    onClick={() =>
+                                      setAnswers((current) => ({
+                                        ...current,
+                                        deliverables: current.deliverables
+                                          ? `${current.deliverables}, ${example}`
+                                          : example,
+                                      }))
+                                    }
+                                  >
+                                    {example}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="field-grid">
+                                <label className="field-wide">
+                                  Anything a creator must include?
+                                  <input
+                                    value={answers.deliverables}
+                                    onChange={(event) =>
+                                      setAnswers((current) => ({
+                                        ...current,
+                                        deliverables: event.target.value,
+                                      }))
+                                    }
+                                    placeholder="Tag @us, link in bio for 48h"
+                                  />
+                                </label>
+                              </div>
+                            </>
+                          )}
+
+                        {/* The artwork they need carried. Uploaded here so a
+                            creator or space owner can see exactly what they'd
+                            be posting before they answer. */}
+                        <div className="form-subsection field-wide">
+                          <span>Your artwork</span>
+                          <h4>What do you need posted?</h4>
+                        </div>
+                        <div className="field-grid">
+                          <label className="field-wide media-upload-field">
+                            Flyer, story, or clip
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              multiple
+                              onChange={(event) =>
+                                setListingFiles(
+                                  Array.from(event.target.files ?? []),
+                                )
+                              }
+                            />
+                            <small>
+                              Upload the graphic you want in the window or on
+                              the feed. Skip it and pick “I need help making it”
+                              below.
+                            </small>
+                          </label>
                         </div>
                         <ChipRow
-                          field="placements"
-                          label="Placements"
-                          multi
-                          options={BUSINESS_PLACEMENT_CHIPS.map((item) => item.label)}
-                          selected={answers.placements}
+                          field="artwork"
+                          label="Artwork"
+                          options={[
+                            "I’ll supply the artwork",
+                            "I need help making it",
+                          ]}
+                          selected={
+                            answers.artwork === "supply"
+                              ? ["I’ll supply the artwork"]
+                              : answers.artwork === "help"
+                                ? ["I need help making it"]
+                                : []
+                          }
                           onPick={(value) =>
                             setAnswers((current) => ({
                               ...current,
-                              placements: current.placements.includes(value)
-                                ? current.placements.filter((item) => item !== value)
-                                : [...current.placements, value],
+                              artwork:
+                                value === "I’ll supply the artwork"
+                                  ? "supply"
+                                  : "help",
                             }))
                           }
                         />
 
-                        {/* Only a business that wants social placements is asked
-                            anything about social. Pick windows and boards only and
-                            the word Instagram never appears in the flow. */}
-                        {answers.placements.some(
-                          (label) =>
-                            BUSINESS_PLACEMENT_CHIPS.find(
-                              (item) => item.label === label,
-                            )?.social,
-                        ) && (
-                          <>
-                            <div className="offer-examples">
-                              {DELIVERABLE_EXAMPLES.map((example) => (
-                                <button
-                                  key={example}
-                                  type="button"
-                                  onClick={() =>
-                                    setAnswers((current) => ({
-                                      ...current,
-                                      deliverables: current.deliverables
-                                        ? `${current.deliverables}, ${example}`
-                                        : example,
-                                    }))
-                                  }
-                                >
-                                  {example}
-                                </button>
-                              ))}
-                            </div>
-                            <div className="field-grid">
-                              <label className="field-wide">
-                                Anything a creator must include?
-                                <input
-                                  value={answers.deliverables}
-                                  onChange={(event) =>
-                                    setAnswers((current) => ({
-                                      ...current,
-                                      deliverables: event.target.value,
-                                    }))
-                                  }
-                                  placeholder="Tag @us, link in bio for 48h"
-                                />
-                              </label>
-                            </div>
-                          </>
-                        )}
-
-                        {answers.placements.some(
-                          (label) =>
-                            BUSINESS_PLACEMENT_CHIPS.find(
-                              (item) => item.label === label,
-                            )?.social === false,
-                        ) && (
-                          <ChipRow
-                            field="artwork"
-                            label="Artwork"
-                            options={["I’ll supply the artwork", "I need help making it"]}
-                            selected={
-                              answers.artwork === "supply"
-                                ? ["I’ll supply the artwork"]
-                                : answers.artwork === "help"
-                                  ? ["I need help making it"]
-                                  : []
-                            }
-                            onPick={(value) =>
-                              setAnswers((current) => ({
-                                ...current,
-                                artwork:
-                                  value === "I’ll supply the artwork"
-                                    ? "supply"
-                                    : "help",
-                              }))
-                            }
-                          />
-                        )}
-
                         <div className="form-subsection field-wide">
                           <span>Budget and timing</span>
-                          <h4>When do you want this to run?</h4>
+                          <h4>What can you spend, and when?</h4>
+                        </div>
+                        <ChipRow
+                          field="budgetRange"
+                          label="Budget range"
+                          options={BUDGET_RANGE_CHIPS.map((item) => item.label)}
+                          selected={BUDGET_RANGE_CHIPS.filter(
+                            (item) =>
+                              item.min === answers.price &&
+                              item.max === answers.priceMax,
+                          ).map((item) => item.label)}
+                          onPick={(value) => {
+                            const chip = BUDGET_RANGE_CHIPS.find(
+                              (item) => item.label === value,
+                            );
+                            if (!chip) return;
+                            setAnswers((current) => ({
+                              ...current,
+                              price: chip.min,
+                              priceMax: chip.max,
+                            }));
+                          }}
+                        />
+                        <div className="field-grid">
+                          <label>
+                            Budget from
+                            <input
+                              type="number"
+                              min={1}
+                              max={2000000000}
+                              data-field="price"
+                              value={answers.price ?? ""}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  price: event.target.value
+                                    ? Number(event.target.value)
+                                    : null,
+                                }))
+                              }
+                              placeholder="150"
+                            />
+                          </label>
+                          <label>
+                            up to
+                            <small>Optional. Leave blank for a flat budget.</small>
+                            <input
+                              type="number"
+                              min={1}
+                              max={2000000000}
+                              data-field="priceMax"
+                              value={answers.priceMax ?? ""}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  priceMax: event.target.value
+                                    ? Number(event.target.value)
+                                    : null,
+                                }))
+                              }
+                              placeholder="500"
+                            />
+                          </label>
                         </div>
                         <ChipRow
                           field="timing"
@@ -7420,12 +7796,14 @@ export default function MarketplaceApp({
                           placeholder="Cafe window, Brea"
                         />
                       </label>
+                      {/* A business already gave a budget range above; asking
+                          again here would duplicate both the question and the
+                          data-field the validator scrolls to. */}
+                      {selectedRole !== "business" && (
                       <label>
-                        {selectedRole === "business"
-                          ? "Your budget"
-                          : selectedRole === "sponsor_host"
-                            ? "What does one sponsor pay?"
-                            : "Price"}
+                        {selectedRole === "sponsor_host"
+                          ? "What does one sponsor pay?"
+                          : "Price"}
                         <input
                           type="number"
                           min={1}
@@ -7446,10 +7824,11 @@ export default function MarketplaceApp({
                           placeholder="150"
                         />
                       </label>
+                      )}
                       {selectedRole === "sponsor_host" ? (
                         <p className="offer-preview">per sponsor</p>
                       ) : selectedRole === "business" ? (
-                        <p className="offer-preview">per campaign</p>
+                        <p className="offer-preview">Budget is per campaign</p>
                       ) : (
                         <label>
                           Per

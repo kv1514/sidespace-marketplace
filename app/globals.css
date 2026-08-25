@@ -6763,3 +6763,143 @@ html.reveal-ready [data-reveal].is-visible {
     padding: 12px 15px;
   }
 }
+
+/* ===== Onboarding v2.1 — role-shaped questions, and a calmer surface ======
+   The first pass reused the marketplace's form styling wholesale, which is
+   tuned for a short editor rather than a long guided flow. Inside a 680px
+   two-step pane it read as a stack of flat beige blocks with a lime slab in
+   the middle of it. These rules are scoped to .onboarding-form so the listing
+   editor keeps the styling it was designed with. */
+
+/* Fields need an edge. The base rule is `border: 1px solid transparent` on a
+   paper fill, so on a paper pane an input has no visible boundary at all and
+   the eye cannot tell a label from its control. */
+.onboarding-form .field-grid input,
+.onboarding-form .field-grid textarea,
+.onboarding-form .field-grid select {
+  background: var(--white);
+  border-color: var(--line);
+  transition: border-color 0.14s ease-out, box-shadow 0.14s ease-out;
+}
+
+.onboarding-form .field-grid input:hover,
+.onboarding-form .field-grid textarea:hover,
+.onboarding-form .field-grid select:hover {
+  border-color: color-mix(in srgb, var(--ink) 32%, var(--line));
+}
+
+.onboarding-form .field-grid input:focus,
+.onboarding-form .field-grid textarea:focus,
+.onboarding-form .field-grid select:focus {
+  border-color: var(--coral);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent);
+}
+
+/* Helper text belongs to the field, not to the label shouting in mono caps. */
+.onboarding-form .field-grid label > small {
+  color: var(--ink-soft);
+  font-family: var(--display);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.4;
+  margin-top: -2px;
+  text-transform: none;
+}
+
+/* The upload field was a solid lime slab - the loudest thing on a pane whose
+   actual subject is the questions. Dashed and quiet: it reads as a drop
+   target without competing with the section headers. */
+.onboarding-form .media-upload-field {
+  background: color-mix(in srgb, var(--lime) 9%, var(--white));
+  border: 1px dashed color-mix(in srgb, var(--lime) 55%, var(--line));
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.onboarding-form .media-upload-field:hover {
+  border-color: var(--coral);
+}
+
+/* Section headers carry the rhythm of the pane, so they need air above them
+   and none of the marketplace's heavy rounding. */
+.onboarding-form .form-subsection {
+  border-radius: 12px;
+  margin-top: 26px;
+  padding: 14px 18px;
+}
+
+.onboarding-form .form-subsection:first-of-type {
+  margin-top: 4px;
+}
+
+.onboarding-form .field-grid {
+  margin-top: 14px;
+}
+
+/* The physical / virtual / both fork. Three cards rather than chips, because
+   this one answer reshapes every question under it and deserves the weight. */
+.scope-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 14px;
+}
+
+.scope-grid > button {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  display: grid;
+  gap: 5px;
+  padding: 15px 14px;
+  text-align: left;
+  transition: border-color 0.14s ease-out, background 0.14s ease-out;
+}
+
+.scope-grid > button:hover {
+  border-color: var(--ink);
+}
+
+.scope-grid > button strong {
+  font-family: var(--display);
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.scope-grid > button small {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.scope-grid > button.active {
+  background: color-mix(in srgb, var(--coral) 7%, var(--white));
+  border-color: var(--coral);
+  box-shadow: inset 0 0 0 1px var(--coral);
+}
+
+/* Free map preview. No embed, no billed key - just a way to look at the block. */
+.map-preview-link {
+  align-self: start;
+  color: var(--coral);
+  font-family: var(--display);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  margin-top: 2px;
+  text-decoration: none;
+  text-transform: none;
+}
+
+.map-preview-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 620px) {
+  .scope-grid {
+    grid-template-columns: 1fr;
+  }
+}
