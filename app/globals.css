@@ -245,7 +245,7 @@ img {
 
 .hero {
   background:
-    radial-gradient(circle at 76% 20%, rgba(254, 110, 0, 0.16), transparent 21%),
+    radial-gradient(circle at 76% 20%, rgba(199, 126, 10, 0.16), transparent 21%),
     var(--paper);
   display: grid;
   gap: clamp(42px, 8vw, 130px);
@@ -305,7 +305,7 @@ img {
 
 .live-dot {
   background: var(--coral);
-  border: 3px solid rgba(255, 107, 71, 0.2);
+  border: 3px solid rgba(199, 126, 10, 0.2);
   background-clip: padding-box;
   border-radius: 50%;
   height: 10px;
@@ -3708,8 +3708,8 @@ textarea::placeholder {
 
 .danger-zone {
   align-items: center;
-  background: rgba(254, 110, 0, 0.04);
-  border: 1px solid rgba(254, 110, 0, 0.4);
+  background: rgba(199, 126, 10, 0.05);
+  border: 1px solid rgba(199, 126, 10, 0.42);
   border-radius: 16px;
   display: flex;
   gap: 18px;
