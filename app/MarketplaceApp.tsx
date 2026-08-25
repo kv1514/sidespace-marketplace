@@ -7900,6 +7900,86 @@ export default function MarketplaceApp({
                       </label>
                     </div>
 
+                    {/* What they are about to publish, rendered from the live
+                        answers. A business sees the Wanted variant because it
+                        passes the same isBrief check the real card does, so
+                        the preview cannot drift from the marketplace. */}
+                    <div className="onboarding-preview field-wide">
+                      <span>This is what people will see</span>
+                      <div className="preview-card">
+                        <div className="preview-card-top">
+                          <span
+                            className={
+                              selectedRole === "business"
+                                ? "preview-chip is-brief"
+                                : "preview-chip"
+                            }
+                          >
+                            {selectedRole === "business"
+                              ? "Wanted"
+                              : buildListingDraft(selectedRole ?? "creator", answers, {
+                                  title: titleTouched,
+                                  description: descriptionTouched,
+                                }).channel}
+                          </span>
+                          <small className="preview-offer">
+                            {answers.display_name.trim() || "Your name"}
+                            {answers.city.trim() ? ` · ${answers.city.trim()}` : ""}
+                          </small>
+                        </div>
+                        <div className="preview-card-body">
+                          <strong>
+                            {effectiveTitle(
+                              selectedRole ?? "creator",
+                              answers,
+                              { title: titleTouched },
+                            ) || "Untitled listing"}
+                          </strong>
+                          <span className="preview-offer">
+                            {(() => {
+                              const draft = buildListingDraft(
+                                selectedRole ?? "creator",
+                                answers,
+                                {
+                                  title: titleTouched,
+                                  description: descriptionTouched,
+                                },
+                              );
+                              const offer = draft.format.trim();
+                              if (!offer) return "Add what people get above.";
+                              return selectedRole === "business"
+                                ? `Looking for ${offer}`
+                                : `You get ${formatOffer(offer)}`;
+                            })()}
+                          </span>
+                          <div className="preview-card-foot">
+                            {selectedRole === "business" && (
+                              <span className="preview-lead">Budget</span>
+                            )}
+                            <b>
+                              {priceLabel({
+                                price: answers.price ?? 0,
+                                price_max: answers.priceMax,
+                              })}
+                            </b>
+                            <small>
+                              /{" "}
+                              {
+                                buildListingDraft(
+                                  selectedRole ?? "creator",
+                                  answers,
+                                  {
+                                    title: titleTouched,
+                                    description: descriptionTouched,
+                                  },
+                                ).price_unit
+                              }
+                            </small>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                   </>
                 )}
 
