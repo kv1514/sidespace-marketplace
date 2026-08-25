@@ -7185,3 +7185,42 @@ html.reveal-ready [data-reveal].is-visible {
 .onboarding-form .field-grid label > small.ig-sync-note {
   order: 6;
 }
+
+/* --- The "how it works" band ---------------------------------------------
+   This was a full-bleed slab of the accent colour, which is the one thing the
+   reference direction never does: amber there is a mark, not a surface. At
+   this size a saturated fill stops being an accent and becomes the loudest
+   element on the page, and it fought the cream sheet either side of it.
+
+   Ink is the restrained equivalent - the section still reads as a distinct
+   chapter, but the amber goes back to being a highlight inside it. */
+.how-section {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.how-section .how-intro h2,
+.how-section h3,
+.how-section h4,
+.how-section strong {
+  color: var(--paper);
+}
+
+.how-section p,
+.how-section li,
+.how-section small {
+  color: rgba(251, 247, 230, 0.74);
+}
+
+/* The eyebrow and any figure keep the amber, which is what it is for. */
+.how-section .eyebrow,
+.how-section em {
+  color: var(--lime);
+}
+
+/* Cards inside the band sit on the ink rather than punching holes in it. */
+.how-section .how-step,
+.how-section article {
+  background: rgba(251, 247, 230, 0.05);
+  border-color: rgba(251, 247, 230, 0.16);
+}

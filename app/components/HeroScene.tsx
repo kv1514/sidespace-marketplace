@@ -19,11 +19,16 @@ import * as THREE from "three";
  * fight the copy it is behind.
  */
 
-const PAPER = "#f4f0e5";
-const PAPER_2 = "#ece7d8";
-const WHITE = "#fbf8f0";
-const SIGNAL = "#ffcf03";
-const EMBER = "#fe6e00";
+/* Mirrors the CSS tokens in globals.css. These cannot read var(--paper) - the
+   scene paints into a WebGL context, not the DOM - so they are duplicated here
+   and must be updated alongside the palette. Before the rebrand this pair was
+   #ffcf03 acid yellow and #fe6e00 orange, which stayed loudly saturated after
+   the sheet went cream and made the hero read as a different product. */
+const PAPER = "#fbf7e6";
+const PAPER_2 = "#f3edd6";
+const WHITE = "#fffdf3";
+const SIGNAL = "#f3b44a";
+const EMBER = "#c77e0a";
 
 type Panel = {
   position: [number, number, number];

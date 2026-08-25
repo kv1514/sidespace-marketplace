@@ -10,20 +10,23 @@
    600 is reserved for small labels, and mono handles eyebrows and figures. */
 
 .shell {
-  --ground: #f4f0e5;
-  --surface: #fbf8f0;
-  --surface-2: #ece7d8;
+  /* Kept in step with globals.css. This route has its own token block rather
+     than inheriting, so a palette change has to land in both or /preview
+     silently keeps showing the retired brand. */
+  --ground: #fbf7e6;
+  --surface: #fffdf3;
+  --surface-2: #f3edd6;
 
-  --line: rgba(21, 19, 14, 0.14);
-  --line-soft: rgba(21, 19, 14, 0.08);
+  --line: rgba(22, 20, 14, 0.16);
+  --line-soft: rgba(22, 20, 14, 0.08);
 
-  --ink: #15130e;
+  --ink: #16140e;
   --ink-2: #3a3730;
-  --ink-3: #6b6659;
-  --ink-4: #918b7c;
+  --ink-3: #57534a;
+  --ink-4: #8b8577;
 
-  --signal: #ffcf03;
-  --ember: #fe6e00;
+  --signal: #f3b44a;
+  --ember: #c77e0a;
 
   --sans: "Geist", "Helvetica Neue", Arial, sans-serif;
   --mono: "Geist Mono", ui-monospace, Menlo, monospace;
