@@ -7413,7 +7413,7 @@ export default function MarketplaceApp({
                     {selectedRole === "business" && (
                       <>
                         <div className="form-subsection field-wide">
-                          <span>What you're promoting</span>
+                          <span>What you’re promoting</span>
                           <h4>What are you actually running this for?</h4>
                           <p>
                             The specific thing — a product, an opening, a class,
