@@ -835,6 +835,9 @@ type OnboardingAnswers = {
   artwork: "" | "supply" | "help";
   timing: string;
   /** Physical space, virtual placements, or both. Forks the whole brief. */
+  /** The concrete thing being promoted: "our new cold brew", "the Saturday
+   *  class", "the grand opening". Categories are too coarse to answer this. */
+  promoting: string;
   briefScope: "" | "physical" | "virtual" | "both";
   /** Upper end of the budget range; `price` holds the lower end. */
   priceMax: number | null;
@@ -928,6 +931,7 @@ function emptyAnswers(): OnboardingAnswers {
     deliverables: "",
     artwork: "",
     timing: "",
+    promoting: "",
     briefScope: "",
     priceMax: null,
     targetPlatforms: [],
@@ -1051,6 +1055,9 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
           ? "We'd want help making the artwork."
           : "";
     return [
+      answers.promoting.trim()
+        ? `We're promoting ${answers.promoting.trim()}.`
+        : "",
       goal?.sentence ?? "",
       bio,
       answers.placements.length
@@ -1095,6 +1102,10 @@ function composeTitle(role: Role, answers: OnboardingAnswers): string {
     return name ? `${label} — ${name}` : label;
   }
   if (role === "business") {
+    // Prefer the thing they are actually promoting. "Brea Coffee Bar - our new
+    // cold brew" tells a creator what the job is; "- August campaign" does not.
+    const what = answers.promoting.trim();
+    if (name && what) return `${name} — ${what}`;
     const month = new Intl.DateTimeFormat("en", { month: "long" }).format(
       new Date(),
     );
@@ -3131,10 +3142,13 @@ export default function MarketplaceApp({
     if (role === "business") {
       // Same order the questions are rendered in, so the error scrolls forward
       // through the pane rather than jumping back past something answered.
-      if (!answers.goal) return ["Pick what the campaign should do.", "goal"];
-      if (!answers.categories.length) {
-        return ["Pick what you’re promoting.", "categories"];
+      if (!answers.promoting.trim()) {
+        return ["Say what you're promoting — a few words is enough.", "promoting"];
       }
+      if (!answers.categories.length) {
+        return ["Pick what kind of business you are.", "categories"];
+      }
+      if (!answers.goal) return ["Pick what the campaign should do.", "goal"];
       if (!answers.briefScope) {
         return ["Pick whether you want physical space, social, or both.", "briefScope"];
       }
@@ -6806,7 +6820,20 @@ export default function MarketplaceApp({
                     ))}
                   </datalist>
                   <label className="field-wide">
-                    One line about you
+                    {selectedRole === "business"
+                      ? "One line about your business"
+                      : selectedRole === "sponsor_host"
+                        ? "One line about your team"
+                        : selectedRole === "space_owner"
+                          ? "One line about you or your business"
+                          : "One line about you"}
+                    <small>
+                      {selectedRole === "business"
+                        ? "What you do, in a sentence. This sits under your name on the brief."
+                        : selectedRole === "sponsor_host"
+                          ? "Who you are and what you do. Sponsors read this first."
+                          : "One sentence. It sits under your name on every card."}
+                    </small>
                     <input
                       name="bio"
                       data-field="bio"
@@ -7386,21 +7413,36 @@ export default function MarketplaceApp({
                     {selectedRole === "business" && (
                       <>
                         <div className="form-subsection field-wide">
-                          <span>The campaign</span>
-                          <h4>What should it do?</h4>
+                          <span>What you're promoting</span>
+                          <h4>What are you actually running this for?</h4>
+                          <p>
+                            The specific thing — a product, an opening, a class,
+                            an event. This becomes the headline of your brief.
+                          </p>
+                        </div>
+                        <div className="field-grid">
+                          <label className="field-wide">
+                            In a few words
+                            <small>
+                              Finish the sentence: “We’re promoting…”
+                            </small>
+                            <input
+                              data-field="promoting"
+                              maxLength={80}
+                              value={answers.promoting}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  promoting: event.target.value,
+                                }))
+                              }
+                              placeholder="our new cold brew"
+                            />
+                          </label>
                         </div>
                         <ChipRow
-                          field="goal"
-                          label="Campaign goal"
-                          options={BUSINESS_GOAL_CHIPS.map((item) => item.label)}
-                          selected={answers.goal ? [answers.goal] : []}
-                          onPick={(value) =>
-                            setAnswers((current) => ({ ...current, goal: value }))
-                          }
-                        />
-                        <ChipRow
                           field="categories"
-                          label="What you are promoting"
+                          label="What kind of business you are"
                           multi
                           options={CATEGORY_CHIPS}
                           selected={answers.categories}
@@ -7414,6 +7456,19 @@ export default function MarketplaceApp({
                           }
                         />
 
+                        <div className="form-subsection field-wide">
+                          <span>The goal</span>
+                          <h4>What should this campaign do?</h4>
+                        </div>
+                        <ChipRow
+                          field="goal"
+                          label="Campaign goal"
+                          options={BUSINESS_GOAL_CHIPS.map((item) => item.label)}
+                          selected={answers.goal ? [answers.goal] : []}
+                          onPick={(value) =>
+                            setAnswers((current) => ({ ...current, goal: value }))
+                          }
+                        />
                         {/* The fork. Everything below reshapes around it: pick
                             Physical and no platform is ever mentioned; pick
                             Virtual and nobody is asked what block they want. */}
@@ -7772,12 +7827,34 @@ export default function MarketplaceApp({
 
                     {/* ---------------- shared: title, price, description ------- */}
                     <div className="form-subsection field-wide">
-                      <span>The listing</span>
-                      <h4>Name it and price it.</h4>
+                      <span>
+                        {selectedRole === "business"
+                          ? "Your brief"
+                          : selectedRole === "creator"
+                            ? "Your offer"
+                            : selectedRole === "space_owner"
+                              ? "Your space"
+                              : "Your sponsorship"}
+                      </span>
+                      <h4>
+                        {selectedRole === "business"
+                          ? "Name the brief and set the budget."
+                          : selectedRole === "creator"
+                            ? "Name the offer and set your rate."
+                            : selectedRole === "space_owner"
+                              ? "Name the space and set the rent."
+                              : "Name the package and set the tier."}
+                      </h4>
                     </div>
                     <div className="field-grid">
                       <label className="field-wide">
-                        {selectedRole === "business" ? "Name this campaign" : "Title"}
+                        {selectedRole === "business"
+                          ? "Name this brief"
+                          : selectedRole === "creator"
+                            ? "Name this offer"
+                            : selectedRole === "space_owner"
+                              ? "Name this space"
+                              : "Name this package"}
                         <input
                           data-field="title"
                           maxLength={120}
@@ -7793,7 +7870,15 @@ export default function MarketplaceApp({
                               title: event.target.value,
                             }));
                           }}
-                          placeholder="Cafe window, Brea"
+                          placeholder={
+                            selectedRole === "business"
+                              ? "Brea Coffee Bar — our new cold brew"
+                              : selectedRole === "creator"
+                                ? "Instagram Reel — Maya Alvarez"
+                                : selectedRole === "space_owner"
+                                  ? "Cafe window, Brea"
+                                  : "Brea Robotics 4414 — season sponsor"
+                          }
                         />
                       </label>
                       {/* A business already gave a budget range above; asking
@@ -7875,9 +7960,21 @@ export default function MarketplaceApp({
                     )}
                     <div className="field-grid">
                       <label className="field-wide">
-                        Describe it
+                        {selectedRole === "business"
+                          ? "What should whoever answers know?"
+                          : selectedRole === "creator"
+                            ? "What does a brand get, in your words?"
+                            : selectedRole === "space_owner"
+                              ? "What is the space actually like?"
+                              : "Why should someone sponsor you?"}
                         <small>
-                          At least a sentence or two. This is the body of your card.
+                          {selectedRole === "business"
+                            ? "We drafted this from your answers. Say what the artwork is and anything a creator or space owner must know."
+                            : selectedRole === "creator"
+                              ? "We drafted this from your answers. Add turnaround, what you will not do, anything a brand should know."
+                              : selectedRole === "space_owner"
+                                ? "We drafted this from your answers. Add the size, what sticks to it, and who walks past."
+                                : "We drafted this from your answers. Add what the season looks like and who turns up."}
                         </small>
                         <textarea
                           data-field="description"
