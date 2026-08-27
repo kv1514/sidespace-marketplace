@@ -747,12 +747,18 @@ const BRIEF_PLATFORM_CHIPS = [
 ];
 
 /** Budget range presets: [low, high]. A range beats one number for a brief. */
-const BUDGET_RANGE_CHIPS: Array<{ label: string; min: number; max: number }> = [
+const BUDGET_RANGE_CHIPS: Array<{
+  label: string;
+  min: number;
+  max: number | null;
+}> = [
   { label: "$50 – $150", min: 50, max: 150 },
   { label: "$150 – $500", min: 150, max: 500 },
   { label: "$500 – $1,500", min: 500, max: 1500 },
   { label: "$1,500 – $5,000", min: 1500, max: 5000 },
-  { label: "$5,000+", min: 5000, max: 25000 },
+  // Open-ended. This used to carry max: 25000, so picking "$5,000+" quietly
+  // wrote a $25,000 ceiling the member never saw, said or agreed to.
+  { label: "$5,000+", min: 5000, max: null },
 ];
 
 /** Business timing. Sets availability_notes plus the available_from/to window. */
@@ -820,7 +826,10 @@ const SPONSOR_REACH_CHIPS: Array<{
     unit: "people per event",
     sentence: "10,000+ people at the event.",
   },
-  { label: "Not sure", count: null, unit: "", sentence: "" },
+  // Same trap as the old traffic chip: picking "Not sure" satisfied the chip
+  // but left reachCount empty, and the validator then refused to publish with
+  // no way back except un-picking the answer they meant.
+  { label: "I’ll put in a number", count: null, unit: "", sentence: "" },
 ];
 
 /** What a sponsor actually receives. First two feed `format`, all feed `deliverables`. */
@@ -851,6 +860,20 @@ const PRICE_CHIPS: Record<string, number[]> = {
   space_owner: [25, 75, 150, 400],
   sponsor_host: [250, 500, 1000, 2500],
 };
+
+/** Every unit the editor offers. The row's own value is unioned in at render. */
+const PRICE_UNIT_OPTIONS = [
+  "campaign",
+  "day",
+  "week",
+  "month",
+  "post",
+  "video",
+  "story",
+  "mention",
+  "sponsor",
+  "partner",
+];
 
 const PRICE_UNIT_CHIPS: Record<string, string[]> = {
   creator: ["post", "video", "story", "campaign"],
@@ -986,28 +1009,39 @@ function ChipRow({
   field: string;
   label: string;
 }) {
+  // The label used to live only in aria-label, so a sighted member met several
+  // required chip rows as unheaded rows of pills - "pick what kind of business
+  // you are" was never written down anywhere. Rendering it fixes the same gap
+  // for everyone at once, and gives reportMissing something focusable.
+  const labelId = `chip-label-${field}`;
   return (
-    <div
-      className="filter-row onboarding-chips"
-      data-field={field}
-      role="group"
-      aria-label={label}
-    >
-      {options.map((option) => {
-        const active = selected.includes(option);
-        return (
-          <button
-            key={option}
-            type="button"
-            className={active ? "active" : ""}
-            aria-pressed={active}
-            onClick={() => onPick(option)}
-          >
-            {multi && active ? `✓ ${option}` : option}
-          </button>
-        );
-      })}
-    </div>
+    <>
+      <span className="chip-label" id={labelId}>
+        {label}
+      </span>
+      <div
+        className="filter-row onboarding-chips"
+        data-field={field}
+        role="group"
+        aria-labelledby={labelId}
+        tabIndex={-1}
+      >
+        {options.map((option) => {
+          const active = selected.includes(option);
+          return (
+            <button
+              key={option}
+              type="button"
+              className={active ? "active" : ""}
+              aria-pressed={active}
+              onClick={() => onPick(option)}
+            >
+              {multi && active ? `✓ ${option}` : option}
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -1053,7 +1087,11 @@ function emptyAnswers(): OnboardingAnswers {
     funding: "",
     benefits: [],
     season: "",
-    tiers: [emptyTier("Gold", 1000)],
+    // No price. "Gold" and "1000" survive as PLACEHOLDERS on the inputs, so
+    // the shape is obvious, but firstTierProblem's !tier.price branch forces a
+    // real decision - the old seed published an invented $1,000 for anyone who
+    // skipped past it.
+    tiers: [emptyTier("Gold", null)],
   };
 }
 
@@ -1208,6 +1246,9 @@ function composeDescription(
     );
     return [
       answers.spaceKind ? `${answers.spaceKind}${where ? ` in ${where}` : ""}.` : "",
+      // The one line they wrote about themselves in step 1 was collected,
+      // required, and then never reached any rendered sentence for this role.
+      bio,
       size ? `It is about ${size}.` : "",
       trafficSentence(answers),
       // What can go up is now ANSWERED, not asserted. The old draft told every
@@ -1238,10 +1279,26 @@ function composeDescription(
         : "",
       goal?.sentence ?? "",
       bio,
-      answers.placements.length
-        ? `We're looking for ${joinList(answers.placements.map((p) => p.toLowerCase()))}${city ? ` around ${city}` : ""}.`
+      // Where they want SPACE, not where they happen to be - a Brea business
+      // can be briefing for a window in Long Beach - and only when the brief
+      // asks for physical space at all.
+      answers.placements.length && answers.briefScope !== "virtual"
+        ? `We're looking for ${joinList(
+            answers.placements.map((p) => p.toLowerCase()),
+          )}${
+            answers.wantedArea.trim() || city
+              ? ` around ${answers.wantedArea.trim() || city}`
+              : ""
+          }.`
         : "",
-      answers.price ? `Our budget is $${answers.price}.` : "",
+      // A band, said as a band. "Our budget is $150" was false for every
+      // business that picked a range.
+      answers.price
+        ? `Our budget is ${priceLabel({
+            price: answers.price,
+            price_max: answers.priceMax,
+          })}.`
+        : "",
       artwork,
       answers.timing ? `Timing: ${answers.timing.toLowerCase()}.` : "",
     ]
@@ -1438,7 +1495,10 @@ function buildListingDraft(
       channel: kind?.channel ?? "Other",
       price_unit: unit,
       price_max: answers.priceMax ?? null,
-      location_area: answers.location_area.trim(),
+      // Falls back to the city they already gave, so this is a real optional
+      // field: the placeholder shows what will be used, and clearing it is
+      // allowed rather than snapping back under their cursor.
+      location_area: answers.location_area.trim() || answers.city.trim(),
       street_address: answers.streetAddress.trim(),
       space_size: size,
       surface_types: answers.surfaces,
@@ -2289,6 +2349,14 @@ export default function MarketplaceApp({
   const [listingFeedback, setListingFeedback] = useState("");
   const [formatPreview, setFormatPreview] = useState("");
   const [editingListing, setEditingListing] = useState<Listing | null>(null);
+  // Which role's questions the listing editor should ask. An existing listing
+  // keeps whatever shape it was published with; a new one follows the member.
+  // A brief is identified by its CHANNEL, not by the owner's role - a space
+  // owner can post a brief too - so the two are deliberately separate.
+  const listingRole: Role | null = profile?.role ?? null;
+  const editingListingIsBrief = editingListing
+    ? isBrief(editingListing)
+    : listingRole === "business";
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteAccountError, setDeleteAccountError] = useState("");
   const [igAvatar, setIgAvatar] = useState("");
@@ -3440,9 +3508,7 @@ export default function MarketplaceApp({
       if (answers.bio.trim().length < 10) {
         return ["Add one line about you — at least a few words.", "bio"];
       }
-      if (role === "business" && !answers.contact_name.trim()) {
-        return ["Add your name, so people know who they're writing to.", "contact_name"];
-      }
+
       if (
         role !== "business" &&
         answers.contact_email.trim() &&
@@ -3466,12 +3532,8 @@ export default function MarketplaceApp({
     }
     if (role === "space_owner") {
       if (!answers.spaceKind) return ["Pick what kind of space this is.", "spaceKind"];
-      if (!answers.streetAddress.trim()) {
-        return ["Add the address so people can find it.", "streetAddress"];
-      }
-      if (!answers.location_area.trim()) {
-        return ["Add the area buyers will see on the card.", "location_area"];
-      }
+
+
       if (!answers.spaceSize.trim()) {
         return ["Say roughly how big it is.", "spaceSize"];
       }
@@ -3495,9 +3557,7 @@ export default function MarketplaceApp({
       if (!answers.promoting.trim()) {
         return ["Say what you're promoting — a few words is enough.", "promoting"];
       }
-      if (!answers.categories.length) {
-        return ["Pick what kind of business you are.", "categories"];
-      }
+
       if (!answers.goal) return ["Pick what the campaign should do.", "goal"];
       if (!answers.briefScope) {
         return ["Pick whether you want physical space, social, or both.", "briefScope"];
@@ -3506,9 +3566,7 @@ export default function MarketplaceApp({
         if (!answers.placements.length) {
           return ["Pick the kind of space you want.", "placements"];
         }
-        if (!answers.wantedArea.trim()) {
-          return ["Say where you want the space.", "wantedArea"];
-        }
+
       }
       if (answers.briefScope !== "physical" && !answers.targetPlatforms.length) {
         return ["Pick at least one platform to target.", "targetPlatforms"];
@@ -3932,6 +3990,7 @@ export default function MarketplaceApp({
         channel: String(values.get("channel") ?? "").trim(),
         format: String(values.get("format") ?? "").trim(),
         price: Number(values.get("price") ?? 0),
+        price_max: Number(values.get("price_max") ?? 0) || null,
         price_unit: String(values.get("price_unit") ?? "campaign").trim(),
         description: String(values.get("description") ?? "").trim(),
         demographics: String(values.get("demographics") ?? "").trim(),
@@ -3949,6 +4008,34 @@ export default function MarketplaceApp({
         cancellation_policy: String(
           values.get("cancellation_policy") ?? "",
         ).trim(),
+        // The role-shaped half, spread in only when that section actually
+        // rendered. getAll() is why these are real checkboxes rather than the
+        // chip component: an uncontrolled form hands us the array with no
+        // state to seed. But an unchecked group and an absent group both give
+        // [], so each section carries a hidden marker and a section that was
+        // not on screen contributes no keys at all - `update` is partial, so
+        // the stored values survive untouched.
+        ...(values.get("has_space_section")
+          ? {
+              surface_types: values.getAll("surface_types").map(String),
+              install_by: String(values.get("install_by") ?? "") || null,
+              space_size: String(values.get("space_size") ?? "").trim(),
+              street_address: String(values.get("street_address") ?? "").trim(),
+            }
+          : {}),
+        ...(values.get("has_sponsor_section")
+          ? {
+              sponsor_tier:
+                String(values.get("sponsor_tier") ?? "").trim() || null,
+              sponsor_slots: Number(values.get("sponsor_slots") ?? 0) || null,
+            }
+          : {}),
+        ...(values.get("has_brief_section")
+          ? {
+              brief_scope: String(values.get("brief_scope") ?? "") || null,
+              target_platforms: values.getAll("target_platforms").map(String),
+            }
+          : {}),
       };
 
       // `required` is satisfied by a space, and these are trimmed to empty just
@@ -3967,6 +4054,14 @@ export default function MarketplaceApp({
       }
       if (!Number.isFinite(fields.price) || fields.price < 0) {
         throw new Error("Enter a price of 0 or more.");
+      }
+      // listings_price_max_valid (0017) rejects this at the database, where it
+      // reaches the member as an unreadable 23514.
+      if (
+        typeof fields.price_max === "number" &&
+        fields.price_max < fields.price
+      ) {
+        throw new Error("The top of the range is below the bottom.");
       }
       if (
         fields.available_from &&
@@ -7442,7 +7537,7 @@ export default function MarketplaceApp({
                     </div>
                     <ChipRow
                       field="categories"
-                      label="Categories"
+                      label="What kind of work"
                       multi
                       options={CATEGORY_CHIPS}
                       selected={answers.categories}
@@ -7639,7 +7734,7 @@ export default function MarketplaceApp({
                         </div>
                         <ChipRow
                           field="categories"
-                          label="Categories"
+                          label="What kind of work"
                           multi
                           options={CATEGORY_CHIPS}
                           selected={answers.categories}
@@ -7695,10 +7790,12 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label className="field-wide">
-                            Exact address
+                            Exact address <span className="optional">optional</span>
                             <small>
-                              Where the space actually is. Bookers need this to
-                              judge the spot and to turn up.
+                              Only used for the map link below, so you can check
+                              you picked the right spot. Nothing on the site
+                              renders it - but listings are fetched whole, so do
+                              not put anything here you would not make public.
                             </small>
                             <input
                               data-field="streetAddress"
@@ -7797,10 +7894,9 @@ export default function MarketplaceApp({
                             would not.
                           </p>
                         </div>
-                        <span className="chip-label">Everything you’d allow</span>
                         <ChipRow
                           field="surfaces"
-                          label="What can go up"
+                          label="Everything you’d allow"
                           multi
                           options={SURFACE_CHIPS}
                           selected={answers.surfaces}
@@ -7813,10 +7909,9 @@ export default function MarketplaceApp({
                             }))
                           }
                         />
-                        <span className="chip-label">Who puts it up</span>
                         <ChipRow
                           field="installBy"
-                          label="Who installs it"
+                          label="Who puts it up"
                           options={INSTALL_CHIPS.map((item) => item.label)}
                           selected={
                             INSTALL_CHIPS.filter(
@@ -7960,7 +8055,7 @@ export default function MarketplaceApp({
                         </div>
                         <ChipRow
                           field="goal"
-                          label="Campaign goal"
+                          label="What it should do"
                           options={BUSINESS_GOAL_CHIPS.map((item) => item.label)}
                           selected={answers.goal ? [answers.goal] : []}
                           onPick={(value) =>
@@ -8143,7 +8238,7 @@ export default function MarketplaceApp({
                         </div>
                         <ChipRow
                           field="artwork"
-                          label="Artwork"
+                          label="Who makes the artwork"
                           options={[
                             "I’ll supply the artwork",
                             "I need help making it",
@@ -8234,7 +8329,7 @@ export default function MarketplaceApp({
                         </div>
                         <ChipRow
                           field="timing"
-                          label="Timing"
+                          label="When it should run"
                           options={BUSINESS_TIMING_CHIPS.map((item) => item.label)}
                           selected={answers.timing ? [answers.timing] : []}
                           onPick={(value) =>
@@ -8253,7 +8348,7 @@ export default function MarketplaceApp({
                         </div>
                         <ChipRow
                           field="orgKind"
-                          label="Organization type"
+                          label="What kind of organization"
                           options={SPONSOR_ORG_CHIPS}
                           selected={answers.orgKind ? [answers.orgKind] : []}
                           onPick={(value) =>
@@ -8296,7 +8391,7 @@ export default function MarketplaceApp({
                         </div>
                         <ChipRow
                           field="reach"
-                          label="Reach"
+                          label="Roughly how many"
                           options={SPONSOR_REACH_CHIPS.map((item) => item.label)}
                           selected={answers.reach ? [answers.reach] : []}
                           onPick={(value) => {
@@ -8366,7 +8461,7 @@ export default function MarketplaceApp({
                         </div>
                         <ChipRow
                           field="benefits"
-                          label="Sponsor benefits"
+                          label="Everything you could offer"
                           multi
                           options={SPONSOR_BENEFIT_CHIPS}
                           selected={answers.benefits}
@@ -8491,9 +8586,6 @@ export default function MarketplaceApp({
                                 />
                               </label>
                             </div>
-                            <span className="chip-label">
-                              What this level includes
-                            </span>
                             {answers.benefits.length ? (
                               <ChipRow
                                 field={`tierBenefits${index}`}
@@ -8525,14 +8617,34 @@ export default function MarketplaceApp({
                             className="tier-add field-wide"
                             onClick={() =>
                               setAnswers((current) => {
+                                // Pick the first preset not already in use.
+                                // Indexing by length handed back a duplicate as
+                                // soon as anyone renamed or removed a tier, and
+                                // the validator then rejected the row it had
+                                // just created for them.
+                                const taken = new Set(
+                                  current.tiers.map((tier) =>
+                                    tier.name.trim().toLowerCase(),
+                                  ),
+                                );
                                 const next =
-                                  TIER_PRESETS[current.tiers.length] ??
-                                  TIER_PRESETS[TIER_PRESETS.length - 1];
+                                  TIER_PRESETS.find(
+                                    (preset) =>
+                                      !taken.has(preset.name.toLowerCase()),
+                                  ) ?? { name: "", price: null };
                                 return {
                                   ...current,
                                   tiers: [
                                     ...current.tiers,
-                                    emptyTier(next.name, next.price),
+                                    {
+                                      ...emptyTier(next.name, null),
+                                      // A new level starts from the whole menu
+                                      // rather than empty: most hosts run one
+                                      // tier, and making them re-tick the same
+                                      // perks they just chose is pure
+                                      // re-answering.
+                                      benefits: [...current.benefits],
+                                    },
                                   ],
                                 };
                               })
@@ -8713,7 +8825,7 @@ export default function MarketplaceApp({
                       Boolean(PRICE_CHIPS[selectedRole ?? ""]) && (
                       <ChipRow
                         field="price_presets"
-                        label="Suggested prices"
+                        label="Or pick a common rate"
                         options={(PRICE_CHIPS[selectedRole ?? ""] ?? []).map(
                           (amount) => `$${amount}`,
                         )}
@@ -9080,6 +9192,22 @@ export default function MarketplaceApp({
               />
               <small>Start at $2, or set any higher price that fits your placement.</small>
             </label>
+            {/* A band, not a number. price_max has been written by onboarding
+                since 0017 - by briefs, spaces and sponsorship tiers - and this
+                form had no input for it, so a listing published with a range
+                could never have that range changed or cleared. */}
+            <label>
+              Up to
+              <small>Optional. Leave blank for a flat price.</small>
+              <input
+                name="price_max"
+                type="number"
+                min="1"
+                max="2000000000"
+                defaultValue={editingListing?.price_max ?? ""}
+                placeholder="400"
+              />
+            </label>
             <label>
               Priced per
               <small>What one unit of your price covers.</small>
@@ -9087,14 +9215,26 @@ export default function MarketplaceApp({
                 name="price_unit"
                 defaultValue={editingListing?.price_unit ?? "campaign"}
               >
-                <option value="campaign">campaign</option>
-                <option value="day">day</option>
-                <option value="week">week</option>
-                <option value="post">post</option>
-                <option value="video">video</option>
-                <option value="mention">mention</option>
-                <option value="month">month</option>
-                <option value="partner">partner</option>
+                {/* Same reasoning as `channel` above. Production carries
+                    'story set' and 'run' from the 0002 seeds and onboarding now
+                    writes 'sponsor'; none of those were in this list, so opening
+                    such a listing selected nothing, the browser fell back to the
+                    first option, and saving ANY edit silently rewrote the unit
+                    to 'campaign'. There is deliberately no CHECK on
+                    listings.price_unit (0016) so the column really can hold
+                    anything - the select has to carry the row's own value. */}
+                {Array.from(
+                  new Set([
+                    ...PRICE_UNIT_OPTIONS,
+                    ...(editingListing?.price_unit
+                      ? [editingListing.price_unit]
+                      : []),
+                  ]),
+                ).map((unit) => (
+                  <option key={unit} value={unit}>
+                    {unit}
+                  </option>
+                ))}
               </select>
             </label>
             <div className="form-subsection field-wide">
@@ -9107,7 +9247,6 @@ export default function MarketplaceApp({
               <small>City or the area you cover. Prefilled from your profile.</small>
               <input
                 name="location_area"
-                required
                 defaultValue={editingListing?.location_area || profile?.city || ""}
                 placeholder="Brea, CA · within 10 miles"
               />
@@ -9165,9 +9304,12 @@ export default function MarketplaceApp({
             <label className="field-wide">
               What happens after they book
               <small>The proof or finished work you hand back, like photos of the placement.</small>
+              {/* Not required. Onboarding never asks for it - every creator
+                  and every physical-only brief publishes with it empty - so a
+                  `required` here blocked the FIRST edit of a listing this app
+                  created itself, on a field saveListing does not even check. */}
               <textarea
                 name="deliverables"
-                required
                 defaultValue={editingListing?.deliverables ?? ""}
                 placeholder="Describe the post, placement, proof photos, links, or other finished deliverables."
               />
@@ -9190,6 +9332,167 @@ export default function MarketplaceApp({
                 placeholder="Example: Free cancellation up to 48 hours before the start date"
               />
             </label>
+            {/* ------------------------------------------------------------
+                ROLE-SHAPED SECTION.
+
+                Onboarding asks each role its own questions and writes nine
+                structured columns - surface_types, install_by, space_size,
+                street_address, brief_scope, target_platforms, sponsor_tier,
+                sponsor_slots, price_max. This editor had an input for none of
+                them, so everything a member answered in onboarding became
+                permanently uneditable the moment they published.
+
+                These are real checkboxes and radios rather than the chip
+                component: the form is uncontrolled, and FormData.getAll gives
+                us the array for free with no state to seed or keep in sync.
+                ------------------------------------------------------------ */}
+            {listingRole === "space_owner" && (
+              <>
+                {/* Presence marker. An unchecked checkbox group and an
+                    ABSENT one both yield [] from getAll, so without this a
+                    creator opening their own listing would save empty arrays
+                    over a space owner's answers. */}
+                <input type="hidden" name="has_space_section" value="1" />
+                <div className="form-subsection field-wide">
+                  <span>The space</span>
+                  <h4>What can go up, and who puts it up?</h4>
+                </div>
+                <fieldset className="chip-check-group field-wide">
+                  <legend>Everything you&rsquo;d allow</legend>
+                  {SURFACE_CHIPS.map((surface) => (
+                    <label key={surface} className="chip-check">
+                      <input
+                        type="checkbox"
+                        name="surface_types"
+                        value={surface}
+                        defaultChecked={editingListing?.surface_types?.includes(
+                          surface,
+                        )}
+                      />
+                      <span>{surface}</span>
+                    </label>
+                  ))}
+                </fieldset>
+                <fieldset className="chip-check-group field-wide">
+                  <legend>Who puts it up</legend>
+                  {INSTALL_CHIPS.map((item) => (
+                    <label key={item.value} className="chip-check">
+                      <input
+                        type="radio"
+                        name="install_by"
+                        value={item.value}
+                        defaultChecked={
+                          editingListing?.install_by === item.value
+                        }
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  ))}
+                </fieldset>
+                <label>
+                  How big is it?
+                  <small>Roughly. Width by height is enough.</small>
+                  <input
+                    name="space_size"
+                    maxLength={80}
+                    defaultValue={editingListing?.space_size ?? ""}
+                    placeholder="6 ft × 3 ft"
+                  />
+                </label>
+                <label>
+                  Exact address
+                  <small>
+                    Optional. Nothing renders it today, but listings are fetched
+                    whole, so treat it as public until that changes.
+                  </small>
+                  <input
+                    name="street_address"
+                    maxLength={240}
+                    defaultValue={editingListing?.street_address ?? ""}
+                    placeholder="1398 Solano Ave, Albany, CA 94706"
+                  />
+                </label>
+              </>
+            )}
+
+            {listingRole === "sponsor_host" && (
+              <>
+                <input type="hidden" name="has_sponsor_section" value="1" />
+                <div className="form-subsection field-wide">
+                  <span>This tier</span>
+                  <h4>Which level is this listing?</h4>
+                  <p>
+                    Each tier is its own listing. Renaming this one does not
+                    touch your other levels.
+                  </p>
+                </div>
+                <label>
+                  Tier name
+                  <small>Gold, Founding Partner, anything you call it.</small>
+                  <input
+                    name="sponsor_tier"
+                    maxLength={40}
+                    defaultValue={editingListing?.sponsor_tier ?? ""}
+                    placeholder="Gold"
+                  />
+                </label>
+                <label>
+                  Spots at this level
+                  <small>Optional. How many sponsors fit.</small>
+                  <input
+                    name="sponsor_slots"
+                    type="number"
+                    min="1"
+                    max="10000"
+                    defaultValue={editingListing?.sponsor_slots ?? ""}
+                    placeholder="3"
+                  />
+                </label>
+              </>
+            )}
+
+            {editingListingIsBrief && (
+              <>
+                <input type="hidden" name="has_brief_section" value="1" />
+                <div className="form-subsection field-wide">
+                  <span>Your brief</span>
+                  <h4>What are you looking for?</h4>
+                </div>
+                <fieldset className="chip-check-group field-wide">
+                  <legend>Physical space, social, or both</legend>
+                  {BRIEF_SCOPE_CHIPS.map((item) => (
+                    <label key={item.value} className="chip-check">
+                      <input
+                        type="radio"
+                        name="brief_scope"
+                        value={item.value}
+                        defaultChecked={
+                          (editingListing?.brief_scope ?? "both") === item.value
+                        }
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  ))}
+                </fieldset>
+                <fieldset className="chip-check-group field-wide">
+                  <legend>Platforms to target</legend>
+                  {BRIEF_PLATFORM_CHIPS.map((platform) => (
+                    <label key={platform} className="chip-check">
+                      <input
+                        type="checkbox"
+                        name="target_platforms"
+                        value={platform}
+                        defaultChecked={editingListing?.target_platforms?.includes(
+                          platform,
+                        )}
+                      />
+                      <span>{platform}</span>
+                    </label>
+                  ))}
+                </fieldset>
+              </>
+            )}
+
             <div className="form-subsection field-wide">
               <span>Audience and photos</span>
               <h4>Show them who they reach.</h4>

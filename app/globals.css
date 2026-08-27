@@ -6799,6 +6799,96 @@ html.reveal-ready [data-reveal].is-visible {
   color: var(--ink);
 }
 
+/* ---------------------------------------------------------------------------
+   Chip-shaped checkboxes and radios, for the listing editor.
+
+   The editor is an uncontrolled form, so its multi-selects are real checkboxes
+   and radios - FormData.getAll returns the array with nothing to keep in sync.
+   These make them read like the ChipRow pills the member already met during
+   onboarding, so the two surfaces stop looking like different products.
+   --------------------------------------------------------------------------- */
+.chip-check-group {
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.chip-check-group > legend {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+  padding: 0;
+  text-transform: uppercase;
+}
+
+.chip-check {
+  cursor: pointer;
+  display: inline-flex;
+}
+
+/* The native control stays in the accessibility tree and keeps its own focus
+   and keyboard behaviour; only its painting is replaced. */
+.chip-check > input {
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  position: absolute;
+  width: 1px;
+}
+
+.chip-check > span {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-block;
+  font-family: var(--display);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 9px 14px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.chip-check:hover > span {
+  border-color: var(--ink-mute);
+}
+
+.chip-check > input:checked + span {
+  background: var(--lime);
+  border-color: var(--lime);
+}
+
+/* Focus has to be visible on the span, since the input itself is not painted. */
+.chip-check > input:focus-visible + span {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (hover: none) {
+  .chip-check > span {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+/* Marks a field as optional inline, so "optional" reads as part of the label
+   rather than as another sentence of helper text below it. */
+.onboarding-form .optional,
+.listing-form .optional {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  margin-left: 6px;
+  text-transform: uppercase;
+}
+
 /* A caption for a chip row that is not the only question under its heading.
    "What works here, and who puts it up?" is two asks; without this the eight
    surface chips and the three install chips wrap into what reads as one long
@@ -6870,15 +6960,25 @@ html.reveal-ready [data-reveal].is-visible {
    The first pass reused the marketplace's form styling wholesale, which is
    tuned for a short editor rather than a long guided flow. Inside a 680px
    two-step pane it read as a stack of flat beige blocks with a lime slab in
-   the middle of it. These rules are scoped to .onboarding-form so the listing
-   editor keeps the styling it was designed with. */
+   the middle of it.
+
+   These were originally scoped to .onboarding-form alone, on the reasoning
+   that the listing editor should keep the styling it was designed with. That
+   was wrong: the editor sits in the same paper modal, and the argument in the
+   next comment - that an input with a transparent border on a paper fill has
+   no visible boundary - is true there too. A member who fills in the guided
+   flow and then opens the editor was meeting two different products. Both
+   surfaces now share these rules. */
 
 /* Fields need an edge. The base rule is `border: 1px solid transparent` on a
    paper fill, so on a paper pane an input has no visible boundary at all and
    the eye cannot tell a label from its control. */
 .onboarding-form .field-grid input,
 .onboarding-form .field-grid textarea,
-.onboarding-form .field-grid select {
+.onboarding-form .field-grid select,
+.listing-form input,
+.listing-form textarea,
+.listing-form select {
   background: var(--white);
   border-color: var(--line);
   transition: border-color 0.14s ease-out, box-shadow 0.14s ease-out;
@@ -6886,19 +6986,26 @@ html.reveal-ready [data-reveal].is-visible {
 
 .onboarding-form .field-grid input:hover,
 .onboarding-form .field-grid textarea:hover,
-.onboarding-form .field-grid select:hover {
+.onboarding-form .field-grid select:hover,
+.listing-form input:hover,
+.listing-form textarea:hover,
+.listing-form select:hover {
   border-color: color-mix(in srgb, var(--ink) 32%, var(--line));
 }
 
 .onboarding-form .field-grid input:focus,
 .onboarding-form .field-grid textarea:focus,
-.onboarding-form .field-grid select:focus {
+.onboarding-form .field-grid select:focus,
+.listing-form input:focus,
+.listing-form textarea:focus,
+.listing-form select:focus {
   border-color: var(--coral);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent);
 }
 
 /* Helper text belongs to the field, not to the label shouting in mono caps. */
-.onboarding-form .field-grid label > small {
+.onboarding-form .field-grid label > small,
+.listing-form label > small {
   color: var(--ink-soft);
   font-family: var(--display);
   font-size: 12.5px;
