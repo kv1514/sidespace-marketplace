@@ -101,6 +101,9 @@ type Listing = {
   surface_types?: string[];
   install_by?: string | null;
   space_size?: string;
+  /** Sponsorship only: which level this row is, and how many sponsors fit. */
+  sponsor_tier?: string | null;
+  sponsor_slots?: number | null;
   /** Business brief: 'physical' | 'virtual' | 'both'. */
   brief_scope?: string | null;
   /** Social platforms a brief wants to target. */
@@ -865,6 +868,26 @@ const PRICE_UNIT_CHIPS: Record<string, string[]> = {
  * profile. Chip groups are React state and never appear in FormData at all, so
  * they would write nothing. Controlled state removes the whole bug class.
  */
+/**
+ * One sponsorship level.
+ *
+ * A sponsorship host publishes one LISTING per tier, so this is the unit the
+ * publish step maps over. Bronze/Silver/Gold is the shape of the category: the
+ * old flow asked for a single price and a single flat benefit list, which
+ * forced a team to either underprice a jersey logo or overprice a website
+ * mention.
+ */
+type SponsorTier = {
+  name: string;
+  price: number | null;
+  /** Optional upper end, for a team publishing one flexible level. */
+  priceMax: number | null;
+  /** How many sponsors fit at this level. */
+  slots: number | null;
+  /** A subset of the benefits chosen above - never a second free-for-all. */
+  benefits: string[];
+};
+
 type OnboardingAnswers = {
   // Step 1 - identity, asked of every role exactly once.
   display_name: string;
@@ -925,8 +948,15 @@ type OnboardingAnswers = {
   // Sponsorship host.
   orgKind: string;
   reach: string;
+  /** The number behind the reach chip, editable - same fix as trafficCount. */
+  reachCount: number | null;
+  /** What the money is actually for: "the championship trip", "new kit".
+   *  The most persuasive line a sponsor reads, and the flow never asked. */
+  funding: string;
   benefits: string[];
   season: string;
+  /** One to three levels. Each publishes its own card. */
+  tiers: SponsorTier[];
 };
 
 /**
@@ -1019,10 +1049,26 @@ function emptyAnswers(): OnboardingAnswers {
     wantedArea: "",
     orgKind: "",
     reach: "",
+    reachCount: null,
+    funding: "",
     benefits: [],
     season: "",
+    tiers: [emptyTier("Gold", 1000)],
   };
 }
+
+/** A blank level, prefilled with a name and price so the first one is not work. */
+function emptyTier(name: string, price: number | null): SponsorTier {
+  return { name, price, priceMax: null, slots: null, benefits: [] };
+}
+
+/** The levels offered as you add them, in the order a team would add them. */
+const TIER_PRESETS: Array<{ name: string; price: number }> = [
+  { name: "Gold", price: 1000 },
+  { name: "Silver", price: 500 },
+  { name: "Bronze", price: 250 },
+];
+const MAX_TIERS = TIER_PRESETS.length;
 
 /** Seed the answers from a stored profile so re-entry is not a blank form. */
 function answersFromProfile(source: Profile | null): OnboardingAnswers {
@@ -1084,8 +1130,11 @@ function deriveReach(
   }
   if (role === "sponsor_host") {
     const chip = SPONSOR_REACH_CHIPS.find((item) => item.label === answers.reach);
-    if (!chip || chip.count === null) return { avg_views: null, reach_unit: null };
-    return { avg_views: chip.count, reach_unit: chip.unit };
+    const count = answers.reachCount ?? null;
+    if (!count || count < 1) return { avg_views: null, reach_unit: null };
+    // The chip still decides the UNIT - a season and an event are different
+    // things - but the number is whatever they typed.
+    return { avg_views: count, reach_unit: chip?.unit || "people a season" };
   }
   return { avg_views: null, reach_unit: null };
 }
@@ -1106,6 +1155,21 @@ function trafficSentence(answers: OnboardingAnswers): string {
 }
 
 /**
+ * The human sentence for a sponsorship host's reach.
+ *
+ * Keeps the chip's copy while the count still matches it, and falls back to a
+ * plain sentence the moment a team types their own number.
+ */
+function reachSentence(answers: OnboardingAnswers): string {
+  const chip = SPONSOR_REACH_CHIPS.find((item) => item.label === answers.reach);
+  const count = answers.reachCount ?? null;
+  if (chip && chip.count !== null && chip.count === count) return chip.sentence;
+  if (!count || count < 1) return "";
+  const unit = chip?.unit || "people a season";
+  return `Around ${count.toLocaleString("en-US")} ${unit}.`;
+}
+
+/**
  * The prefilled body copy for the listing.
  *
  * These are drafts in a real editable textarea, not fixed strings. Every branch
@@ -1114,7 +1178,11 @@ function trafficSentence(answers: OnboardingAnswers): string {
  * `listingRank` - a flow that publishes thin rows is a flow that publishes rows
  * nobody sees.
  */
-function composeDescription(role: Role, answers: OnboardingAnswers): string {
+function composeDescription(
+  role: Role,
+  answers: OnboardingAnswers,
+  tier?: SponsorTier,
+): string {
   const bio = answers.bio.trim();
   const city = answers.city.trim();
   if (role === "creator") {
@@ -1181,13 +1249,24 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
       .join(" ");
   }
   if (role === "sponsor_host") {
-    const reach = SPONSOR_REACH_CHIPS.find((item) => item.label === answers.reach);
+    // `tier` is the level being described. Without one - the live preview
+    // before any tier is filled in - fall back to the whole benefit menu.
+    const perks = tier?.benefits.length ? tier.benefits : answers.benefits;
+    const funding = answers.funding.trim();
     return [
       answers.orgKind ? `${answers.orgKind}${city ? ` in ${city}` : ""}.` : "",
       bio,
-      reach?.sentence ?? "",
-      answers.benefits.length
-        ? `Sponsors get ${joinList(answers.benefits.map((b) => b.toLowerCase()))}.`
+      // The single most persuasive line a sponsor reads, and the flow used to
+      // ask a team for their org type and their reach but never for this.
+      funding ? `We're raising for ${funding}.` : "",
+      reachSentence(answers),
+      perks.length
+        ? `${tier?.name ? `${tier.name} sponsors get` : "Sponsors get"} ${joinList(
+            perks.map((b) => b.toLowerCase()),
+          )}.`
+        : "",
+      tier?.slots
+        ? `Room for ${tier.slots} at this level.`
         : "",
       answers.season ? `${answers.season}.` : "",
     ]
@@ -1198,7 +1277,11 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
 }
 
 /** The suggested `title`, regenerated as the answers that feed it change. */
-function composeTitle(role: Role, answers: OnboardingAnswers): string {
+function composeTitle(
+  role: Role,
+  answers: OnboardingAnswers,
+  tier?: SponsorTier,
+): string {
   const name = answers.display_name.trim();
   const city = answers.city.trim();
   if (role === "space_owner") {
@@ -1228,7 +1311,15 @@ function composeTitle(role: Role, answers: OnboardingAnswers): string {
     return name ? `${name} — ${month} campaign` : "";
   }
   if (role === "sponsor_host") {
-    return name ? `${name} — season sponsor` : "";
+    if (!name) return "";
+    // Every team used to get the identical "- season sponsor", so two teams
+    // in one town were indistinguishable and the same team relisting next
+    // year produced a byte-identical headline. The tier separates the levels;
+    // what they are raising for separates the seasons.
+    const level = tier?.name.trim();
+    const head = level ? `${name} — ${level} sponsor` : `${name} — season sponsor`;
+    const funding = answers.funding.trim();
+    return funding ? `${head} for ${funding}` : head;
   }
   return "";
 }
@@ -1250,7 +1341,11 @@ function effectiveTitle(
   role: Role,
   answers: OnboardingAnswers,
   touched: { title: boolean },
+  tier?: SponsorTier,
 ) {
+  // A sponsorship host never edits one title - each tier composes its own -
+  // so an edited `title` must not overwrite all three.
+  if (role === "sponsor_host") return composeTitle(role, answers, tier);
   return touched.title ? answers.title.trim() : composeTitle(role, answers);
 }
 
@@ -1258,10 +1353,29 @@ function effectiveDescription(
   role: Role,
   answers: OnboardingAnswers,
   touched: { description: boolean },
+  tier?: SponsorTier,
 ) {
-  return touched.description
-    ? answers.description.trim()
-    : composeDescription(role, answers).trim();
+  if (touched.description) {
+    const edited = answers.description.trim();
+    // The edited copy is the team's own words about themselves; the per-tier
+    // perk line still has to differ, or three cards read identically.
+    if (role === "sponsor_host" && tier) {
+      const perks = tier.benefits.length ? tier.benefits : answers.benefits;
+      return [
+        edited,
+        perks.length
+          ? `${tier.name || "These"} sponsors get ${joinList(
+              perks.map((b) => b.toLowerCase()),
+            )}.`
+          : "",
+        tier.slots ? `Room for ${tier.slots} at this level.` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    }
+    return edited;
+  }
+  return composeDescription(role, answers, tier).trim();
 }
 
 /**
@@ -1277,10 +1391,11 @@ function buildListingDraft(
   role: Role,
   answers: OnboardingAnswers,
   touched: { title: boolean; description: boolean },
+  tier?: SponsorTier,
 ) {
   const base = {
-    title: effectiveTitle(role, answers, touched).slice(0, 120),
-    description: effectiveDescription(role, answers, touched),
+    title: effectiveTitle(role, answers, touched, tier).slice(0, 120),
+    description: effectiveDescription(role, answers, touched, tier),
     price: answers.price ?? 0,
     price_max: null as number | null,
     format: answers.format.trim(),
@@ -1290,6 +1405,8 @@ function buildListingDraft(
     space_size: "",
     surface_types: [] as string[],
     install_by: null as string | null,
+    sponsor_tier: null as string | null,
+    sponsor_slots: null as number | null,
     brief_scope: null as string | null,
     target_platforms: [] as string[],
     availability_notes: "",
@@ -1380,14 +1497,20 @@ function buildListingDraft(
     const season = SPONSOR_SEASON_CHIPS.find(
       (item) => item.label === answers.season,
     );
-    const reach = SPONSOR_REACH_CHIPS.find((item) => item.label === answers.reach);
+    const perks = tier?.benefits.length ? tier.benefits : answers.benefits;
     return {
       ...base,
       channel: "Sponsorship",
-      price_unit: "partner",
-      format: joinList(answers.benefits.slice(0, 2).map((b) => b.toLowerCase())),
-      deliverables: answers.benefits.join("\n"),
-      demographics: reach?.sentence ?? "",
+      // The form promised "per sponsor" while the card rendered "/ partner",
+      // on the same screen. One word, and the form's was the honest one.
+      price_unit: "sponsor",
+      price: tier?.price ?? answers.price ?? 0,
+      price_max: tier?.priceMax ?? null,
+      sponsor_tier: tier?.name.trim() || null,
+      sponsor_slots: tier?.slots ?? null,
+      format: joinList(perks.slice(0, 2).map((b) => b.toLowerCase())),
+      deliverables: perks.join("\n"),
+      demographics: reachSentence(answers),
       availability_notes: answers.season,
       available_from: season ? isoDaysFromToday(0) : null,
       available_to: season ? isoDaysFromToday(season.days) : null,
@@ -1395,6 +1518,80 @@ function buildListingDraft(
   }
 
   return base;
+}
+
+/**
+ * Every listings row this onboarding publishes.
+ *
+ * One for every role except a sponsorship host, who publishes one card PER
+ * TIER - which is the whole point: a business browsing can find the level it
+ * can afford instead of one bundled price that fits nobody.
+ */
+function buildListingDrafts(
+  role: Role,
+  answers: OnboardingAnswers,
+  touched: { title: boolean; description: boolean },
+) {
+  if (role !== "sponsor_host") return [buildListingDraft(role, answers, touched)];
+  const tiers = completeTiers(answers);
+  if (!tiers.length) return [buildListingDraft(role, answers, touched)];
+  return tiers.map((tier) => buildListingDraft(role, answers, touched, tier));
+}
+
+/**
+ * The first thing wrong with any tier, as [message, data-field].
+ *
+ * Walks tiers in the order they render so an error scrolls forward. Every
+ * message names the level by number, because "Set a price" is useless when
+ * three price inputs are on screen.
+ */
+function firstTierProblem(
+  answers: OnboardingAnswers,
+): [string, string] | null {
+  for (let i = 0; i < answers.tiers.length; i += 1) {
+    const tier = answers.tiers[i];
+    const label = `Tier ${i + 1}`;
+    if (!tier.name.trim()) {
+      return [`Name ${label} — Gold, Founding Partner, anything.`, `tierName${i}`];
+    }
+    if (!tier.price || tier.price < 1) {
+      return [`Set what one ${tier.name.trim()} sponsor pays.`, `tierPrice${i}`];
+    }
+    // listings_price_max_valid rejects this at the database, where it surfaces
+    // as a generic "something went wrong".
+    if (typeof tier.priceMax === "number" && tier.priceMax < tier.price) {
+      return [
+        `${tier.name.trim()}'s upper price is below its lower one.`,
+        `tierPriceMax${i}`,
+      ];
+    }
+    if (!tier.benefits.length) {
+      return [
+        `Pick what a ${tier.name.trim()} sponsor actually gets.`,
+        `tierBenefits${i}`,
+      ];
+    }
+  }
+  // Two levels at the same price are one level with two names, and they
+  // publish as two near-identical cards.
+  const prices = answers.tiers.map((tier) => tier.price);
+  const duplicate = prices.findIndex(
+    (price, i) => price !== null && prices.indexOf(price) !== i,
+  );
+  if (duplicate > 0) {
+    return [
+      "Two tiers are priced the same — give them different prices or drop one.",
+      `tierPrice${duplicate}`,
+    ];
+  }
+  return null;
+}
+
+/** The tiers actually filled in, most expensive first. */
+function completeTiers(answers: OnboardingAnswers): SponsorTier[] {
+  return answers.tiers
+    .filter((tier) => tier.name.trim() && tier.price && tier.price >= 1)
+    .sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
 }
 
 /**
@@ -3319,12 +3516,20 @@ export default function MarketplaceApp({
       if (!answers.timing) return ["Pick when you want it to run.", "timing"];
     }
     if (role === "sponsor_host") {
+      // Same order the questions render in.
       if (!answers.orgKind) return ["Pick what kind of organization you are.", "orgKind"];
-      if (!answers.reach) return ["Pick roughly how many people will see it.", "reach"];
-      if (!answers.benefits.length) {
-        return ["Pick what a sponsor gets.", "benefits"];
+      if (!answers.funding.trim()) {
+        return ["Say what you're raising for — a few words is enough.", "funding"];
       }
-      if (!answers.season) return ["Pick when the sponsorship runs.", "season"];
+      if (!answers.reachCount || answers.reachCount < 1) {
+        return ["Add roughly how many people will see it.", "reachCount"];
+      }
+      if (!answers.season) return ["Pick how long a sponsorship lasts.", "season"];
+      if (!answers.benefits.length) {
+        return ["Pick what a sponsor could get.", "benefits"];
+      }
+      const problem = firstTierProblem(answers);
+      if (problem) return problem;
     }
     // Validate exactly what the member can see, via the same helpers publish
     // uses - so an emptied field fails here instead of silently republishing
@@ -3332,9 +3537,13 @@ export default function MarketplaceApp({
     const touched = { title: titleTouched, description: descriptionTouched };
     const shownTitle = effectiveTitle(role, answers, touched);
     const shownDescription = effectiveDescription(role, answers, touched);
-    if (!shownTitle.trim()) return ["Give this a title.", "title"];
-    if (!answers.price || answers.price < 1) {
-      return ["Set a price of at least $1.", "price"];
+    // A sponsorship host has no single title or price - both are per tier and
+    // firstTierProblem already checked every one of them.
+    if (role !== "sponsor_host") {
+      if (!shownTitle.trim()) return ["Give this a title.", "title"];
+      if (!answers.price || answers.price < 1) {
+        return ["Set a price of at least $1.", "price"];
+      }
     }
     // listings_price_max_valid (0017) rejects a max below the min at the
     // database, where it surfaces as a generic "something went wrong". Both
@@ -3342,6 +3551,7 @@ export default function MarketplaceApp({
     // sit on screen.
     if (
       typeof answers.priceMax === "number" &&
+      typeof answers.price === "number" &&
       answers.priceMax < answers.price
     ) {
       return ["The top of the range is below the bottom.", "priceMax"];
@@ -3362,6 +3572,16 @@ export default function MarketplaceApp({
    * below the field that is missing. Scrolling the control into view is what
    * makes a sticky footer safe.
    */
+  /** Patch one tier in place. Every tier input goes through this. */
+  function updateTier(index: number, patch: Partial<SponsorTier>) {
+    setAnswers((current) => ({
+      ...current,
+      tiers: current.tiers.map((tier, i) =>
+        i === index ? { ...tier, ...patch } : tier,
+      ),
+    }));
+  }
+
   function reportMissing(problem: [string, string]) {
     const [message, field] = problem;
     setOnboardingError(message);
@@ -3582,7 +3802,10 @@ export default function MarketplaceApp({
           chosenListingFiles,
           "listings",
         );
-        const draft = buildListingDraft(role, answers, {
+        // Plural. A sponsorship host publishes one row per tier; everyone
+        // else publishes exactly one, which is the same code path with a
+        // one-element array.
+        const drafts = buildListingDrafts(role, answers, {
           title: titleTouched,
           description: descriptionTouched,
         });
@@ -3596,17 +3819,21 @@ export default function MarketplaceApp({
           payload.avatar_url ||
           payload.gallery_urls[0] ||
           DEFAULT_LISTING_IMAGE;
+        // Captured before the map: narrowing on the outer binding does not
+        // survive into a closure, and this is the only reference inside one.
+        const ownerId = savedProfile.id;
         const inserted = await supabase
           .from("listings")
-          .insert({
-            ...draft,
-            owner_profile_id: savedProfile.id,
-            image_url: cover,
-            image_urls: listingUploads.length ? listingUploads : [cover],
-            status: "active",
-          })
-          .select("*")
-          .single();
+          .insert(
+            drafts.map((draft) => ({
+              ...draft,
+              owner_profile_id: ownerId,
+              image_url: cover,
+              image_urls: listingUploads.length ? listingUploads : [cover],
+              status: "active",
+            })),
+          )
+          .select("*");
         if (inserted.error) throw inserted.error;
 
         window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
@@ -3618,7 +3845,9 @@ export default function MarketplaceApp({
         setToast(
           role === "business"
             ? "Your brief is live. We’ll tell you the moment someone answers."
-            : `You’re live. “${draft.title}” is on the marketplace.`,
+            : drafts.length > 1
+              ? `You’re live. ${drafts.length} sponsorship tiers are on the marketplace.`
+              : `You’re live. “${drafts[0].title}” is on the marketplace.`,
         );
         return;
       }
@@ -8032,6 +8261,36 @@ export default function MarketplaceApp({
                           }
                         />
                         <div className="form-subsection field-wide">
+                          <span>What it’s for</span>
+                          <h4>What are you raising money for?</h4>
+                          <p>
+                            The championship trip, new kit, competition fees. It
+                            is the line a sponsor actually decides on, and it
+                            becomes the headline of every tier.
+                          </p>
+                        </div>
+                        <div className="field-grid">
+                          <label className="field-wide">
+                            In a few words
+                            <small>
+                              Finish the sentence: “We’re raising for…”
+                            </small>
+                            <input
+                              data-field="funding"
+                              maxLength={70}
+                              value={answers.funding}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  funding: event.target.value,
+                                }))
+                              }
+                              placeholder="the championship trip"
+                            />
+                          </label>
+                        </div>
+
+                        <div className="form-subsection field-wide">
                           <span>Your reach</span>
                           <h4>How many people will see it?</h4>
                         </div>
@@ -8040,10 +8299,53 @@ export default function MarketplaceApp({
                           label="Reach"
                           options={SPONSOR_REACH_CHIPS.map((item) => item.label)}
                           selected={answers.reach ? [answers.reach] : []}
-                          onPick={(value) =>
-                            setAnswers((current) => ({ ...current, reach: value }))
-                          }
+                          onPick={(value) => {
+                            const chip = SPONSOR_REACH_CHIPS.find(
+                              (item) => item.label === value,
+                            );
+                            setAnswers((current) => ({
+                              ...current,
+                              reach: value,
+                              reachCount:
+                                chip && chip.count !== null
+                                  ? chip.count
+                                  : current.reachCount,
+                            }));
+                          }}
                         />
+                        <div className="field-grid">
+                          <label>
+                            How many people
+                            <small>
+                              Pick a chip to fill this in, or type your own
+                              number. This is what shows on your card.
+                            </small>
+                            <input
+                              type="number"
+                              min={1}
+                              max={2000000000}
+                              data-field="reachCount"
+                              value={answers.reachCount ?? ""}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  reachCount: event.target.value
+                                    ? Number(event.target.value)
+                                    : null,
+                                }))
+                              }
+                              placeholder="1000"
+                            />
+                          </label>
+                        </div>
+
+                        {/* These chips used to render straight under "How many
+                            people will see it?", so "One event" read as an
+                            answer about headcount. */}
+                        <div className="form-subsection field-wide">
+                          <span>When it runs</span>
+                          <h4>How long does a sponsorship last?</h4>
+                        </div>
                         <ChipRow
                           field="season"
                           label="When it runs"
@@ -8055,8 +8357,12 @@ export default function MarketplaceApp({
                         />
 
                         <div className="form-subsection field-wide">
-                          <span>The sponsorship</span>
-                          <h4>What does a sponsor get?</h4>
+                          <span>The menu</span>
+                          <h4>What could a sponsor get?</h4>
+                          <p>
+                            Everything you would ever offer, at any level. You
+                            split it into tiers next.
+                          </p>
                         </div>
                         <ChipRow
                           field="benefits"
@@ -8070,9 +8376,171 @@ export default function MarketplaceApp({
                               benefits: current.benefits.includes(value)
                                 ? current.benefits.filter((item) => item !== value)
                                 : [...current.benefits, value],
+                              // Dropping a perk from the menu drops it from
+                              // every tier, or a tier keeps advertising a
+                              // benefit the team just said they do not offer.
+                              tiers: current.benefits.includes(value)
+                                ? current.tiers.map((tier) => ({
+                                    ...tier,
+                                    benefits: tier.benefits.filter(
+                                      (item) => item !== value,
+                                    ),
+                                  }))
+                                : current.tiers,
                             }))
                           }
                         />
+
+                        {/* ---- the tiers, one card each on the marketplace ---- */}
+                        <div className="form-subsection field-wide">
+                          <span>Your tiers</span>
+                          <h4>Break it into levels, or keep one.</h4>
+                          <p>
+                            Each tier publishes its own card, so a business can
+                            find you by what it can afford instead of one price
+                            that fits nobody.
+                          </p>
+                        </div>
+                        {answers.tiers.map((tier, index) => (
+                          <div className="tier-card field-wide" key={index}>
+                            <div className="tier-card-head">
+                              <span>Tier {index + 1}</span>
+                              {answers.tiers.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setAnswers((current) => ({
+                                      ...current,
+                                      tiers: current.tiers.filter(
+                                        (_, i) => i !== index,
+                                      ),
+                                    }))
+                                  }
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                            <div className="field-grid">
+                              <label>
+                                Name this level
+                                <input
+                                  data-field={`tierName${index}`}
+                                  maxLength={40}
+                                  value={tier.name}
+                                  onChange={(event) =>
+                                    updateTier(index, { name: event.target.value })
+                                  }
+                                  placeholder="Gold"
+                                />
+                              </label>
+                              <label>
+                                Spots at this level
+                                <small>Optional.</small>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={10000}
+                                  data-field={`tierSlots${index}`}
+                                  value={tier.slots ?? ""}
+                                  onChange={(event) =>
+                                    updateTier(index, {
+                                      slots: event.target.value
+                                        ? Number(event.target.value)
+                                        : null,
+                                    })
+                                  }
+                                  placeholder="3"
+                                />
+                              </label>
+                              <label>
+                                What one sponsor pays
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={2000000000}
+                                  data-field={`tierPrice${index}`}
+                                  value={tier.price ?? ""}
+                                  onChange={(event) =>
+                                    updateTier(index, {
+                                      price: event.target.value
+                                        ? Number(event.target.value)
+                                        : null,
+                                    })
+                                  }
+                                  placeholder="1000"
+                                />
+                              </label>
+                              <label>
+                                up to
+                                <small>Optional. Leave blank for a flat tier.</small>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={2000000000}
+                                  data-field={`tierPriceMax${index}`}
+                                  value={tier.priceMax ?? ""}
+                                  onChange={(event) =>
+                                    updateTier(index, {
+                                      priceMax: event.target.value
+                                        ? Number(event.target.value)
+                                        : null,
+                                    })
+                                  }
+                                  placeholder="2500"
+                                />
+                              </label>
+                            </div>
+                            <span className="chip-label">
+                              What this level includes
+                            </span>
+                            {answers.benefits.length ? (
+                              <ChipRow
+                                field={`tierBenefits${index}`}
+                                label={`What ${tier.name || "this level"} includes`}
+                                multi
+                                options={answers.benefits}
+                                selected={tier.benefits}
+                                onPick={(value) =>
+                                  updateTier(index, {
+                                    benefits: tier.benefits.includes(value)
+                                      ? tier.benefits.filter(
+                                          (item) => item !== value,
+                                        )
+                                      : [...tier.benefits, value],
+                                  })
+                                }
+                              />
+                            ) : (
+                              <p className="tier-empty">
+                                Pick what a sponsor could get above, then split
+                                it across your levels here.
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                        {answers.tiers.length < MAX_TIERS && (
+                          <button
+                            type="button"
+                            className="tier-add field-wide"
+                            onClick={() =>
+                              setAnswers((current) => {
+                                const next =
+                                  TIER_PRESETS[current.tiers.length] ??
+                                  TIER_PRESETS[TIER_PRESETS.length - 1];
+                                return {
+                                  ...current,
+                                  tiers: [
+                                    ...current.tiers,
+                                    emptyTier(next.name, next.price),
+                                  ],
+                                };
+                              })
+                            }
+                          >
+                            + Add another tier
+                          </button>
+                        )}
                         <div className="field-grid">
                           <label className="field-wide media-upload-field">
                             Photos
@@ -8112,18 +8580,21 @@ export default function MarketplaceApp({
                             ? "Name the offer and set your rate."
                             : selectedRole === "space_owner"
                               ? "Name the space and set the rent."
-                              : "Name the package and set the tier."}
+                              : "Tell them who they’d be backing."}
                       </h4>
                     </div>
                     <div className="field-grid">
+                      {/* A sponsorship host named each level in the tier editor,
+                          and every tier composes its own headline from that name
+                          plus what they are raising for. One shared title input
+                          here would overwrite all three. */}
+                      {selectedRole !== "sponsor_host" && (
                       <label className="field-wide">
                         {selectedRole === "business"
                           ? "Name this brief"
                           : selectedRole === "creator"
                             ? "Name this offer"
-                            : selectedRole === "space_owner"
-                              ? "Name this space"
-                              : "Name this package"}
+                            : "Name this space"}
                         <input
                           data-field="title"
                           maxLength={120}
@@ -8144,22 +8615,21 @@ export default function MarketplaceApp({
                               ? "Brea Coffee Bar — our new cold brew"
                               : selectedRole === "creator"
                                 ? "Instagram Reel — Maya Alvarez"
-                                : selectedRole === "space_owner"
-                                  ? "Cafe window, Brea"
-                                  : "Brea Robotics 4414 — season sponsor"
+                                : // Was "Cafe window, Brea", left behind when
+                                  // the composed title started leading with the
+                                  // owner's name.
+                                  "Maya’s Barbershop — window in Downtown Brea"
                           }
                         />
                       </label>
+                      )}
                       {/* A business already gave a budget range above; asking
                           again here would duplicate both the question and the
                           data-field the validator scrolls to. */}
-                      {selectedRole !== "business" && (
+                      {selectedRole !== "business" &&
+                        selectedRole !== "sponsor_host" && (
                       <label>
-                        {selectedRole === "sponsor_host"
-                          ? "What does one sponsor pay?"
-                          : selectedRole === "space_owner"
-                            ? "Price from"
-                            : "Price"}
+                        {selectedRole === "space_owner" ? "Price from" : "Price"}
                         <input
                           type="number"
                           min={1}
@@ -8208,9 +8678,8 @@ export default function MarketplaceApp({
                           />
                         </label>
                       )}
-                      {selectedRole === "sponsor_host" ? (
-                        <p className="offer-preview">per sponsor</p>
-                      ) : selectedRole === "business" ? (
+                      {selectedRole === "sponsor_host" ? null : selectedRole ===
+                        "business" ? (
                         <p className="offer-preview">Budget is per campaign</p>
                       ) : (
                         <label>
@@ -8240,7 +8709,8 @@ export default function MarketplaceApp({
                         </label>
                       )}
                     </div>
-                    {Boolean(PRICE_CHIPS[selectedRole ?? ""]) && (
+                    {selectedRole !== "sponsor_host" &&
+                      Boolean(PRICE_CHIPS[selectedRole ?? ""]) && (
                       <ChipRow
                         field="price_presets"
                         label="Suggested prices"
@@ -8300,7 +8770,14 @@ export default function MarketplaceApp({
                         passes the same isBrief check the real card does, so
                         the preview cannot drift from the marketplace. */}
                     <div className="onboarding-preview field-wide">
-                      <span>This is what people will see</span>
+                      <span>
+                        {selectedRole === "sponsor_host" &&
+                        completeTiers(answers).length > 1
+                          ? `This is what people will see — ${
+                              completeTiers(answers).length
+                            } cards, top tier shown`
+                          : "This is what people will see"}
+                      </span>
                       <div className="preview-card">
                         <div className="preview-card-top">
                           <span
@@ -8328,6 +8805,7 @@ export default function MarketplaceApp({
                               selectedRole ?? "creator",
                               answers,
                               { title: titleTouched },
+                              completeTiers(answers)[0],
                             ) || "Untitled listing"}
                           </strong>
                           <span className="preview-offer">
@@ -8339,6 +8817,7 @@ export default function MarketplaceApp({
                                   title: titleTouched,
                                   description: descriptionTouched,
                                 },
+                                completeTiers(answers)[0],
                               );
                               const offer = draft.format.trim();
                               if (!offer) return "Add what people get above.";
@@ -8352,10 +8831,21 @@ export default function MarketplaceApp({
                               <span className="preview-lead">Budget</span>
                             )}
                             <b>
-                              {priceLabel({
-                                price: answers.price ?? 0,
-                                price_max: answers.priceMax,
-                              })}
+                              {(() => {
+                                // A sponsorship host has no single price; the
+                                // top tier is what this card shows.
+                                const top = completeTiers(answers)[0];
+                                return priceLabel({
+                                  price:
+                                    (selectedRole === "sponsor_host"
+                                      ? top?.price
+                                      : answers.price) ?? 0,
+                                  price_max:
+                                    selectedRole === "sponsor_host"
+                                      ? (top?.priceMax ?? null)
+                                      : answers.priceMax,
+                                });
+                              })()}
                             </b>
                             <small>
                               /{" "}
@@ -8367,6 +8857,7 @@ export default function MarketplaceApp({
                                     title: titleTouched,
                                     description: descriptionTouched,
                                   },
+                                  completeTiers(answers)[0],
                                 ).price_unit
                               }
                             </small>

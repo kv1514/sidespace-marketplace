@@ -6721,6 +6721,84 @@ html.reveal-ready [data-reveal].is-visible {
   margin-top: 22px;
 }
 
+/* ---------------------------------------------------------------------------
+   Sponsorship tiers.
+
+   Each of these publishes its own card, so the editor has to read as a set of
+   discrete things rather than one long form. A hairline card with a numbered
+   head is the lightest thing that does that without becoming a slab - the same
+   reasoning that turned .form-subsection from a black card into a ruled
+   heading.
+   --------------------------------------------------------------------------- */
+.onboarding-form .tier-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  margin-top: 14px;
+  padding: 16px 18px 18px;
+}
+
+.onboarding-form .tier-card-head {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.onboarding-form .tier-card-head > span {
+  /* --ink-soft, not --ink-mute: the muted token measures 3.42:1 on paper,
+     under the 4.5:1 floor, and this label is how you tell which level you are
+     editing. */
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.onboarding-form .tier-card-head > button {
+  background: none;
+  border: 0;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  padding: 0;
+  text-decoration: underline;
+  text-transform: uppercase;
+}
+
+.onboarding-form .tier-card-head > button:hover {
+  color: var(--ink);
+}
+
+.onboarding-form .tier-empty {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  margin: 2px 0 0;
+}
+
+/* Dashed, like the file inputs: it adds a thing rather than submitting one. */
+.onboarding-form .tier-add {
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  margin-top: 12px;
+  padding: 12px;
+  text-transform: uppercase;
+  width: 100%;
+}
+
+.onboarding-form .tier-add:hover {
+  border-color: var(--ink-mute);
+  color: var(--ink);
+}
+
 /* A caption for a chip row that is not the only question under its heading.
    "What works here, and who puts it up?" is two asks; without this the eight
    surface chips and the three install chips wrap into what reads as one long
