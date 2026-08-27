@@ -97,6 +97,10 @@ type Listing = {
   location_area?: string;
   /** Upper end of a budget range; `price` stays the lower end. */
   price_max?: number | null;
+  /** Physical space only: what can go up, who installs it, and how big it is. */
+  surface_types?: string[];
+  install_by?: string | null;
+  space_size?: string;
   /** Business brief: 'physical' | 'virtual' | 'both'. */
   brief_scope?: string | null;
   /** Social platforms a brief wants to target. */
@@ -571,6 +575,48 @@ const SPACE_KIND_CHIPS: Array<{ label: string; channel: string }> = [
  * "Not sure" carries a null count deliberately - it must leave whatever the
  * member already had rather than publishing a claim of zero.
  */
+/**
+ * What can physically go up in a space.
+ *
+ * This is the question the flow used to answer on the owner's behalf: every
+ * drafted description carried "It suits a poster, a decal, or a printed card,
+ * and I can help put it up." A shop that does not allow adhesive on glass was
+ * advertising decals, and every owner was volunteering their own labour.
+ */
+const SURFACE_CHIPS = [
+  "Posters",
+  "Vinyl decals",
+  "Counter cards",
+  "Flyers",
+  "Banners",
+  "A-frame signs",
+  "Paint or mural",
+  "Digital screens",
+];
+
+/** Who physically puts it up. Feeds listings.install_by and the description. */
+const INSTALL_CHIPS: Array<{
+  label: string;
+  value: "owner" | "renter" | "either";
+  sentence: string;
+}> = [
+  {
+    label: "I put it up",
+    value: "owner",
+    sentence: "I’ll put it up for you.",
+  },
+  {
+    label: "You come and install it",
+    value: "renter",
+    sentence: "You install it yourself — we’ll arrange a time.",
+  },
+  {
+    label: "Either works",
+    value: "either",
+    sentence: "I can put it up, or you’re welcome to install it yourself.",
+  },
+];
+
 const TRAFFIC_CHIPS: Array<{
   label: string;
   count: number | null;
@@ -596,15 +642,34 @@ const TRAFFIC_CHIPS: Array<{
     count: 5000,
     sentence: "5,000+ people a day - a main pedestrian route.",
   },
-  { label: "Not sure", count: null, sentence: "" },
+  // Not "Not sure". That chip published a space with no reach at all, which
+  // sorts below every space that guessed - the exact opposite of what someone
+  // picking it intends. This one reveals nothing new; it just leaves the count
+  // input, which is always on screen, for them to fill in.
+  { label: "I’ll count it myself", count: null, sentence: "" },
 ];
 
 /** Space owner availability. One chip, no date pickers. */
-const AVAILABILITY_CHIPS = [
-  "Available now",
-  "From next month",
-  "Seasonal",
-  "Ask me",
+/**
+ * Availability, which now writes real dates.
+ *
+ * These used to be four bare strings landing in `availability_notes` and
+ * nowhere else, so a space had no date window while a business brief - whose
+ * timing chips have always written available_from/available_to - did. A space
+ * that cannot say when it is free cannot be matched to a campaign that runs in
+ * October.
+ *
+ * `startDays: null` means "no window", which is the honest write for "Ask me".
+ */
+const AVAILABILITY_CHIPS: Array<{
+  label: string;
+  startDays: number | null;
+  days: number;
+}> = [
+  { label: "Available now", startDays: 0, days: 90 },
+  { label: "From next month", startDays: 30, days: 120 },
+  { label: "Seasonal", startDays: 0, days: 180 },
+  { label: "Ask me", startDays: null, days: 0 },
 ];
 
 /** Business: what the campaign should achieve. Seeds the description draft. */
@@ -826,7 +891,19 @@ type OnboardingAnswers = {
   /** The exact address. A physical listing is worth nothing without it. */
   streetAddress: string;
   location_area: string;
+  /** Roughly how big it is, free text: "6 ft x 3 ft". The description helper
+   *  has always told owners to add this by hand; now the form asks. */
+  spaceSize: string;
+  /** What can physically go up. The drafted description used to assert
+   *  "suits a poster, a decal, or a printed card" for every single owner. */
+  surfaces: string[];
+  /** Who puts the artwork up. "either" is a real answer, not a missing one. */
+  installBy: "" | "owner" | "renter" | "either";
   traffic: string;
+  /** The number behind the traffic chip, editable. Without it "Not sure" was
+   *  a dead end that published a space with no reach at all, which sorts it
+   *  below every space that guessed. */
+  trafficCount: number | null;
   availability: string;
   // Business.
   goal: string;
@@ -924,7 +1001,11 @@ function emptyAnswers(): OnboardingAnswers {
     spaceKind: "",
     streetAddress: "",
     location_area: "",
+    spaceSize: "",
+    surfaces: [],
+    installBy: "",
     traffic: "",
+    trafficCount: null,
     availability: "",
     goal: "",
     placements: [],
@@ -995,9 +1076,11 @@ function deriveReach(
   answers: OnboardingAnswers,
 ): { avg_views: number | null; reach_unit: string | null } {
   if (role === "space_owner") {
-    const chip = TRAFFIC_CHIPS.find((item) => item.label === answers.traffic);
-    if (!chip || chip.count === null) return { avg_views: null, reach_unit: null };
-    return { avg_views: chip.count, reach_unit: "people a day" };
+    // The typed count wins. The chips are shortcuts that fill it in, so an
+    // owner who knows their real number is never overruled by a bracket.
+    const count = answers.trafficCount ?? null;
+    if (!count || count < 1) return { avg_views: null, reach_unit: null };
+    return { avg_views: count, reach_unit: "people a day" };
   }
   if (role === "sponsor_host") {
     const chip = SPONSOR_REACH_CHIPS.find((item) => item.label === answers.reach);
@@ -1005,6 +1088,21 @@ function deriveReach(
     return { avg_views: chip.count, reach_unit: chip.unit };
   }
   return { avg_views: null, reach_unit: null };
+}
+
+/**
+ * The human sentence for a space's foot traffic.
+ *
+ * Prefers the chip's own copy, but only while the count still matches it: the
+ * moment an owner types their real number, "About 300 people a day, mostly
+ * local regulars" stops being true and a plain sentence takes over.
+ */
+function trafficSentence(answers: OnboardingAnswers): string {
+  const chip = TRAFFIC_CHIPS.find((item) => item.label === answers.traffic);
+  const count = answers.trafficCount ?? null;
+  if (chip && chip.count !== null && chip.count === count) return chip.sentence;
+  if (!count || count < 1) return "";
+  return `About ${count.toLocaleString("en-US")} people walk past on a normal day.`;
 }
 
 /**
@@ -1035,12 +1133,24 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
       .join(" ");
   }
   if (role === "space_owner") {
-    const traffic = TRAFFIC_CHIPS.find((item) => item.label === answers.traffic);
     const where = answers.location_area.trim() || city;
+    const size = answers.spaceSize.trim();
+    const install = INSTALL_CHIPS.find(
+      (item) => item.value === answers.installBy,
+    );
     return [
-      answers.spaceKind ? `${answers.spaceKind}${where ? ` at ${where}` : ""}.` : "",
-      traffic?.sentence ?? "",
-      "It suits a poster, a decal, or a printed card, and I can help put it up.",
+      answers.spaceKind ? `${answers.spaceKind}${where ? ` in ${where}` : ""}.` : "",
+      size ? `It is about ${size}.` : "",
+      trafficSentence(answers),
+      // What can go up is now ANSWERED, not asserted. The old draft told every
+      // owner's readers it "suits a poster, a decal, or a printed card" and
+      // that the owner would put it up - two offers they never made.
+      answers.surfaces.length
+        ? `It works for ${joinList(
+            answers.surfaces.map((item) => item.toLowerCase()),
+          )}.`
+        : "",
+      install?.sentence ?? "",
       answers.availability ? `Availability: ${answers.availability.toLowerCase()}.` : "",
     ]
       .filter(Boolean)
@@ -1093,7 +1203,13 @@ function composeTitle(role: Role, answers: OnboardingAnswers): string {
   const city = answers.city.trim();
   if (role === "space_owner") {
     if (!answers.spaceKind) return "";
-    return city ? `${answers.spaceKind}, ${city}` : answers.spaceKind;
+    // "Window, Brea" was the weakest title of the four roles: two windows in
+    // one town produced a byte-identical headline and neither said whose it
+    // was. Lead with the name, the way a business brief now does.
+    const where = answers.location_area.trim() || city;
+    const kind = answers.spaceKind.toLowerCase();
+    if (name) return where ? `${name} — ${kind} in ${where}` : `${name} — ${kind}`;
+    return where ? `${answers.spaceKind}, ${where}` : answers.spaceKind;
   }
   if (role === "creator") {
     const primary = answers.platforms[0];
@@ -1171,6 +1287,9 @@ function buildListingDraft(
     demographics: "",
     location_area: "",
     street_address: "",
+    space_size: "",
+    surface_types: [] as string[],
+    install_by: null as string | null,
     brief_scope: null as string | null,
     target_platforms: [] as string[],
     availability_notes: "",
@@ -1192,18 +1311,37 @@ function buildListingDraft(
 
   if (role === "space_owner") {
     const kind = SPACE_KIND_CHIPS.find((item) => item.label === answers.spaceKind);
-    const traffic = TRAFFIC_CHIPS.find((item) => item.label === answers.traffic);
+    const free = AVAILABILITY_CHIPS.find(
+      (item) => item.label === answers.availability,
+    );
+    const size = answers.spaceSize.trim();
+    const unit = answers.price_unit || "week";
     return {
       ...base,
       channel: kind?.channel ?? "Other",
-      price_unit: answers.price_unit || "week",
+      price_unit: unit,
+      price_max: answers.priceMax ?? null,
       location_area: answers.location_area.trim(),
       street_address: answers.streetAddress.trim(),
-      demographics: traffic?.sentence ?? "",
+      space_size: size,
+      surface_types: answers.surfaces,
+      install_by: answers.installBy || null,
+      deliverables: answers.surfaces.join("\n"),
+      demographics: trafficSentence(answers),
       availability_notes: answers.availability,
+      // A space with no date window cannot be matched to a campaign that runs
+      // in October. "Ask me" still writes nothing, because that is the answer.
+      available_from:
+        free && free.startDays !== null
+          ? isoDaysFromToday(free.startDays)
+          : null,
+      available_to:
+        free && free.startDays !== null
+          ? isoDaysFromToday(free.startDays + free.days)
+          : null,
       format:
         base.format ||
-        `your ${(answers.spaceKind || "space").toLowerCase()} for a ${answers.price_unit || "week"}`,
+        `${size ? `${size} ` : ""}${(answers.spaceKind || "space").toLowerCase()} for a ${unit}`,
     };
   }
 
@@ -3137,7 +3275,22 @@ export default function MarketplaceApp({
       if (!answers.location_area.trim()) {
         return ["Add the area buyers will see on the card.", "location_area"];
       }
-      if (!answers.traffic) return ["Pick roughly how busy it is.", "traffic"];
+      if (!answers.spaceSize.trim()) {
+        return ["Say roughly how big it is.", "spaceSize"];
+      }
+      if (!answers.surfaces.length) {
+        return ["Pick what can actually go up there.", "surfaces"];
+      }
+      if (!answers.installBy) return ["Say who puts it up.", "installBy"];
+      // The count, not the chip: an owner who typed 850 and never touched a
+      // chip has answered this, and an owner who picked "I'll count it myself"
+      // and left the box empty has not.
+      if (!answers.trafficCount || answers.trafficCount < 1) {
+        return ["Add roughly how many people walk past a day.", "trafficCount"];
+      }
+      if (!answers.availability) {
+        return ["Pick when the space is free.", "availability"];
+      }
     }
     if (role === "business") {
       // Same order the questions are rendered in, so the error scrolls forward
@@ -3182,6 +3335,16 @@ export default function MarketplaceApp({
     if (!shownTitle.trim()) return ["Give this a title.", "title"];
     if (!answers.price || answers.price < 1) {
       return ["Set a price of at least $1.", "price"];
+    }
+    // listings_price_max_valid (0017) rejects a max below the min at the
+    // database, where it surfaces as a generic "something went wrong". Both
+    // roles that can set a band are checked here, in the order the two inputs
+    // sit on screen.
+    if (
+      typeof answers.priceMax === "number" &&
+      answers.priceMax < answers.price
+    ) {
+      return ["The top of the range is below the bottom.", "priceMax"];
     }
     if (shownDescription.trim().length < 60) {
       return [
@@ -7337,7 +7500,7 @@ export default function MarketplaceApp({
                               </a>
                             )}
                           </label>
-                          <label className="field-wide">
+                          <label>
                             What buyers see on the card
                             <small>
                               A street or neighborhood. Shown publicly instead of
@@ -7353,6 +7516,28 @@ export default function MarketplaceApp({
                                 }))
                               }
                               placeholder={answers.city || "Downtown Brea"}
+                            />
+                          </label>
+                          {/* The description helper has always told owners to
+                              "add the size" by hand. This is the form finally
+                              asking, so the draft can say it for them. */}
+                          <label>
+                            How big is it?
+                            <small>
+                              Roughly. Width by height is enough — it is the
+                              first thing a buyer asks.
+                            </small>
+                            <input
+                              data-field="spaceSize"
+                              maxLength={80}
+                              value={answers.spaceSize}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  spaceSize: event.target.value,
+                                }))
+                              }
+                              placeholder="6 ft × 3 ft"
                             />
                           </label>
                           <label className="field-wide media-upload-field">
@@ -7375,6 +7560,53 @@ export default function MarketplaceApp({
                         </div>
 
                         <div className="form-subsection field-wide">
+                          <span>What can go up</span>
+                          <h4>What works here, and who puts it up?</h4>
+                          <p>
+                            The first thing a buyer asks before they book. Pick
+                            everything you would actually allow — and nothing you
+                            would not.
+                          </p>
+                        </div>
+                        <span className="chip-label">Everything you’d allow</span>
+                        <ChipRow
+                          field="surfaces"
+                          label="What can go up"
+                          multi
+                          options={SURFACE_CHIPS}
+                          selected={answers.surfaces}
+                          onPick={(value) =>
+                            setAnswers((current) => ({
+                              ...current,
+                              surfaces: current.surfaces.includes(value)
+                                ? current.surfaces.filter((item) => item !== value)
+                                : [...current.surfaces, value],
+                            }))
+                          }
+                        />
+                        <span className="chip-label">Who puts it up</span>
+                        <ChipRow
+                          field="installBy"
+                          label="Who installs it"
+                          options={INSTALL_CHIPS.map((item) => item.label)}
+                          selected={
+                            INSTALL_CHIPS.filter(
+                              (item) => item.value === answers.installBy,
+                            ).map((item) => item.label)
+                          }
+                          onPick={(value) => {
+                            const chip = INSTALL_CHIPS.find(
+                              (item) => item.label === value,
+                            );
+                            if (!chip) return;
+                            setAnswers((current) => ({
+                              ...current,
+                              installBy: chip.value,
+                            }));
+                          }}
+                        />
+
+                        <div className="form-subsection field-wide">
                           <span>How busy is it?</span>
                           <h4>People who walk past on a normal day.</h4>
                         </div>
@@ -7383,19 +7615,56 @@ export default function MarketplaceApp({
                           label="Foot traffic"
                           options={TRAFFIC_CHIPS.map((item) => item.label)}
                           selected={answers.traffic ? [answers.traffic] : []}
-                          onPick={(value) =>
-                            setAnswers((current) => ({ ...current, traffic: value }))
-                          }
+                          onPick={(value) => {
+                            const chip = TRAFFIC_CHIPS.find(
+                              (item) => item.label === value,
+                            );
+                            setAnswers((current) => ({
+                              ...current,
+                              traffic: value,
+                              // The chip is a shortcut that fills the number in;
+                              // the number is what actually publishes.
+                              trafficCount:
+                                chip && chip.count !== null
+                                  ? chip.count
+                                  : current.trafficCount,
+                            }));
+                          }}
                         />
+                        <div className="field-grid">
+                          <label>
+                            People a day
+                            <small>
+                              Pick a chip to fill this in, or type your own
+                              count. This is what shows on your card.
+                            </small>
+                            <input
+                              type="number"
+                              min={1}
+                              max={2000000000}
+                              data-field="trafficCount"
+                              value={answers.trafficCount ?? ""}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  trafficCount: event.target.value
+                                    ? Number(event.target.value)
+                                    : null,
+                                }))
+                              }
+                              placeholder="300"
+                            />
+                          </label>
+                        </div>
 
                         <div className="form-subsection field-wide">
-                          <span>Price and availability</span>
-                          <h4>What does it cost to book?</h4>
+                          <span>Availability</span>
+                          <h4>When is it free?</h4>
                         </div>
                         <ChipRow
                           field="availability"
                           label="Availability"
-                          options={AVAILABILITY_CHIPS}
+                          options={AVAILABILITY_CHIPS.map((item) => item.label)}
                           selected={
                             answers.availability ? [answers.availability] : []
                           }
@@ -7888,7 +8157,9 @@ export default function MarketplaceApp({
                       <label>
                         {selectedRole === "sponsor_host"
                           ? "What does one sponsor pay?"
-                          : "Price"}
+                          : selectedRole === "space_owner"
+                            ? "Price from"
+                            : "Price"}
                         <input
                           type="number"
                           min={1}
@@ -7909,6 +8180,33 @@ export default function MarketplaceApp({
                           placeholder="150"
                         />
                       </label>
+                      )}
+                      {/* A week in December is not a week in February, and a
+                          mural is not a poster. A space owner could only post
+                          one number, so "$150-400 depending on how long" was
+                          unsayable - the same band a business brief has had
+                          since price_max landed. */}
+                      {selectedRole === "space_owner" && (
+                        <label>
+                          up to
+                          <small>Optional. Leave blank for a flat rate.</small>
+                          <input
+                            type="number"
+                            min={1}
+                            max={2000000000}
+                            data-field="priceMax"
+                            value={answers.priceMax ?? ""}
+                            onChange={(event) =>
+                              setAnswers((current) => ({
+                                ...current,
+                                priceMax: event.target.value
+                                  ? Number(event.target.value)
+                                  : null,
+                              }))
+                            }
+                            placeholder="400"
+                          />
+                        </label>
                       )}
                       {selectedRole === "sponsor_host" ? (
                         <p className="offer-preview">per sponsor</p>
