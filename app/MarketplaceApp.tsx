@@ -1655,31 +1655,45 @@ function buildListingDrafts(
  * message names the level by number, because "Set a price" is useless when
  * three price inputs are on screen.
  */
-function firstTierProblem(
-  answers: OnboardingAnswers,
-): [string, string] | null {
+/**
+ * Everything still missing from the tiers, in the order the cards sit.
+ *
+ * Returns the whole list rather than the first problem so the flow can tell a
+ * host how much is left instead of bouncing them from one field to the next,
+ * one press of Publish at a time. Every message falls back to "tier 1" when
+ * the level has no name yet - the old short-circuit meant the name was always
+ * filled in by the time the others could fire, and collecting them all would
+ * otherwise produce "Set what one  sponsor pays."
+ */
+function tierProblems(answers: OnboardingAnswers): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
   for (let i = 0; i < answers.tiers.length; i += 1) {
     const tier = answers.tiers[i];
     const label = `Tier ${i + 1}`;
+    const named = tier.name.trim() || label.toLowerCase();
     if (!tier.name.trim()) {
-      return [`Name ${label} — Gold, Founding Partner, anything.`, `tierName${i}`];
+      out.push([`Name ${label} — Gold, Founding Partner, anything.`, `tierName${i}`]);
     }
     if (!tier.price || tier.price < 1) {
-      return [`Set what one ${tier.name.trim()} sponsor pays.`, `tierPrice${i}`];
+      out.push([`Set what one ${named} sponsor pays.`, `tierPrice${i}`]);
     }
     // listings_price_max_valid rejects this at the database, where it surfaces
     // as a generic "something went wrong".
-    if (typeof tier.priceMax === "number" && tier.priceMax < tier.price) {
-      return [
-        `${tier.name.trim()}'s upper price is below its lower one.`,
+    if (
+      typeof tier.priceMax === "number" &&
+      typeof tier.price === "number" &&
+      tier.priceMax < tier.price
+    ) {
+      out.push([
+        `${named}'s upper price is below its lower one.`,
         `tierPriceMax${i}`,
-      ];
+      ]);
     }
     if (!tier.benefits.length) {
-      return [
-        `Pick what a ${tier.name.trim()} sponsor actually gets.`,
+      out.push([
+        `Pick what a ${named} sponsor actually gets.`,
         `tierBenefits${i}`,
-      ];
+      ]);
     }
   }
   // Two levels at the same price are one level with two names, and they
@@ -1689,12 +1703,12 @@ function firstTierProblem(
     (price, i) => price !== null && prices.indexOf(price) !== i,
   );
   if (duplicate > 0) {
-    return [
+    out.push([
       "Two tiers are priced the same — give them different prices or drop one.",
       `tierPrice${duplicate}`,
-    ];
+    ]);
   }
-  return null;
+  return out;
 }
 
 /** The tiers actually filled in, most expensive first. */
@@ -3606,101 +3620,127 @@ export default function MarketplaceApp({
    * and put the cursor on it. The old flow toasted and moved on; a toast is
    * gone in four seconds and never says where to look.
    */
-  function firstMissingAnswer(): [string, string] | null {
+  /**
+   * Everything still unanswered on the current step, in the order it renders.
+   *
+   * This used to stop at the first problem, which is all publish needs - but
+   * it meant the only way to find out how much was left was to press Publish,
+   * get bounced to one field, fix it, and press again. A space owner answers
+   * nine required questions on step 2; that is nine rounds of being surprised.
+   * Collecting the whole list lets the flow say what is outstanding while they
+   * are still filling it in.
+   */
+  function missingAnswers(): Array<[string, string]> {
     const role = selectedRole;
-    if (onboardingStep === 1) {
-      if (!roleTouched || !role) {
-        return ["Pick how you’ll use SideSpace first.", "role"];
-      }
-      if (!answers.display_name.trim()) {
-        return ["Add your display name before continuing.", "display_name"];
-      }
-      if (!answers.city.trim()) {
-        return ["Add your city or market before continuing.", "city"];
-      }
-      if (answers.bio.trim().length < 10) {
-        return ["Add one line about you — at least a few words.", "bio"];
-      }
+    const out: Array<[string, string]> = [];
+    const need = (unmet: boolean, message: string, field: string) => {
+      if (unmet) out.push([message, field]);
+    };
 
-      if (
+    if (onboardingStep === 1) {
+      need(!roleTouched || !role, "Pick how you’ll use SideSpace first.", "role");
+      need(
+        !answers.display_name.trim(),
+        "Add your display name before continuing.",
+        "display_name",
+      );
+      need(
+        !answers.city.trim(),
+        "Add your city or market before continuing.",
+        "city",
+      );
+      need(
+        answers.bio.trim().length < 10,
+        "Add one line about you — at least a few words.",
+        "bio",
+      );
+      // Only a MALFORMED address is a problem; leaving it blank is allowed.
+      need(
         role !== "business" &&
-        answers.contact_email.trim() &&
-        !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(answers.contact_email.trim())
-      ) {
-        return ["That email doesn't look right.", "contact_email"];
-      }
-      return null;
+          Boolean(answers.contact_email.trim()) &&
+          !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(answers.contact_email.trim()),
+        "That email doesn't look right.",
+        "contact_email",
+      );
+      return out;
     }
 
     // Step 2 in edit mode only ever touches profile fields, all optional.
-    if (onboardingMode === "edit" || !role) return null;
+    if (onboardingMode === "edit" || !role) return out;
 
     if (role === "creator") {
-      if (!answers.platforms.length) {
-        return ["Pick at least one place you post.", "platforms"];
-      }
-      if (answers.format.trim().length < 10) {
-        return ["Say what a brand actually gets.", "format"];
-      }
+      need(!answers.platforms.length, "Pick at least one place you post.", "platforms");
+      need(
+        answers.format.trim().length < 10,
+        "Say what a brand actually gets.",
+        "format",
+      );
     }
     if (role === "space_owner") {
-      if (!answers.spaceKind) return ["Pick what kind of space this is.", "spaceKind"];
-
-
-      if (!answers.spaceSize.trim()) {
-        return ["Say roughly how big it is.", "spaceSize"];
-      }
-      if (!answers.surfaces.length) {
-        return ["Pick what can actually go up there.", "surfaces"];
-      }
-      if (!answers.installBy) return ["Say who puts it up.", "installBy"];
+      need(!answers.spaceKind, "Pick what kind of space this is.", "spaceKind");
+      need(!answers.spaceSize.trim(), "Say roughly how big it is.", "spaceSize");
+      need(
+        !answers.surfaces.length,
+        "Pick what can actually go up there.",
+        "surfaces",
+      );
+      need(!answers.installBy, "Say who puts it up.", "installBy");
       // The count, not the chip: an owner who typed 850 and never touched a
       // chip has answered this, and an owner who picked "I'll count it myself"
       // and left the box empty has not.
-      if (!answers.trafficCount || answers.trafficCount < 1) {
-        return ["Add roughly how many people walk past a day.", "trafficCount"];
-      }
-      if (!answers.availability) {
-        return ["Pick when the space is free.", "availability"];
-      }
+      need(
+        !answers.trafficCount || answers.trafficCount < 1,
+        "Add roughly how many people walk past a day.",
+        "trafficCount",
+      );
+      need(!answers.availability, "Pick when the space is free.", "availability");
     }
     if (role === "business") {
       // Same order the questions are rendered in, so the error scrolls forward
       // through the pane rather than jumping back past something answered.
-      if (!answers.promoting.trim()) {
-        return ["Say what you're promoting — a few words is enough.", "promoting"];
-      }
-
-      if (!answers.goal) return ["Pick what the campaign should do.", "goal"];
-      if (!answers.briefScope) {
-        return ["Pick whether you want physical space, social, or both.", "briefScope"];
-      }
-      if (answers.briefScope !== "virtual") {
-        if (!answers.placements.length) {
-          return ["Pick the kind of space you want.", "placements"];
-        }
-
-      }
-      if (answers.briefScope !== "physical" && !answers.targetPlatforms.length) {
-        return ["Pick at least one platform to target.", "targetPlatforms"];
-      }
-      if (!answers.timing) return ["Pick when you want it to run.", "timing"];
+      need(
+        !answers.promoting.trim(),
+        "Say what you're promoting — a few words is enough.",
+        "promoting",
+      );
+      need(!answers.goal, "Pick what the campaign should do.", "goal");
+      need(
+        !answers.briefScope,
+        "Pick whether you want physical space, social, or both.",
+        "briefScope",
+      );
+      need(
+        answers.briefScope !== "virtual" && !answers.placements.length,
+        "Pick the kind of space you want.",
+        "placements",
+      );
+      need(
+        answers.briefScope !== "physical" && !answers.targetPlatforms.length,
+        "Pick at least one platform to target.",
+        "targetPlatforms",
+      );
+      need(!answers.timing, "Pick when you want it to run.", "timing");
     }
     if (role === "sponsor_host") {
       // Same order the questions render in.
-      if (!answers.orgKind) return ["Pick what kind of organization you are.", "orgKind"];
-      if (!answers.funding.trim()) {
-        return ["Say what you're raising for — a few words is enough.", "funding"];
-      }
-      if (!answers.reachCount || answers.reachCount < 1) {
-        return ["Add roughly how many people will see it.", "reachCount"];
-      }
-      if (!answers.season) return ["Pick how long a sponsorship lasts.", "season"];
-      if (!answers.benefits.length) {
-        return ["Pick what a sponsor could get.", "benefits"];
-      }
-      const problem = firstTierProblem(answers);
-      if (problem) return problem;
+      need(
+        !answers.orgKind,
+        "Pick what kind of organization you are.",
+        "orgKind",
+      );
+      need(
+        !answers.funding.trim(),
+        "Say what you're raising for — a few words is enough.",
+        "funding",
+      );
+      need(
+        !answers.reachCount || answers.reachCount < 1,
+        "Add roughly how many people will see it.",
+        "reachCount",
+      );
+      need(!answers.season, "Pick how long a sponsorship lasts.", "season");
+      need(!answers.benefits.length, "Pick what a sponsor could get.", "benefits");
+      out.push(...tierProblems(answers));
     }
     // Validate exactly what the member can see, via the same helpers publish
     // uses - so an emptied field fails here instead of silently republishing
@@ -3709,31 +3749,37 @@ export default function MarketplaceApp({
     const shownTitle = effectiveTitle(role, answers, touched);
     const shownDescription = descriptionBody(role, answers, touched);
     // A sponsorship host has no single title or price - both are per tier and
-    // firstTierProblem already checked every one of them.
+    // tierProblems already checked every one of them.
     if (role !== "sponsor_host") {
-      if (!shownTitle.trim()) return ["Give this a title.", "title"];
-      if (!answers.price || answers.price < 1) {
-        return ["Set a price of at least $1.", "price"];
-      }
+      need(!shownTitle.trim(), "Give this a title.", "title");
+      need(
+        !answers.price || answers.price < 1,
+        "Set a price of at least $1.",
+        "price",
+      );
     }
     // listings_price_max_valid (0017) rejects a max below the min at the
     // database, where it surfaces as a generic "something went wrong". Both
     // roles that can set a band are checked here, in the order the two inputs
     // sit on screen.
-    if (
+    need(
       typeof answers.priceMax === "number" &&
-      typeof answers.price === "number" &&
-      answers.priceMax < answers.price
-    ) {
-      return ["The top of the range is below the bottom.", "priceMax"];
-    }
-    if (shownDescription.trim().length < 60) {
-      return [
-        "Add a bit more detail — a sentence or two is what makes a card worth opening.",
-        "description",
-      ];
-    }
-    return null;
+        typeof answers.price === "number" &&
+        answers.priceMax < answers.price,
+      "The top of the range is below the bottom.",
+      "priceMax",
+    );
+    need(
+      shownDescription.trim().length < 60,
+      "Add a bit more detail — a sentence or two is what makes a card worth opening.",
+      "description",
+    );
+    return out;
+  }
+
+  /** What publish blocks on: the first thing still missing, or nothing. */
+  function firstMissingAnswer(): [string, string] | null {
+    return missingAnswers()[0] ?? null;
   }
 
   /**
@@ -3753,9 +3799,15 @@ export default function MarketplaceApp({
     }));
   }
 
-  function reportMissing(problem: [string, string]) {
-    const [message, field] = problem;
-    setOnboardingError(message);
+  /**
+   * Put the member in front of one question.
+   *
+   * Split out of reportMissing because the outstanding-answers line jumps to a
+   * field WITHOUT raising an error: nothing has gone wrong when somebody taps
+   * "3 still to answer" on their way down the form, and painting the red
+   * banner for it would teach them to ignore the banner.
+   */
+  function scrollToField(field: string) {
     const form = onboardingFormRef.current;
     const target =
       form?.querySelector<HTMLElement>(`[data-field="${field}"]`) ??
@@ -3769,6 +3821,12 @@ export default function MarketplaceApp({
         target.focus();
       }
     }
+  }
+
+  function reportMissing(problem: [string, string]) {
+    const [message, field] = problem;
+    setOnboardingError(message);
+    scrollToField(field);
   }
 
   function advanceOnboarding() {
@@ -7540,6 +7598,33 @@ export default function MarketplaceApp({
                   )}
                 </div>
 
+                {/* What is still outstanding, live, next to the button that
+                    will refuse to move without it. Before this the only way to
+                    find out was to press the button and be bounced to a field;
+                    on step 2 a space owner has nine of these to discover one
+                    at a time. */}
+                {(() => {
+                  const left = missingAnswers();
+                  if (!left.length) {
+                    return (
+                      <p className="onboarding-todo is-ready">
+                        Everything’s answered.
+                      </p>
+                    );
+                  }
+                  return (
+                    <button
+                      type="button"
+                      className="onboarding-todo"
+                      onClick={() => scrollToField(left[0][1])}
+                    >
+                      <span>
+                        {left.length} still to answer
+                      </span>
+                      <b>{left[0][0]}</b>
+                    </button>
+                  );
+                })()}
                 <div className="onboarding-actions">
                   <span />
                   <button
@@ -9269,6 +9354,37 @@ export default function MarketplaceApp({
                   }}
                 />
 
+                {/* What is still outstanding, live, next to the button that
+                    will refuse to move without it. Before this the only way to
+                    find out was to press the button and be bounced to a field;
+                    on step 2 a space owner has nine of these to discover one
+                    at a time. */}
+                {(() => {
+                  const left = missingAnswers();
+                  // In edit mode step 2 is the profile editor: nothing on
+                  // it is required, so a "ready" badge would be answering a
+                  // question nobody asked.
+                  if (!left.length) {
+                    if (onboardingMode === "edit") return null;
+                    return (
+                      <p className="onboarding-todo is-ready">
+                        Everything’s answered.
+                      </p>
+                    );
+                  }
+                  return (
+                    <button
+                      type="button"
+                      className="onboarding-todo"
+                      onClick={() => scrollToField(left[0][1])}
+                    >
+                      <span>
+                        {left.length} still to answer
+                      </span>
+                      <b>{left[0][0]}</b>
+                    </button>
+                  );
+                })()}
                 <div className="onboarding-actions">
                   <button
                     type="button"

@@ -6846,6 +6846,61 @@ html.reveal-ready [data-reveal].is-visible {
   order: 6;
 }
 
+/* ---------------------------------------------------------------------------
+   What is still outstanding.
+
+   Deliberately NOT styled as an error: nothing has gone wrong while somebody
+   is still filling a form in, and painting this the same red as .form-feedback
+   would make the real failure banner mean nothing. Quiet, tappable, and it
+   sits directly above the button that will otherwise refuse to move.
+   --------------------------------------------------------------------------- */
+.onboarding-form .onboarding-todo {
+  align-items: baseline;
+  background: var(--paper-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  color: var(--ink-soft);
+  display: flex;
+  flex-wrap: wrap;
+  font-family: var(--display);
+  font-size: 13px;
+  gap: 4px 9px;
+  letter-spacing: 0;
+  line-height: 1.45;
+  margin: 22px 0 0;
+  min-height: 44px;
+  padding: 12px 15px;
+  text-align: left;
+  text-transform: none;
+  width: 100%;
+}
+
+.onboarding-form button.onboarding-todo {
+  cursor: pointer;
+}
+
+.onboarding-form button.onboarding-todo:hover {
+  border-color: var(--ink);
+}
+
+/* The count is the label; the question itself is what they act on. */
+.onboarding-form .onboarding-todo > span {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.onboarding-form .onboarding-todo > b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.onboarding-form .onboarding-todo.is-ready {
+  border-style: dashed;
+}
+
 .onboarding-form .tier-empty {
   color: var(--ink-soft);
   font-size: 12.5px;
