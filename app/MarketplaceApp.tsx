@@ -671,11 +671,22 @@ const AVAILABILITY_CHIPS: Array<{
   label: string;
   startDays: number | null;
   days: number;
+  sentence: string;
 }> = [
-  { label: "Available now", startDays: 0, days: 90 },
-  { label: "From next month", startDays: 30, days: 120 },
-  { label: "Seasonal", startDays: 0, days: 180 },
-  { label: "Ask me", startDays: null, days: 0 },
+  { label: "Available now", startDays: 0, days: 90, sentence: "It’s free now." },
+  {
+    label: "From next month",
+    startDays: 30,
+    days: 120,
+    sentence: "It opens up next month.",
+  },
+  {
+    label: "Seasonal",
+    startDays: 0,
+    days: 180,
+    sentence: "It’s free seasonally — ask about specific dates.",
+  },
+  { label: "Ask me", startDays: null, days: 0, sentence: "Ask me about dates." },
 ];
 
 /** Business: what the campaign should achieve. Seeds the description draft. */
@@ -765,11 +776,19 @@ const BUDGET_RANGE_CHIPS: Array<{
 ];
 
 /** Business timing. Sets availability_notes plus the available_from/to window. */
-const BUSINESS_TIMING_CHIPS: Array<{ label: string; days: number }> = [
-  { label: "Next 2 weeks", days: 14 },
-  { label: "This month", days: 30 },
-  { label: "Next month", days: 60 },
-  { label: "Flexible", days: 90 },
+const BUSINESS_TIMING_CHIPS: Array<{
+  label: string;
+  days: number;
+  sentence: string;
+}> = [
+  {
+    label: "Next 2 weeks",
+    days: 14,
+    sentence: "We’d like this live in the next two weeks.",
+  },
+  { label: "This month", days: 30, sentence: "We’d like this live this month." },
+  { label: "Next month", days: 60, sentence: "We’re planning for next month." },
+  { label: "Flexible", days: 90, sentence: "Our timing is flexible." },
 ];
 
 /** Suggestion chips for a business's `deliverables`, social placements only. */
@@ -850,11 +869,19 @@ const SPONSOR_BENEFIT_CHIPS = [
 ];
 
 /** Sponsorship window. Sets availability_notes and the date pair. */
-const SPONSOR_SEASON_CHIPS: Array<{ label: string; days: number }> = [
-  { label: "This season", days: 120 },
-  { label: "This semester", days: 150 },
-  { label: "One event", days: 30 },
-  { label: "Year-round", days: 365 },
+const SPONSOR_SEASON_CHIPS: Array<{
+  label: string;
+  days: number;
+  sentence: string;
+}> = [
+  {
+    label: "This season",
+    days: 120,
+    sentence: "This is a season-long sponsorship.",
+  },
+  { label: "This semester", days: 150, sentence: "This runs for the semester." },
+  { label: "One event", days: 30, sentence: "This is for a single event." },
+  { label: "Year-round", days: 365, sentence: "This runs year-round." },
 ];
 
 /** Price presets per role. "Custom" reveals a number input. */
@@ -1219,11 +1246,7 @@ function reachSentence(answers: OnboardingAnswers): string {
  * `listingRank` - a flow that publishes thin rows is a flow that publishes rows
  * nobody sees.
  */
-function composeDescription(
-  role: Role,
-  answers: OnboardingAnswers,
-  tier?: SponsorTier,
-): string {
+function composeDescription(role: Role, answers: OnboardingAnswers): string {
   const bio = answers.bio.trim();
   const city = answers.city.trim();
   if (role === "creator") {
@@ -1263,7 +1286,10 @@ function composeDescription(
           )}.`
         : "",
       install?.sentence ?? "",
-      answers.availability ? `Availability: ${answers.availability.toLowerCase()}.` : "",
+      // The chip's own sentence, not the chip's label bolted onto a colon.
+      // "Availability: available now." is not something a person writes.
+      AVAILABILITY_CHIPS.find((item) => item.label === answers.availability)
+        ?.sentence ?? "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -1303,15 +1329,13 @@ function composeDescription(
           })}.`
         : "",
       artwork,
-      answers.timing ? `Timing: ${answers.timing.toLowerCase()}.` : "",
+      BUSINESS_TIMING_CHIPS.find((item) => item.label === answers.timing)
+        ?.sentence ?? "",
     ]
       .filter(Boolean)
       .join(" ");
   }
   if (role === "sponsor_host") {
-    // `tier` is the level being described. Without one - the live preview
-    // before any tier is filled in - fall back to the whole benefit menu.
-    const perks = tier?.benefits.length ? tier.benefits : answers.benefits;
     const funding = answers.funding.trim();
     return [
       answers.orgKind ? `${answers.orgKind}${city ? ` in ${city}` : ""}.` : "",
@@ -1320,20 +1344,39 @@ function composeDescription(
       // ask a team for their org type and their reach but never for this.
       funding ? `We're raising for ${funding}.` : "",
       reachSentence(answers),
-      perks.length
-        ? `${tier?.name ? `${tier.name} sponsors get` : "Sponsors get"} ${joinList(
-            perks.map((b) => b.toLowerCase()),
-          )}.`
-        : "",
-      tier?.slots
-        ? `Room for ${tier.slots} at this level.`
-        : "",
-      answers.season ? `${answers.season}.` : "",
+      SPONSOR_SEASON_CHIPS.find((item) => item.label === answers.season)
+        ?.sentence ?? "",
     ]
       .filter(Boolean)
       .join(" ");
   }
   return bio;
+}
+
+/**
+ * The per-tier sentences appended to every sponsorship card.
+ *
+ * These are deliberately NOT part of the editable draft. They used to be, and
+ * the result was a card that listed the perks twice: the textarea showed the
+ * whole benefit menu ("Sponsors get logo on jerseys, banner at events and
+ * social shoutouts."), the host added a line of their own - which set
+ * descriptionTouched - and publish then appended the tier's own perk sentence
+ * on top of the copy that already contained one. Keeping the tail out of the
+ * body means the host edits only their own words and each tier card still
+ * differs, which is the entire point of publishing one card per tier.
+ */
+function tierSentences(answers: OnboardingAnswers, tier?: SponsorTier) {
+  const perks = tier?.benefits.length ? tier.benefits : answers.benefits;
+  return [
+    perks.length
+      ? `${tier?.name.trim() ? `${tier.name.trim()} sponsors get` : "Sponsors get"} ${joinList(
+          perks.map((b) => b.toLowerCase()),
+        )}.`
+      : "",
+    tier?.slots ? `Room for ${tier.slots} at this level.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /** The suggested `title`, regenerated as the answers that feed it change. */
@@ -1415,27 +1458,26 @@ function effectiveDescription(
   touched: { description: boolean },
   tier?: SponsorTier,
 ) {
-  if (touched.description) {
-    const edited = answers.description.trim();
-    // The edited copy is the team's own words about themselves; the per-tier
-    // perk line still has to differ, or three cards read identically.
-    if (role === "sponsor_host" && tier) {
-      const perks = tier.benefits.length ? tier.benefits : answers.benefits;
-      return [
-        edited,
-        perks.length
-          ? `${tier.name || "These"} sponsors get ${joinList(
-              perks.map((b) => b.toLowerCase()),
-            )}.`
-          : "",
-        tier.slots ? `Room for ${tier.slots} at this level.` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-    }
-    return edited;
-  }
-  return composeDescription(role, answers, tier).trim();
+  const body = descriptionBody(role, answers, touched);
+  if (role !== "sponsor_host") return body;
+  return [body, tierSentences(answers, tier)].filter(Boolean).join(" ");
+}
+
+/**
+ * Just the member's own words - theirs if they edited, our draft if they did
+ * not. This is exactly what the textarea holds, which is why the validator
+ * measures THIS and not the published string: the per-tier perk tail would
+ * otherwise pad a two-word description past the minimum without the host ever
+ * seeing the characters that got them there.
+ */
+function descriptionBody(
+  role: Role,
+  answers: OnboardingAnswers,
+  touched: { description: boolean },
+) {
+  return touched.description
+    ? answers.description.trim()
+    : composeDescription(role, answers).trim();
 }
 
 /**
@@ -1964,6 +2006,24 @@ const TIME_FORMAT = new Intl.DateTimeFormat("en", {
   minute: "2-digit",
 });
 
+/**
+ * What a date chip is about to publish, said out loud.
+ *
+ * "Available now" writes a real 90-day window into available_from/available_to
+ * and the listing page renders it as "Booking window: 27 Aug - 25 Nov" - a
+ * commitment in specific dates that the owner picked a one-word chip for and
+ * never saw. Showing the window here is the difference between a shortcut and
+ * a guess published in their name.
+ */
+function windowNote(startDays: number | null, days: number) {
+  if (startDays === null) {
+    return "No dates go on your card — people will message you to ask.";
+  }
+  return `Your card will show ${displayDate(
+    isoDaysFromToday(startDays),
+  )} – ${displayDate(isoDaysFromToday(startDays + days))}. You can change the exact dates on your listing any time.`;
+}
+
 function displayDate(value?: string | null) {
   if (!value) return "Flexible";
   return DATE_FORMAT.format(new Date(`${value}T00:00:00Z`));
@@ -2357,6 +2417,13 @@ export default function MarketplaceApp({
   // A brief is identified by its CHANNEL, not by the owner's role - a space
   // owner can post a brief too - so the two are deliberately separate.
   const listingRole: Role | null = profile?.role ?? null;
+  // Who is asked for platforms, handles and a follower count when editing their
+  // profile. Creators, plus anyone who already carries that data from an older
+  // row so they can still change or clear it.
+  const showAudienceFields =
+    selectedRole === "creator" ||
+    Boolean(profile?.followers) ||
+    Object.values(profile?.social_links ?? {}).some(Boolean);
   const editingListingIsBrief = editingListing
     ? isBrief(editingListing)
     : listingRole === "business";
@@ -3602,7 +3669,7 @@ export default function MarketplaceApp({
     // the draft they deleted.
     const touched = { title: titleTouched, description: descriptionTouched };
     const shownTitle = effectiveTitle(role, answers, touched);
-    const shownDescription = effectiveDescription(role, answers, touched);
+    const shownDescription = descriptionBody(role, answers, touched);
     // A sponsorship host has no single title or price - both are per tier and
     // firstTierProblem already checked every one of them.
     if (role !== "sponsor_host") {
@@ -3817,7 +3884,14 @@ export default function MarketplaceApp({
         // then switched to Space owner otherwise reaches profiles_followers_check
         // and fails the ENTIRE profile write, with an error naming a field that
         // is no longer on screen.
-        followers: Math.max(0, answers.followers ?? existing?.followers ?? 0),
+        // When the field is ON SCREEN, an empty box means zero - not "keep
+        // whatever is stored". The old `??` chain fell back to the existing
+        // value, so a member who typed a follower count by mistake could never
+        // remove it, and on the person card `followers || avg_views` meant that
+        // number permanently replaced their real reach.
+        followers: showAudienceFields
+          ? Math.max(0, answers.followers ?? 0)
+          : Math.max(0, answers.followers ?? existing?.followers ?? 0),
         avg_views: Math.max(0, reach.avg_views ?? existing?.avg_views ?? 0),
         reach_unit: reach.reach_unit ?? existing?.reach_unit ?? "weekly looks",
         audience_age: existing?.audience_age ?? "",
@@ -7452,79 +7526,97 @@ export default function MarketplaceApp({
                   <>
                     <h3>Your details</h3>
                     <p>This is what people see on your profile card.</p>
-                    <div className="form-subsection field-wide">
-                      <span>Your audience</span>
-                      <h4>Where do people follow you?</h4>
-                      <p>Only the ones you pick get a field.</p>
-                    </div>
-                    <ChipRow
-                      field="platforms"
-                      label="Platforms you post on"
-                      multi
-                      options={CREATOR_PLATFORMS.map(
-                        (key) =>
-                          socialPlatforms.find((p) => p.key === key)?.label ?? key,
-                      )}
-                      selected={answers.platforms.map(
-                        (key) =>
-                          socialPlatforms.find((p) => p.key === key)?.label ?? key,
-                      )}
-                      onPick={(label) => {
-                        const key =
-                          socialPlatforms.find((p) => p.label === label)?.key ?? "";
-                        if (!key) return;
-                        setAnswers((current) => ({
-                          ...current,
-                          platforms: current.platforms.includes(key)
-                            ? current.platforms.filter((item) => item !== key)
-                            : [...current.platforms, key],
-                        }));
-                      }}
-                    />
-                    <div className="field-grid">
-                      {answers.platforms.map((key) => {
-                        const platform = socialPlatforms.find(
-                          (item) => item.key === key,
-                        );
-                        if (!platform) return null;
-                        return (
-                          <label key={key}>
-                            {platform.label}
+                    {/* Gated. This block asks which platforms you post on and
+                        your follower count, and it used to render for EVERY
+                        role - so a barbershop or a robotics team opening their
+                        own profile was asked for a follower count that means
+                        nothing to them. It is not merely irrelevant: the person
+                        card renders `followers || avg_views`, so a number typed
+                        here REPLACES "300 people a day" with "N followers" and,
+                        because publish falls back to the stored value, clearing
+                        the box could not undo it.
+
+                        Shown for creators, and for anyone who already has this
+                        data from a legacy row so they can still edit it. */}
+                    {showAudienceFields && (
+                      <>
+                        <div className="form-subsection field-wide">
+                          <span>Your audience</span>
+                          <h4>Where do people follow you?</h4>
+                          <p>Only the ones you pick get a field.</p>
+                        </div>
+                        <ChipRow
+                          field="platforms"
+                          label="Platforms you post on"
+                          multi
+                          options={CREATOR_PLATFORMS.map(
+                            (key) =>
+                              socialPlatforms.find((p) => p.key === key)?.label ?? key,
+                          )}
+                          selected={answers.platforms.map(
+                            (key) =>
+                              socialPlatforms.find((p) => p.key === key)?.label ?? key,
+                          )}
+                          onPick={(label) => {
+                            const key =
+                              socialPlatforms.find((p) => p.label === label)?.key ?? "";
+                            if (!key) return;
+                            setAnswers((current) => ({
+                              ...current,
+                              platforms: current.platforms.includes(key)
+                                ? current.platforms.filter((item) => item !== key)
+                                : [...current.platforms, key],
+                            }));
+                          }}
+                        />
+                        <div className="field-grid">
+                          {answers.platforms.map((key) => {
+                            const platform = socialPlatforms.find(
+                              (item) => item.key === key,
+                            );
+                            if (!platform) return null;
+                            return (
+                              <label key={key}>
+                                {platform.label}
+                                <input
+                                  value={answers.socials[key] ?? ""}
+                                  onChange={(event) =>
+                                    setAnswers((current) => ({
+                                      ...current,
+                                      socials: {
+                                        ...current.socials,
+                                        [key]: event.target.value,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="@yourhandle"
+                                />
+                              </label>
+                            );
+                          })}
+                          <label>
+                            Your following on your biggest platform
+                            <small>Roughly is fine.</small>
                             <input
-                              value={answers.socials[key] ?? ""}
+                              type="number"
+                              min={0}
+                              max={2000000000}
+                              value={answers.followers ?? ""}
                               onChange={(event) =>
                                 setAnswers((current) => ({
                                   ...current,
-                                  socials: {
-                                    ...current.socials,
-                                    [key]: event.target.value,
-                                  },
+                                  followers: event.target.value
+                                    ? Number(event.target.value)
+                                    : null,
                                 }))
                               }
-                              placeholder="@yourhandle"
+                              placeholder="18400"
                             />
                           </label>
-                        );
-                      })}
-                      <label>
-                        Your following on your biggest platform
-                        <small>Roughly is fine.</small>
-                        <input
-                          type="number"
-                          min={0}
-                          max={2000000000}
-                          value={answers.followers ?? ""}
-                          onChange={(event) =>
-                            setAnswers((current) => ({
-                              ...current,
-                              followers: event.target.value
-                                ? Number(event.target.value)
-                                : null,
-                            }))
-                          }
-                          placeholder="18400"
-                        />
-                      </label>
+                        </div>
+                      </>
+                    )}
+                    <div className="field-grid">
                       <label className="field-wide media-upload-field">
                         Profile photos
                         <input
@@ -8007,6 +8099,16 @@ export default function MarketplaceApp({
                             }))
                           }
                         />
+                        {(() => {
+                          const free = AVAILABILITY_CHIPS.find(
+                            (item) => item.label === answers.availability,
+                          );
+                          return free ? (
+                            <p className="chip-note field-wide">
+                              {windowNote(free.startDays, free.days)}
+                            </p>
+                          ) : null;
+                        })()}
                       </>
                     )}
 
@@ -8344,6 +8446,16 @@ export default function MarketplaceApp({
                             setAnswers((current) => ({ ...current, timing: value }))
                           }
                         />
+                        {(() => {
+                          const timing = BUSINESS_TIMING_CHIPS.find(
+                            (item) => item.label === answers.timing,
+                          );
+                          return timing ? (
+                            <p className="chip-note field-wide">
+                              {windowNote(0, timing.days)}
+                            </p>
+                          ) : null;
+                        })()}
                       </>
                     )}
 
@@ -8458,6 +8570,16 @@ export default function MarketplaceApp({
                             setAnswers((current) => ({ ...current, season: value }))
                           }
                         />
+                        {(() => {
+                          const season = SPONSOR_SEASON_CHIPS.find(
+                            (item) => item.label === answers.season,
+                          );
+                          return season ? (
+                            <p className="chip-note field-wide">
+                              {windowNote(0, season.days)}
+                            </p>
+                          ) : null;
+                        })()}
 
                         <div className="form-subsection field-wide">
                           <span>The menu</span>
@@ -8511,14 +8633,35 @@ export default function MarketplaceApp({
                               {answers.tiers.length > 1 && (
                                 <button
                                   type="button"
-                                  onClick={() =>
+                                  aria-label={`Remove tier ${index + 1}${
+                                    tier.name.trim() ? `, ${tier.name.trim()}` : ""
+                                  }`}
+                                  onClick={() => {
+                                    // Only ask when there is something to lose.
+                                    // A freshly added, still-empty tier should
+                                    // close as easily as it opened.
+                                    const filled =
+                                      tier.price !== null ||
+                                      tier.priceMax !== null ||
+                                      tier.slots !== null ||
+                                      tier.benefits.length > 0;
+                                    if (
+                                      filled &&
+                                      !window.confirm(
+                                        `Remove ${
+                                          tier.name.trim() || `tier ${index + 1}`
+                                        }? What you filled in for this level is lost.`,
+                                      )
+                                    ) {
+                                      return;
+                                    }
                                     setAnswers((current) => ({
                                       ...current,
                                       tiers: current.tiers.filter(
                                         (_, i) => i !== index,
                                       ),
-                                    }))
-                                  }
+                                    }));
+                                  }}
                                 >
                                   Remove
                                 </button>
@@ -8882,6 +9025,19 @@ export default function MarketplaceApp({
                             }));
                           }}
                         />
+                        {/* The perk sentence is appended per tier at publish,
+                            so it is deliberately not in the box. Saying so is
+                            what stops a host from typing it themselves and
+                            ending up with it on the card twice. */}
+                        {selectedRole === "sponsor_host" && (
+                          <span className="chip-note">
+                            Each tier card ends with its own perks line
+                            {completeTiers(answers)[0]?.name.trim()
+                              ? ` — “${completeTiers(answers)[0].name.trim()} sponsors get…”`
+                              : " — “Gold sponsors get…”"}
+                            . You don’t need to write it here.
+                          </span>
+                        )}
                       </label>
                     </div>
 
@@ -8955,11 +9111,17 @@ export default function MarketplaceApp({
                                 // A sponsorship host has no single price; the
                                 // top tier is what this card shows.
                                 const top = completeTiers(answers)[0];
+                                const price =
+                                  selectedRole === "sponsor_host"
+                                    ? top?.price
+                                    : answers.price;
+                                // Not "$0". Before a price is entered the old
+                                // preview showed "$0 / sponsor", which reads as
+                                // an offer to work for free rather than as a
+                                // field still to fill in.
+                                if (!price) return "Price";
                                 return priceLabel({
-                                  price:
-                                    (selectedRole === "sponsor_host"
-                                      ? top?.price
-                                      : answers.price) ?? 0,
+                                  price,
                                   price_max:
                                     selectedRole === "sponsor_host"
                                       ? (top?.priceMax ?? null)
@@ -9100,19 +9262,34 @@ export default function MarketplaceApp({
             className="field-grid listing-form"
             onSubmit={saveListing}
           >
+            {/* A brief is a WANTED card. Asking its author "What are you
+                offering?" and telling them to name it like "Cafe window, Main
+                Street" describes the opposite of what they posted. */}
             <div className="form-subsection field-wide">
               <span>The basics</span>
-              <h4>What are you offering?</h4>
+              <h4>
+                {editingListingIsBrief
+                  ? "What are you looking for?"
+                  : "What are you offering?"}
+              </h4>
             </div>
             <label className="field-wide">
-              Listing title
-              <small>A short name people will see first, like &quot;Cafe window, Main Street&quot;.</small>
+              {editingListingIsBrief ? "Name the brief" : "Listing title"}
+              <small>
+                {editingListingIsBrief
+                  ? "A short name people will see first, like \u201cWindow space for our spring opening\u201d."
+                  : "A short name people will see first, like \u201cCafe window, Main Street\u201d."}
+              </small>
               <input
                 name="title"
                 required
                 maxLength={120}
                 defaultValue={editingListing?.title ?? ""}
-                placeholder="Three-story launch package"
+                placeholder={
+                  editingListingIsBrief
+                    ? "Looking for a storefront window in Brea"
+                    : "Three-story launch package"
+                }
               />
             </label>
             <label>
@@ -9139,33 +9316,60 @@ export default function MarketplaceApp({
               </select>
             </label>
             <label>
-              What the buyer gets
+              {editingListingIsBrief ? "What you want back" : "What the buyer gets"}
               <small>
-                Finish the sentence <b>&ldquo;You get&hellip;&rdquo;</b> exactly
-                as it should read on your card.
+                Finish the sentence{" "}
+                <b>
+                  {editingListingIsBrief
+                    ? "\u201cLooking for\u2026\u201d"
+                    : "\u201cYou get\u2026\u201d"}
+                </b>{" "}
+                exactly as it should read on your card.
               </small>
+              {/* 140, not 60. Onboarding composes this line from chips and
+                  routinely runs past 60 - two live listings sit at 62 right
+                  now - and maxLength does not truncate a value it inherits, it
+                  just stops accepting keystrokes. Measured in Chromium: at 60
+                  those owners can delete from their offer line but cannot add
+                  a single character to it, and the field swallows the typing
+                  with no message. The cap has to clear what the flow itself
+                  writes. */}
               <input
                 name="format"
                 required
-                maxLength={60}
+                maxLength={140}
                 defaultValue={editingListing?.format ?? ""}
-                placeholder="three Instagram stories over 48 hours"
+                placeholder={
+                  editingListingIsBrief
+                    ? "a storefront window on a busy street"
+                    : "three Instagram stories over 48 hours"
+                }
                 onChange={(event) => setFormatPreview(event.target.value)}
               />
               <span className="offer-preview" aria-live="polite">
                 Your card will read:{" "}
                 <b>
-                  You get{" "}
+                  {editingListingIsBrief ? "Looking for " : "You get "}
                   {formatOffer(formatPreview || editingListing?.format || "") ||
                     "…"}
                 </b>
               </span>
+              {/* Unlabelled, these read as three things that already happened
+                  to the field rather than three things you can tap. */}
+              <span className="offer-examples-label">Or start from one of these:</span>
               <span className="offer-examples">
-                {[
-                  "three Instagram stories over 48 hours",
-                  "one 18 by 24 inch poster, displayed for a week",
-                  "a card on the counter for 30 days",
-                ].map((example) => (
+                {(editingListingIsBrief
+                  ? [
+                      "a storefront window on a busy street",
+                      "three Instagram stories from a local creator",
+                      "a counter card in a cafe for 30 days",
+                    ]
+                  : [
+                      "three Instagram stories over 48 hours",
+                      "one 18 by 24 inch poster, displayed for a week",
+                      "a card on the counter for 30 days",
+                    ]
+                ).map((example) => (
                   <button
                     type="button"
                     key={example}
@@ -9300,8 +9504,20 @@ export default function MarketplaceApp({
               <h4>What buyers will read.</h4>
             </div>
             <label className="field-wide">
-              Describe it
-              <small>What it is, where exactly it sits, and who walks past.</small>
+              {editingListingIsBrief ? "Describe the brief" : "Describe it"}
+              {/* This used to read "where exactly it sits, and who walks past"
+                  for every role - advice that means nothing to a creator
+                  selling three stories, and describes the wrong side of the
+                  deal entirely for a business posting a brief. */}
+              <small>
+                {editingListingIsBrief
+                  ? "What you’re promoting, what the artwork is, and anything whoever answers must know."
+                  : listingRole === "creator"
+                    ? "What a brand gets, your turnaround, and anything you won’t do."
+                    : listingRole === "sponsor_host"
+                      ? "What the season looks like, who turns up, and what a sponsor’s money pays for."
+                      : "What it is, where exactly it sits, and who walks past."}
+              </small>
               <textarea
                 name="description"
                 required
@@ -9507,16 +9723,25 @@ export default function MarketplaceApp({
             </div>
             <label>
               Who will see it?
+              {/* `||`, not `??`. demographics is a NOT NULL text column that
+                  defaults to the empty string, so `??` never fell through and
+                  the profile value it promised to prefill was never used -
+                  three live listings sit on an empty string right now. */}
               <input
                 name="demographics"
                 defaultValue={
-                  editingListing?.demographics ??
-                  profile?.audience_age ??
-                  ""
+                  editingListing?.demographics || profile?.audience_age || ""
                 }
                 placeholder="68% ages 21–34 · local"
               />
-              <small>Prefilled from your profile — edit if this listing reaches a different audience.</small>
+              {/* Only claim the prefill when there is something to prefill
+                  with, and only call it "from your profile" when it came from
+                  there rather than from this listing's own saved value. */}
+              <small>
+                {!editingListing?.demographics && profile?.audience_age
+                  ? "Prefilled from your profile — edit if this listing reaches a different audience."
+                  : "Who actually sees this placement. Leave blank if you’d rather not say."}
+              </small>
             </label>
             <label className="field-wide media-upload-field">
               {editingListing ? "Add or replace photos" : "Upload listing photos"}
