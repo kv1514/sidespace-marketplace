@@ -805,6 +805,8 @@ const DELIVERABLE_EXAMPLES = [
  * nothing wrote it, so a robotics team published with no categories at all
  * and could not be found by searching for one.
  */
+const SPONSOR_ORG_OTHER = "Something else";
+
 const SPONSOR_ORG_CHIPS = [
   "Robotics team",
   "Sports team",
@@ -816,6 +818,12 @@ const SPONSOR_ORG_CHIPS = [
   "School club",
   "Festival",
   "Band or theater",
+  // SPACE_KIND_CHIPS has always ended with an escape hatch and this did not,
+  // so a scout troop, a PTA, a church group or an animal shelter had to file
+  // itself under "Nonprofit". That label is not cosmetic: it opens their
+  // description and, since it seeds profiles.categories, it is what somebody
+  // searching finds them by.
+  SPONSOR_ORG_OTHER,
 ];
 
 /**
@@ -872,6 +880,46 @@ const SPONSOR_BENEFIT_CHIPS = [
   "Announcer shout-out",
   "Program ad",
 ];
+
+/**
+ * A tier's perks in menu order, not tap order.
+ *
+ * The card's offer line is built from the first two of these, and it used to
+ * take them in whatever order the host happened to tap the chips - so a team
+ * that picked "Newsletter mention" before "Logo on jerseys" published a card
+ * led by the newsletter. SPONSOR_BENEFIT_CHIPS is already written most
+ * tangible first; sorting by it makes the headline the two perks a sponsor
+ * cares most about, every time.
+ */
+function orderedBenefits(benefits: string[]) {
+  const rank = (item: string) => {
+    const at = SPONSOR_BENEFIT_CHIPS.indexOf(item);
+    return at === -1 ? SPONSOR_BENEFIT_CHIPS.length : at;
+  };
+  return [...benefits].sort((a, b) => rank(a) - rank(b));
+}
+
+/**
+ * The one-line offer on a sponsorship card.
+ *
+ * Two perks and a count, rather than a bare first two. A new tier starts from
+ * the whole menu and the host prunes downward, so lower tiers are usually
+ * PREFIXES of higher ones - and a bare slice(0, 2) then published the same
+ * sentence for Gold and Silver:
+ *
+ *   $1000 Gold    You get logo on jerseys and banner at events
+ *   $500  Silver  You get logo on jerseys and banner at events
+ *
+ * A business could not tell what the extra $500 bought. The count is what
+ * makes the levels different on the card, which is the whole reason each tier
+ * publishes its own.
+ */
+function sponsorOfferLine(benefits: string[]) {
+  const perks = orderedBenefits(benefits).map((item) => item.toLowerCase());
+  if (perks.length <= 2) return joinList(perks);
+  const rest = perks.length - 2;
+  return joinList([...perks.slice(0, 2), `${rest} more`]);
+}
 
 /** Sponsorship window. Sets availability_notes and the date pair. */
 const SPONSOR_SEASON_CHIPS: Array<{
@@ -1005,6 +1053,8 @@ type OnboardingAnswers = {
   wantedArea: string;
   // Sponsorship host.
   orgKind: string;
+  /** What they typed after picking "Something else". */
+  orgOther: string;
   reach: string;
   /** The number behind the reach chip, editable - same fix as trafficCount. */
   reachCount: number | null;
@@ -1117,6 +1167,7 @@ function emptyAnswers(): OnboardingAnswers {
     targetPlatforms: [],
     wantedArea: "",
     orgKind: "",
+    orgOther: "",
     reach: "",
     reachCount: null,
     funding: "",
@@ -1126,22 +1177,34 @@ function emptyAnswers(): OnboardingAnswers {
     // the shape is obvious, but firstTierProblem's !tier.price branch forces a
     // real decision - the old seed published an invented $1,000 for anyone who
     // skipped past it.
-    tiers: [emptyTier("Gold", null)],
+    tiers: [emptyTier("Gold")],
   };
 }
 
-/** A blank level, prefilled with a name and price so the first one is not work. */
-function emptyTier(name: string, price: number | null): SponsorTier {
-  return { name, price, priceMax: null, slots: null, benefits: [] };
+/** A blank level, prefilled with a name so the first one is not work. */
+function emptyTier(name: string): SponsorTier {
+  return { name, price: null, priceMax: null, slots: null, benefits: [] };
 }
 
-/** The levels offered as you add them, in the order a team would add them. */
-const TIER_PRESETS: Array<{ name: string; price: number }> = [
-  { name: "Gold", price: 1000 },
-  { name: "Silver", price: 500 },
-  { name: "Bronze", price: 250 },
-];
-const MAX_TIERS = TIER_PRESETS.length;
+/**
+ * The names offered as levels are added, in the order a team would add them.
+ *
+ * Downward: the first tier a host writes is their top one. The `price` these
+ * used to carry was never read - emptyTier was called with null - so it is
+ * gone; PRICE_CHIPS.sponsor_host is what actually suggests a number now.
+ */
+const TIER_PRESETS = ["Gold", "Silver", "Bronze", "Supporter", "Friend"];
+
+/**
+ * How many levels a sponsorship can publish.
+ *
+ * Was `TIER_PRESETS.length`, which made the ceiling on what a team may offer
+ * an accident of how many nice names happened to be in a list - three - and
+ * plenty of teams run four or five. Now it is a number chosen for its own
+ * reason: past five, a business scrolling the marketplace is reading one
+ * team's price list rather than browsing.
+ */
+const MAX_TIERS = 5;
 
 /** Seed the answers from a stored profile so re-entry is not a blank form. */
 function answersFromProfile(source: Profile | null): OnboardingAnswers {
@@ -1343,7 +1406,7 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
   if (role === "sponsor_host") {
     const funding = answers.funding.trim();
     return [
-      answers.orgKind ? `${answers.orgKind}${city ? ` in ${city}` : ""}.` : "",
+      orgLabel(answers) ? `${orgLabel(answers)}${city ? ` in ${city}` : ""}.` : "",
       bio,
       // The single most persuasive line a sponsor reads, and the flow used to
       // ask a team for their org type and their reach but never for this.
@@ -1370,8 +1433,23 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
  * body means the host edits only their own words and each tier card still
  * differs, which is the entire point of publishing one card per tier.
  */
+/**
+ * What this organisation calls itself, in its own words where it gave them.
+ *
+ * Everywhere the org type is written - the opening sentence of the
+ * description, profiles.categories, the validator - goes through here, so
+ * "Something else" never reaches a card.
+ */
+function orgLabel(answers: OnboardingAnswers) {
+  return answers.orgKind === SPONSOR_ORG_OTHER
+    ? answers.orgOther.trim()
+    : answers.orgKind;
+}
+
 function tierSentences(answers: OnboardingAnswers, tier?: SponsorTier) {
-  const perks = tier?.benefits.length ? tier.benefits : answers.benefits;
+  const perks = orderedBenefits(
+    tier?.benefits.length ? tier.benefits : answers.benefits,
+  );
   return [
     perks.length
       ? `${tier?.name.trim() ? `${tier.name.trim()} sponsors get` : "Sponsors get"} ${joinList(
@@ -1382,6 +1460,34 @@ function tierSentences(answers: OnboardingAnswers, tier?: SponsorTier) {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+/**
+ * The longest title a listing carries, and the one place that decides it.
+ *
+ * The title INPUT has always carried maxLength={120}, so a typed title cannot
+ * exceed this. A COMPOSED one could: publish did `.slice(0, 120)` while the
+ * preview rendered the untrimmed string, so a team whose name is long saw one
+ * headline on screen and published another, cut mid-word:
+ *
+ *   preview   Brea Olinda High School Competitive Robotics Team 4414 — Gold
+ *             sponsor for the championship trip to Houston and new competition kit
+ *   published ... for the championship trip to Houston and new compe
+ *
+ * A sponsorship host has no title input at all, so there was nowhere to fix it.
+ */
+const TITLE_MAX = 120;
+
+/** Trim to the cap on a word boundary, and say that it was trimmed. */
+function fitTitle(text: string) {
+  const clean = text.trim();
+  if (clean.length <= TITLE_MAX) return clean;
+  const cut = clean.slice(0, TITLE_MAX - 1);
+  const space = cut.lastIndexOf(" ");
+  // Only break at a space if one falls late enough to leave a real title;
+  // a single 200-character word still has to be cut somewhere.
+  const kept = space > TITLE_MAX * 0.6 ? cut.slice(0, space) : cut;
+  return `${kept.trimEnd()}…`;
 }
 
 /** The suggested `title`, regenerated as the answers that feed it change. */
@@ -1427,7 +1533,12 @@ function composeTitle(
     const level = tier?.name.trim();
     const head = level ? `${name} — ${level} sponsor` : `${name} — season sponsor`;
     const funding = answers.funding.trim();
-    return funding ? `${head} for ${funding}` : head;
+    if (!funding) return head;
+    // What they are raising for is the part worth dropping when the whole
+    // thing will not fit: cutting it loses a clause, cutting the other end
+    // loses the team's own name.
+    const full = `${head} for ${funding}`;
+    return full.length <= TITLE_MAX ? full : head;
   }
   return "";
 }
@@ -1453,8 +1564,14 @@ function effectiveTitle(
 ) {
   // A sponsorship host never edits one title - each tier composes its own -
   // so an edited `title` must not overwrite all three.
-  if (role === "sponsor_host") return composeTitle(role, answers, tier);
-  return touched.title ? answers.title.trim() : composeTitle(role, answers);
+  //
+  // fitTitle here rather than at the publish call, so the preview, the
+  // validator and the insert cannot disagree about the headline: the cap is
+  // applied once, to the value all three read.
+  if (role === "sponsor_host") return fitTitle(composeTitle(role, answers, tier));
+  return fitTitle(
+    touched.title ? answers.title : composeTitle(role, answers),
+  );
 }
 
 function effectiveDescription(
@@ -1501,7 +1618,7 @@ function buildListingDraft(
   tier?: SponsorTier,
 ) {
   const base = {
-    title: effectiveTitle(role, answers, touched, tier).slice(0, 120),
+    title: effectiveTitle(role, answers, touched, tier),
     description: effectiveDescription(role, answers, touched, tier),
     price: answers.price ?? 0,
     price_max: null as number | null,
@@ -1618,8 +1735,8 @@ function buildListingDraft(
       price_max: tier?.priceMax ?? null,
       sponsor_tier: tier?.name.trim() || null,
       sponsor_slots: tier?.slots ?? null,
-      format: joinList(perks.slice(0, 2).map((b) => b.toLowerCase())),
-      deliverables: perks.join("\n"),
+      format: sponsorOfferLine(perks),
+      deliverables: orderedBenefits(perks).join("\n"),
       demographics: reachSentence(answers),
       availability_notes: answers.season,
       available_from: season ? isoDaysFromToday(0) : null,
@@ -3729,6 +3846,11 @@ export default function MarketplaceApp({
         "orgKind",
       );
       need(
+        answers.orgKind === SPONSOR_ORG_OTHER && !answers.orgOther.trim(),
+        "Say what kind of organization you are.",
+        "orgOther",
+      );
+      need(
         !answers.funding.trim(),
         "Say what you're raising for — a few words is enough.",
         "funding",
@@ -3975,8 +4097,8 @@ export default function MarketplaceApp({
         // chip. Reusing it costs them no taps and makes "robotics" or
         // "festival" find them.
         categories:
-          role === "sponsor_host" && answers.orgKind
-            ? [answers.orgKind]
+          role === "sponsor_host" && orgLabel(answers)
+            ? [orgLabel(answers)]
             : answers.categories,
         // A null follower count means "not answered", and must not overwrite a
         // number they gave earlier with 0.
@@ -8606,9 +8728,40 @@ export default function MarketplaceApp({
                           options={SPONSOR_ORG_CHIPS}
                           selected={answers.orgKind ? [answers.orgKind] : []}
                           onPick={(value) =>
-                            setAnswers((current) => ({ ...current, orgKind: value }))
+                            setAnswers((current) => ({
+                              ...current,
+                              orgKind: value,
+                              // Switching back to a real chip clears the text,
+                              // or "Scout troop" keeps opening the description
+                              // of a team that now calls itself a Nonprofit.
+                              orgOther:
+                                value === SPONSOR_ORG_OTHER ? current.orgOther : "",
+                            }))
                           }
                         />
+                        {answers.orgKind === SPONSOR_ORG_OTHER && (
+                          <div className="field-grid">
+                            <label className="field-wide">
+                              So what are you?
+                              <small>
+                                A couple of words. It opens your description and
+                                it is what people searching will find you by.
+                              </small>
+                              <input
+                                data-field="orgOther"
+                                maxLength={40}
+                                value={answers.orgOther}
+                                onChange={(event) =>
+                                  setAnswers((current) => ({
+                                    ...current,
+                                    orgOther: event.target.value,
+                                  }))
+                                }
+                                placeholder="Scout troop"
+                              />
+                            </label>
+                          </div>
+                        )}
                         <div className="form-subsection field-wide">
                           <span>What it’s for</span>
                           <h4>What are you raising money for?</h4>
@@ -8850,6 +9003,33 @@ export default function MarketplaceApp({
                                   }
                                   placeholder="1000"
                                 />
+                                {/* PRICE_CHIPS.sponsor_host has existed since
+                                    this role shipped and was never rendered:
+                                    the shared preset row is gated off for a
+                                    host, because their price is per tier. So
+                                    the hardest number in the flow was the only
+                                    one offered no help. */}
+                                <span className="offer-examples-label">
+                                  Or tap a common one:
+                                </span>
+                                <span className="offer-examples">
+                                  {(PRICE_CHIPS.sponsor_host ?? []).map(
+                                    (amount) => (
+                                      <button
+                                        type="button"
+                                        key={amount}
+                                        className={
+                                          tier.price === amount ? "is-picked" : ""
+                                        }
+                                        onClick={() =>
+                                          updateTier(index, { price: amount })
+                                        }
+                                      >
+                                        ${amount.toLocaleString("en-US")}
+                                      </button>
+                                    ),
+                                  )}
+                                </span>
                               </label>
                               <label>
                                 up to
@@ -8896,6 +9076,15 @@ export default function MarketplaceApp({
                             )}
                           </div>
                         ))}
+                        {answers.tiers.length >= MAX_TIERS && (
+                          // The button used to vanish here, so a host who
+                          // wanted a fifth level just found the control gone.
+                          <p className="chip-note field-wide">
+                            {MAX_TIERS} levels is the most a listing set can
+                            carry — past that a business is reading a price
+                            list rather than browsing.
+                          </p>
+                        )}
                         {answers.tiers.length < MAX_TIERS && (
                           <button
                             type="button"
@@ -8914,15 +9103,14 @@ export default function MarketplaceApp({
                                 );
                                 const next =
                                   TIER_PRESETS.find(
-                                    (preset) =>
-                                      !taken.has(preset.name.toLowerCase()),
-                                  ) ?? { name: "", price: null };
+                                    (preset) => !taken.has(preset.toLowerCase()),
+                                  ) ?? "";
                                 return {
                                   ...current,
                                   tiers: [
                                     ...current.tiers,
                                     {
-                                      ...emptyTier(next.name, null),
+                                      ...emptyTier(next),
                                       // A new level starts from the whole menu
                                       // rather than empty: most hosts run one
                                       // tier, and making them re-tick the same

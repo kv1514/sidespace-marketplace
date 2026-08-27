@@ -5469,6 +5469,19 @@ html.reveal-ready [data-reveal].is-visible {
   color: var(--ink);
 }
 
+/* A price preset stays picked, unlike the offer-line examples which only ever
+   fill a box once. Without this a host could not see which one they tapped. */
+.offer-examples button.is-picked {
+  background: var(--ink);
+  border-color: var(--ink);
+  border-style: solid;
+  color: var(--white);
+}
+
+.offer-examples button.is-picked:hover {
+  color: var(--white);
+}
+
 /* ===== Hero product surface =====
    Replaces the stock-photo collage. The strongest proof a marketplace is real
    is its inventory, so the hero frames the actual listings. */
