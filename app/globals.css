@@ -6721,6 +6721,20 @@ html.reveal-ready [data-reveal].is-visible {
   margin-top: 22px;
 }
 
+/* A caption for a chip row that is not the only question under its heading.
+   "What works here, and who puts it up?" is two asks; without this the eight
+   surface chips and the three install chips wrap into what reads as one long
+   row of eleven unrelated options. */
+.onboarding-form .chip-label {
+  color: var(--ink-soft);
+  display: block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  margin: 18px 0 -2px;
+  text-transform: uppercase;
+}
+
 /* The Instagram result line. globals.css previously carried a comment saying
    .ig-sync-note deliberately had no rules and inherited `label > small`;
    now that the lookup is an explicit button rather than a blur handler, its
@@ -6892,20 +6906,25 @@ html.reveal-ready [data-reveal].is-visible {
 }
 
 /* Free map preview. No embed, no billed key - just a way to look at the block. */
+/* Brand coral on paper measures 3.05:1, which fails AA for text this size -
+   and this is a link, so colour was also the only thing marking it as one.
+   Mixed toward ink to keep the hue, and underlined permanently. */
 .map-preview-link {
   align-self: start;
-  color: var(--coral);
+  color: color-mix(in srgb, var(--coral) 55%, var(--ink));
   font-family: var(--display);
   font-size: 12.5px;
   font-weight: 500;
   letter-spacing: 0;
   margin-top: 2px;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
   text-transform: none;
 }
 
 .map-preview-link:hover {
-  text-decoration: underline;
+  color: var(--ink);
 }
 
 @media (max-width: 620px) {
