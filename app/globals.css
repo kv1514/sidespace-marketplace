@@ -6854,6 +6854,13 @@ html.reveal-ready [data-reveal].is-visible {
   margin: 8px 0 0;
 }
 
+/* The one word the note is actually about - which platform, which tier -
+   should not sit at the same weight and colour as the sentence around it. */
+.onboarding-form .chip-note b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
 .onboarding-form label > .chip-note {
   display: block;
   order: 6;

@@ -1603,6 +1603,27 @@ function descriptionBody(
 }
 
 /**
+ * The platform a creator's card is filed under.
+ *
+ * This is the marketplace's primary filter, and it used to be
+ * `answers.platforms[0]` - the chip they happened to tap FIRST. A creator
+ * whose audience is on TikTok but who tapped Instagram first was filed under
+ * Instagram, and worse, a platform picked but left without a handle still set
+ * the channel while `socialLinks` dropped it: the card advertised a platform
+ * the profile carried no link for.
+ *
+ * Preferring a platform they actually gave a handle for fixes both, and asks
+ * them nothing they were not already being asked.
+ */
+function creatorChannel(answers: OnboardingAnswers) {
+  const withHandle = answers.platforms.find((key) =>
+    (answers.socials[key] ?? "").trim(),
+  );
+  const key = withHandle ?? answers.platforms[0];
+  return socialPlatforms.find((p) => p.key === key)?.label ?? "Other";
+}
+
+/**
  * The `listings` row a completed onboarding publishes.
  *
  * Every value lands in a column that already exists. `channel` carries no DB
@@ -1642,10 +1663,9 @@ function buildListingDraft(
   };
 
   if (role === "creator") {
-    const primary = answers.platforms[0];
     return {
       ...base,
-      channel: socialPlatforms.find((p) => p.key === primary)?.label ?? "Other",
+      channel: creatorChannel(answers),
       price_unit: answers.price_unit || "post",
     };
   }
@@ -8041,36 +8061,80 @@ export default function MarketplaceApp({
                             />
                           </label>
                         </div>
+                        {/* Which platform the card is filed under, and what a
+                            picked-but-empty handle costs. Both were decided
+                            silently: the channel by tap order, and a blank
+                            handle by publish dropping the platform from
+                            social_links without saying so. */}
+                        {answers.platforms.length > 0 && (
+                          <p className="chip-note field-wide">
+                            Your card will be filed under{" "}
+                            <b>{creatorChannel(answers)}</b> — you can change
+                            that on your listing any time.
+                            {(() => {
+                              const blank = answers.platforms
+                                .filter((key) => !(answers.socials[key] ?? "").trim())
+                                .map(
+                                  (key) =>
+                                    socialPlatforms.find((p) => p.key === key)
+                                      ?.label ?? key,
+                                );
+                              if (!blank.length) return null;
+                              return ` ${joinList(blank)} ${
+                                blank.length === 1 ? "has" : "have"
+                              } no handle yet, so ${
+                                blank.length === 1 ? "it" : "they"
+                              } won’t appear on your profile.`;
+                            })()}
+                          </p>
+                        )}
 
                         <div className="form-subsection field-wide">
                           <span>Your first offer</span>
                           <h4>What does a brand actually get?</h4>
                         </div>
-                        <div className="offer-examples">
-                          {answers.platforms
-                            .flatMap((key) => CREATOR_OFFER_EXAMPLES[key] ?? [])
-                            .slice(0, 6)
-                            .map((example) => (
-                              <button
-                                key={example}
-                                type="button"
-                                onClick={() =>
-                                  setAnswers((current) => ({
-                                    ...current,
-                                    format: example,
-                                  }))
-                                }
-                              >
-                                {example}
-                              </button>
-                            ))}
-                        </div>
+                        {/* Only when there are any: an empty flex row still
+                            takes its margin, leaving a gap under the header
+                            for anyone who has not picked a platform yet. */}
+                        {answers.platforms.some(
+                          (key) => (CREATOR_OFFER_EXAMPLES[key] ?? []).length,
+                        ) && (
+                          <>
+                            <span className="offer-examples-label field-wide">
+                              Or start from one of these:
+                            </span>
+                            <div className="offer-examples">
+                              {answers.platforms
+                                .flatMap((key) => CREATOR_OFFER_EXAMPLES[key] ?? [])
+                                .slice(0, 6)
+                                .map((example) => (
+                                  <button
+                                    key={example}
+                                    type="button"
+                                    onClick={() =>
+                                      setAnswers((current) => ({
+                                        ...current,
+                                        format: example,
+                                      }))
+                                    }
+                                  >
+                                    {example}
+                                  </button>
+                                ))}
+                            </div>
+                          </>
+                        )}
                         <div className="field-grid">
                           <label className="field-wide">
                             What they get
+                            {/* 140 to match the listing editor. At 60 a creator
+                                who wanted "one in-feed post plus three stories
+                                over 48 hours, with a link in bio" found the
+                                field stopping accepting keystrokes, with no
+                                message - measured in Chromium. */}
                             <input
                               data-field="format"
-                              maxLength={60}
+                              maxLength={140}
                               value={answers.format}
                               onChange={(event) =>
                                 setAnswers((current) => ({
