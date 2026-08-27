@@ -805,6 +805,8 @@ const DELIVERABLE_EXAMPLES = [
  * nothing wrote it, so a robotics team published with no categories at all
  * and could not be found by searching for one.
  */
+const SPONSOR_ORG_OTHER = "Something else";
+
 const SPONSOR_ORG_CHIPS = [
   "Robotics team",
   "Sports team",
@@ -816,6 +818,12 @@ const SPONSOR_ORG_CHIPS = [
   "School club",
   "Festival",
   "Band or theater",
+  // SPACE_KIND_CHIPS has always ended with an escape hatch and this did not,
+  // so a scout troop, a PTA, a church group or an animal shelter had to file
+  // itself under "Nonprofit". That label is not cosmetic: it opens their
+  // description and, since it seeds profiles.categories, it is what somebody
+  // searching finds them by.
+  SPONSOR_ORG_OTHER,
 ];
 
 /**
@@ -872,6 +880,46 @@ const SPONSOR_BENEFIT_CHIPS = [
   "Announcer shout-out",
   "Program ad",
 ];
+
+/**
+ * A tier's perks in menu order, not tap order.
+ *
+ * The card's offer line is built from the first two of these, and it used to
+ * take them in whatever order the host happened to tap the chips - so a team
+ * that picked "Newsletter mention" before "Logo on jerseys" published a card
+ * led by the newsletter. SPONSOR_BENEFIT_CHIPS is already written most
+ * tangible first; sorting by it makes the headline the two perks a sponsor
+ * cares most about, every time.
+ */
+function orderedBenefits(benefits: string[]) {
+  const rank = (item: string) => {
+    const at = SPONSOR_BENEFIT_CHIPS.indexOf(item);
+    return at === -1 ? SPONSOR_BENEFIT_CHIPS.length : at;
+  };
+  return [...benefits].sort((a, b) => rank(a) - rank(b));
+}
+
+/**
+ * The one-line offer on a sponsorship card.
+ *
+ * Two perks and a count, rather than a bare first two. A new tier starts from
+ * the whole menu and the host prunes downward, so lower tiers are usually
+ * PREFIXES of higher ones - and a bare slice(0, 2) then published the same
+ * sentence for Gold and Silver:
+ *
+ *   $1000 Gold    You get logo on jerseys and banner at events
+ *   $500  Silver  You get logo on jerseys and banner at events
+ *
+ * A business could not tell what the extra $500 bought. The count is what
+ * makes the levels different on the card, which is the whole reason each tier
+ * publishes its own.
+ */
+function sponsorOfferLine(benefits: string[]) {
+  const perks = orderedBenefits(benefits).map((item) => item.toLowerCase());
+  if (perks.length <= 2) return joinList(perks);
+  const rest = perks.length - 2;
+  return joinList([...perks.slice(0, 2), `${rest} more`]);
+}
 
 /** Sponsorship window. Sets availability_notes and the date pair. */
 const SPONSOR_SEASON_CHIPS: Array<{
@@ -1005,6 +1053,8 @@ type OnboardingAnswers = {
   wantedArea: string;
   // Sponsorship host.
   orgKind: string;
+  /** What they typed after picking "Something else". */
+  orgOther: string;
   reach: string;
   /** The number behind the reach chip, editable - same fix as trafficCount. */
   reachCount: number | null;
@@ -1117,6 +1167,7 @@ function emptyAnswers(): OnboardingAnswers {
     targetPlatforms: [],
     wantedArea: "",
     orgKind: "",
+    orgOther: "",
     reach: "",
     reachCount: null,
     funding: "",
@@ -1126,22 +1177,34 @@ function emptyAnswers(): OnboardingAnswers {
     // the shape is obvious, but firstTierProblem's !tier.price branch forces a
     // real decision - the old seed published an invented $1,000 for anyone who
     // skipped past it.
-    tiers: [emptyTier("Gold", null)],
+    tiers: [emptyTier("Gold")],
   };
 }
 
-/** A blank level, prefilled with a name and price so the first one is not work. */
-function emptyTier(name: string, price: number | null): SponsorTier {
-  return { name, price, priceMax: null, slots: null, benefits: [] };
+/** A blank level, prefilled with a name so the first one is not work. */
+function emptyTier(name: string): SponsorTier {
+  return { name, price: null, priceMax: null, slots: null, benefits: [] };
 }
 
-/** The levels offered as you add them, in the order a team would add them. */
-const TIER_PRESETS: Array<{ name: string; price: number }> = [
-  { name: "Gold", price: 1000 },
-  { name: "Silver", price: 500 },
-  { name: "Bronze", price: 250 },
-];
-const MAX_TIERS = TIER_PRESETS.length;
+/**
+ * The names offered as levels are added, in the order a team would add them.
+ *
+ * Downward: the first tier a host writes is their top one. The `price` these
+ * used to carry was never read - emptyTier was called with null - so it is
+ * gone; PRICE_CHIPS.sponsor_host is what actually suggests a number now.
+ */
+const TIER_PRESETS = ["Gold", "Silver", "Bronze", "Supporter", "Friend"];
+
+/**
+ * How many levels a sponsorship can publish.
+ *
+ * Was `TIER_PRESETS.length`, which made the ceiling on what a team may offer
+ * an accident of how many nice names happened to be in a list - three - and
+ * plenty of teams run four or five. Now it is a number chosen for its own
+ * reason: past five, a business scrolling the marketplace is reading one
+ * team's price list rather than browsing.
+ */
+const MAX_TIERS = 5;
 
 /** Seed the answers from a stored profile so re-entry is not a blank form. */
 function answersFromProfile(source: Profile | null): OnboardingAnswers {
@@ -1343,7 +1406,7 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
   if (role === "sponsor_host") {
     const funding = answers.funding.trim();
     return [
-      answers.orgKind ? `${answers.orgKind}${city ? ` in ${city}` : ""}.` : "",
+      orgLabel(answers) ? `${orgLabel(answers)}${city ? ` in ${city}` : ""}.` : "",
       bio,
       // The single most persuasive line a sponsor reads, and the flow used to
       // ask a team for their org type and their reach but never for this.
@@ -1370,8 +1433,23 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
  * body means the host edits only their own words and each tier card still
  * differs, which is the entire point of publishing one card per tier.
  */
+/**
+ * What this organisation calls itself, in its own words where it gave them.
+ *
+ * Everywhere the org type is written - the opening sentence of the
+ * description, profiles.categories, the validator - goes through here, so
+ * "Something else" never reaches a card.
+ */
+function orgLabel(answers: OnboardingAnswers) {
+  return answers.orgKind === SPONSOR_ORG_OTHER
+    ? answers.orgOther.trim()
+    : answers.orgKind;
+}
+
 function tierSentences(answers: OnboardingAnswers, tier?: SponsorTier) {
-  const perks = tier?.benefits.length ? tier.benefits : answers.benefits;
+  const perks = orderedBenefits(
+    tier?.benefits.length ? tier.benefits : answers.benefits,
+  );
   return [
     perks.length
       ? `${tier?.name.trim() ? `${tier.name.trim()} sponsors get` : "Sponsors get"} ${joinList(
@@ -1382,6 +1460,34 @@ function tierSentences(answers: OnboardingAnswers, tier?: SponsorTier) {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+/**
+ * The longest title a listing carries, and the one place that decides it.
+ *
+ * The title INPUT has always carried maxLength={120}, so a typed title cannot
+ * exceed this. A COMPOSED one could: publish did `.slice(0, 120)` while the
+ * preview rendered the untrimmed string, so a team whose name is long saw one
+ * headline on screen and published another, cut mid-word:
+ *
+ *   preview   Brea Olinda High School Competitive Robotics Team 4414 — Gold
+ *             sponsor for the championship trip to Houston and new competition kit
+ *   published ... for the championship trip to Houston and new compe
+ *
+ * A sponsorship host has no title input at all, so there was nowhere to fix it.
+ */
+const TITLE_MAX = 120;
+
+/** Trim to the cap on a word boundary, and say that it was trimmed. */
+function fitTitle(text: string) {
+  const clean = text.trim();
+  if (clean.length <= TITLE_MAX) return clean;
+  const cut = clean.slice(0, TITLE_MAX - 1);
+  const space = cut.lastIndexOf(" ");
+  // Only break at a space if one falls late enough to leave a real title;
+  // a single 200-character word still has to be cut somewhere.
+  const kept = space > TITLE_MAX * 0.6 ? cut.slice(0, space) : cut;
+  return `${kept.trimEnd()}…`;
 }
 
 /** The suggested `title`, regenerated as the answers that feed it change. */
@@ -1427,7 +1533,12 @@ function composeTitle(
     const level = tier?.name.trim();
     const head = level ? `${name} — ${level} sponsor` : `${name} — season sponsor`;
     const funding = answers.funding.trim();
-    return funding ? `${head} for ${funding}` : head;
+    if (!funding) return head;
+    // What they are raising for is the part worth dropping when the whole
+    // thing will not fit: cutting it loses a clause, cutting the other end
+    // loses the team's own name.
+    const full = `${head} for ${funding}`;
+    return full.length <= TITLE_MAX ? full : head;
   }
   return "";
 }
@@ -1453,8 +1564,14 @@ function effectiveTitle(
 ) {
   // A sponsorship host never edits one title - each tier composes its own -
   // so an edited `title` must not overwrite all three.
-  if (role === "sponsor_host") return composeTitle(role, answers, tier);
-  return touched.title ? answers.title.trim() : composeTitle(role, answers);
+  //
+  // fitTitle here rather than at the publish call, so the preview, the
+  // validator and the insert cannot disagree about the headline: the cap is
+  // applied once, to the value all three read.
+  if (role === "sponsor_host") return fitTitle(composeTitle(role, answers, tier));
+  return fitTitle(
+    touched.title ? answers.title : composeTitle(role, answers),
+  );
 }
 
 function effectiveDescription(
@@ -1486,6 +1603,27 @@ function descriptionBody(
 }
 
 /**
+ * The platform a creator's card is filed under.
+ *
+ * This is the marketplace's primary filter, and it used to be
+ * `answers.platforms[0]` - the chip they happened to tap FIRST. A creator
+ * whose audience is on TikTok but who tapped Instagram first was filed under
+ * Instagram, and worse, a platform picked but left without a handle still set
+ * the channel while `socialLinks` dropped it: the card advertised a platform
+ * the profile carried no link for.
+ *
+ * Preferring a platform they actually gave a handle for fixes both, and asks
+ * them nothing they were not already being asked.
+ */
+function creatorChannel(answers: OnboardingAnswers) {
+  const withHandle = answers.platforms.find((key) =>
+    (answers.socials[key] ?? "").trim(),
+  );
+  const key = withHandle ?? answers.platforms[0];
+  return socialPlatforms.find((p) => p.key === key)?.label ?? "Other";
+}
+
+/**
  * The `listings` row a completed onboarding publishes.
  *
  * Every value lands in a column that already exists. `channel` carries no DB
@@ -1501,7 +1639,7 @@ function buildListingDraft(
   tier?: SponsorTier,
 ) {
   const base = {
-    title: effectiveTitle(role, answers, touched, tier).slice(0, 120),
+    title: effectiveTitle(role, answers, touched, tier),
     description: effectiveDescription(role, answers, touched, tier),
     price: answers.price ?? 0,
     price_max: null as number | null,
@@ -1525,10 +1663,9 @@ function buildListingDraft(
   };
 
   if (role === "creator") {
-    const primary = answers.platforms[0];
     return {
       ...base,
-      channel: socialPlatforms.find((p) => p.key === primary)?.label ?? "Other",
+      channel: creatorChannel(answers),
       price_unit: answers.price_unit || "post",
     };
   }
@@ -1618,8 +1755,8 @@ function buildListingDraft(
       price_max: tier?.priceMax ?? null,
       sponsor_tier: tier?.name.trim() || null,
       sponsor_slots: tier?.slots ?? null,
-      format: joinList(perks.slice(0, 2).map((b) => b.toLowerCase())),
-      deliverables: perks.join("\n"),
+      format: sponsorOfferLine(perks),
+      deliverables: orderedBenefits(perks).join("\n"),
       demographics: reachSentence(answers),
       availability_notes: answers.season,
       available_from: season ? isoDaysFromToday(0) : null,
@@ -1655,31 +1792,45 @@ function buildListingDrafts(
  * message names the level by number, because "Set a price" is useless when
  * three price inputs are on screen.
  */
-function firstTierProblem(
-  answers: OnboardingAnswers,
-): [string, string] | null {
+/**
+ * Everything still missing from the tiers, in the order the cards sit.
+ *
+ * Returns the whole list rather than the first problem so the flow can tell a
+ * host how much is left instead of bouncing them from one field to the next,
+ * one press of Publish at a time. Every message falls back to "tier 1" when
+ * the level has no name yet - the old short-circuit meant the name was always
+ * filled in by the time the others could fire, and collecting them all would
+ * otherwise produce "Set what one  sponsor pays."
+ */
+function tierProblems(answers: OnboardingAnswers): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
   for (let i = 0; i < answers.tiers.length; i += 1) {
     const tier = answers.tiers[i];
     const label = `Tier ${i + 1}`;
+    const named = tier.name.trim() || label.toLowerCase();
     if (!tier.name.trim()) {
-      return [`Name ${label} — Gold, Founding Partner, anything.`, `tierName${i}`];
+      out.push([`Name ${label} — Gold, Founding Partner, anything.`, `tierName${i}`]);
     }
     if (!tier.price || tier.price < 1) {
-      return [`Set what one ${tier.name.trim()} sponsor pays.`, `tierPrice${i}`];
+      out.push([`Set what one ${named} sponsor pays.`, `tierPrice${i}`]);
     }
     // listings_price_max_valid rejects this at the database, where it surfaces
     // as a generic "something went wrong".
-    if (typeof tier.priceMax === "number" && tier.priceMax < tier.price) {
-      return [
-        `${tier.name.trim()}'s upper price is below its lower one.`,
+    if (
+      typeof tier.priceMax === "number" &&
+      typeof tier.price === "number" &&
+      tier.priceMax < tier.price
+    ) {
+      out.push([
+        `${named}'s upper price is below its lower one.`,
         `tierPriceMax${i}`,
-      ];
+      ]);
     }
     if (!tier.benefits.length) {
-      return [
-        `Pick what a ${tier.name.trim()} sponsor actually gets.`,
+      out.push([
+        `Pick what a ${named} sponsor actually gets.`,
         `tierBenefits${i}`,
-      ];
+      ]);
     }
   }
   // Two levels at the same price are one level with two names, and they
@@ -1689,12 +1840,12 @@ function firstTierProblem(
     (price, i) => price !== null && prices.indexOf(price) !== i,
   );
   if (duplicate > 0) {
-    return [
+    out.push([
       "Two tiers are priced the same — give them different prices or drop one.",
       `tierPrice${duplicate}`,
-    ];
+    ]);
   }
-  return null;
+  return out;
 }
 
 /** The tiers actually filled in, most expensive first. */
@@ -3606,101 +3757,132 @@ export default function MarketplaceApp({
    * and put the cursor on it. The old flow toasted and moved on; a toast is
    * gone in four seconds and never says where to look.
    */
-  function firstMissingAnswer(): [string, string] | null {
+  /**
+   * Everything still unanswered on the current step, in the order it renders.
+   *
+   * This used to stop at the first problem, which is all publish needs - but
+   * it meant the only way to find out how much was left was to press Publish,
+   * get bounced to one field, fix it, and press again. A space owner answers
+   * nine required questions on step 2; that is nine rounds of being surprised.
+   * Collecting the whole list lets the flow say what is outstanding while they
+   * are still filling it in.
+   */
+  function missingAnswers(): Array<[string, string]> {
     const role = selectedRole;
-    if (onboardingStep === 1) {
-      if (!roleTouched || !role) {
-        return ["Pick how you’ll use SideSpace first.", "role"];
-      }
-      if (!answers.display_name.trim()) {
-        return ["Add your display name before continuing.", "display_name"];
-      }
-      if (!answers.city.trim()) {
-        return ["Add your city or market before continuing.", "city"];
-      }
-      if (answers.bio.trim().length < 10) {
-        return ["Add one line about you — at least a few words.", "bio"];
-      }
+    const out: Array<[string, string]> = [];
+    const need = (unmet: boolean, message: string, field: string) => {
+      if (unmet) out.push([message, field]);
+    };
 
-      if (
+    if (onboardingStep === 1) {
+      need(!roleTouched || !role, "Pick how you’ll use SideSpace first.", "role");
+      need(
+        !answers.display_name.trim(),
+        "Add your display name before continuing.",
+        "display_name",
+      );
+      need(
+        !answers.city.trim(),
+        "Add your city or market before continuing.",
+        "city",
+      );
+      need(
+        answers.bio.trim().length < 10,
+        "Add one line about you — at least a few words.",
+        "bio",
+      );
+      // Only a MALFORMED address is a problem; leaving it blank is allowed.
+      need(
         role !== "business" &&
-        answers.contact_email.trim() &&
-        !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(answers.contact_email.trim())
-      ) {
-        return ["That email doesn't look right.", "contact_email"];
-      }
-      return null;
+          Boolean(answers.contact_email.trim()) &&
+          !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(answers.contact_email.trim()),
+        "That email doesn't look right.",
+        "contact_email",
+      );
+      return out;
     }
 
     // Step 2 in edit mode only ever touches profile fields, all optional.
-    if (onboardingMode === "edit" || !role) return null;
+    if (onboardingMode === "edit" || !role) return out;
 
     if (role === "creator") {
-      if (!answers.platforms.length) {
-        return ["Pick at least one place you post.", "platforms"];
-      }
-      if (answers.format.trim().length < 10) {
-        return ["Say what a brand actually gets.", "format"];
-      }
+      need(!answers.platforms.length, "Pick at least one place you post.", "platforms");
+      need(
+        answers.format.trim().length < 10,
+        "Say what a brand actually gets.",
+        "format",
+      );
     }
     if (role === "space_owner") {
-      if (!answers.spaceKind) return ["Pick what kind of space this is.", "spaceKind"];
-
-
-      if (!answers.spaceSize.trim()) {
-        return ["Say roughly how big it is.", "spaceSize"];
-      }
-      if (!answers.surfaces.length) {
-        return ["Pick what can actually go up there.", "surfaces"];
-      }
-      if (!answers.installBy) return ["Say who puts it up.", "installBy"];
+      need(!answers.spaceKind, "Pick what kind of space this is.", "spaceKind");
+      need(!answers.spaceSize.trim(), "Say roughly how big it is.", "spaceSize");
+      need(
+        !answers.surfaces.length,
+        "Pick what can actually go up there.",
+        "surfaces",
+      );
+      need(!answers.installBy, "Say who puts it up.", "installBy");
       // The count, not the chip: an owner who typed 850 and never touched a
       // chip has answered this, and an owner who picked "I'll count it myself"
       // and left the box empty has not.
-      if (!answers.trafficCount || answers.trafficCount < 1) {
-        return ["Add roughly how many people walk past a day.", "trafficCount"];
-      }
-      if (!answers.availability) {
-        return ["Pick when the space is free.", "availability"];
-      }
+      need(
+        !answers.trafficCount || answers.trafficCount < 1,
+        "Add roughly how many people walk past a day.",
+        "trafficCount",
+      );
+      need(!answers.availability, "Pick when the space is free.", "availability");
     }
     if (role === "business") {
       // Same order the questions are rendered in, so the error scrolls forward
       // through the pane rather than jumping back past something answered.
-      if (!answers.promoting.trim()) {
-        return ["Say what you're promoting — a few words is enough.", "promoting"];
-      }
-
-      if (!answers.goal) return ["Pick what the campaign should do.", "goal"];
-      if (!answers.briefScope) {
-        return ["Pick whether you want physical space, social, or both.", "briefScope"];
-      }
-      if (answers.briefScope !== "virtual") {
-        if (!answers.placements.length) {
-          return ["Pick the kind of space you want.", "placements"];
-        }
-
-      }
-      if (answers.briefScope !== "physical" && !answers.targetPlatforms.length) {
-        return ["Pick at least one platform to target.", "targetPlatforms"];
-      }
-      if (!answers.timing) return ["Pick when you want it to run.", "timing"];
+      need(
+        !answers.promoting.trim(),
+        "Say what you're promoting — a few words is enough.",
+        "promoting",
+      );
+      need(!answers.goal, "Pick what the campaign should do.", "goal");
+      need(
+        !answers.briefScope,
+        "Pick whether you want physical space, social, or both.",
+        "briefScope",
+      );
+      need(
+        answers.briefScope !== "virtual" && !answers.placements.length,
+        "Pick the kind of space you want.",
+        "placements",
+      );
+      need(
+        answers.briefScope !== "physical" && !answers.targetPlatforms.length,
+        "Pick at least one platform to target.",
+        "targetPlatforms",
+      );
+      need(!answers.timing, "Pick when you want it to run.", "timing");
     }
     if (role === "sponsor_host") {
       // Same order the questions render in.
-      if (!answers.orgKind) return ["Pick what kind of organization you are.", "orgKind"];
-      if (!answers.funding.trim()) {
-        return ["Say what you're raising for — a few words is enough.", "funding"];
-      }
-      if (!answers.reachCount || answers.reachCount < 1) {
-        return ["Add roughly how many people will see it.", "reachCount"];
-      }
-      if (!answers.season) return ["Pick how long a sponsorship lasts.", "season"];
-      if (!answers.benefits.length) {
-        return ["Pick what a sponsor could get.", "benefits"];
-      }
-      const problem = firstTierProblem(answers);
-      if (problem) return problem;
+      need(
+        !answers.orgKind,
+        "Pick what kind of organization you are.",
+        "orgKind",
+      );
+      need(
+        answers.orgKind === SPONSOR_ORG_OTHER && !answers.orgOther.trim(),
+        "Say what kind of organization you are.",
+        "orgOther",
+      );
+      need(
+        !answers.funding.trim(),
+        "Say what you're raising for — a few words is enough.",
+        "funding",
+      );
+      need(
+        !answers.reachCount || answers.reachCount < 1,
+        "Add roughly how many people will see it.",
+        "reachCount",
+      );
+      need(!answers.season, "Pick how long a sponsorship lasts.", "season");
+      need(!answers.benefits.length, "Pick what a sponsor could get.", "benefits");
+      out.push(...tierProblems(answers));
     }
     // Validate exactly what the member can see, via the same helpers publish
     // uses - so an emptied field fails here instead of silently republishing
@@ -3709,31 +3891,37 @@ export default function MarketplaceApp({
     const shownTitle = effectiveTitle(role, answers, touched);
     const shownDescription = descriptionBody(role, answers, touched);
     // A sponsorship host has no single title or price - both are per tier and
-    // firstTierProblem already checked every one of them.
+    // tierProblems already checked every one of them.
     if (role !== "sponsor_host") {
-      if (!shownTitle.trim()) return ["Give this a title.", "title"];
-      if (!answers.price || answers.price < 1) {
-        return ["Set a price of at least $1.", "price"];
-      }
+      need(!shownTitle.trim(), "Give this a title.", "title");
+      need(
+        !answers.price || answers.price < 1,
+        "Set a price of at least $1.",
+        "price",
+      );
     }
     // listings_price_max_valid (0017) rejects a max below the min at the
     // database, where it surfaces as a generic "something went wrong". Both
     // roles that can set a band are checked here, in the order the two inputs
     // sit on screen.
-    if (
+    need(
       typeof answers.priceMax === "number" &&
-      typeof answers.price === "number" &&
-      answers.priceMax < answers.price
-    ) {
-      return ["The top of the range is below the bottom.", "priceMax"];
-    }
-    if (shownDescription.trim().length < 60) {
-      return [
-        "Add a bit more detail — a sentence or two is what makes a card worth opening.",
-        "description",
-      ];
-    }
-    return null;
+        typeof answers.price === "number" &&
+        answers.priceMax < answers.price,
+      "The top of the range is below the bottom.",
+      "priceMax",
+    );
+    need(
+      shownDescription.trim().length < 60,
+      "Add a bit more detail — a sentence or two is what makes a card worth opening.",
+      "description",
+    );
+    return out;
+  }
+
+  /** What publish blocks on: the first thing still missing, or nothing. */
+  function firstMissingAnswer(): [string, string] | null {
+    return missingAnswers()[0] ?? null;
   }
 
   /**
@@ -3753,9 +3941,15 @@ export default function MarketplaceApp({
     }));
   }
 
-  function reportMissing(problem: [string, string]) {
-    const [message, field] = problem;
-    setOnboardingError(message);
+  /**
+   * Put the member in front of one question.
+   *
+   * Split out of reportMissing because the outstanding-answers line jumps to a
+   * field WITHOUT raising an error: nothing has gone wrong when somebody taps
+   * "3 still to answer" on their way down the form, and painting the red
+   * banner for it would teach them to ignore the banner.
+   */
+  function scrollToField(field: string) {
     const form = onboardingFormRef.current;
     const target =
       form?.querySelector<HTMLElement>(`[data-field="${field}"]`) ??
@@ -3769,6 +3963,12 @@ export default function MarketplaceApp({
         target.focus();
       }
     }
+  }
+
+  function reportMissing(problem: [string, string]) {
+    const [message, field] = problem;
+    setOnboardingError(message);
+    scrollToField(field);
   }
 
   function advanceOnboarding() {
@@ -3917,8 +4117,8 @@ export default function MarketplaceApp({
         // chip. Reusing it costs them no taps and makes "robotics" or
         // "festival" find them.
         categories:
-          role === "sponsor_host" && answers.orgKind
-            ? [answers.orgKind]
+          role === "sponsor_host" && orgLabel(answers)
+            ? [orgLabel(answers)]
             : answers.categories,
         // A null follower count means "not answered", and must not overwrite a
         // number they gave earlier with 0.
@@ -7540,6 +7740,33 @@ export default function MarketplaceApp({
                   )}
                 </div>
 
+                {/* What is still outstanding, live, next to the button that
+                    will refuse to move without it. Before this the only way to
+                    find out was to press the button and be bounced to a field;
+                    on step 2 a space owner has nine of these to discover one
+                    at a time. */}
+                {(() => {
+                  const left = missingAnswers();
+                  if (!left.length) {
+                    return (
+                      <p className="onboarding-todo is-ready">
+                        Everything’s answered.
+                      </p>
+                    );
+                  }
+                  return (
+                    <button
+                      type="button"
+                      className="onboarding-todo"
+                      onClick={() => scrollToField(left[0][1])}
+                    >
+                      <span>
+                        {left.length} still to answer
+                      </span>
+                      <b>{left[0][0]}</b>
+                    </button>
+                  );
+                })()}
                 <div className="onboarding-actions">
                   <span />
                   <button
@@ -7834,36 +8061,80 @@ export default function MarketplaceApp({
                             />
                           </label>
                         </div>
+                        {/* Which platform the card is filed under, and what a
+                            picked-but-empty handle costs. Both were decided
+                            silently: the channel by tap order, and a blank
+                            handle by publish dropping the platform from
+                            social_links without saying so. */}
+                        {answers.platforms.length > 0 && (
+                          <p className="chip-note field-wide">
+                            Your card will be filed under{" "}
+                            <b>{creatorChannel(answers)}</b> — you can change
+                            that on your listing any time.
+                            {(() => {
+                              const blank = answers.platforms
+                                .filter((key) => !(answers.socials[key] ?? "").trim())
+                                .map(
+                                  (key) =>
+                                    socialPlatforms.find((p) => p.key === key)
+                                      ?.label ?? key,
+                                );
+                              if (!blank.length) return null;
+                              return ` ${joinList(blank)} ${
+                                blank.length === 1 ? "has" : "have"
+                              } no handle yet, so ${
+                                blank.length === 1 ? "it" : "they"
+                              } won’t appear on your profile.`;
+                            })()}
+                          </p>
+                        )}
 
                         <div className="form-subsection field-wide">
                           <span>Your first offer</span>
                           <h4>What does a brand actually get?</h4>
                         </div>
-                        <div className="offer-examples">
-                          {answers.platforms
-                            .flatMap((key) => CREATOR_OFFER_EXAMPLES[key] ?? [])
-                            .slice(0, 6)
-                            .map((example) => (
-                              <button
-                                key={example}
-                                type="button"
-                                onClick={() =>
-                                  setAnswers((current) => ({
-                                    ...current,
-                                    format: example,
-                                  }))
-                                }
-                              >
-                                {example}
-                              </button>
-                            ))}
-                        </div>
+                        {/* Only when there are any: an empty flex row still
+                            takes its margin, leaving a gap under the header
+                            for anyone who has not picked a platform yet. */}
+                        {answers.platforms.some(
+                          (key) => (CREATOR_OFFER_EXAMPLES[key] ?? []).length,
+                        ) && (
+                          <>
+                            <span className="offer-examples-label field-wide">
+                              Or start from one of these:
+                            </span>
+                            <div className="offer-examples">
+                              {answers.platforms
+                                .flatMap((key) => CREATOR_OFFER_EXAMPLES[key] ?? [])
+                                .slice(0, 6)
+                                .map((example) => (
+                                  <button
+                                    key={example}
+                                    type="button"
+                                    onClick={() =>
+                                      setAnswers((current) => ({
+                                        ...current,
+                                        format: example,
+                                      }))
+                                    }
+                                  >
+                                    {example}
+                                  </button>
+                                ))}
+                            </div>
+                          </>
+                        )}
                         <div className="field-grid">
                           <label className="field-wide">
                             What they get
+                            {/* 140 to match the listing editor. At 60 a creator
+                                who wanted "one in-feed post plus three stories
+                                over 48 hours, with a link in bio" found the
+                                field stopping accepting keystrokes, with no
+                                message - measured in Chromium. */}
                             <input
                               data-field="format"
-                              maxLength={60}
+                              maxLength={140}
                               value={answers.format}
                               onChange={(event) =>
                                 setAnswers((current) => ({
@@ -8521,9 +8792,40 @@ export default function MarketplaceApp({
                           options={SPONSOR_ORG_CHIPS}
                           selected={answers.orgKind ? [answers.orgKind] : []}
                           onPick={(value) =>
-                            setAnswers((current) => ({ ...current, orgKind: value }))
+                            setAnswers((current) => ({
+                              ...current,
+                              orgKind: value,
+                              // Switching back to a real chip clears the text,
+                              // or "Scout troop" keeps opening the description
+                              // of a team that now calls itself a Nonprofit.
+                              orgOther:
+                                value === SPONSOR_ORG_OTHER ? current.orgOther : "",
+                            }))
                           }
                         />
+                        {answers.orgKind === SPONSOR_ORG_OTHER && (
+                          <div className="field-grid">
+                            <label className="field-wide">
+                              So what are you?
+                              <small>
+                                A couple of words. It opens your description and
+                                it is what people searching will find you by.
+                              </small>
+                              <input
+                                data-field="orgOther"
+                                maxLength={40}
+                                value={answers.orgOther}
+                                onChange={(event) =>
+                                  setAnswers((current) => ({
+                                    ...current,
+                                    orgOther: event.target.value,
+                                  }))
+                                }
+                                placeholder="Scout troop"
+                              />
+                            </label>
+                          </div>
+                        )}
                         <div className="form-subsection field-wide">
                           <span>What it’s for</span>
                           <h4>What are you raising money for?</h4>
@@ -8765,6 +9067,33 @@ export default function MarketplaceApp({
                                   }
                                   placeholder="1000"
                                 />
+                                {/* PRICE_CHIPS.sponsor_host has existed since
+                                    this role shipped and was never rendered:
+                                    the shared preset row is gated off for a
+                                    host, because their price is per tier. So
+                                    the hardest number in the flow was the only
+                                    one offered no help. */}
+                                <span className="offer-examples-label">
+                                  Or tap a common one:
+                                </span>
+                                <span className="offer-examples">
+                                  {(PRICE_CHIPS.sponsor_host ?? []).map(
+                                    (amount) => (
+                                      <button
+                                        type="button"
+                                        key={amount}
+                                        className={
+                                          tier.price === amount ? "is-picked" : ""
+                                        }
+                                        onClick={() =>
+                                          updateTier(index, { price: amount })
+                                        }
+                                      >
+                                        ${amount.toLocaleString("en-US")}
+                                      </button>
+                                    ),
+                                  )}
+                                </span>
                               </label>
                               <label>
                                 up to
@@ -8811,6 +9140,15 @@ export default function MarketplaceApp({
                             )}
                           </div>
                         ))}
+                        {answers.tiers.length >= MAX_TIERS && (
+                          // The button used to vanish here, so a host who
+                          // wanted a fifth level just found the control gone.
+                          <p className="chip-note field-wide">
+                            {MAX_TIERS} levels is the most a listing set can
+                            carry — past that a business is reading a price
+                            list rather than browsing.
+                          </p>
+                        )}
                         {answers.tiers.length < MAX_TIERS && (
                           <button
                             type="button"
@@ -8829,15 +9167,14 @@ export default function MarketplaceApp({
                                 );
                                 const next =
                                   TIER_PRESETS.find(
-                                    (preset) =>
-                                      !taken.has(preset.name.toLowerCase()),
-                                  ) ?? { name: "", price: null };
+                                    (preset) => !taken.has(preset.toLowerCase()),
+                                  ) ?? "";
                                 return {
                                   ...current,
                                   tiers: [
                                     ...current.tiers,
                                     {
-                                      ...emptyTier(next.name, null),
+                                      ...emptyTier(next),
                                       // A new level starts from the whole menu
                                       // rather than empty: most hosts run one
                                       // tier, and making them re-tick the same
@@ -9269,6 +9606,37 @@ export default function MarketplaceApp({
                   }}
                 />
 
+                {/* What is still outstanding, live, next to the button that
+                    will refuse to move without it. Before this the only way to
+                    find out was to press the button and be bounced to a field;
+                    on step 2 a space owner has nine of these to discover one
+                    at a time. */}
+                {(() => {
+                  const left = missingAnswers();
+                  // In edit mode step 2 is the profile editor: nothing on
+                  // it is required, so a "ready" badge would be answering a
+                  // question nobody asked.
+                  if (!left.length) {
+                    if (onboardingMode === "edit") return null;
+                    return (
+                      <p className="onboarding-todo is-ready">
+                        Everything’s answered.
+                      </p>
+                    );
+                  }
+                  return (
+                    <button
+                      type="button"
+                      className="onboarding-todo"
+                      onClick={() => scrollToField(left[0][1])}
+                    >
+                      <span>
+                        {left.length} still to answer
+                      </span>
+                      <b>{left[0][0]}</b>
+                    </button>
+                  );
+                })()}
                 <div className="onboarding-actions">
                   <button
                     type="button"
