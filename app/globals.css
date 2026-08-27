@@ -7306,6 +7306,45 @@ html.reveal-ready [data-reveal].is-visible {
   pointer-events: none;
 }
 
+/* Matches the real card's proportions: the photo is the top half, not a
+   thumbnail beside the text. 4:3 is what .listing-image settles on - the
+   height:250px at the top of this file is overridden later. */
+.preview-card-photo {
+  aspect-ratio: 4 / 3;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+/* The same box before a photo exists, so the space the picture will occupy is
+   visible rather than implied. Dashed like every other upload affordance. */
+.preview-card-photo.is-empty {
+  align-items: center;
+  background: var(--paper-2);
+  border-bottom: 1px dashed var(--line);
+  color: var(--ink-soft);
+  display: flex;
+  font-size: 12.5px;
+  justify-content: center;
+  line-height: 1.4;
+  margin: 0;
+  padding: 0 24px;
+  text-align: center;
+}
+
+/* Two lines, like .listing-blurb. A member who wrote six paragraphs should see
+   that the card shows two lines of them, not discover it after publishing. */
+.preview-card-blurb {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+  overflow: hidden;
+}
+
 .preview-card-top {
   align-items: center;
   background: var(--paper-2);
@@ -7361,6 +7400,15 @@ html.reveal-ready [data-reveal].is-visible {
   font-size: 20px;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+}
+
+/* The empty price slot is a prompt, not a number: at 20px in the same weight
+   as a real price it read like one. */
+.preview-card-foot b.preview-price-empty {
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 .preview-card-foot small {

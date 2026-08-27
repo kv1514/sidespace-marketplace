@@ -799,7 +799,12 @@ const DELIVERABLE_EXAMPLES = [
   "Show the product on camera",
 ];
 
-/** Sponsorship host: what kind of organisation. Seeds categories and the title. */
+/**
+ * Sponsorship host: what kind of organisation. Seeds the title AND the
+ * profile's categories - the comment here used to claim the latter while
+ * nothing wrote it, so a robotics team published with no categories at all
+ * and could not be found by searching for one.
+ */
 const SPONSOR_ORG_CHIPS = [
   "Robotics team",
   "Sports team",
@@ -2405,6 +2410,15 @@ export default function MarketplaceApp({
    */
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [listingFiles, setListingFiles] = useState<File[]>([]);
+  /**
+   * The photo the onboarding preview shows.
+   *
+   * A real listing card is mostly picture - the image is the whole top half,
+   * above the name - and the preview had none, so the member's model of what
+   * they were publishing was missing its largest element. Held as an object
+   * URL and revoked when it changes, or every re-pick leaks a blob.
+   */
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState("");
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const onboardingFormRef = useRef<HTMLFormElement | null>(null);
@@ -2427,6 +2441,22 @@ export default function MarketplaceApp({
   const editingListingIsBrief = editingListing
     ? isBrief(editingListing)
     : listingRole === "business";
+
+  /**
+   * Take the photos a member just picked, and point the preview at the first.
+   *
+   * All four role panes call this instead of setListingFiles, so the URL is
+   * minted in the event that produced the file and the one it replaces is
+   * revoked in the same breath - no render-phase side effect, and no blob left
+   * behind when somebody re-picks five times before they are happy.
+   */
+  function chooseListingFiles(files: File[]) {
+    setListingFiles(files);
+    if (previewPhotoUrl) URL.revokeObjectURL(previewPhotoUrl);
+    const file = files.find((item) => item.size > 0);
+    setPreviewPhotoUrl(file ? URL.createObjectURL(file) : "");
+  }
+
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteAccountError, setDeleteAccountError] = useState("");
   const [igAvatar, setIgAvatar] = useState("");
@@ -3160,6 +3190,13 @@ export default function MarketplaceApp({
       // the card, so searching "Walnut" or "decal" should find them. Optional
       // fields are coalesced so the literal string "undefined" never becomes
       // searchable text.
+      //
+      // The owner's categories are in here because onboarding ASKS for them -
+      // a twelve-chip multi-select every creator and business taps through -
+      // and until now the answer was stored, published to anonymous readers,
+      // and read by nothing except one sentence of a draft description. A
+      // question that changes nothing is a question that should not be asked;
+      // making it searchable is the cheaper of the two ways to fix that.
       const text = [
         listing.title,
         listing.channel,
@@ -3169,6 +3206,7 @@ export default function MarketplaceApp({
         listing.location_area ?? "",
         listing.owner.display_name,
         listing.owner.city,
+        (listing.owner.categories ?? []).join(" "),
       ]
         .join(" ")
         .toLowerCase();
@@ -3369,7 +3407,7 @@ export default function MarketplaceApp({
     setTitleTouched(false);
     setDescriptionTouched(false);
     setAvatarFile(null);
-    setListingFiles([]);
+    chooseListingFiles([]);
     setGalleryFiles([]);
   }
 
@@ -3874,7 +3912,14 @@ export default function MarketplaceApp({
         contact_email: answers.contact_email.trim(),
         city: answers.city.trim(),
         bio: answers.bio.trim(),
-        categories: answers.categories,
+        // A sponsorship host is never shown the category chips - what they
+        // are is already answered, in their own words, by the organisation
+        // chip. Reusing it costs them no taps and makes "robotics" or
+        // "festival" find them.
+        categories:
+          role === "sponsor_host" && answers.orgKind
+            ? [answers.orgKind]
+            : answers.categories,
         // A null follower count means "not answered", and must not overwrite a
         // number they gave earlier with 0.
         //
@@ -7453,6 +7498,10 @@ export default function MarketplaceApp({
                     <label>
                       Your name
                       <small>Who a booker is actually writing to.</small>
+                      {/* Every other example in this flow is invented -
+                          "Maya Alvarez", "Brea Coffee Bar". This placeholder
+                          was the founder's own name, shown as ghost text in a
+                          box asking a stranger for theirs. */}
                       <input
                         name="contact_name"
                         data-field="contact_name"
@@ -7464,7 +7513,7 @@ export default function MarketplaceApp({
                             contact_name: event.target.value,
                           }))
                         }
-                        placeholder="Kausthubh Veldanda"
+                        placeholder="Dana Okafor"
                       />
                     </label>
                   ) : (
@@ -7855,7 +7904,7 @@ export default function MarketplaceApp({
                               accept="image/jpeg,image/png,image/webp"
                               multiple
                               onChange={(event) =>
-                                setListingFiles(
+                                chooseListingFiles(
                                   Array.from(event.target.files ?? []),
                                 )
                               }
@@ -7973,7 +8022,7 @@ export default function MarketplaceApp({
                               accept="image/jpeg,image/png,image/webp"
                               multiple
                               onChange={(event) =>
-                                setListingFiles(
+                                chooseListingFiles(
                                   Array.from(event.target.files ?? []),
                                 )
                               }
@@ -8334,7 +8383,7 @@ export default function MarketplaceApp({
                               accept="image/jpeg,image/png,image/webp"
                               multiple
                               onChange={(event) =>
-                                setListingFiles(
+                                chooseListingFiles(
                                   Array.from(event.target.files ?? []),
                                 )
                               }
@@ -8812,7 +8861,7 @@ export default function MarketplaceApp({
                               accept="image/jpeg,image/png,image/webp"
                               multiple
                               onChange={(event) =>
-                                setListingFiles(
+                                chooseListingFiles(
                                   Array.from(event.target.files ?? []),
                                 )
                               }
@@ -9055,6 +9104,24 @@ export default function MarketplaceApp({
                           : "This is what people will see"}
                       </span>
                       <div className="preview-card">
+                        {/* A real card is a photo with text under it. Without
+                            this the preview quietly implied the picture was a
+                            detail, and a member could finish onboarding never
+                            realising they had published a card with nothing on
+                            the half of it people look at first. */}
+                        {previewPhotoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            className="preview-card-photo"
+                            src={previewPhotoUrl}
+                            alt=""
+                          />
+                        ) : (
+                          <p className="preview-card-photo is-empty">
+                            Add a photo above — it fills the top half of your
+                            card.
+                          </p>
+                        )}
                         <div className="preview-card-top">
                           <span
                             className={
@@ -9102,11 +9169,30 @@ export default function MarketplaceApp({
                                 : `You get ${formatOffer(offer)}`;
                             })()}
                           </span>
+                          {/* The description is the longest thing the member
+                              writes and the preview never showed a word of it.
+                              Clamped to two lines in CSS, exactly as the real
+                              card's blurb is. */}
+                          <p className="preview-card-blurb">
+                            {descriptionBody(
+                              selectedRole ?? "creator",
+                              answers,
+                              { description: descriptionTouched },
+                            ) || "Your description will show here."}
+                          </p>
                           <div className="preview-card-foot">
                             {selectedRole === "business" && (
                               <span className="preview-lead">Budget</span>
                             )}
-                            <b>
+                            <b
+                              className={
+                                (selectedRole === "sponsor_host"
+                                  ? completeTiers(answers)[0]?.price
+                                  : answers.price)
+                                  ? undefined
+                                  : "preview-price-empty"
+                              }
+                            >
                               {(() => {
                                 // A sponsorship host has no single price; the
                                 // top tier is what this card shows.
@@ -9119,7 +9205,7 @@ export default function MarketplaceApp({
                                 // preview showed "$0 / sponsor", which reads as
                                 // an offer to work for free rather than as a
                                 // field still to fill in.
-                                if (!price) return "Price";
+                                if (!price) return "Add a price";
                                 return priceLabel({
                                   price,
                                   price_max:
