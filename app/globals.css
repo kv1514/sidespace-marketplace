@@ -1648,6 +1648,32 @@ h2 em {
   padding: 14px 16px;
 }
 
+/* This banner is the answer to "why did nothing happen when I pressed
+   Publish?", and it renders at the top of a form that is several screens long.
+   reportMissing scrolls the offending field to the middle of the pane, which
+   scrolled the explanation off the top - the member was taken to the right box
+   and never told what was wrong with it. .modal-card is the scroll container,
+   so pinning the banner to its top keeps the reason on screen alongside the
+   field it is about. */
+.modal-card .form-feedback {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+
+/* The pane's own padding sits above the banner once it sticks, and the form
+   scrolls up through that gutter - a sliver of whatever field is passing
+   behind appears to float above the error. This paints the gutter out. */
+.modal-card .form-feedback::before {
+  background: var(--white);
+  bottom: 100%;
+  content: "";
+  height: 56px;
+  left: -4px;
+  position: absolute;
+  right: -4px;
+}
+
 .form-feedback strong {
   font-size: 14px;
 }
@@ -5397,7 +5423,19 @@ html.reveal-ready [data-reveal].is-visible {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+  order: 6;
+}
+
+.offer-examples-label {
+  color: var(--ink-soft);
+  display: block;
+  font-family: var(--display);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  margin-top: 10px;
   order: 5;
+  text-transform: none;
 }
 
 .offer-examples button {
@@ -5413,6 +5451,16 @@ html.reveal-ready [data-reveal].is-visible {
   text-align: left;
   text-transform: none;
   transition: border-color 0.15s ease-out, color 0.15s ease-out;
+}
+
+/* The chip rows got a 44px floor on touch; these were missed, and they do the
+   same job - one tap fills the field. At 6px of padding they were a ~28px
+   target holding a sentence of text. */
+@media (hover: none), (max-width: 720px) {
+  .offer-examples button {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
 }
 
 .offer-examples button:hover {
@@ -6756,20 +6804,46 @@ html.reveal-ready [data-reveal].is-visible {
 }
 
 .onboarding-form .tier-card-head > button {
+  /* A destructive control that discards a filled-in tier. At 10.5px with no
+     padding the tappable box was about 12px tall - a third of the 44px
+     minimum, and sitting in the top-right corner where a thumb lands. The
+     padding buys the hit area; the negative margin keeps the label where the
+     eye already expects it, level with "TIER 1". */
+  align-items: center;
   background: none;
   border: 0;
+  border-radius: 8px;
   color: var(--ink-soft);
   cursor: pointer;
+  display: inline-flex;
   font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: 0.05em;
-  padding: 0;
+  margin: -14px -12px;
+  min-height: 44px;
+  padding: 14px 12px;
   text-decoration: underline;
   text-transform: uppercase;
 }
 
 .onboarding-form .tier-card-head > button:hover {
   color: var(--ink);
+}
+
+/* What a chip is about to write, in the member's own units: the booking
+   window a date chip publishes, or the sentence appended to every tier card.
+   Sits under the control it explains, quieter than a label but readable
+   (--ink-soft is 7.13:1 on paper; --ink-mute measures 3.42:1 and fails AA). */
+.onboarding-form .chip-note {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+.onboarding-form label > .chip-note {
+  display: block;
+  order: 6;
 }
 
 .onboarding-form .tier-empty {
@@ -7232,6 +7306,45 @@ html.reveal-ready [data-reveal].is-visible {
   pointer-events: none;
 }
 
+/* Matches the real card's proportions: the photo is the top half, not a
+   thumbnail beside the text. 4:3 is what .listing-image settles on - the
+   height:250px at the top of this file is overridden later. */
+.preview-card-photo {
+  aspect-ratio: 4 / 3;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+/* The same box before a photo exists, so the space the picture will occupy is
+   visible rather than implied. Dashed like every other upload affordance. */
+.preview-card-photo.is-empty {
+  align-items: center;
+  background: var(--paper-2);
+  border-bottom: 1px dashed var(--line);
+  color: var(--ink-soft);
+  display: flex;
+  font-size: 12.5px;
+  justify-content: center;
+  line-height: 1.4;
+  margin: 0;
+  padding: 0 24px;
+  text-align: center;
+}
+
+/* Two lines, like .listing-blurb. A member who wrote six paragraphs should see
+   that the card shows two lines of them, not discover it after publishing. */
+.preview-card-blurb {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+  overflow: hidden;
+}
+
 .preview-card-top {
   align-items: center;
   background: var(--paper-2);
@@ -7287,6 +7400,15 @@ html.reveal-ready [data-reveal].is-visible {
   font-size: 20px;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+}
+
+/* The empty price slot is a prompt, not a number: at 20px in the same weight
+   as a real price it read like one. */
+.preview-card-foot b.preview-price-empty {
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 .preview-card-foot small {
