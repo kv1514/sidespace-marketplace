@@ -29,6 +29,15 @@ export const PUBLIC_PROFILE_COLUMNS =
  * A column added later is absent here until someone adds it, so it stays out
  * of the public payload by default. That is the safe direction to fail, and it
  * is the same trade-off PUBLIC_PROFILE_COLUMNS already makes.
+ *
+ * ADDING A COLUMN TO public.listings? Migration 0020 revoked the table-wide
+ * SELECT grant from `anon` and granted the columns back one by one, so a new
+ * column is unreadable by signed-out visitors until its migration carries
+ *
+ *     grant select (new_column) on public.listings to anon;
+ *
+ * If the column belongs in this list, it needs that grant too. Forgetting it
+ * surfaces as the public marketplace failing to load, not a missing field.
  */
 export const PUBLIC_LISTING_COLUMNS =
   "id,owner_profile_id,title,channel,format,price,price_unit,description,demographics,image_url,status,created_at,updated_at,image_urls,location_area,availability_notes,available_from,available_to,lead_time_days,minimum_booking,deliverables,cancellation_policy,price_max,brief_scope,target_platforms,surface_types,install_by,space_size,sponsor_tier,sponsor_slots";
