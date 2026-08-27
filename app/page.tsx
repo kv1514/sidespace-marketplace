@@ -1,6 +1,7 @@
 import MarketplaceApp from "./MarketplaceApp";
 import {
   createPublicClient,
+  PUBLIC_LISTING_COLUMNS,
   PUBLIC_PROFILE_COLUMNS,
 } from "@/lib/supabase/public";
 
@@ -49,7 +50,7 @@ export default async function Home() {
       supabase
         .from("listings")
         .select(
-          `*, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
+          `${PUBLIC_LISTING_COLUMNS}, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
         )
         .eq("status", "active")
         .order("created_at", { ascending: false })

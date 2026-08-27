@@ -12,7 +12,10 @@ import {
 } from "react";
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
-import { PUBLIC_PROFILE_COLUMNS } from "@/lib/supabase/public";
+import {
+  PUBLIC_LISTING_COLUMNS,
+  PUBLIC_PROFILE_COLUMNS,
+} from "@/lib/supabase/public";
 import {
   localListingSeeds,
   localProfiles,
@@ -2437,8 +2440,11 @@ export default function MarketplaceApp({
         .limit(60),
       supabase
         .from("listings")
+        // Not `*`: street_address is the exact address of someone's shop or
+        // home, and this payload reaches every visitor. loadOwnListings below
+        // keeps `*` because it is scoped to the owner.
         .select(
-          `*, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
+          `${PUBLIC_LISTING_COLUMNS}, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
         )
         .eq("status", "active")
         .order("created_at", { ascending: false })
@@ -3234,9 +3240,11 @@ export default function MarketplaceApp({
       if (supabase) {
         const { data } = await supabase
           .from("listings")
+          // A deep link, so anyone with the URL gets this row - narrowed for
+          // the same reason as the grid.
           .select(
-          `*, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
-        )
+            `${PUBLIC_LISTING_COLUMNS}, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
+          )
           .eq("id", listingId)
           .eq("status", "active")
           .maybeSingle();

@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
+  PUBLIC_LISTING_COLUMNS,
+  PUBLIC_PROFILE_COLUMNS,
+} from "@/lib/supabase/public";
+import {
   CountUp,
   HeroLine,
   Reveal,
@@ -118,7 +122,9 @@ export default async function PreviewPage() {
         .limit(60),
       supabase
         .from("listings")
-        .select("*, owner:profiles!listings_owner_profile_id_fkey(*)")
+        .select(
+          `${PUBLIC_LISTING_COLUMNS}, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
+        )
         .eq("status", "active")
         .order("created_at", { ascending: false })
         .limit(200),
