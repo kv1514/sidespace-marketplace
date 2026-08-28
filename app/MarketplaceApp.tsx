@@ -589,6 +589,8 @@ const SPACE_KIND_CHIPS: Array<{ label: string; channel: string }> = [
  * and I can help put it up." A shop that does not allow adhesive on glass was
  * advertising decals, and every owner was volunteering their own labour.
  */
+const SURFACE_OTHER = "Something else";
+
 const SURFACE_CHIPS = [
   "Posters",
   "Vinyl decals",
@@ -598,6 +600,11 @@ const SURFACE_CHIPS = [
   "A-frame signs",
   "Paint or mural",
   "Digital screens",
+  // Required, and it becomes `deliverables` - the literal list of what a buyer
+  // gets. An owner offering a shelf for product samples, a hanging mobile or a
+  // lightbox had nothing to pick and no way to say so, on the one question
+  // that defines the thing they are selling.
+  SURFACE_OTHER,
 ];
 
 /** Who physically puts it up. Feeds listings.install_by and the description. */
@@ -1055,6 +1062,8 @@ type OnboardingAnswers = {
   orgKind: string;
   /** What they typed after picking "Something else". */
   orgOther: string;
+  /** Same, for the surfaces list. */
+  surfaceOther: string;
   reach: string;
   /** The number behind the reach chip, editable - same fix as trafficCount. */
   reachCount: number | null;
@@ -1168,6 +1177,7 @@ function emptyAnswers(): OnboardingAnswers {
     wantedArea: "",
     orgKind: "",
     orgOther: "",
+    surfaceOther: "",
     reach: "",
     reachCount: null,
     funding: "",
@@ -1348,9 +1358,9 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
       // What can go up is now ANSWERED, not asserted. The old draft told every
       // owner's readers it "suits a poster, a decal, or a printed card" and
       // that the owner would put it up - two offers they never made.
-      answers.surfaces.length
+      resolvedSurfaces(answers).length
         ? `It works for ${joinList(
-            answers.surfaces.map((item) => item.toLowerCase()),
+            resolvedSurfaces(answers).map((item) => item.toLowerCase()),
           )}.`
         : "",
       install?.sentence ?? "",
@@ -1433,6 +1443,20 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
  * body means the host edits only their own words and each tier card still
  * differs, which is the entire point of publishing one card per tier.
  */
+/**
+ * What can actually go up, with "Something else" replaced by what they typed.
+ *
+ * Everywhere the list is written - listings.deliverables, the "It works for X"
+ * sentence, the validator - goes through here, so the placeholder chip never
+ * reaches a card as the name of a surface.
+ */
+function resolvedSurfaces(answers: OnboardingAnswers) {
+  const typed = answers.surfaceOther.trim();
+  return answers.surfaces
+    .map((item) => (item === SURFACE_OTHER ? typed : item))
+    .filter(Boolean);
+}
+
 /**
  * What this organisation calls itself, in its own words where it gave them.
  *
@@ -1688,9 +1712,9 @@ function buildListingDraft(
       location_area: answers.location_area.trim() || answers.city.trim(),
       street_address: answers.streetAddress.trim(),
       space_size: size,
-      surface_types: answers.surfaces,
+      surface_types: resolvedSurfaces(answers),
       install_by: answers.installBy || null,
-      deliverables: answers.surfaces.join("\n"),
+      deliverables: resolvedSurfaces(answers).join("\n"),
       demographics: trafficSentence(answers),
       availability_notes: answers.availability,
       // A space with no date window cannot be matched to a campaign that runs
@@ -3820,6 +3844,11 @@ export default function MarketplaceApp({
         !answers.surfaces.length,
         "Pick what can actually go up there.",
         "surfaces",
+      );
+      need(
+        answers.surfaces.includes(SURFACE_OTHER) && !answers.surfaceOther.trim(),
+        "Say what else can go up there.",
+        "surfaceOther",
       );
       need(!answers.installBy, "Say who puts it up.", "installBy");
       // The count, not the chip: an owner who typed 850 and never touched a
@@ -8211,11 +8240,23 @@ export default function MarketplaceApp({
                         <div className="field-grid">
                           <label className="field-wide">
                             Exact address <span className="optional">optional</span>
+                            {/* This used to end "listings are fetched whole,
+                                so do not put anything here you would not make
+                                public" - true when written, and false since
+                                the address was taken out of the public column
+                                list and out of the anon grant. Measured on the
+                                live database: anon has no table-level SELECT
+                                on listings and has_column_privilege for
+                                street_address is false, so a visitor or a
+                                crawler cannot reach it at all. A signed-in
+                                member still can, because `authenticated`
+                                keeps a table-wide grant, and that is the line
+                                the copy now draws. */}
                             <small>
-                              Only used for the map link below, so you can check
-                              you picked the right spot. Nothing on the site
-                              renders it - but listings are fetched whole, so do
-                              not put anything here you would not make public.
+                              Used for the map link below, so you can check you
+                              picked the right spot. It is never shown on your
+                              card and visitors to the site cannot read it —
+                              though anyone signed in to SideSpace could.
                             </small>
                             <input
                               data-field="streetAddress"
@@ -8321,14 +8362,47 @@ export default function MarketplaceApp({
                           options={SURFACE_CHIPS}
                           selected={answers.surfaces}
                           onPick={(value) =>
-                            setAnswers((current) => ({
-                              ...current,
-                              surfaces: current.surfaces.includes(value)
-                                ? current.surfaces.filter((item) => item !== value)
-                                : [...current.surfaces, value],
-                            }))
+                            setAnswers((current) => {
+                              const dropping = current.surfaces.includes(value);
+                              return {
+                                ...current,
+                                surfaces: dropping
+                                  ? current.surfaces.filter(
+                                      (item) => item !== value,
+                                    )
+                                  : [...current.surfaces, value],
+                                // Un-picking the chip clears the text, or a
+                                // surface they took back keeps publishing.
+                                surfaceOther:
+                                  value === SURFACE_OTHER && dropping
+                                    ? ""
+                                    : current.surfaceOther,
+                              };
+                            })
                           }
                         />
+                        {answers.surfaces.includes(SURFACE_OTHER) && (
+                          <div className="field-grid">
+                            <label className="field-wide">
+                              What else can go up?
+                              <small>
+                                A few words. It joins the list a buyer reads.
+                              </small>
+                              <input
+                                data-field="surfaceOther"
+                                maxLength={60}
+                                value={answers.surfaceOther}
+                                onChange={(event) =>
+                                  setAnswers((current) => ({
+                                    ...current,
+                                    surfaceOther: event.target.value,
+                                  }))
+                                }
+                                placeholder="a shelf for product samples"
+                              />
+                            </label>
+                          </div>
+                        )}
                         <ChipRow
                           field="installBy"
                           label="Who puts it up"
@@ -10080,8 +10154,8 @@ export default function MarketplaceApp({
                 <label>
                   Exact address
                   <small>
-                    Optional. Nothing renders it today, but listings are fetched
-                    whole, so treat it as public until that changes.
+                    Optional. Never shown on your card, and visitors to the site
+                    cannot read it — though anyone signed in to SideSpace could.
                   </small>
                   <input
                     name="street_address"
