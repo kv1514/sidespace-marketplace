@@ -1157,6 +1157,56 @@ function ChipRow({
   );
 }
 
+/**
+ * The answers that survive a change of role.
+ *
+ * Identity, not shape: who you are and how to reach you do not change because
+ * you switched from renting a window to selling posts. contact_name and
+ * contact_email used to be missing from this list, so a creator who typed
+ * their email, looked at the Business pane, and came back found the box empty
+ * - three of the four roles ask for that address.
+ */
+const ROLE_SWITCH_KEEPS = [
+  "display_name",
+  "city",
+  "bio",
+  "handle",
+  "contact_name",
+  "contact_email",
+  "categories",
+  "platforms",
+  "socials",
+  "followers",
+] as const;
+
+/**
+ * Whether a role switch would throw away work.
+ *
+ * Derived by diffing against emptyAnswers() rather than checking a hand-kept
+ * list of fields, so a question added to a role pane is covered the day it
+ * lands instead of the day somebody remembers this function exists.
+ */
+function roleAnswersFilled(answers: OnboardingAnswers) {
+  const blank = emptyAnswers();
+  const kept = new Set<string>(ROLE_SWITCH_KEEPS);
+  return (Object.keys(blank) as Array<keyof OnboardingAnswers>).some(
+    (key) =>
+      !kept.has(key) &&
+      JSON.stringify(answers[key]) !== JSON.stringify(blank[key]),
+  );
+}
+
+/** The answers to start a different role's flow with. */
+function answersForNewRole(current: OnboardingAnswers): OnboardingAnswers {
+  const next = emptyAnswers();
+  for (const key of ROLE_SWITCH_KEEPS) {
+    // Same list the confirm prompt measures against, so what is kept and what
+    // is counted as lost can never disagree.
+    (next[key] as unknown) = current[key];
+  }
+  return next;
+}
+
 function emptyAnswers(): OnboardingAnswers {
   return {
     display_name: "",
@@ -7588,33 +7638,33 @@ export default function MarketplaceApp({
                       aria-pressed={selectedRole === role}
                       className={selectedRole === role ? "active" : ""}
                       onClick={() => {
-                        const switching =
-                          selectedRole !== null && selectedRole !== role;
+                        const from = selectedRole;
+                        const switching = from !== null && from !== role;
+                        // Changing role changes what step 2 asks, and the four
+                        // shapes are not interchangeable, so the role-shaped
+                        // answers have to go - a creator must not inherit the
+                        // space owner's "per week" and a half-built space.
+                        //
+                        // But step 2 has a Back button, so this is reachable
+                        // with nine answered questions behind it, and it used
+                        // to discard them without a word. Ask first, and only
+                        // when there is something to lose.
+                        if (switching && roleAnswersFilled(answers)) {
+                          const ok = window.confirm(
+                            `Switching to ${roleCopy[role].label} clears what you filled in for ${roleCopy[from].label} — the two ask different questions. Your name, city, bio and contact details are kept.`,
+                          );
+                          if (!ok) return;
+                        }
                         setSelectedRole(role);
                         setRoleTouched(true);
                         setOnboardingError("");
                         setExtraRoles((current) =>
                           current.filter((extra) => extra !== role),
                         );
-                        // Changing role changes what step 2 asks, and the four
-                        // shapes are not interchangeable. Keep the identity
-                        // answers - they are role-independent - and drop the
-                        // role-shaped ones, or a creator inherits the space
-                        // owner's "per week" price unit and a half-built space.
                         if (switching) {
                           setTitleTouched(false);
                           setDescriptionTouched(false);
-                          setAnswers((current) => ({
-                            ...emptyAnswers(),
-                            display_name: current.display_name,
-                            city: current.city,
-                            bio: current.bio,
-                            handle: current.handle,
-                            categories: current.categories,
-                            platforms: current.platforms,
-                            socials: current.socials,
-                            followers: current.followers,
-                          }));
+                          setAnswers(answersForNewRole);
                         }
                       }}
                     >
