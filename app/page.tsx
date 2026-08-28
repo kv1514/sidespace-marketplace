@@ -4,6 +4,7 @@ import {
   PUBLIC_LISTING_COLUMNS,
   PUBLIC_PROFILE_COLUMNS,
 } from "@/lib/supabase/public";
+import type { Invite } from "@/lib/supabase/public";
 
 // Render per request, deliberately.
 //
@@ -28,9 +29,38 @@ export const dynamic = "force-dynamic";
  * marketplace of invented businesses and never a real one. The same query runs
  * again on the client, so a stale cache self-corrects within a second.
  */
-export default async function Home() {
+/** Reject anything that is not a uuid before it reaches the database. */
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function loadInvite(token: unknown): Promise<Invite | null> {
+  if (typeof token !== "string" || !UUID.test(token)) return null;
+  try {
+    const supabase = createPublicClient();
+    const { data, error } = await supabase
+      .rpc("invite_prospect", { token })
+      .maybeSingle();
+    if (error) {
+      console.error("[home] invite lookup failed:", error);
+      return null;
+    }
+    return (data as Invite) ?? null;
+  } catch (error) {
+    // An unknown or expired token is not an error worth breaking the homepage
+    // over - they still get the ordinary marketplace.
+    console.error("[home] invite lookup threw:", error);
+    return null;
+  }
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   let profiles = null;
   let listings = null;
+  const invite = await loadInvite((await searchParams).p);
 
   try {
     // Cookie-free on purpose: none of this data is per-user, so it does not
@@ -77,5 +107,11 @@ export default async function Home() {
     listings = null;
   }
 
-  return <MarketplaceApp initialProfiles={profiles} initialListings={listings} />;
+  return (
+    <MarketplaceApp
+      initialProfiles={profiles}
+      initialListings={listings}
+      invite={invite}
+    />
+  );
 }

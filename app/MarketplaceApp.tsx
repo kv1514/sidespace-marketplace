@@ -16,6 +16,7 @@ import {
   PUBLIC_LISTING_COLUMNS,
   PUBLIC_PROFILE_COLUMNS,
 } from "@/lib/supabase/public";
+import type { Invite } from "@/lib/supabase/public";
 import {
   localListingSeeds,
   localProfiles,
@@ -1284,9 +1285,58 @@ const TIER_PRESETS = ["Gold", "Silver", "Bronze", "Supporter", "Friend"];
  */
 const MAX_TIERS = 5;
 
-/** Seed the answers from a stored profile so re-entry is not a blank form. */
-function answersFromProfile(source: Profile | null): OnboardingAnswers {
+/**
+ * Which flow an invited business lands in.
+ *
+ * The outreach queue already made this call when it decided what to write to
+ * them: a SUPPLY prospect was emailed about renting out their own space, a
+ * DEMAND one about running a campaign. Asking them to pick a role again is
+ * asking a question we answered before we hit send.
+ *
+ * Still a pick, not a lock - the picker is on screen and they can change it.
+ */
+/** Only a uuid is ever put back into a redirect URL. */
+const UUID_PARAM =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function inviteRole(invite: Invite): Role {
+  return invite.intent === "SUPPLY" ? "space_owner" : "business";
+}
+
+/**
+ * The onboarding answers an invite link can fill in for someone.
+ *
+ * Only the three things we are actually sure of, all of them already on the
+ * business's own website: their name, their town, and which side of the
+ * marketplace we approached them about. Not their bio, not their category
+ * chips, not a price - the whole point of the last week's work was to stop the
+ * flow publishing sentences nobody wrote, and a prefill that invents a
+ * description would be the worst offender yet.
+ *
+ * The city gains a state because every prospect is Californian and the plain
+ * town name would fragment the market filter - "Brea", "Brea, CA" and
+ * "brea, CA" are already three separate filters in live data.
+ */
+function prefillFromInvite(invite: Invite): OnboardingAnswers {
   const base = emptyAnswers();
+  const city = invite.city.trim();
+  return {
+    ...base,
+    display_name: invite.business.trim(),
+    city: city ? (city.includes(",") ? city : `${city}, CA`) : "",
+  };
+}
+
+/** Seed the answers from a stored profile so re-entry is not a blank form. */
+function answersFromProfile(
+  source: Profile | null,
+  invite?: Invite | null,
+): OnboardingAnswers {
+  // No stored profile means this is first-run setup, which is the only time an
+  // invite is relevant. Routing the prefill through here rather than through
+  // the initial useState means every path that reseeds - including
+  // seedRolePickers(null) - keeps it, and a real profile always wins.
+  const base = !source && invite ? prefillFromInvite(invite) : emptyAnswers();
   if (!source) return base;
   return {
     ...base,
@@ -2541,12 +2591,15 @@ function Modal({
 export default function MarketplaceApp({
   initialProfiles = null,
   initialListings = null,
+  invite = null,
 }: {
   /** Server-rendered marketplace, so crawlers and link previews see real
    *  members instead of the seeded demo set. Null when Supabase was
    *  unreachable, in which case the demo seed is used exactly as before. */
   initialProfiles?: unknown;
   initialListings?: unknown;
+  /** Resolved from ?p= on the invite link in a cold email. See prefillFromInvite. */
+  invite?: Invite | null;
 } = {}) {
   const seededProfiles = useMemo(() => {
     const loaded = safeProfiles(initialProfiles);
@@ -2629,11 +2682,16 @@ export default function MarketplaceApp({
   // to default to "business": anyone who scrolled past the role cards was
   // silently filed as a Business, and role drives the RLS policy that decides
   // whether they may list at all.
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [selectedRole, setSelectedRole] = useState<Role | null>(
+    invite ? inviteRole(invite) : null,
+  );
   // A returning member already answered this, and their stored role counts as
   // an answer - otherwise "Edit profile" would refuse to advance until they
   // re-tapped a card they chose months ago.
-  const [roleTouched, setRoleTouched] = useState(false);
+  // An invite counts as answered: the outreach queue already decided which
+  // side of the marketplace this business was approached about, and the card
+  // is pre-selected on screen where they can change it.
+  const [roleTouched, setRoleTouched] = useState(Boolean(invite));
   const [extraRoles, setExtraRoles] = useState<Role[]>([]);
   /**
    * "setup" builds a profile AND the member's first listing. "edit" is the
@@ -2651,7 +2709,7 @@ export default function MarketplaceApp({
   );
   const [onboardingError, setOnboardingError] = useState("");
   const [answers, setAnswers] = useState<OnboardingAnswers>(() =>
-    emptyAnswers(),
+    answersFromProfile(null, invite),
   );
   // File inputs cannot be controlled, so these are read at publish time rather
   // than mirrored into `answers`.
@@ -3665,7 +3723,16 @@ export default function MarketplaceApp({
     // A retired `consumer` row has no card to highlight, so treat it as
     // unanswered and make them choose rather than pre-selecting something they
     // never picked.
-    const pickable = stored && PICKABLE_ROLES.includes(stored) ? stored : null;
+    //
+    // With no stored profile at all, an invite stands in: the queue already
+    // decided what to write to this business, so it can decide which flow they
+    // land in. A member who HAS a profile is never overridden by a link.
+    const pickable =
+      stored && PICKABLE_ROLES.includes(stored)
+        ? stored
+        : !source && invite
+          ? inviteRole(invite)
+          : null;
     setSelectedRole(pickable);
     setRoleTouched(Boolean(pickable));
     setExtraRoles(
@@ -3673,7 +3740,7 @@ export default function MarketplaceApp({
         EXTRA_ROLE_OPTIONS.includes(role),
       ),
     );
-    setAnswers(answersFromProfile(source));
+    setAnswers(answersFromProfile(source, invite));
     setOnboardingError("");
     // Otherwise a second open keeps treating the generated title and
     // description as hand-written, and stops regenerating them.
@@ -4116,10 +4183,18 @@ export default function MarketplaceApp({
 
   async function signInWithGoogle() {
     if (!supabase) return;
+    // Carry an invite token through the OAuth round trip. Without this an
+    // invited business signs in with Google and comes back to a blank form -
+    // the prefill is resolved from ?p= on the server, and Google sends them to
+    // /auth/callback, which drops the query we arrived with.
+    const token = new URLSearchParams(window.location.search).get("p") ?? "";
+    const next = UUID_PARAM.test(token)
+      ? `?next=${encodeURIComponent(`/?p=${token}`)}`
+      : "";
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback${next}`,
       },
     });
     if (error) setToast(friendlyDbError(error));
@@ -6862,12 +6937,21 @@ export default function MarketplaceApp({
           <div className="modal-heading">
             <p className="eyebrow">Your SideSpace account</p>
             <h2>
-              {authMode === "signup" ? "Join the network." : "Welcome back."}
+              {authMode === "signup"
+                ? invite
+                  ? `Set up ${invite.business}.`
+                  : "Join the network."
+                : "Welcome back."}
             </h2>
             <p>
-              {authMode === "signup"
-                ? "Browse publicly. Create an account when you’re ready to list or message."
-                : "Sign in to manage your profile, listings, and conversations."}
+              {authMode !== "signup"
+                ? "Sign in to manage your profile, listings, and conversations."
+                : invite
+                  ? // They were written to by name. Landing on "Join the
+                    // network" makes the email look like a mail-merge, which
+                    // is the one thing the outreach rules exist to avoid.
+                    "One account, then the questions we could not answer for you. Most of it is already filled in."
+                  : "Browse publicly. Create an account when you’re ready to list or message."}
             </p>
           </div>
           {!configured && (
@@ -7653,15 +7737,33 @@ export default function MarketplaceApp({
             </div>
           </div>
 
-          {onboardingMode === "setup" && (
-            <div className="setup-notice">
-              <strong>Nobody can see you yet.</strong>
-              <p>
-                Your profile appears in search once you finish this. It is two
-                screens.
-              </p>
-            </div>
-          )}
+          {onboardingMode === "setup" &&
+            (invite && !profile ? (
+              /* An invited business should never be asked to type its own
+                 name. But a prefill they cannot see the origin of is just the
+                 form asserting things about them, which is the thing this
+                 whole flow has been fixed to stop doing - so it says where it
+                 came from and that they are free to change it. */
+              <div className="setup-notice">
+                <strong>
+                  {invite.owner_first_name?.trim()
+                    ? `Hi ${invite.owner_first_name.trim()} — we started this for ${invite.business}.`
+                    : `We started this for ${invite.business}.`}
+                </strong>
+                <p>
+                  Filled in from your own website, so check it and change
+                  anything that is wrong. Nobody can see you until you finish.
+                </p>
+              </div>
+            ) : (
+              <div className="setup-notice">
+                <strong>Nobody can see you yet.</strong>
+                <p>
+                  Your profile appears in search once you finish this. It is two
+                  screens.
+                </p>
+              </div>
+            ))}
 
           <form
             ref={onboardingFormRef}

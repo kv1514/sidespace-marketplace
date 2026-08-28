@@ -98,8 +98,27 @@ Under 150 words.
 >
 > Kausthubh Veldanda
 > Cofounder, SideSpace — Brea, CA
-> https://sidespace-marketplace.vercel.app/
+> sidespace-marketplace.vercel.app/?p={PROSPECT_ID}
 > Not useful? Reply "no thanks" and I won't write again.
+
+### The link carries their prospect id
+
+`?p={PROSPECT_ID}` is the `outreach.prospects.id` uuid for the row you are
+sending to. It is not tracking — it is what makes the site know who arrived.
+
+Opening it prefills onboarding with their business name and town, and puts them
+in the right flow (SUPPLY lands on Physical space, DEMAND on Business), so a
+salon owner who got a personal email is not then asked to type her own salon's
+name into a blank form. Everything is editable and the pane says where it came
+from.
+
+Resolved server-side by `public.invite_prospect(uuid)`, which returns only the
+six fields already public on their website. Their email address, the hook we
+wrote, and the URLs we researched are NOT returned — the link gets forwarded,
+and none of our notes should travel with it.
+
+Send without the `?p=` and nothing breaks; they just get the ordinary blank
+flow, which is what every email before today did.
 
 ### SUPPLY template (Bay Area)
 
@@ -124,7 +143,7 @@ Leads with honesty about being early there, and turns that into the ask.
 >
 > Kausthubh Veldanda
 > Cofounder, SideSpace — Brea, CA
-> https://sidespace-marketplace.vercel.app/
+> sidespace-marketplace.vercel.app/?p={PROSPECT_ID}
 > Not useful? Reply "no thanks" and I won't write again.
 
 ---
