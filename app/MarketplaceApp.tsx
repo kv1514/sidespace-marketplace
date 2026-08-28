@@ -928,6 +928,24 @@ function sponsorOfferLine(benefits: string[]) {
   return joinList([...perks.slice(0, 2), `${rest} more`]);
 }
 
+/**
+ * The one-line "Looking for" on a brief card.
+ *
+ * Two problems it fixes. A business that picks broadly published all of it:
+ * every physical chip plus every platform is a 234-character run-on where a
+ * card headline should be. And everything was lowercased, which is right for
+ * "storefront windows" and wrong for a brand - the card asked for "instagram
+ * and tiktok", and rendered X as "x".
+ */
+function briefWantsLine(placements: string[], platforms: string[]) {
+  const wants = [
+    ...placements.map((item) => item.toLowerCase()),
+    ...platforms,
+  ];
+  if (wants.length <= 3) return joinList(wants);
+  return joinList([...wants.slice(0, 3), `${wants.length - 3} more`]);
+}
+
 /** Sponsorship window. Sets availability_notes and the date pair. */
 const SPONSOR_SEASON_CHIPS: Array<{
   label: string;
@@ -1740,15 +1758,15 @@ function buildListingDraft(
     const scope = answers.briefScope || null;
     // What the card reads after "Looking for". A physical-only brief must not
     // advertise platforms it never asked about, and vice versa.
-    const wants = [
-      ...(scope !== "virtual" ? answers.placements : []),
-      ...(scope !== "physical" ? answers.targetPlatforms : []),
-    ].map((item) => item.toLowerCase());
+    const wants = briefWantsLine(
+      scope !== "virtual" ? answers.placements : [],
+      scope !== "physical" ? answers.targetPlatforms : [],
+    );
     return {
       ...base,
       channel: "Business brief",
       price_unit: "campaign",
-      format: joinList(wants),
+      format: wants,
       deliverables: answers.deliverables.trim(),
       brief_scope: scope,
       target_platforms: scope !== "physical" ? answers.targetPlatforms : [],
@@ -8677,28 +8695,12 @@ export default function MarketplaceApp({
                                   }))
                                 }
                               />
-                              <div className="offer-examples">
-                                {DELIVERABLE_EXAMPLES.map((example) => (
-                                  <button
-                                    key={example}
-                                    type="button"
-                                    onClick={() =>
-                                      setAnswers((current) => ({
-                                        ...current,
-                                        deliverables: current.deliverables
-                                          ? `${current.deliverables}, ${example}`
-                                          : example,
-                                      }))
-                                    }
-                                  >
-                                    {example}
-                                  </button>
-                                ))}
-                              </div>
                               <div className="field-grid">
                                 <label className="field-wide">
                                   Anything a creator must include?
                                   <input
+                                    data-field="deliverables"
+                                    maxLength={200}
                                     value={answers.deliverables}
                                     onChange={(event) =>
                                       setAnswers((current) => ({
@@ -8708,6 +8710,51 @@ export default function MarketplaceApp({
                                     }
                                     placeholder="Tag @us, link in bio for 48h"
                                   />
+                                  {/* Below the box now, not above it: these
+                                      fill the field, and every other example
+                                      row in the product sits under the thing
+                                      it fills. */}
+                                  <span className="offer-examples-label">
+                                    Or tap to add one:
+                                  </span>
+                                  <span className="offer-examples">
+                                    {DELIVERABLE_EXAMPLES.map((example) => {
+                                      // Already in the list? Tapping again used
+                                      // to append it a second time - "Tag @us,
+                                      // Tag @us" - so it toggles instead.
+                                      const parts = answers.deliverables
+                                        .split(",")
+                                        .map((item) => item.trim())
+                                        .filter(Boolean);
+                                      const picked = parts.includes(example);
+                                      return (
+                                        <button
+                                          key={example}
+                                          type="button"
+                                          className={picked ? "is-picked" : ""}
+                                          onClick={() =>
+                                            setAnswers((current) => {
+                                              const list = current.deliverables
+                                                .split(",")
+                                                .map((item) => item.trim())
+                                                .filter(Boolean);
+                                              const next = list.includes(example)
+                                                ? list.filter(
+                                                    (item) => item !== example,
+                                                  )
+                                                : [...list, example];
+                                              return {
+                                                ...current,
+                                                deliverables: next.join(", "),
+                                              };
+                                            })
+                                          }
+                                        >
+                                          {example}
+                                        </button>
+                                      );
+                                    })}
+                                  </span>
                                 </label>
                               </div>
                             </>
@@ -8755,13 +8802,20 @@ export default function MarketplaceApp({
                                 : []
                           }
                           onPick={(value) =>
-                            setAnswers((current) => ({
-                              ...current,
-                              artwork:
+                            setAnswers((current) => {
+                              const next =
                                 value === "I’ll supply the artwork"
                                   ? "supply"
-                                  : "help",
-                            }))
+                                  : "help";
+                              // Tapping the picked chip again clears it. This
+                              // question is optional, but once answered there
+                              // was no way back, and the answer writes a
+                              // sentence into the published description.
+                              return {
+                                ...current,
+                                artwork: current.artwork === next ? "" : next,
+                              };
+                            })
                           }
                         />
 
