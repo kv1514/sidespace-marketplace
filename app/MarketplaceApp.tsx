@@ -16,6 +16,7 @@ import {
   PUBLIC_LISTING_COLUMNS,
   PUBLIC_PROFILE_COLUMNS,
 } from "@/lib/supabase/public";
+import type { Invite } from "@/lib/supabase/public";
 import {
   localListingSeeds,
   localProfiles,
@@ -589,6 +590,8 @@ const SPACE_KIND_CHIPS: Array<{ label: string; channel: string }> = [
  * and I can help put it up." A shop that does not allow adhesive on glass was
  * advertising decals, and every owner was volunteering their own labour.
  */
+const SURFACE_OTHER = "Something else";
+
 const SURFACE_CHIPS = [
   "Posters",
   "Vinyl decals",
@@ -598,6 +601,11 @@ const SURFACE_CHIPS = [
   "A-frame signs",
   "Paint or mural",
   "Digital screens",
+  // Required, and it becomes `deliverables` - the literal list of what a buyer
+  // gets. An owner offering a shelf for product samples, a hanging mobile or a
+  // lightbox had nothing to pick and no way to say so, on the one question
+  // that defines the thing they are selling.
+  SURFACE_OTHER,
 ];
 
 /** Who physically puts it up. Feeds listings.install_by and the description. */
@@ -921,6 +929,24 @@ function sponsorOfferLine(benefits: string[]) {
   return joinList([...perks.slice(0, 2), `${rest} more`]);
 }
 
+/**
+ * The one-line "Looking for" on a brief card.
+ *
+ * Two problems it fixes. A business that picks broadly published all of it:
+ * every physical chip plus every platform is a 234-character run-on where a
+ * card headline should be. And everything was lowercased, which is right for
+ * "storefront windows" and wrong for a brand - the card asked for "instagram
+ * and tiktok", and rendered X as "x".
+ */
+function briefWantsLine(placements: string[], platforms: string[]) {
+  const wants = [
+    ...placements.map((item) => item.toLowerCase()),
+    ...platforms,
+  ];
+  if (wants.length <= 3) return joinList(wants);
+  return joinList([...wants.slice(0, 3), `${wants.length - 3} more`]);
+}
+
 /** Sponsorship window. Sets availability_notes and the date pair. */
 const SPONSOR_SEASON_CHIPS: Array<{
   label: string;
@@ -1055,6 +1081,8 @@ type OnboardingAnswers = {
   orgKind: string;
   /** What they typed after picking "Something else". */
   orgOther: string;
+  /** Same, for the surfaces list. */
+  surfaceOther: string;
   reach: string;
   /** The number behind the reach chip, editable - same fix as trafficCount. */
   reachCount: number | null;
@@ -1130,6 +1158,56 @@ function ChipRow({
   );
 }
 
+/**
+ * The answers that survive a change of role.
+ *
+ * Identity, not shape: who you are and how to reach you do not change because
+ * you switched from renting a window to selling posts. contact_name and
+ * contact_email used to be missing from this list, so a creator who typed
+ * their email, looked at the Business pane, and came back found the box empty
+ * - three of the four roles ask for that address.
+ */
+const ROLE_SWITCH_KEEPS = [
+  "display_name",
+  "city",
+  "bio",
+  "handle",
+  "contact_name",
+  "contact_email",
+  "categories",
+  "platforms",
+  "socials",
+  "followers",
+] as const;
+
+/**
+ * Whether a role switch would throw away work.
+ *
+ * Derived by diffing against emptyAnswers() rather than checking a hand-kept
+ * list of fields, so a question added to a role pane is covered the day it
+ * lands instead of the day somebody remembers this function exists.
+ */
+function roleAnswersFilled(answers: OnboardingAnswers) {
+  const blank = emptyAnswers();
+  const kept = new Set<string>(ROLE_SWITCH_KEEPS);
+  return (Object.keys(blank) as Array<keyof OnboardingAnswers>).some(
+    (key) =>
+      !kept.has(key) &&
+      JSON.stringify(answers[key]) !== JSON.stringify(blank[key]),
+  );
+}
+
+/** The answers to start a different role's flow with. */
+function answersForNewRole(current: OnboardingAnswers): OnboardingAnswers {
+  const next = emptyAnswers();
+  for (const key of ROLE_SWITCH_KEEPS) {
+    // Same list the confirm prompt measures against, so what is kept and what
+    // is counted as lost can never disagree.
+    (next[key] as unknown) = current[key];
+  }
+  return next;
+}
+
 function emptyAnswers(): OnboardingAnswers {
   return {
     display_name: "",
@@ -1168,6 +1246,7 @@ function emptyAnswers(): OnboardingAnswers {
     wantedArea: "",
     orgKind: "",
     orgOther: "",
+    surfaceOther: "",
     reach: "",
     reachCount: null,
     funding: "",
@@ -1206,9 +1285,58 @@ const TIER_PRESETS = ["Gold", "Silver", "Bronze", "Supporter", "Friend"];
  */
 const MAX_TIERS = 5;
 
-/** Seed the answers from a stored profile so re-entry is not a blank form. */
-function answersFromProfile(source: Profile | null): OnboardingAnswers {
+/**
+ * Which flow an invited business lands in.
+ *
+ * The outreach queue already made this call when it decided what to write to
+ * them: a SUPPLY prospect was emailed about renting out their own space, a
+ * DEMAND one about running a campaign. Asking them to pick a role again is
+ * asking a question we answered before we hit send.
+ *
+ * Still a pick, not a lock - the picker is on screen and they can change it.
+ */
+/** Only a uuid is ever put back into a redirect URL. */
+const UUID_PARAM =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function inviteRole(invite: Invite): Role {
+  return invite.intent === "SUPPLY" ? "space_owner" : "business";
+}
+
+/**
+ * The onboarding answers an invite link can fill in for someone.
+ *
+ * Only the three things we are actually sure of, all of them already on the
+ * business's own website: their name, their town, and which side of the
+ * marketplace we approached them about. Not their bio, not their category
+ * chips, not a price - the whole point of the last week's work was to stop the
+ * flow publishing sentences nobody wrote, and a prefill that invents a
+ * description would be the worst offender yet.
+ *
+ * The city gains a state because every prospect is Californian and the plain
+ * town name would fragment the market filter - "Brea", "Brea, CA" and
+ * "brea, CA" are already three separate filters in live data.
+ */
+function prefillFromInvite(invite: Invite): OnboardingAnswers {
   const base = emptyAnswers();
+  const city = invite.city.trim();
+  return {
+    ...base,
+    display_name: invite.business.trim(),
+    city: city ? (city.includes(",") ? city : `${city}, CA`) : "",
+  };
+}
+
+/** Seed the answers from a stored profile so re-entry is not a blank form. */
+function answersFromProfile(
+  source: Profile | null,
+  invite?: Invite | null,
+): OnboardingAnswers {
+  // No stored profile means this is first-run setup, which is the only time an
+  // invite is relevant. Routing the prefill through here rather than through
+  // the initial useState means every path that reseeds - including
+  // seedRolePickers(null) - keeps it, and a real profile always wins.
+  const base = !source && invite ? prefillFromInvite(invite) : emptyAnswers();
   if (!source) return base;
   return {
     ...base,
@@ -1348,9 +1476,9 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
       // What can go up is now ANSWERED, not asserted. The old draft told every
       // owner's readers it "suits a poster, a decal, or a printed card" and
       // that the owner would put it up - two offers they never made.
-      answers.surfaces.length
+      resolvedSurfaces(answers).length
         ? `It works for ${joinList(
-            answers.surfaces.map((item) => item.toLowerCase()),
+            resolvedSurfaces(answers).map((item) => item.toLowerCase()),
           )}.`
         : "",
       install?.sentence ?? "",
@@ -1433,6 +1561,20 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
  * body means the host edits only their own words and each tier card still
  * differs, which is the entire point of publishing one card per tier.
  */
+/**
+ * What can actually go up, with "Something else" replaced by what they typed.
+ *
+ * Everywhere the list is written - listings.deliverables, the "It works for X"
+ * sentence, the validator - goes through here, so the placeholder chip never
+ * reaches a card as the name of a surface.
+ */
+function resolvedSurfaces(answers: OnboardingAnswers) {
+  const typed = answers.surfaceOther.trim();
+  return answers.surfaces
+    .map((item) => (item === SURFACE_OTHER ? typed : item))
+    .filter(Boolean);
+}
+
 /**
  * What this organisation calls itself, in its own words where it gave them.
  *
@@ -1688,9 +1830,9 @@ function buildListingDraft(
       location_area: answers.location_area.trim() || answers.city.trim(),
       street_address: answers.streetAddress.trim(),
       space_size: size,
-      surface_types: answers.surfaces,
+      surface_types: resolvedSurfaces(answers),
       install_by: answers.installBy || null,
-      deliverables: answers.surfaces.join("\n"),
+      deliverables: resolvedSurfaces(answers).join("\n"),
       demographics: trafficSentence(answers),
       availability_notes: answers.availability,
       // A space with no date window cannot be matched to a campaign that runs
@@ -1716,15 +1858,15 @@ function buildListingDraft(
     const scope = answers.briefScope || null;
     // What the card reads after "Looking for". A physical-only brief must not
     // advertise platforms it never asked about, and vice versa.
-    const wants = [
-      ...(scope !== "virtual" ? answers.placements : []),
-      ...(scope !== "physical" ? answers.targetPlatforms : []),
-    ].map((item) => item.toLowerCase());
+    const wants = briefWantsLine(
+      scope !== "virtual" ? answers.placements : [],
+      scope !== "physical" ? answers.targetPlatforms : [],
+    );
     return {
       ...base,
       channel: "Business brief",
       price_unit: "campaign",
-      format: joinList(wants),
+      format: wants,
       deliverables: answers.deliverables.trim(),
       brief_scope: scope,
       target_platforms: scope !== "physical" ? answers.targetPlatforms : [],
@@ -2039,12 +2181,42 @@ function shuffleKey(id: string) {
  * A listing is "ready" when it would not embarrass the marketplace: it says
  * enough for someone to decide. Thin ones sink below the complete ones.
  */
+/**
+ * What the marketplace counts as a complete listing.
+ *
+ * listingRank sorts anything failing this below every complete listing, and
+ * nothing ever told the owner. At the time of writing 3 of the 16 live member
+ * listings are in that state - one short title, two short descriptions - so
+ * roughly a fifth of the inventory is being quietly sunk by a rule its owners
+ * have never been shown.
+ *
+ * One constant, so the ranking, the onboarding validator and the note on the
+ * My listings card cannot drift apart about where the bar is.
+ */
+const LISTING_READY_MIN = { title: 8, format: 10, description: 60 };
+
+/**
+ * What a listing is still missing, phrased for the person who has to fix it.
+ * An empty list means the grid treats it as complete.
+ */
+function listingGaps(
+  listing: Pick<Listing, "title" | "format" | "description">,
+) {
+  const gaps: string[] = [];
+  if (listing.title.trim().length < LISTING_READY_MIN.title) {
+    gaps.push("a longer title");
+  }
+  if (listing.format.trim().length < LISTING_READY_MIN.format) {
+    gaps.push("more detail in what the buyer gets");
+  }
+  if (listing.description.trim().length < LISTING_READY_MIN.description) {
+    gaps.push("a longer description");
+  }
+  return gaps;
+}
+
 function listingIsReady(listing: Listing) {
-  return (
-    listing.description.trim().length >= 60 &&
-    listing.format.trim().length >= 10 &&
-    listing.title.trim().length >= 8
-  );
+  return listingGaps(listing).length === 0;
 }
 
 /** Real and complete first, then real but thin, then samples. */
@@ -2419,12 +2591,15 @@ function Modal({
 export default function MarketplaceApp({
   initialProfiles = null,
   initialListings = null,
+  invite = null,
 }: {
   /** Server-rendered marketplace, so crawlers and link previews see real
    *  members instead of the seeded demo set. Null when Supabase was
    *  unreachable, in which case the demo seed is used exactly as before. */
   initialProfiles?: unknown;
   initialListings?: unknown;
+  /** Resolved from ?p= on the invite link in a cold email. See prefillFromInvite. */
+  invite?: Invite | null;
 } = {}) {
   const seededProfiles = useMemo(() => {
     const loaded = safeProfiles(initialProfiles);
@@ -2507,11 +2682,16 @@ export default function MarketplaceApp({
   // to default to "business": anyone who scrolled past the role cards was
   // silently filed as a Business, and role drives the RLS policy that decides
   // whether they may list at all.
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [selectedRole, setSelectedRole] = useState<Role | null>(
+    invite ? inviteRole(invite) : null,
+  );
   // A returning member already answered this, and their stored role counts as
   // an answer - otherwise "Edit profile" would refuse to advance until they
   // re-tapped a card they chose months ago.
-  const [roleTouched, setRoleTouched] = useState(false);
+  // An invite counts as answered: the outreach queue already decided which
+  // side of the marketplace this business was approached about, and the card
+  // is pre-selected on screen where they can change it.
+  const [roleTouched, setRoleTouched] = useState(Boolean(invite));
   const [extraRoles, setExtraRoles] = useState<Role[]>([]);
   /**
    * "setup" builds a profile AND the member's first listing. "edit" is the
@@ -2529,7 +2709,7 @@ export default function MarketplaceApp({
   );
   const [onboardingError, setOnboardingError] = useState("");
   const [answers, setAnswers] = useState<OnboardingAnswers>(() =>
-    emptyAnswers(),
+    answersFromProfile(null, invite),
   );
   // File inputs cannot be controlled, so these are read at publish time rather
   // than mirrored into `answers`.
@@ -3543,7 +3723,16 @@ export default function MarketplaceApp({
     // A retired `consumer` row has no card to highlight, so treat it as
     // unanswered and make them choose rather than pre-selecting something they
     // never picked.
-    const pickable = stored && PICKABLE_ROLES.includes(stored) ? stored : null;
+    //
+    // With no stored profile at all, an invite stands in: the queue already
+    // decided what to write to this business, so it can decide which flow they
+    // land in. A member who HAS a profile is never overridden by a link.
+    const pickable =
+      stored && PICKABLE_ROLES.includes(stored)
+        ? stored
+        : !source && invite
+          ? inviteRole(invite)
+          : null;
     setSelectedRole(pickable);
     setRoleTouched(Boolean(pickable));
     setExtraRoles(
@@ -3551,7 +3740,7 @@ export default function MarketplaceApp({
         EXTRA_ROLE_OPTIONS.includes(role),
       ),
     );
-    setAnswers(answersFromProfile(source));
+    setAnswers(answersFromProfile(source, invite));
     setOnboardingError("");
     // Otherwise a second open keeps treating the generated title and
     // description as hand-written, and stops regenerating them.
@@ -3821,6 +4010,11 @@ export default function MarketplaceApp({
         "Pick what can actually go up there.",
         "surfaces",
       );
+      need(
+        answers.surfaces.includes(SURFACE_OTHER) && !answers.surfaceOther.trim(),
+        "Say what else can go up there.",
+        "surfaceOther",
+      );
       need(!answers.installBy, "Say who puts it up.", "installBy");
       // The count, not the chip: an owner who typed 850 and never touched a
       // chip has answered this, and an owner who picked "I'll count it myself"
@@ -3893,7 +4087,13 @@ export default function MarketplaceApp({
     // A sponsorship host has no single title or price - both are per tier and
     // tierProblems already checked every one of them.
     if (role !== "sponsor_host") {
-      need(!shownTitle.trim(), "Give this a title.", "title");
+      need(
+        shownTitle.trim().length < LISTING_READY_MIN.title,
+        shownTitle.trim()
+          ? "That title is too short — the marketplace sorts thin listings last."
+          : "Give this a title.",
+        "title",
+      );
       need(
         !answers.price || answers.price < 1,
         "Set a price of at least $1.",
@@ -3983,10 +4183,18 @@ export default function MarketplaceApp({
 
   async function signInWithGoogle() {
     if (!supabase) return;
+    // Carry an invite token through the OAuth round trip. Without this an
+    // invited business signs in with Google and comes back to a blank form -
+    // the prefill is resolved from ?p= on the server, and Google sends them to
+    // /auth/callback, which drops the query we arrived with.
+    const token = new URLSearchParams(window.location.search).get("p") ?? "";
+    const next = UUID_PARAM.test(token)
+      ? `?next=${encodeURIComponent(`/?p=${token}`)}`
+      : "";
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback${next}`,
       },
     });
     if (error) setToast(friendlyDbError(error));
@@ -6729,12 +6937,21 @@ export default function MarketplaceApp({
           <div className="modal-heading">
             <p className="eyebrow">Your SideSpace account</p>
             <h2>
-              {authMode === "signup" ? "Join the network." : "Welcome back."}
+              {authMode === "signup"
+                ? invite
+                  ? `Set up ${invite.business}.`
+                  : "Join the network."
+                : "Welcome back."}
             </h2>
             <p>
-              {authMode === "signup"
-                ? "Browse publicly. Create an account when you’re ready to list or message."
-                : "Sign in to manage your profile, listings, and conversations."}
+              {authMode !== "signup"
+                ? "Sign in to manage your profile, listings, and conversations."
+                : invite
+                  ? // They were written to by name. Landing on "Join the
+                    // network" makes the email look like a mail-merge, which
+                    // is the one thing the outreach rules exist to avoid.
+                    "One account, then the questions we could not answer for you. Most of it is already filled in."
+                  : "Browse publicly. Create an account when you’re ready to list or message."}
             </p>
           </div>
           {!configured && (
@@ -7093,6 +7310,21 @@ export default function MarketplaceApp({
                         <p>
                           {listing.channel} • {priceLabel(listing)}/{listing.price_unit}
                         </p>
+                        {/* The one place an owner can find out that the grid
+                            is sinking their listing. listingRank has always
+                            sorted a thin row below every complete one; this
+                            says so, and says which piece is missing, next to
+                            the Edit button that fixes it. */}
+                        {(() => {
+                          const gaps = listingGaps(listing);
+                          if (!gaps.length) return null;
+                          return (
+                            <p className="listing-gap">
+                              Sorted below complete listings — it needs{" "}
+                              {joinList(gaps)}.
+                            </p>
+                          );
+                        })()}
                         <div className="my-listing-actions">
                           <button
                             onClick={() => {
@@ -7505,15 +7737,33 @@ export default function MarketplaceApp({
             </div>
           </div>
 
-          {onboardingMode === "setup" && (
-            <div className="setup-notice">
-              <strong>Nobody can see you yet.</strong>
-              <p>
-                Your profile appears in search once you finish this. It is two
-                screens.
-              </p>
-            </div>
-          )}
+          {onboardingMode === "setup" &&
+            (invite && !profile ? (
+              /* An invited business should never be asked to type its own
+                 name. But a prefill they cannot see the origin of is just the
+                 form asserting things about them, which is the thing this
+                 whole flow has been fixed to stop doing - so it says where it
+                 came from and that they are free to change it. */
+              <div className="setup-notice">
+                <strong>
+                  {invite.owner_first_name?.trim()
+                    ? `Hi ${invite.owner_first_name.trim()} — we started this for ${invite.business}.`
+                    : `We started this for ${invite.business}.`}
+                </strong>
+                <p>
+                  Filled in from your own website, so check it and change
+                  anything that is wrong. Nobody can see you until you finish.
+                </p>
+              </div>
+            ) : (
+              <div className="setup-notice">
+                <strong>Nobody can see you yet.</strong>
+                <p>
+                  Your profile appears in search once you finish this. It is two
+                  screens.
+                </p>
+              </div>
+            ))}
 
           <form
             ref={onboardingFormRef}
@@ -7541,33 +7791,33 @@ export default function MarketplaceApp({
                       aria-pressed={selectedRole === role}
                       className={selectedRole === role ? "active" : ""}
                       onClick={() => {
-                        const switching =
-                          selectedRole !== null && selectedRole !== role;
+                        const from = selectedRole;
+                        const switching = from !== null && from !== role;
+                        // Changing role changes what step 2 asks, and the four
+                        // shapes are not interchangeable, so the role-shaped
+                        // answers have to go - a creator must not inherit the
+                        // space owner's "per week" and a half-built space.
+                        //
+                        // But step 2 has a Back button, so this is reachable
+                        // with nine answered questions behind it, and it used
+                        // to discard them without a word. Ask first, and only
+                        // when there is something to lose.
+                        if (switching && roleAnswersFilled(answers)) {
+                          const ok = window.confirm(
+                            `Switching to ${roleCopy[role].label} clears what you filled in for ${roleCopy[from].label} — the two ask different questions. Your name, city, bio and contact details are kept.`,
+                          );
+                          if (!ok) return;
+                        }
                         setSelectedRole(role);
                         setRoleTouched(true);
                         setOnboardingError("");
                         setExtraRoles((current) =>
                           current.filter((extra) => extra !== role),
                         );
-                        // Changing role changes what step 2 asks, and the four
-                        // shapes are not interchangeable. Keep the identity
-                        // answers - they are role-independent - and drop the
-                        // role-shaped ones, or a creator inherits the space
-                        // owner's "per week" price unit and a half-built space.
                         if (switching) {
                           setTitleTouched(false);
                           setDescriptionTouched(false);
-                          setAnswers((current) => ({
-                            ...emptyAnswers(),
-                            display_name: current.display_name,
-                            city: current.city,
-                            bio: current.bio,
-                            handle: current.handle,
-                            categories: current.categories,
-                            platforms: current.platforms,
-                            socials: current.socials,
-                            followers: current.followers,
-                          }));
+                          setAnswers(answersForNewRole);
                         }
                       }}
                     >
@@ -8211,11 +8461,23 @@ export default function MarketplaceApp({
                         <div className="field-grid">
                           <label className="field-wide">
                             Exact address <span className="optional">optional</span>
+                            {/* This used to end "listings are fetched whole,
+                                so do not put anything here you would not make
+                                public" - true when written, and false since
+                                the address was taken out of the public column
+                                list and out of the anon grant. Measured on the
+                                live database: anon has no table-level SELECT
+                                on listings and has_column_privilege for
+                                street_address is false, so a visitor or a
+                                crawler cannot reach it at all. A signed-in
+                                member still can, because `authenticated`
+                                keeps a table-wide grant, and that is the line
+                                the copy now draws. */}
                             <small>
-                              Only used for the map link below, so you can check
-                              you picked the right spot. Nothing on the site
-                              renders it - but listings are fetched whole, so do
-                              not put anything here you would not make public.
+                              Used for the map link below, so you can check you
+                              picked the right spot. It is never shown on your
+                              card and visitors to the site cannot read it —
+                              though anyone signed in to SideSpace could.
                             </small>
                             <input
                               data-field="streetAddress"
@@ -8321,14 +8583,47 @@ export default function MarketplaceApp({
                           options={SURFACE_CHIPS}
                           selected={answers.surfaces}
                           onPick={(value) =>
-                            setAnswers((current) => ({
-                              ...current,
-                              surfaces: current.surfaces.includes(value)
-                                ? current.surfaces.filter((item) => item !== value)
-                                : [...current.surfaces, value],
-                            }))
+                            setAnswers((current) => {
+                              const dropping = current.surfaces.includes(value);
+                              return {
+                                ...current,
+                                surfaces: dropping
+                                  ? current.surfaces.filter(
+                                      (item) => item !== value,
+                                    )
+                                  : [...current.surfaces, value],
+                                // Un-picking the chip clears the text, or a
+                                // surface they took back keeps publishing.
+                                surfaceOther:
+                                  value === SURFACE_OTHER && dropping
+                                    ? ""
+                                    : current.surfaceOther,
+                              };
+                            })
                           }
                         />
+                        {answers.surfaces.includes(SURFACE_OTHER) && (
+                          <div className="field-grid">
+                            <label className="field-wide">
+                              What else can go up?
+                              <small>
+                                A few words. It joins the list a buyer reads.
+                              </small>
+                              <input
+                                data-field="surfaceOther"
+                                maxLength={60}
+                                value={answers.surfaceOther}
+                                onChange={(event) =>
+                                  setAnswers((current) => ({
+                                    ...current,
+                                    surfaceOther: event.target.value,
+                                  }))
+                                }
+                                placeholder="a shelf for product samples"
+                              />
+                            </label>
+                          </div>
+                        )}
                         <ChipRow
                           field="installBy"
                           label="Who puts it up"
@@ -8603,28 +8898,12 @@ export default function MarketplaceApp({
                                   }))
                                 }
                               />
-                              <div className="offer-examples">
-                                {DELIVERABLE_EXAMPLES.map((example) => (
-                                  <button
-                                    key={example}
-                                    type="button"
-                                    onClick={() =>
-                                      setAnswers((current) => ({
-                                        ...current,
-                                        deliverables: current.deliverables
-                                          ? `${current.deliverables}, ${example}`
-                                          : example,
-                                      }))
-                                    }
-                                  >
-                                    {example}
-                                  </button>
-                                ))}
-                              </div>
                               <div className="field-grid">
                                 <label className="field-wide">
                                   Anything a creator must include?
                                   <input
+                                    data-field="deliverables"
+                                    maxLength={200}
                                     value={answers.deliverables}
                                     onChange={(event) =>
                                       setAnswers((current) => ({
@@ -8634,6 +8913,51 @@ export default function MarketplaceApp({
                                     }
                                     placeholder="Tag @us, link in bio for 48h"
                                   />
+                                  {/* Below the box now, not above it: these
+                                      fill the field, and every other example
+                                      row in the product sits under the thing
+                                      it fills. */}
+                                  <span className="offer-examples-label">
+                                    Or tap to add one:
+                                  </span>
+                                  <span className="offer-examples">
+                                    {DELIVERABLE_EXAMPLES.map((example) => {
+                                      // Already in the list? Tapping again used
+                                      // to append it a second time - "Tag @us,
+                                      // Tag @us" - so it toggles instead.
+                                      const parts = answers.deliverables
+                                        .split(",")
+                                        .map((item) => item.trim())
+                                        .filter(Boolean);
+                                      const picked = parts.includes(example);
+                                      return (
+                                        <button
+                                          key={example}
+                                          type="button"
+                                          className={picked ? "is-picked" : ""}
+                                          onClick={() =>
+                                            setAnswers((current) => {
+                                              const list = current.deliverables
+                                                .split(",")
+                                                .map((item) => item.trim())
+                                                .filter(Boolean);
+                                              const next = list.includes(example)
+                                                ? list.filter(
+                                                    (item) => item !== example,
+                                                  )
+                                                : [...list, example];
+                                              return {
+                                                ...current,
+                                                deliverables: next.join(", "),
+                                              };
+                                            })
+                                          }
+                                        >
+                                          {example}
+                                        </button>
+                                      );
+                                    })}
+                                  </span>
                                 </label>
                               </div>
                             </>
@@ -8681,13 +9005,20 @@ export default function MarketplaceApp({
                                 : []
                           }
                           onPick={(value) =>
-                            setAnswers((current) => ({
-                              ...current,
-                              artwork:
+                            setAnswers((current) => {
+                              const next =
                                 value === "I’ll supply the artwork"
                                   ? "supply"
-                                  : "help",
-                            }))
+                                  : "help";
+                              // Tapping the picked chip again clears it. This
+                              // question is optional, but once answered there
+                              // was no way back, and the answer writes a
+                              // sentence into the published description.
+                              return {
+                                ...current,
+                                artwork: current.artwork === next ? "" : next,
+                              };
+                            })
                           }
                         />
 
@@ -10080,8 +10411,8 @@ export default function MarketplaceApp({
                 <label>
                   Exact address
                   <small>
-                    Optional. Nothing renders it today, but listings are fetched
-                    whole, so treat it as public until that changes.
+                    Optional. Never shown on your card, and visitors to the site
+                    cannot read it — though anyone signed in to SideSpace could.
                   </small>
                   <input
                     name="street_address"

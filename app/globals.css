@@ -1640,6 +1640,29 @@ h2 em {
   margin: 5px 0 0;
 }
 
+/* A listing being ranked down is not an error - it is live and reachable, just
+   sorted last - so this is a note in the brand's own accent, not the red of a
+   failure banner. */
+.listing-gap {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin: 6px 0 0;
+  padding-left: 13px;
+  position: relative;
+}
+
+.listing-gap::before {
+  background: var(--coral);
+  border-radius: 999px;
+  content: "";
+  height: 6px;
+  left: 0;
+  position: absolute;
+  top: 6px;
+  width: 6px;
+}
+
 .form-feedback {
   background: #fff0ed;
   border: 1px solid #e5a89e;

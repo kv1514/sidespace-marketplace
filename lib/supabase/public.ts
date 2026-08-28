@@ -10,6 +10,26 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
  * including a rejection). None of the three is read anywhere in the client, so
  * naming columns explicitly costs nothing and stops sending them.
  */
+/**
+ * What a cold-email recipient's invite link tells us about them.
+ *
+ * Everything here is already published on the business's own website - that is
+ * where we found it. public.invite_prospect deliberately does not return their
+ * email address, the hook we wrote about them, or the URLs we researched: a
+ * link gets forwarded, and none of our notes should travel with it.
+ *
+ * Lives here rather than in app/page.tsx so the client component can name the
+ * type without importing from a server module.
+ */
+export type Invite = {
+  business: string;
+  city: string;
+  category: string;
+  owner_first_name: string | null;
+  intent: string;
+  has_physical_space: boolean;
+};
+
 export const PUBLIC_PROFILE_COLUMNS =
   "id,role,display_name,handle,bio,city,categories,followers,avg_views,reach_unit,audience_age,website,avatar_url,verified,is_demo,is_internal,onboarding_complete,extra_roles,social_links,gallery_urls,created_at,updated_at";
 
