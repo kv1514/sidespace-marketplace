@@ -2131,12 +2131,42 @@ function shuffleKey(id: string) {
  * A listing is "ready" when it would not embarrass the marketplace: it says
  * enough for someone to decide. Thin ones sink below the complete ones.
  */
+/**
+ * What the marketplace counts as a complete listing.
+ *
+ * listingRank sorts anything failing this below every complete listing, and
+ * nothing ever told the owner. At the time of writing 3 of the 16 live member
+ * listings are in that state - one short title, two short descriptions - so
+ * roughly a fifth of the inventory is being quietly sunk by a rule its owners
+ * have never been shown.
+ *
+ * One constant, so the ranking, the onboarding validator and the note on the
+ * My listings card cannot drift apart about where the bar is.
+ */
+const LISTING_READY_MIN = { title: 8, format: 10, description: 60 };
+
+/**
+ * What a listing is still missing, phrased for the person who has to fix it.
+ * An empty list means the grid treats it as complete.
+ */
+function listingGaps(
+  listing: Pick<Listing, "title" | "format" | "description">,
+) {
+  const gaps: string[] = [];
+  if (listing.title.trim().length < LISTING_READY_MIN.title) {
+    gaps.push("a longer title");
+  }
+  if (listing.format.trim().length < LISTING_READY_MIN.format) {
+    gaps.push("more detail in what the buyer gets");
+  }
+  if (listing.description.trim().length < LISTING_READY_MIN.description) {
+    gaps.push("a longer description");
+  }
+  return gaps;
+}
+
 function listingIsReady(listing: Listing) {
-  return (
-    listing.description.trim().length >= 60 &&
-    listing.format.trim().length >= 10 &&
-    listing.title.trim().length >= 8
-  );
+  return listingGaps(listing).length === 0;
 }
 
 /** Real and complete first, then real but thin, then samples. */
@@ -3990,7 +4020,13 @@ export default function MarketplaceApp({
     // A sponsorship host has no single title or price - both are per tier and
     // tierProblems already checked every one of them.
     if (role !== "sponsor_host") {
-      need(!shownTitle.trim(), "Give this a title.", "title");
+      need(
+        shownTitle.trim().length < LISTING_READY_MIN.title,
+        shownTitle.trim()
+          ? "That title is too short — the marketplace sorts thin listings last."
+          : "Give this a title.",
+        "title",
+      );
       need(
         !answers.price || answers.price < 1,
         "Set a price of at least $1.",
@@ -7190,6 +7226,21 @@ export default function MarketplaceApp({
                         <p>
                           {listing.channel} • {priceLabel(listing)}/{listing.price_unit}
                         </p>
+                        {/* The one place an owner can find out that the grid
+                            is sinking their listing. listingRank has always
+                            sorted a thin row below every complete one; this
+                            says so, and says which piece is missing, next to
+                            the Edit button that fixes it. */}
+                        {(() => {
+                          const gaps = listingGaps(listing);
+                          if (!gaps.length) return null;
+                          return (
+                            <p className="listing-gap">
+                              Sorted below complete listings — it needs{" "}
+                              {joinList(gaps)}.
+                            </p>
+                          );
+                        })()}
                         <div className="my-listing-actions">
                           <button
                             onClick={() => {
