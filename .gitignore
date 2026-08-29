@@ -9,5 +9,7 @@ node_modules/
 # Business outreach data is operational, not application source.
 outreach/
 
-# Local tool config, not application source.
-.claude/
+# Local tool config, not application source — except the skills we
+# deliberately vendor, which every session on this repo should get.
+.claude/*
+!.claude/skills/
