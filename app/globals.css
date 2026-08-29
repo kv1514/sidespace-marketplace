@@ -7648,3 +7648,448 @@ html.reveal-ready [data-reveal].is-visible {
   background: rgba(251, 247, 230, 0.05);
   border-color: rgba(251, 247, 230, 0.16);
 }
+
+/* --- The "how it works" steps, on the dark band ---------------------------
+   The rebrand above turned this section's surface to ink and its type to
+   cream, but `.steps` still carried `background: var(--paper)` from the amber
+   layout it replaced. So the three cards stayed cream while everything
+   written on them turned cream too, and #fbf7e6 on #fbf7e6 is nothing: all
+   three headings, every `strong`, and every value that simply inherited - the
+   agreed price, the dates, both sides of the conversation - rendered and
+   disappeared. Only the handful of nodes carrying a colour of their own came
+   through, which is why the cards read as animated furniture with no words in
+   them. `.how-section em { color: var(--lime) }` caught the search field's
+   query the same way: amber on near-white, technically painted, unreadable.
+
+   Painting the type back to ink would fix the contrast and leave the band
+   half-rebranded. The cards join it instead - dark glass on ink, cream type
+   at full strength, amber reserved for the one thing each card is doing.
+   Cream on ink is about 13:1, so there is contrast to spare at every size
+   here, and the widgets stop being pale ghosts of themselves.
+
+   The type also went up roughly a third across the board. At 15px headings
+   and an 11.5px widget these were captions; they are the explanation of what
+   the product does, sitting under a 112px headline. */
+
+.how-section .steps {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  gap: clamp(14px, 1.6vw, 22px);
+  /* Was clipping the active card's lift and glow. */
+  overflow: visible;
+}
+
+.how-section .steps article,
+.how-section .steps article:not(:last-child) {
+  background:
+    linear-gradient(
+      168deg,
+      rgba(251, 247, 230, 0.075),
+      rgba(251, 247, 230, 0.028) 58%
+    );
+  border: 1px solid rgba(251, 247, 230, 0.15);
+  border-radius: 20px;
+  isolation: isolate;
+  padding: 26px 24px 42px;
+  transition:
+    background 320ms ease-out,
+    border-color 320ms ease-out,
+    box-shadow 320ms ease-out,
+    transform 320ms cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+/* The step the section is currently telling. An amber edge and a lift carry
+   it, so the inactive cards no longer have to be dimmed to make the point. */
+.how-section .steps article.step-active {
+  background:
+    linear-gradient(
+      168deg,
+      rgba(243, 180, 74, 0.14),
+      rgba(251, 247, 230, 0.04) 58%
+    );
+  border-color: rgba(243, 180, 74, 0.5);
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(251, 247, 230, 0.1);
+  transform: translateY(-6px);
+}
+
+/* A slow amber bloom behind the active card's icon. Sits under the content
+   and never under a glyph, so it adds depth without touching legibility. */
+.how-section .steps article::before {
+  background: radial-gradient(
+    120px 120px at 52px 96px,
+    rgba(243, 180, 74, 0.3),
+    transparent 70%
+  );
+  border-radius: inherit;
+  content: "";
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 420ms ease-out;
+  z-index: -1;
+}
+
+.how-section .steps article.step-active::before {
+  opacity: 1;
+}
+
+.how-section .steps article > span {
+  color: var(--lime);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  opacity: 0.85;
+}
+
+.how-section .steps article h3 {
+  color: var(--paper);
+  font-size: clamp(21px, 1.6vw, 27px);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.14;
+  margin: 22px 0 10px;
+}
+
+.how-section .steps article p {
+  color: rgba(251, 247, 230, 0.82);
+  font-size: clamp(15px, 1.05vw, 16.5px);
+  line-height: 1.62;
+  max-width: 34ch;
+}
+
+/* The first icon was ink-on-ink once the band went dark. All three become the
+   same amber-glass token and fill solid on their turn, which also stops the
+   three steps looking like three unrelated colour decisions. */
+.how-section .steps article .step-icon,
+.how-section .steps article:nth-child(2) .step-icon,
+.how-section .steps article:nth-child(3) .step-icon {
+  background: rgba(243, 180, 74, 0.14);
+  border: 1px solid rgba(243, 180, 74, 0.4);
+  color: var(--lime);
+  font-size: 26px;
+  height: 58px;
+  margin-top: 26px;
+  width: 58px;
+}
+
+.how-section .steps article.step-active .step-icon {
+  background: var(--lime);
+  border-color: var(--lime);
+  box-shadow: 0 0 0 7px rgba(243, 180, 74, 0.12);
+  color: var(--ink);
+}
+
+.how-section .step-progress {
+  background: rgba(251, 247, 230, 0.13);
+  bottom: 18px;
+  left: 24px;
+  right: 24px;
+}
+
+.how-section .step-progress::after {
+  background: linear-gradient(90deg, var(--coral), var(--lime));
+}
+
+/* ===== The widgets ===== */
+
+.how-section .step-widget {
+  background: rgba(8, 7, 5, 0.5);
+  border: 1px solid rgba(251, 247, 230, 0.11);
+  border-radius: 16px;
+  margin-top: 22px;
+  padding: 16px;
+}
+
+/* The three stories are different lengths, so the panels used to stop at three
+   different heights inside cards the grid had already made equal - a search
+   panel running to the card's floor next to a deal panel finishing halfway up
+   it. Letting the panel take the leftover space gives the row one bottom edge
+   and reads as three views of one product rather than three loose cards. The
+   progress bar is absolutely positioned, so it is not a flex item and stays
+   pinned where it was. */
+.how-section .steps article {
+  display: flex;
+  flex-direction: column;
+}
+
+.how-section .steps article .step-widget {
+  flex: 1 1 auto;
+}
+
+.how-section .mock {
+  font-size: 13px;
+  gap: 11px;
+}
+
+/* Dimming two of the three widgets to 0.55 cost more than it bought: on a
+   dark panel it pushed already-small type under the contrast floor, and the
+   active card is now marked by its edge, its glow and its icon anyway. */
+.how-section .steps article .step-widget {
+  opacity: 0.94;
+}
+
+.how-section .steps article.step-active .step-widget {
+  opacity: 1;
+}
+
+/* --- 01 Discover --- */
+.how-section .mock-field {
+  background: rgba(251, 247, 230, 0.06);
+  border-color: rgba(251, 247, 230, 0.17);
+  padding: 11px 13px;
+}
+
+.how-section .mock-field span {
+  color: rgba(251, 247, 230, 0.55);
+}
+
+/* Beats `.how-section em`, which was tinting the typed query amber. */
+.how-section .mock-field em {
+  color: var(--paper);
+  font-size: 13px;
+}
+
+.how-section .mock-caret {
+  background: var(--lime);
+  height: 15px;
+}
+
+.how-section .mock-chips b {
+  background: rgba(251, 247, 230, 0.09);
+  color: rgba(251, 247, 230, 0.82);
+  font-size: 12px;
+  padding: 5px 11px;
+}
+
+.how-section .mock-results {
+  gap: 8px;
+}
+
+.how-section .mock-results li {
+  background: rgba(251, 247, 230, 0.055);
+  border-color: rgba(251, 247, 230, 0.12);
+  padding: 9px 11px;
+}
+
+.how-section .mock-results strong {
+  color: var(--paper);
+  font-size: 13px;
+}
+
+.how-section .mock-results small {
+  color: rgba(251, 247, 230, 0.62);
+  font-size: 11.5px;
+}
+
+.how-section .mock-thumb {
+  background: linear-gradient(
+    135deg,
+    rgba(243, 180, 74, 0.85),
+    rgba(243, 180, 74, 0.25)
+  );
+  height: 30px;
+  width: 30px;
+}
+
+/* --- 02 Message --- */
+.how-section .mock-bubble {
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 88%;
+  padding: 10px 13px;
+}
+
+.how-section .mock-bubble.them {
+  background: rgba(251, 247, 230, 0.1);
+  color: var(--paper);
+}
+
+/* The reply is the moment the step is about, so it takes the accent. */
+.how-section .mock-bubble.me {
+  background: var(--lime);
+  color: var(--ink);
+}
+
+.how-section .mock-typing i {
+  background: rgba(251, 247, 230, 0.55);
+  height: 6px;
+  width: 6px;
+}
+
+/* --- 03 Make it happen --- */
+.how-section .mock-deal-head strong {
+  color: var(--paper);
+  font-size: 14px;
+}
+
+.how-section .mock-status {
+  font-size: 11px;
+  padding: 5px 11px;
+}
+
+.how-section .mock-deal-facts dt {
+  color: rgba(251, 247, 230, 0.55);
+  font-size: 11px;
+}
+
+.how-section .mock-deal-facts dd {
+  color: var(--paper);
+  font-size: 15px;
+}
+
+.how-section .mock-deal-check {
+  font-size: 17px;
+  height: 36px;
+  width: 36px;
+}
+
+/* --- The loop, rewritten so it never takes the words away -----------------
+   The widgets are a four-and-a-half second story, and the way they told it
+   was to animate their own contents from `opacity: 0`. Between the fade-out
+   at 92% and the fade-in at 10% every line of every widget was simply gone,
+   and the rows in step 01 did not arrive until 36% of the cycle - so for
+   whole seconds at a time the panels were empty boxes doing something.
+
+   A cycle of appearing and disappearing text is also the thing that makes a
+   loop tiring to sit next to. These keyframes keep the motion and drop the
+   vanishing: content rests at a legible weight, rises and brightens on its
+   beat, and settles back. Nothing that carries a word goes below 0.42, so
+   the story still moves and the panel is readable at any frame you stop on.
+
+   Redefining the names the rules above already reference - a later
+   @keyframes of the same name replaces the earlier one - keeps this to the
+   timing itself rather than another layer of overrides. */
+
+/* Wider than the old 108px: the query is 13px now, not 11.5px. */
+@keyframes loop-type {
+  0%        { width: 0; }
+  20%       { width: 132px; }
+  86%       { width: 132px; }
+  94%, 100% { width: 0; }
+}
+
+@keyframes loop-chip {
+  0%, 24% {
+    background: rgba(251, 247, 230, 0.09);
+    color: rgba(251, 247, 230, 0.82);
+  }
+  30%, 88% {
+    background: var(--lime);
+    color: var(--ink);
+  }
+  95%, 100% {
+    background: rgba(251, 247, 230, 0.09);
+    color: rgba(251, 247, 230, 0.82);
+  }
+}
+
+@keyframes loop-row {
+  0%        { opacity: 0.42; transform: translateY(9px) scale(0.99); }
+  16%, 84%  { opacity: 1; transform: none; }
+  96%, 100% { opacity: 0.42; transform: translateY(9px) scale(0.99); }
+}
+
+@keyframes loop-bubble {
+  0%        { opacity: 0.45; transform: translateY(9px) scale(0.985); }
+  12%, 84%  { opacity: 1; transform: none; }
+  96%, 100% { opacity: 0.45; transform: translateY(9px) scale(0.985); }
+}
+
+/* Three dots and no text, so this one can still fade the whole way. */
+@keyframes loop-typing {
+  0%, 30%   { opacity: 0; }
+  40%, 84%  { opacity: 1; }
+  92%, 100% { opacity: 0; }
+}
+
+@keyframes loop-status {
+  0%, 30% {
+    background: rgba(251, 247, 230, 0.1);
+    color: rgba(251, 247, 230, 0.72);
+    transform: scale(1);
+  }
+  40%, 88% {
+    background: var(--lime);
+    color: var(--ink);
+    transform: scale(1.06);
+  }
+  96%, 100% {
+    background: rgba(251, 247, 230, 0.1);
+    color: rgba(251, 247, 230, 0.72);
+    transform: scale(1);
+  }
+}
+
+/* The tick is the payoff of step 03, so it keeps a real entrance - but it
+   lands at 30% of the cycle rather than 52%, and holds to the end. */
+@keyframes loop-check {
+  0%, 22%   { opacity: 0; transform: scale(0.4) rotate(-14deg); }
+  34%, 90%  { opacity: 1; transform: scale(1) rotate(0deg); }
+  97%, 100% { opacity: 0; transform: scale(0.4) rotate(-14deg); }
+}
+
+/* Reduced motion already pins every one of these to opacity 1; the amber
+   states they animate to are the resting look there, since without the loop
+   there is nothing to arrive at. */
+@media (prefers-reduced-motion: reduce) {
+  .how-section .mock-chips b:nth-child(2) {
+    background: var(--lime);
+    color: var(--ink);
+  }
+
+  .how-section .mock-status {
+    background: var(--lime);
+    color: var(--ink);
+  }
+
+  .how-section .mock-field em {
+    width: auto;
+  }
+}
+
+/* --- Making the band survive a narrow column ------------------------------
+   Two things were breaking below desktop, and bigger type made both of them
+   obvious rather than causing them.
+
+   The phone layout was already written - `.steps { grid-template-columns: 1fr }`
+   inside the 620px block - but a later unconditional `repeat(3, minmax(0, 1fr))`
+   sits after it in the file at equal specificity, so it won at every width and
+   three cards stayed side by side on a 390px screen, one word per line.
+   Scoping the phone rule to `.how-section .steps` settles it on specificity
+   instead of source order, so neither rule can drift back on top of the other.
+
+   The widgets then have to fit whatever column they land in. `.mock` is a grid
+   whose single track was sized to its widest child, and `.mock-field` is a flex
+   row holding a nowrap query at a fixed animated width - together about 190px
+   of min-content in a 153px panel at tablet widths, which `overflow: hidden`
+   turned into rows sliced off mid-word. Letting the track and the flex items
+   shrink lets the titles wrap and the typed query clip the way a real input
+   would. */
+
+@media (max-width: 620px) {
+  .how-section .steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.how-section .mock {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.how-section .mock-field,
+.how-section .mock-results li,
+.how-section .mock-results li > div {
+  min-width: 0;
+}
+
+.how-section .mock-field em {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.how-section .mock-chips {
+  flex-wrap: wrap;
+}
