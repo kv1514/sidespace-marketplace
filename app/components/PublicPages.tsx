@@ -43,28 +43,83 @@ function price(listing: PublicListing) {
   return high > low ? `$${low}–$${high}` : `$${low}`;
 }
 
+/**
+ * A "Business brief" is a business asking for space, not space anyone can book.
+ *
+ * It is the one channel that means demand rather than supply, so it has no
+ * business anywhere the site is showing off its inventory - the hero card
+ * least of all, which is the first listing most people ever see. Briefs still
+ * belong in the marketplace, where "wanted" is a card people can answer; they
+ * just sort to the end of it.
+ */
+function isDemandBrief(listing: Pick<PublicListing, "channel">) {
+  return listing.channel === "Business brief";
+}
+
+/**
+ * Which channels each hero tab is actually offering.
+ *
+ * Matched against `channel` alone, which is the field that says what a listing
+ * is. Widening it to the prose in `format` sounds harmless and is not: the
+ * word "team" in "logo beneath the team logo on a team hoodie" was enough to
+ * present a hoodie as the marketplace's example of a local event.
+ *
+ * A regex rather than a set because the seed rows predate the
+ * `LISTING_CHANNELS` vocabulary and carry their own values ("Cafe window",
+ * "Counter card", "Farm stand"). A channel that matches nothing here - "Other"
+ * - simply does not appear in the hero, which is the right answer for a
+ * listing whose own kind is unstated.
+ */
 const INVENTORY_TYPES = [
   {
     label: "Storefront",
     short: "WINDOW / 01",
     detail: "A real window on a real street",
+    match: /storefront|window|wall|mural|room|interior|board|counter|main street|farm stand|cafe|bakery/i,
   },
   {
     label: "Creator",
     short: "AUDIENCE / 02",
     detail: "A trusted voice people already follow",
+    match: /instagram|tiktok|youtube|newsletter|podcast|twitch|website/i,
   },
   {
     label: "Vehicle",
     short: "ROUTE / 03",
     detail: "A moving placement with a local routine",
+    match: /vehicle/i,
   },
   {
     label: "Event",
     short: "CROWD / 04",
     detail: "A team, gathering, or local occasion",
+    match: /sponsorship|event/i,
   },
 ];
+
+/**
+ * The listing each tab shows.
+ *
+ * This used to be `listings[active]` - the card was chosen by which tab was
+ * open, not by what the tab was offering, so whatever happened to be the
+ * second-newest listing in the whole marketplace was presented as a Creator.
+ * That is how a business brief ended up introduced as "a trusted voice people
+ * already follow" on the front page.
+ *
+ * Now each tab picks the newest real listing that genuinely belongs to it,
+ * demo rows are a fallback rather than a first choice, and a tab with nothing
+ * to show falls through to the generic card below rather than borrowing
+ * someone else's listing.
+ */
+function pickInventory(listings: PublicListing[]) {
+  const bookable = listings.filter((listing) => !isDemandBrief(listing));
+  return INVENTORY_TYPES.map((type) => {
+    const matches = bookable.filter((listing) =>
+      type.match.test(listing.channel),
+    );
+    return matches.find((listing) => !listing.owner.is_demo) ?? matches[0];
+  });
+}
 
 const HERO_FALLBACK_IMAGES = [
   "/photos/corner-store.jpg",
@@ -309,6 +364,7 @@ function ListingPreviewCard({
 }
 
 function HeroInventory({ listings }: { listings: PublicListing[] }) {
+  const picks = useMemo(() => pickInventory(listings), [listings]);
   const [active, setActive] = useState(0);
   const [onScreen, setOnScreen] = useState(true);
   const [tabVisible, setTabVisible] = useState(true);
@@ -414,7 +470,7 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
     };
   }, [active]);
 
-  const listing = listings[active % Math.max(listings.length, 1)];
+  const listing = picks[active];
   const inventory = INVENTORY_TYPES[active];
   const fallbackImage = HERO_FALLBACK_IMAGES[active];
 
@@ -643,7 +699,7 @@ export function LandingPage({
             <li>Owners set the price</li>
           </ul>
         </div>
-        <HeroInventory listings={listings.slice(0, 4)} />
+        <HeroInventory listings={listings} />
       </section>
 
       <section className="ss-audience-section">
@@ -1007,12 +1063,16 @@ export function PhysicalSpacesPage({
   onList: () => void;
   onOpenListing: (listingId: string) => void;
 }) {
-  const physical = listings.filter((listing) =>
+  const bookable = listings.filter((listing) => !isDemandBrief(listing));
+  const physical = bookable.filter((listing) =>
     /window|storefront|vehicle|wall|counter|board|farm|cafe|bakery|physical/i.test(
       `${listing.channel} ${listing.title}`,
     ),
   );
-  const examples = (physical.length ? physical : listings).slice(0, 3);
+  // Falls back to other bookable listings, never to the full list: the old
+  // fallback would have shown a business brief here the moment the regex
+  // stopped matching anything.
+  const examples = (physical.length ? physical : bookable).slice(0, 3);
 
   return (
     <>
@@ -1072,12 +1132,13 @@ export function CreatorsPage({
   onList: () => void;
   onOpenListing: (listingId: string) => void;
 }) {
-  const digital = listings.filter((listing) =>
+  const bookable = listings.filter((listing) => !isDemandBrief(listing));
+  const digital = bookable.filter((listing) =>
     /instagram|tiktok|youtube|newsletter|creator|sponsor|story|video/i.test(
       `${listing.channel} ${listing.title}`,
     ),
   );
-  const examples = (digital.length ? digital : listings).slice(0, 4);
+  const examples = (digital.length ? digital : bookable).slice(0, 4);
 
   return (
     <>
