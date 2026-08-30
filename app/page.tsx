@@ -35,7 +35,11 @@ export default async function Home({
     // longer pays for the complete browser it does not render.
     loadMarketplaceSnapshot({
       profileLimit: 8,
-      listingLimit: 8,
+      // The hero introduces four kinds of inventory and the two sections
+      // below it show physical and audience examples, so eight rows was
+      // never enough to fill the page from: whichever kind happened not to
+      // be in the eight newest listings had nothing to show.
+      listingLimit: 24,
       label: "home",
     }),
   ]);

@@ -2475,8 +2475,18 @@ function listingIsReady(listing: Listing) {
   return listingGaps(listing).length === 0;
 }
 
-/** Real and complete first, then real but thin, then samples. */
+/**
+ * Real and complete first, then real but thin, then samples, then briefs.
+ *
+ * A brief is a business asking for space, not space anyone can book, so it
+ * answers a different question from every other card in the grid. Mixed in by
+ * recency a single fresh brief took the top of the marketplace and read as the
+ * headline listing. It stays in the grid - "wanted" is a card people can
+ * answer, and the role filter exists to find them - it just stops arriving
+ * first.
+ */
 function listingRank(listing: Listing) {
+  if (isBrief(listing)) return 3;
   if (listing.owner.is_demo) return 2;
   return listingIsReady(listing) ? 0 : 1;
 }
