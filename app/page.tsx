@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PublicSiteApp from "./components/PublicSiteApp";
 import InviteMarketplaceBridge from "./components/InviteMarketplaceBridge";
+import { OG_IMAGE } from "@/lib/site-metadata";
 import {
   isInviteToken,
   loadInvite,
@@ -15,6 +16,7 @@ export const metadata: Metadata = {
   description:
     "Book local creators, storefronts, vehicles, newsletters, teams, and sponsorship opportunities—or list the attention you already own.",
   openGraph: {
+    images: OG_IMAGE,
     url: "/",
     title: "SideSpace - Local attention, now bookable",
     description:

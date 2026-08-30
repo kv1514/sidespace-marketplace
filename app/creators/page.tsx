@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PublicSiteApp from "../components/PublicSiteApp";
 import { loadMarketplaceSnapshot } from "@/lib/public-marketplace";
+import { OG_IMAGE } from "@/lib/site-metadata";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export const metadata: Metadata = {
   description:
     "List Instagram, TikTok, YouTube, newsletters, teams, events, and other local audience opportunities on SideSpace.",
   openGraph: {
+    images: OG_IMAGE,
     url: "/creators",
     title: "Creators and audience owners on SideSpace",
     description:

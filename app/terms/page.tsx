@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { OG_IMAGE } from "@/lib/site-metadata";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
@@ -8,6 +9,7 @@ export const metadata: Metadata = {
   // canonical hint - so sharing this page unfurled as the homepage.
   alternates: { canonical: "/terms" },
   openGraph: {
+    images: OG_IMAGE,
     type: "article",
     siteName: "SideSpace",
     url: "/terms",
@@ -15,6 +17,7 @@ export const metadata: Metadata = {
     description: "The terms that govern using the SideSpace marketplace.",
   },
   twitter: {
+    images: OG_IMAGE,
     card: "summary",
     title: "Terms of Service · SideSpace",
     description: "The terms that govern using the SideSpace marketplace.",
