@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
+import "lenis/dist/lenis.css";
+import "./public-site.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://sidespace-marketplace.vercel.app"),
@@ -11,7 +13,7 @@ export const metadata: Metadata = {
     google: "-tVSDszKSbYFpt-rw-F18V4FtwnhWrxmSrjOFy4ZRns",
   },
   title: {
-    default: "SideSpace - Affordable local advertising space",
+    default: "SideSpace - Local attention, now bookable",
     template: "%s · SideSpace",
   },
   description:
@@ -20,16 +22,16 @@ export const metadata: Metadata = {
     type: "website",
     siteName: "SideSpace",
     url: "https://sidespace-marketplace.vercel.app",
-    title: "SideSpace - Get seen where it matters",
+    title: "SideSpace - Local attention, now bookable",
     description:
-      "A marketplace for everyday advertising space: local creators, storefront windows, vehicles, and community boards. Free to join, no broker, no minimum spend.",
+      "Book local creators, storefronts, vehicles, newsletters, and sponsorship opportunities—or list the attention you already own.",
     images: ["/og-card.jpg"],
   },
   twitter: {
     card: "summary_large_image",
-    title: "SideSpace - Get seen where it matters",
+    title: "SideSpace - Local attention, now bookable",
     description:
-      "Book local creators and real-world ad space. Free to join, and the owner sets the price.",
+      "Book creators and real-world local ad space—or list the attention you already own.",
     images: ["/og-card.jpg"],
   },
 };

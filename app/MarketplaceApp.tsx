@@ -1,9 +1,10 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import {
+  type Dispatch,
   FormEvent,
   ReactNode,
+  type SetStateAction,
   useCallback,
   useEffect,
   useMemo,
@@ -21,6 +22,15 @@ import {
   localListingSeeds,
   localProfiles,
 } from "@/app/localMarketplaceData";
+import {
+  DashboardGate,
+  LandingPage,
+} from "@/app/components/PublicPages";
+import {
+  SiteFooter,
+  SiteHeader,
+  type SideSpaceRoute,
+} from "@/app/components/SiteChrome";
 
 // `consumer` is retired from the product but stays in the union, in roleCopy and
 // in the DB CHECK. Legacy rows still carry it, roleLabel() dereferences
@@ -475,21 +485,6 @@ function displayHandle(raw: string) {
 // Cover photo used when a listing has none of its own, and the repair target
 // when a listing's photo is deleted from the member's profile.
 const DEFAULT_LISTING_IMAGE = "/photos/market-creator.jpg";
-
-/**
- * The hero's WebGL field: a slow drift of panels standing in for the
- * advertising space the marketplace sells.
- *
- * Client-only and dynamically imported, so three.js never enters the
- * server bundle and never blocks first paint. It replaces two decorative
- * blobs rather than being added on top of them: the hero already carries a
- * headline, a live listing preview and a trust row, and a third decorative
- * layer would be noise. The component itself checks for WebGL support and
- * renders nothing if there is none, so the hero always stands on its type.
- */
-const HeroCanvas = dynamic(() => import("./components/HeroCanvas"), {
-  ssr: false,
-});
 
 /** Channels offered in the listing editor. A listing may legitimately carry a
  *  channel outside this list (seeded rows, or one set directly in the
@@ -1155,6 +1150,219 @@ function ChipRow({
         })}
       </div>
     </>
+  );
+}
+
+/**
+ * The creator's platform selection, profile links and audience size as one
+ * progressive question.
+ *
+ * The previous layout rendered every selected handle as a loose form field,
+ * put Instagram's lookup button on a separate line, and left the follower
+ * count visually unrelated to the platform it described. These rows keep the
+ * platform identity, its public link and its primary-channel status together.
+ */
+function CreatorAudienceFields({
+  answers,
+  setAnswers,
+  igAvatarBusy,
+  igAvatar,
+  igStats,
+  onCheckInstagram,
+}: {
+  answers: OnboardingAnswers;
+  setAnswers: Dispatch<SetStateAction<OnboardingAnswers>>;
+  igAvatarBusy: boolean;
+  igAvatar: string;
+  igStats: IgStats | null;
+  onCheckInstagram: (handle: string) => void;
+}) {
+  const selectedPlatforms = answers.platforms
+    .map((key) => socialPlatforms.find((platform) => platform.key === key))
+    .filter((platform): platform is (typeof socialPlatforms)[number] =>
+      Boolean(platform),
+    );
+  const primaryKey =
+    answers.platforms.find((key) => (answers.socials[key] ?? "").trim()) ??
+    answers.platforms[0] ??
+    "";
+  const primaryPlatform = socialPlatforms.find(
+    (platform) => platform.key === primaryKey,
+  );
+
+  function togglePlatform(label: string) {
+    const key = socialPlatforms.find((platform) => platform.label === label)?.key;
+    if (!key) return;
+    setAnswers((current) => ({
+      ...current,
+      platforms: current.platforms.includes(key)
+        ? current.platforms.filter((item) => item !== key)
+        : [...current.platforms, key],
+    }));
+  }
+
+  function makePrimary(key: string) {
+    setAnswers((current) => ({
+      ...current,
+      platforms: [key, ...current.platforms.filter((item) => item !== key)],
+    }));
+  }
+
+  return (
+    <div className="creator-audience-fieldset">
+      <ChipRow
+        field="platforms"
+        label="Choose all that apply"
+        multi
+        options={CREATOR_PLATFORMS.map(
+          (key) =>
+            socialPlatforms.find((platform) => platform.key === key)?.label ?? key,
+        )}
+        selected={selectedPlatforms.map((platform) => platform.label)}
+        onPick={togglePlatform}
+      />
+
+      {selectedPlatforms.length > 0 && (
+        <div className="audience-profile-list">
+          <div className="audience-profile-heading">
+            <div>
+              <strong>Add your profiles</strong>
+              <span>Add a handle or link for the ones you want shown.</span>
+            </div>
+            <small>{selectedPlatforms.length} selected</small>
+          </div>
+
+          {selectedPlatforms.map((platform) => {
+            const value = answers.socials[platform.key] ?? "";
+            const isPrimary = platform.key === primaryKey;
+            const canBePrimary = Boolean(value.trim());
+            const placeholder =
+              platform.key === "newsletter"
+                ? "Newsletter link"
+                : platform.key === "podcast"
+                  ? "Show link"
+                  : "@yourhandle";
+
+            return (
+              <div
+                className={`audience-profile-row${isPrimary ? " is-primary" : ""}`}
+                key={platform.key}
+              >
+                <div className="audience-platform-id">
+                  <span aria-hidden="true">{platform.short}</span>
+                  <strong>{platform.label}</strong>
+                </div>
+                <label
+                  className="audience-handle-field"
+                  htmlFor={`audience-${platform.key}`}
+                >
+                  <span className="sr-only">{platform.label} handle or link</span>
+                  <input
+                    id={`audience-${platform.key}`}
+                    value={value}
+                    onChange={(event) =>
+                      setAnswers((current) => ({
+                        ...current,
+                        socials: {
+                          ...current.socials,
+                          [platform.key]: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder={placeholder}
+                  />
+                </label>
+                <div className="audience-row-actions">
+                  {platform.key === "instagram" && (
+                    <button
+                      type="button"
+                      className="audience-check"
+                      disabled={igAvatarBusy || !value.trim()}
+                      onClick={() => onCheckInstagram(value)}
+                    >
+                      {igAvatarBusy ? "Checking…" : "Check"}
+                    </button>
+                  )}
+                  {isPrimary ? (
+                    <span className="audience-primary-badge">Primary</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="audience-primary-action"
+                      disabled={!canBePrimary}
+                      onClick={() => makePrimary(platform.key)}
+                      title={
+                        canBePrimary
+                          ? `Use ${platform.label} as your primary channel`
+                          : `Add your ${platform.label} profile first`
+                      }
+                    >
+                      Make primary
+                    </button>
+                  )}
+                </div>
+
+                {platform.key === "instagram" && igAvatar && (
+                  <span className="ig-avatar-preview audience-row-result">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={igAvatar} alt="Instagram profile preview" />
+                    <small>
+                      Profile found. Upload your own photo in step 1 to replace it.
+                    </small>
+                  </span>
+                )}
+                {platform.key === "instagram" && igStats && (
+                  <small
+                    className="ig-sync-note audience-row-result"
+                    role="status"
+                  >
+                    {igStats.throttled
+                      ? "Instagram is rate-limiting us. Add your audience size below and carry on."
+                      : igStats.error
+                        ? "We couldn’t read that profile. You can still add your audience size below."
+                        : `Found @${igStats.username} — ${compactNumber(igStats.followers ?? 0)} followers.`}
+                  </small>
+                )}
+              </div>
+            );
+          })}
+
+          <label className="audience-size-field">
+            <span>
+              {primaryPlatform
+                ? `${primaryPlatform.label} audience size`
+                : "Audience size"}
+              <small className="optional">Optional</small>
+            </span>
+            <small>An estimate is fine. This helps brands compare reach.</small>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={2000000000}
+              value={answers.followers ?? ""}
+              onChange={(event) =>
+                setAnswers((current) => ({
+                  ...current,
+                  followers: event.target.value
+                    ? Number(event.target.value)
+                    : null,
+                }))
+              }
+              placeholder="18,400"
+            />
+          </label>
+
+          <div className="audience-filing-note" aria-live="polite">
+            <span aria-hidden="true">↳</span>
+            <p>
+              Your card will appear under <b>{creatorChannel(answers)}</b>.
+              Only profiles with a handle or link are shown publicly.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2592,6 +2800,10 @@ export default function MarketplaceApp({
   initialProfiles = null,
   initialListings = null,
   invite = null,
+  route = "home",
+  initialQuery = "",
+  initialRoleFilter = "all",
+  initialChannel = "All",
 }: {
   /** Server-rendered marketplace, so crawlers and link previews see real
    *  members instead of the seeded demo set. Null when Supabase was
@@ -2600,6 +2812,12 @@ export default function MarketplaceApp({
   initialListings?: unknown;
   /** Resolved from ?p= on the invite link in a cold email. See prefillFromInvite. */
   invite?: Invite | null;
+  /** Public information architecture route. The marketplace/auth engine stays
+   * mounted so every route keeps the same dialogs, sessions, and handlers. */
+  route?: SideSpaceRoute;
+  initialQuery?: string;
+  initialRoleFilter?: RoleFilter;
+  initialChannel?: string;
 } = {}) {
   const seededProfiles = useMemo(() => {
     const loaded = safeProfiles(initialProfiles);
@@ -2845,17 +3063,25 @@ export default function MarketplaceApp({
   const [profileChecked, setProfileChecked] = useState(false);
   // True once getUser() has answered, whether or not it found anyone. Stays
   // true across sign-out: the session question is settled either way.
-  const [sessionResolved, setSessionResolved] = useState(false);
+  // With no Supabase client there is no async session check to wait for. Mark
+  // the local/demo session resolved immediately so shared listing URLs can
+  // still open instead of waiting forever on an auth request that cannot run.
+  const [sessionResolved, setSessionResolved] = useState(!configured);
   const [activeStep, setActiveStep] = useState(0);
-  const [query, setQuery] = useState("");
-  const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
-  const [channelFilter, setChannelFilter] = useState("All");
+  const [query, setQuery] = useState(initialQuery);
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>(initialRoleFilter);
+  const [channelFilter, setChannelFilter] = useState(initialChannel);
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [googleOAuthEnabled, setGoogleOAuthEnabled] = useState(false);
 
   const loadMarketplace = useCallback(async () => {
     if (!supabase) return;
+
+    // Public marketing routes only need enough real inventory to prove the
+    // marketplace exists. The full browser remains intentionally denser.
+    const profileLimit = route === "marketplace" ? 60 : 12;
+    const listingLimit = route === "marketplace" ? 200 : 12;
 
     const [profilesResult, listingsResult] = await Promise.all([
       supabase
@@ -2865,7 +3091,7 @@ export default function MarketplaceApp({
         .neq("role", "consumer")
         .order("verified", { ascending: false })
         // Bounded to match the showcase row, which renders a card per profile.
-        .limit(60),
+        .limit(profileLimit),
       supabase
         .from("listings")
         // Not `*`: street_address is the exact address of someone's shop or
@@ -2876,7 +3102,7 @@ export default function MarketplaceApp({
         )
         .eq("status", "active")
         .order("created_at", { ascending: false })
-        .limit(200),
+        .limit(listingLimit),
     ]);
 
     if (!profilesResult.error) {
@@ -2887,7 +3113,7 @@ export default function MarketplaceApp({
       const loaded = safeListings(listingsResult.data);
       setListings(loaded.length ? loaded : demoListings);
     }
-  }, [supabase]);
+  }, [route, supabase]);
 
   const loadOwnListings = useCallback(
     async (ownProfile: Profile) => {
@@ -3088,7 +3314,16 @@ export default function MarketplaceApp({
 
     let mounted = true;
     const startup = window.setTimeout(() => {
-      void Promise.all([supabase.auth.getUser(), loadMarketplace()]).then(
+      const needsPublicMarketplace = [
+        "home",
+        "marketplace",
+        "physical-spaces",
+        "creators",
+      ].includes(route);
+      void Promise.all([
+        supabase.auth.getUser(),
+        needsPublicMarketplace ? loadMarketplace() : Promise.resolve(),
+      ]).then(
         ([authResult]) => {
           if (!mounted) return;
           const currentUser = authResult.data.user;
@@ -3145,7 +3380,7 @@ export default function MarketplaceApp({
       window.clearTimeout(startup);
       subscription.unsubscribe();
     };
-  }, [loadMarketplace, loadOwnProfile, supabase]);
+  }, [loadMarketplace, loadOwnProfile, route, supabase]);
 
   useEffect(() => {
     if (!configured) return;
@@ -3611,10 +3846,13 @@ export default function MarketplaceApp({
     if (typeof window === "undefined" || !user) return;
     const url = new URL(window.location.href);
     if (url.searchParams.get("recovery") !== "1") return;
-    setAccountOpen(true);
-    setToast("Choose a new password below.");
     url.searchParams.delete("recovery");
     window.history.replaceState({}, "", url.toString());
+    const timer = window.setTimeout(() => {
+      setAccountOpen(true);
+      setToast("Choose a new password below.");
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [user]);
 
   // The auth callback redirects here with ?authError=callback when the code
@@ -3626,14 +3864,35 @@ export default function MarketplaceApp({
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     if (url.searchParams.get("authError") !== "callback") return;
-    setToast(
-      "We could not finish signing you in. That link may have expired or been opened in a different browser. Try again below.",
-    );
-    setAuthMode("signin");
-    setAuthOpen(true);
     url.searchParams.delete("authError");
     window.history.replaceState({}, "", url.toString());
+    const timer = window.setTimeout(() => {
+      setToast(
+        "We could not finish signing you in. That link may have expired or been opened in a different browser. Try again below.",
+      );
+      setAuthMode("signin");
+      setAuthOpen(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
+
+  // Lightweight public pages hand account actions to the dedicated dashboard
+  // instead of shipping this entire marketplace engine in their first bundle.
+  // Consume the one-shot intent here, then remove it so refresh/back never
+  // reopens a dialog the visitor already dismissed.
+  useEffect(() => {
+    if (route !== "dashboard" || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const requestedMode = url.searchParams.get("auth");
+    if (requestedMode !== "signin" && requestedMode !== "signup") return;
+    url.searchParams.delete("auth");
+    window.history.replaceState({}, "", url.toString());
+    const timer = window.setTimeout(() => {
+      setAuthMode(requestedMode);
+      setAuthOpen(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [route]);
 
   useEffect(() => {
     if (selectedListing || typeof window === "undefined") return;
@@ -3906,12 +4165,19 @@ export default function MarketplaceApp({
     setBusy(true);
 
     if (authMode === "signup") {
+      const token = new URLSearchParams(window.location.search).get("p") ?? "";
+      const nextPath = UUID_PARAM.test(token)
+        ? `/?p=${token}`
+        : "/dashboard";
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { display_name: String(values.get("name") ?? "").trim() },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          // Preserve personalized outreach through email confirmation just as
+          // the Google flow does. Everyone else lands in the dedicated account
+          // area instead of returning to a marketing page.
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`,
         },
       });
       setBusy(false);
@@ -3936,7 +4202,7 @@ export default function MarketplaceApp({
     if (error) return setToast(friendlyDbError(error));
     setUser(data.user);
     setAuthOpen(false);
-    setToast("Welcome back.");
+    window.location.assign("/dashboard");
   }
 
   /**
@@ -4188,9 +4454,8 @@ export default function MarketplaceApp({
     // the prefill is resolved from ?p= on the server, and Google sends them to
     // /auth/callback, which drops the query we arrived with.
     const token = new URLSearchParams(window.location.search).get("p") ?? "";
-    const next = UUID_PARAM.test(token)
-      ? `?next=${encodeURIComponent(`/?p=${token}`)}`
-      : "";
+    const nextPath = UUID_PARAM.test(token) ? `/?p=${token}` : "/dashboard";
+    const next = `?next=${encodeURIComponent(nextPath)}`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -5861,81 +6126,45 @@ export default function MarketplaceApp({
     return "Nothing needs your attention right now.";
   }
 
+  // The old root-page marketing sections remain in this file temporarily as
+  // refactor reference, but never mount. Keeping the functional marketplace
+  // branch live while route QA is underway avoids mixing a broad deletion
+  // into the auth/listing preservation work.
+  const legacyPublicSections = false;
+
   return (
     <main>
-      <header className="topbar" id="top">
-        <a className="brand" href="#top" aria-label="SideSpace home">
-          <span className="brand-mark">S</span>
-          <span>SideSpace</span>
-        </a>
-        <nav aria-label="Primary navigation">
-          <a href="#how">How it works</a>
-          <a href="#market">Marketplace</a>
-          <a href="#spaces">Physical spaces</a>
-          <a href="#creators">Creators &amp; businesses</a>
-        </nav>
-        <div className="header-actions">
-          <button className="text-button" onClick={openInbox}>
-            Messages
-            {unreadCount > 0 && <b>{unreadCount > 99 ? "99+" : unreadCount}</b>}
-          </button>
-          {loading ? (
-            <span className="account-skeleton" />
-          ) : user && profile ? (
-            <>
-              <button
-                className="profile-pill"
-                onClick={() => {
-                  setAccountOpen(true);
-                  void loadOwnListings(profile);
-                }}
-                aria-label="Open account and settings"
-              >
-                <Avatar profile={profile} size="small" />
-                <span>{profile.display_name}</span>
-                <span className="profile-pill-settings">Account</span>
-              </button>
-              <button
-                className="icon-button"
-                onClick={() => {
-                  setAccountOpen(true);
-                  void loadOwnListings(profile);
-                }}
-                title="Settings"
-                aria-label="Account settings"
-              >
-                ⚙
-              </button>
-              <button className="button button-ghost button-small" onClick={signOut}>
-                Log out
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                className="text-button desktop-action"
-                onClick={() => {
-                  setAuthMode("signin");
-                  setAuthOpen(true);
-                }}
-              >
-                Sign in
-              </button>
-              <button
-                className="button button-dark button-small"
-                onClick={() => {
-                  setAuthMode("signup");
-                  setAuthOpen(true);
-                }}
-              >
-                Join SideSpace <span>↗</span>
-              </button>
-            </>
-          )}
-        </div>
-      </header>
+      <a className="ss-skip-link" href="#main-content">
+        Skip to main content
+      </a>
+      <SiteHeader
+        route={route}
+        loading={loading}
+        viewer={
+          profile
+            ? {
+                displayName: profile.display_name,
+                avatarUrl: profile.avatar_url,
+              }
+            : null
+        }
+        unreadCount={unreadCount}
+        onMessages={openInbox}
+        onSignIn={() => {
+          setAuthMode("signin");
+          setAuthOpen(true);
+        }}
+        onJoin={() => {
+          setAuthMode("signup");
+          setAuthOpen(true);
+        }}
+        onAccount={() => {
+          setAccountOpen(true);
+          if (profile) void loadOwnListings(profile);
+        }}
+      />
 
-      {user && !profile && !profileChecked ? (
+      {route === "dashboard" && (loading || (user && !profile && !profileChecked) ? (
         <section className="dashboard" aria-label="Loading your dashboard">
           <div className="dashboard-head">
             <div>
@@ -5983,11 +6212,7 @@ export default function MarketplaceApp({
           <div className="dashboard-paths" data-reveal>
             <a
               className="dashboard-path"
-              href="#market"
-              onClick={() => {
-                setRoleFilter("business");
-                setChannelFilter("All");
-              }}
+              href="/marketplace?role=business"
             >
               <span>I&rsquo;m a creator or host</span>
               <strong>See businesses looking for reach</strong>
@@ -5999,11 +6224,7 @@ export default function MarketplaceApp({
             </a>
             <a
               className="dashboard-path"
-              href="#market"
-              onClick={() => {
-                setRoleFilter("supply");
-                setChannelFilter("All");
-              }}
+              href="/marketplace?role=supply"
             >
               <span>I&rsquo;m a business</span>
               <strong>Pick creators and spaces to book</strong>
@@ -6147,7 +6368,7 @@ export default function MarketplaceApp({
                   <strong>Find your first placement</strong>
                   <p>Browse creators and spaces, then message the owner directly.</p>
                 </div>
-                <a className="button button-ghost button-small" href="#market">
+                <a className="button button-ghost button-small" href="/marketplace">
                   Browse
                 </a>
               </li>
@@ -6155,96 +6376,27 @@ export default function MarketplaceApp({
           </ol>
         </section>
       ) : (
-      <section className="hero">
-        <div className="hero-field" aria-hidden="true">
-          <HeroCanvas />
-        </div>
-        <div className="hero-copy">
-          <h1 className="hero-headline">
-            Get seen
-            <br />
-            <em>where it matters.</em>
-            <span className="type-cursor" aria-hidden="true" />
-          </h1>
-          <p className="hero-lede">
-            SideSpace turns everyday attention into bookable ad space: local
-            creators, storefront windows, vehicles, land, and more. Browse
-            what is available and message the owner directly.
-          </p>
-          <div className="hero-actions">
-            <a className="button button-dark" href="#market">
-              Browse creators and spaces <span>↓</span>
-            </a>
-            <button
-              className="button button-ghost"
-              onClick={openListingEditor}
-            >
-              List what you have <span>＋</span>
-            </button>
-          </div>
-          <div className="hero-trust" aria-label="SideSpace benefits">
-            <span>Free to join</span>
-            <span>Direct messages</span>
-            <span>Digital and physical reach</span>
-          </div>
-        </div>
-        {/* The strongest proof this is real is the real inventory, so the hero
-            shows the actual marketplace rather than stock photography. */}
-        <div className="hero-stage" aria-label="A preview of live listings">
-          <div className="hero-app">
-            <div className="hero-app-bar" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-              <span>SideSpace</span>
-            </div>
-            <div className="hero-app-body">
-              <aside className="hero-app-side" aria-hidden="true">
-                <small>Type of space</small>
-                <ul>
-                  <li className="on">Storefront</li>
-                  <li>Vehicle</li>
-                  <li>Community board</li>
-                  <li>Social post</li>
-                </ul>
-                <small>Near</small>
-                <p>Orange County</p>
-              </aside>
-              <div className="hero-app-grid">
-                {heroListings.map((listing) => (
-                  <article className="hero-app-card" key={listing.id}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={listing.image_url || DEFAULT_LISTING_IMAGE}
-                      alt=""
-                      width={92}
-                      height={69}
-                      // The first paint renders demo placeholders that are
-                      // thrown away as soon as the real listings load. Claiming
-                      // high priority for those made the browser fetch a set it
-                      // was about to discard, ahead of the real one.
-                      fetchPriority={listing.owner.is_demo ? "low" : "high"}
-                      loading={listing.owner.is_demo ? "lazy" : "eager"}
-                      decoding="async"
-                    />
-                    <div>
-                      <strong>{listing.title}</strong>
-                      <small>
-                        {listing.owner.display_name}
-                        {listing.owner.city ? ` · ${listing.owner.city}` : ""}
-                      </small>
-                      <b>
-                        {priceLabel(listing)}
-                        <span> / {listing.price_unit}</span>
-                      </b>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+        <DashboardGate
+          onSignIn={() => {
+            setAuthMode("signin");
+            setAuthOpen(true);
+          }}
+          onJoin={() => {
+            setAuthMode("signup");
+            setAuthOpen(true);
+          }}
+        />
+      ))}
+
+      {route === "home" && (
+        <LandingPage
+          listings={heroListings}
+          onJoin={() => {
+            setAuthMode("signup");
+            setAuthOpen(true);
+          }}
+          onList={openListingEditor}
+        />
       )}
 
       {/* Was five hard-coded labels, three of which named channels nobody
@@ -6253,7 +6405,7 @@ export default function MarketplaceApp({
           sale. Two identical tracks translating -50% make the loop seamless;
           aria-hidden because it is decoration and the same information is
           in the filter chips below, which are reachable and announced. */}
-      <section
+      {legacyPublicSections && (<section
         className="signal-strip"
         aria-hidden="true"
       >
@@ -6267,13 +6419,13 @@ export default function MarketplaceApp({
             ),
           )}
         </div>
-      </section>
+      </section>)}
 
       {/* Sits directly above the marketplace, so every figure is derived
           from the same listings the grid renders. Hidden entirely while
           blocks are still loading rather than announcing counts that are
           about to change under the reader. */}
-      {!blocksPending && marketplaceStats.listings > 0 && (
+      {legacyPublicSections && !blocksPending && marketplaceStats.listings > 0 && (
         <section className="stat-band" aria-label="Marketplace at a glance">
           <div className="stat-cell">
             <b>{marketplaceStats.listings}</b>
@@ -6294,7 +6446,7 @@ export default function MarketplaceApp({
         </section>
       )}
 
-      <section className="how-section" id="how">
+      {legacyPublicSections && (<section className="how-section" id="how">
         <div className="how-intro">
           <h2>Find it. Message. <em>Make it happen.</em></h2>
         </div>
@@ -6404,13 +6556,13 @@ export default function MarketplaceApp({
             </article>
           ))}
         </div>
-      </section>
+      </section>)}
 
-      <section className="market-section" id="market">
+      {route === "marketplace" && (<div className="ss-marketplace-page" id="main-content"><section className="market-section" id="market">
         <div className="section-top">
           <div>
             <p className="section-label">Marketplace</p>
-            <h2>Find the right audience or <em>spot.</em></h2>
+            <h1>Find the right audience or <em>spot.</em></h1>
           </div>
           <p>
             Search Instagram, TikTok, newsletters, local audiences, towns, or
@@ -6619,9 +6771,9 @@ export default function MarketplaceApp({
             </button>
           </div>
         )}
-      </section>
+      </section></div>)}
 
-      <section className="spaces-section" id="spaces">
+      {legacyPublicSections && (<section className="spaces-section" id="spaces">
         <div className="spaces-heading">
           <h2>
             Every local spot
@@ -6678,9 +6830,9 @@ export default function MarketplaceApp({
             </figcaption>
           </figure>
         </div>
-      </section>
+      </section>)}
 
-      <section className="people-section" id="creators">
+      {legacyPublicSections && (<section className="people-section" id="creators">
         <div className="section-top">
           <div>
             <p className="section-label">Creators, hosts and businesses</p>
@@ -6746,14 +6898,14 @@ export default function MarketplaceApp({
             </article>
             ))}
         </div>
-      </section>
+      </section>)}
 
       {/* Sits immediately before pricing, because the honest argument for
           the price is the comparison, not the number. A real table rather
           than a grid of divs: it is tabular data, screen readers announce
           the row and column headers, and it stays readable if the CSS never
           loads. */}
-      <section className="compare-section" aria-labelledby="compare-heading">
+      {legacyPublicSections && (<section className="compare-section" aria-labelledby="compare-heading">
         <div className="compare-intro">
           <p className="eyebrow">Before and after</p>
           <h2 id="compare-heading">
@@ -6791,8 +6943,8 @@ export default function MarketplaceApp({
             </tbody>
           </table>
         </div>
-      </section>
-      <section className="pricing-section" id="pricing">
+      </section>)}
+      {legacyPublicSections && (<section className="pricing-section" id="pricing">
         <div className="pricing-intro">
           <div>
             <p className="eyebrow">Pricing</p>
@@ -6882,9 +7034,9 @@ export default function MarketplaceApp({
           </article>
         </div>
 
-      </section>
+      </section>)}
 
-      <section className="final-cta">
+      {legacyPublicSections && (<section className="final-cta">
         <div>
           <h2>
             Ready for
@@ -6907,9 +7059,9 @@ export default function MarketplaceApp({
             Create your free profile <span>↗</span>
           </button>
         </div>
-      </section>
+      </section>)}
 
-      <footer className="site-footer">
+      {legacyPublicSections && (<footer className="site-footer">
         <a className="brand footer-brand" href="#top">
           <span className="brand-mark">S</span>
           <span>SideSpace</span>
@@ -6926,7 +7078,14 @@ export default function MarketplaceApp({
           <button onClick={openInbox}>Messages</button>
         </nav>
         <small>© {new Date().getFullYear()} SideSpace</small>
-      </footer>
+      </footer>)}
+
+      <SiteFooter
+        onJoin={() => {
+          setAuthMode("signup");
+          setAuthOpen(true);
+        }}
+      />
 
       {authOpen && (
         <Modal
@@ -8068,78 +8227,22 @@ export default function MarketplaceApp({
                       <>
                         <div className="form-subsection field-wide">
                           <span>Your audience</span>
-                          <h4>Where do people follow you?</h4>
-                          <p>Only the ones you pick get a field.</p>
+                          <h4>Where can brands find you?</h4>
+                          <p>
+                            Choose every platform you use, then add the profiles
+                            you want to show.
+                          </p>
                         </div>
-                        <ChipRow
-                          field="platforms"
-                          label="Platforms you post on"
-                          multi
-                          options={CREATOR_PLATFORMS.map(
-                            (key) =>
-                              socialPlatforms.find((p) => p.key === key)?.label ?? key,
-                          )}
-                          selected={answers.platforms.map(
-                            (key) =>
-                              socialPlatforms.find((p) => p.key === key)?.label ?? key,
-                          )}
-                          onPick={(label) => {
-                            const key =
-                              socialPlatforms.find((p) => p.label === label)?.key ?? "";
-                            if (!key) return;
-                            setAnswers((current) => ({
-                              ...current,
-                              platforms: current.platforms.includes(key)
-                                ? current.platforms.filter((item) => item !== key)
-                                : [...current.platforms, key],
-                            }));
-                          }}
+                        <CreatorAudienceFields
+                          answers={answers}
+                          setAnswers={setAnswers}
+                          igAvatarBusy={igAvatarBusy}
+                          igAvatar={igAvatar}
+                          igStats={igStats}
+                          onCheckInstagram={(handle) =>
+                            void syncInstagramAvatar(handle)
+                          }
                         />
-                        <div className="field-grid">
-                          {answers.platforms.map((key) => {
-                            const platform = socialPlatforms.find(
-                              (item) => item.key === key,
-                            );
-                            if (!platform) return null;
-                            return (
-                              <label key={key}>
-                                {platform.label}
-                                <input
-                                  value={answers.socials[key] ?? ""}
-                                  onChange={(event) =>
-                                    setAnswers((current) => ({
-                                      ...current,
-                                      socials: {
-                                        ...current.socials,
-                                        [key]: event.target.value,
-                                      },
-                                    }))
-                                  }
-                                  placeholder="@yourhandle"
-                                />
-                              </label>
-                            );
-                          })}
-                          <label>
-                            Your following on your biggest platform
-                            <small>Roughly is fine.</small>
-                            <input
-                              type="number"
-                              min={0}
-                              max={2000000000}
-                              value={answers.followers ?? ""}
-                              onChange={(event) =>
-                                setAnswers((current) => ({
-                                  ...current,
-                                  followers: event.target.value
-                                    ? Number(event.target.value)
-                                    : null,
-                                }))
-                              }
-                              placeholder="18400"
-                            />
-                          </label>
-                        </div>
                       </>
                     )}
                     <div className="field-grid">
@@ -8203,141 +8306,22 @@ export default function MarketplaceApp({
                       <>
                         <div className="form-subsection field-wide">
                           <span>Your audience</span>
-                          <h4>Where do people follow you?</h4>
-                          <p>Pick your platforms. Only those get a field.</p>
-                        </div>
-                        <ChipRow
-                          field="platforms"
-                          label="Platforms you post on"
-                          multi
-                          options={CREATOR_PLATFORMS.map(
-                            (key) =>
-                              socialPlatforms.find((p) => p.key === key)?.label ??
-                              key,
-                          )}
-                          selected={answers.platforms.map(
-                            (key) =>
-                              socialPlatforms.find((p) => p.key === key)?.label ??
-                              key,
-                          )}
-                          onPick={(label) => {
-                            const key =
-                              socialPlatforms.find((p) => p.label === label)?.key ??
-                              "";
-                            if (!key) return;
-                            setAnswers((current) => ({
-                              ...current,
-                              platforms: current.platforms.includes(key)
-                                ? current.platforms.filter((item) => item !== key)
-                                : [...current.platforms, key],
-                            }));
-                          }}
-                        />
-                        <div className="field-grid">
-                          {answers.platforms.map((key) => {
-                            const platform = socialPlatforms.find(
-                              (item) => item.key === key,
-                            );
-                            if (!platform) return null;
-                            return (
-                              <label key={key}>
-                                {platform.label}
-                                <input
-                                  value={answers.socials[key] ?? ""}
-                                  onChange={(event) =>
-                                    setAnswers((current) => ({
-                                      ...current,
-                                      socials: {
-                                        ...current.socials,
-                                        [key]: event.target.value,
-                                      },
-                                    }))
-                                  }
-                                  placeholder="@yourhandle"
-                                />
-                                {key === "instagram" && (
-                                  <button
-                                    type="button"
-                                    className="button button-small button-ghost"
-                                    disabled={igAvatarBusy}
-                                    onClick={() =>
-                                      void syncInstagramAvatar(
-                                        answers.socials.instagram ?? "",
-                                      )
-                                    }
-                                  >
-                                    {igAvatarBusy ? "Checking…" : "Check"}
-                                  </button>
-                                )}
-                                {key === "instagram" && igAvatar && (
-                                  <span className="ig-avatar-preview">
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={igAvatar} alt="" />
-                                    <small>
-                                      Synced from Instagram — upload your own photo
-                                      in step 1 to use a different one.
-                                    </small>
-                                  </span>
-                                )}
-                                {key === "instagram" && igStats && (
-                                  <small className="ig-sync-note" role="status">
-                                    {igStats.throttled
-                                      ? "Instagram is rate-limiting us right now. Enter your following below and carry on."
-                                      : igStats.error
-                                        ? "We couldn’t read that profile. Enter your following below and carry on."
-                                        : `Found @${igStats.username} — ${compactNumber(igStats.followers ?? 0)} followers.`}
-                                  </small>
-                                )}
-                              </label>
-                            );
-                          })}
-                          <label>
-                            Your following on your biggest platform
-                            <small>Roughly is fine. Optional.</small>
-                            <input
-                              type="number"
-                              min={0}
-                              max={2000000000}
-                              value={answers.followers ?? ""}
-                              onChange={(event) =>
-                                setAnswers((current) => ({
-                                  ...current,
-                                  followers: event.target.value
-                                    ? Number(event.target.value)
-                                    : null,
-                                }))
-                              }
-                              placeholder="18400"
-                            />
-                          </label>
-                        </div>
-                        {/* Which platform the card is filed under, and what a
-                            picked-but-empty handle costs. Both were decided
-                            silently: the channel by tap order, and a blank
-                            handle by publish dropping the platform from
-                            social_links without saying so. */}
-                        {answers.platforms.length > 0 && (
-                          <p className="chip-note field-wide">
-                            Your card will be filed under{" "}
-                            <b>{creatorChannel(answers)}</b> — you can change
-                            that on your listing any time.
-                            {(() => {
-                              const blank = answers.platforms
-                                .filter((key) => !(answers.socials[key] ?? "").trim())
-                                .map(
-                                  (key) =>
-                                    socialPlatforms.find((p) => p.key === key)
-                                      ?.label ?? key,
-                                );
-                              if (!blank.length) return null;
-                              return ` ${joinList(blank)} ${
-                                blank.length === 1 ? "has" : "have"
-                              } no handle yet, so ${
-                                blank.length === 1 ? "it" : "they"
-                              } won’t appear on your profile.`;
-                            })()}
+                          <h4>Where can brands find you?</h4>
+                          <p>
+                            Choose every platform you use, then add the profiles
+                            you want to show.
                           </p>
-                        )}
+                        </div>
+                        <CreatorAudienceFields
+                          answers={answers}
+                          setAnswers={setAnswers}
+                          igAvatarBusy={igAvatarBusy}
+                          igAvatar={igAvatar}
+                          igStats={igStats}
+                          onCheckInstagram={(handle) =>
+                            void syncInstagramAvatar(handle)
+                          }
+                        />
 
                         <div className="form-subsection field-wide">
                           <span>Your first offer</span>

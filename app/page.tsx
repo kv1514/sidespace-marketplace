@@ -1,117 +1,61 @@
-import MarketplaceApp from "./MarketplaceApp";
+import type { Metadata } from "next";
+import PublicSiteApp from "./components/PublicSiteApp";
+import InviteMarketplaceBridge from "./components/InviteMarketplaceBridge";
 import {
-  createPublicClient,
-  PUBLIC_LISTING_COLUMNS,
-  PUBLIC_PROFILE_COLUMNS,
-} from "@/lib/supabase/public";
-import type { Invite } from "@/lib/supabase/public";
+  isInviteToken,
+  loadInvite,
+  loadMarketplaceSnapshot,
+} from "@/lib/public-marketplace";
 
-// Render per request, deliberately.
-//
-// This was briefly `revalidate = 300`, which is worse than it sounds for this
-// page: Next prerenders it at BUILD time, so whatever the build machine's fetch
-// returned gets baked into the HTML every visitor receives. When that fetch came
-// back empty the homepage served the demo seed fallback - twelve invented
-// businesses in Ohio and Montana - and none of the real listings, with no error
-// anywhere because the catch below is doing its job.
-//
-// A marketplace's homepage IS its live data. Caching it on the CDN trades the
-// one thing the page exists to show for a few hundred milliseconds.
 export const dynamic = "force-dynamic";
 
-/**
- * Fetch the marketplace on the server so the HTML actually contains real
- * members and listings.
- *
- * Without this the first paint is the seeded demo marketplace and the real data
- * only arrives after the client hydrates and queries Supabase - so every
- * crawler, link unfurler (Slack, iMessage, LinkedIn) and AI search bot saw a
- * marketplace of invented businesses and never a real one. The same query runs
- * again on the client, so a stale cache self-corrects within a second.
- */
-/** Reject anything that is not a uuid before it reaches the database. */
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-async function loadInvite(token: unknown): Promise<Invite | null> {
-  if (typeof token !== "string" || !UUID.test(token)) return null;
-  try {
-    const supabase = createPublicClient();
-    const { data, error } = await supabase
-      .rpc("invite_prospect", { token })
-      .maybeSingle();
-    if (error) {
-      console.error("[home] invite lookup failed:", error);
-      return null;
-    }
-    return (data as Invite) ?? null;
-  } catch (error) {
-    // An unknown or expired token is not an error worth breaking the homepage
-    // over - they still get the ordinary marketplace.
-    console.error("[home] invite lookup threw:", error);
-    return null;
-  }
-}
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+  title: "SideSpace - Local attention, now bookable",
+  description:
+    "Book local creators, storefronts, vehicles, newsletters, teams, and sponsorship opportunities—or list the attention you already own.",
+  openGraph: {
+    url: "/",
+    title: "SideSpace - Local attention, now bookable",
+    description:
+      "The marketplace for creators, storefronts, vehicles, sponsorships, and other local advertising space.",
+  },
+};
 
 export default async function Home({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  let profiles = null;
-  let listings = null;
-  const invite = await loadInvite((await searchParams).p);
+  const params = await searchParams;
+  const inviteToken = typeof params.p === "string" ? params.p : "";
+  const [invite, snapshot] = await Promise.all([
+    loadInvite(inviteToken),
+    // The homepage proves the marketplace is real with a small preview. It no
+    // longer pays for the complete browser it does not render.
+    loadMarketplaceSnapshot({
+      profileLimit: 8,
+      listingLimit: 8,
+      label: "home",
+    }),
+  ]);
 
-  try {
-    // Cookie-free on purpose: none of this data is per-user, so it does not
-    // need a session, and avoiding cookies() keeps the fetch independent of
-    // request context.
-    const supabase = createPublicClient();
-    const [profilesResult, listingsResult] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select(PUBLIC_PROFILE_COLUMNS)
-        .eq("onboarding_complete", true)
-        .neq("role", "consumer")
-        .order("verified", { ascending: false })
-        // Same reasoning as the listings bound below - this fed an uncapped
-        // showcase row that rendered a card per profile.
-        .limit(60),
-      supabase
-        .from("listings")
-        .select(
-          `${PUBLIC_LISTING_COLUMNS}, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
-        )
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-        // Bound the payload: PostgREST truncates at 1000 anyway, silently.
-        .limit(200),
-    ]);
-    // Log loudly. Falling through to null silently swaps the real marketplace
-    // for twelve invented demo businesses, which looks like a working page and
-    // is the hardest kind of failure to notice - it took a founder saying "where
-    // are my listings" to catch it, because nothing errored.
-    if (profilesResult.error) {
-      console.error("[home] profiles fetch failed:", profilesResult.error);
-    }
-    if (listingsResult.error) {
-      console.error("[home] listings fetch failed:", listingsResult.error);
-    }
-    profiles = profilesResult.error ? null : profilesResult.data;
-    listings = listingsResult.error ? null : listingsResult.data;
-  } catch (error) {
-    // Supabase unreachable: fall through with nulls and let the client seed
-    // itself, but say so in the logs rather than serving fiction in silence.
-    console.error("[home] marketplace fetch threw:", error);
-    profiles = null;
-    listings = null;
+  // Prospect links keep the full onboarding engine mounted even when the
+  // lookup is temporarily unavailable. Normal homepage visits use the much
+  // smaller public shell and load listing details on /marketplace.
+  if (!isInviteToken(inviteToken)) {
+    return (
+      <PublicSiteApp route="home" initialListings={snapshot.listings} />
+    );
   }
 
   return (
-    <MarketplaceApp
-      initialProfiles={profiles}
-      initialListings={listings}
+    <InviteMarketplaceBridge
+      route="home"
+      initialProfiles={snapshot.profiles}
+      initialListings={snapshot.listings}
       invite={invite}
+      inviteToken={inviteToken}
     />
   );
 }

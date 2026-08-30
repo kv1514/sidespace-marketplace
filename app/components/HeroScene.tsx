@@ -153,7 +153,30 @@ function Scene({ reduce }: { reduce: boolean }) {
   );
 }
 
-export default function HeroScene() {
+function ContextMonitor({ onContextLost }: { onContextLost: () => void }) {
+  const { gl } = useThree();
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      onContextLost();
+    };
+
+    canvas.addEventListener("webglcontextlost", handleContextLost, false);
+    return () => {
+      canvas.removeEventListener("webglcontextlost", handleContextLost, false);
+    };
+  }, [gl, onContextLost]);
+
+  return null;
+}
+
+export default function HeroScene({
+  onContextLost,
+}: {
+  onContextLost: () => void;
+}) {
   const reduce = useReducedMotion() ?? false;
   // WebGL is not guaranteed: locked-down browsers, some embedded webviews and
   // machines with blocklisted drivers have none. Probe once, lazily, before a
@@ -211,11 +234,13 @@ export default function HeroScene() {
         aria-hidden="true"
         camera={{ position: [0, 0, 8], fov: 42 }}
         dpr={[1, 1.6]}
+        fallback={null}
         // The scene is ambient. Never let it fight the main thread for input.
         frameloop={reduce || !active ? "demand" : "always"}
         gl={{ antialias: true, alpha: true, powerPreference: "low-power" }}
         style={{ pointerEvents: "none" }}
       >
+        <ContextMonitor onContextLost={onContextLost} />
         <Scene reduce={reduce} />
       </Canvas>
     </div>
