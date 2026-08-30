@@ -14,6 +14,15 @@ alter table public.profiles
   add constraint profiles_creator_offer_valid
   check (creator_offer is null or creator_offer in ('social', 'physical', 'sponsorship'));
 
+-- Both role constraints come off before any data moves. The pre-existing
+-- profiles_extra_roles_valid already forbids `role = any(extra_roles)`, so a
+-- profile carrying 'creator' as a secondary role while its primary is
+-- space_owner fails the moment its primary becomes 'creator': the role UPDATE
+-- below trips the OLD constraint, before the new one is ever added. This bit
+-- in production - one profile was exactly that shape.
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles drop constraint if exists profiles_extra_roles_valid;
+
 -- Keep an internal record of rows whose primary role changed. The private
 -- schema is not exposed through PostgREST, and this makes an accidental
 -- rollout reversible without trying to infer the old role from listings.
@@ -61,19 +70,22 @@ set extra_roles = (
     from unnest(coalesce(p.extra_roles, '{}'::text[])) as legacy(item)
     where legacy.item in ('business', 'creator', 'space_owner', 'sponsor_host')
   ) normalized
-  where normalized.value <> case
-    when p.role in ('space_owner', 'sponsor_host') then 'creator'
-    else p.role
-  end
+  where normalized.value <> p.role
 )
 where p.extra_roles && array['space_owner', 'sponsor_host']::text[];
 
-alter table public.profiles drop constraint if exists profiles_role_check;
+-- Catches what the normalization above does not: a secondary role that is
+-- redundant once the primary says the same thing. The UPDATE above only
+-- touches rows whose extra_roles still contain a legacy value, so a profile
+-- that was already {'creator'} while primary-space_owner slips past it.
+update public.profiles
+set extra_roles = array_remove(extra_roles, role)
+where role = any (extra_roles);
+
 alter table public.profiles
   add constraint profiles_role_check
   check (role in ('consumer', 'business', 'creator'));
 
-alter table public.profiles drop constraint if exists profiles_extra_roles_valid;
 alter table public.profiles
   add constraint profiles_extra_roles_valid
   check (
