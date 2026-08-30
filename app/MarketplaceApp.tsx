@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import {
   type Dispatch,
   FormEvent,
@@ -486,6 +487,29 @@ function displayHandle(raw: string) {
 // when a listing's photo is deleted from the member's profile.
 const DEFAULT_LISTING_IMAGE = "/photos/market-creator.jpg";
 
+/**
+ * How long each how-it-works step holds before the band moves on.
+ *
+ * The widget animations run on the same clock in CSS - `--step-cycle` and
+ * the `loop-*` animations in globals.css - so a change here needs the same
+ * change there, or a step will move on mid-sentence.
+ */
+const STEP_CYCLE_MS = 3200;
+
+/**
+ * The hero's WebGL field: a slow drift of panels standing in for the
+ * advertising space the marketplace sells.
+ *
+ * Client-only and dynamically imported, so three.js never enters the
+ * server bundle and never blocks first paint. It replaces two decorative
+ * blobs rather than being added on top of them: the hero already carries a
+ * headline, a live listing preview and a trust row, and a third decorative
+ * layer would be noise. The component itself checks for WebGL support and
+ * renders nothing if there is none, so the hero always stands on its type.
+ */
+const HeroCanvas = dynamic(() => import("./components/HeroCanvas"), {
+  ssr: false,
+});
 /** Channels offered in the listing editor. A listing may legitimately carry a
  *  channel outside this list (seeded rows, or one set directly in the
  *  database), so the editor also always offers whatever the listing already
@@ -3068,6 +3092,10 @@ export default function MarketplaceApp({
   // still open instead of waiting forever on an auth request that cannot run.
   const [sessionResolved, setSessionResolved] = useState(!configured);
   const [activeStep, setActiveStep] = useState(0);
+  // The steps band only cycles while it is on screen, so it is always
+  // step 01 that greets someone scrolling into it.
+  const [stepsLive, setStepsLive] = useState(false);
+  const stepsRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState(initialQuery);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>(initialRoleFilter);
   const [channelFilter, setChannelFilter] = useState(initialChannel);
@@ -3828,15 +3856,59 @@ export default function MarketplaceApp({
     };
   }, [listings, user, profile]);
 
+  // The cycle used to start on mount and never stop, so by the time anyone
+  // scrolled this far the band was mid-story - you would arrive at step 02 or
+  // 03 with no idea you had missed the beginning. It runs only while the band
+  // is on screen now, and rewinds to 01 every time it comes back into view, so
+  // the first thing anyone sees is the first step. Leaving the viewport drops
+  // `steps-live`, which parks the widgets on their finished, readable frame
+  // and lets the whole story restart in sync on the way back.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const band = stepsRef.current;
+    if (!band) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    // Matches the widget animation cycle so each story finishes before the
-    // section moves on.
-    const timer = window.setInterval(() => {
-      setActiveStep((current) => (current + 1) % 3);
-    }, 4600);
-    return () => window.clearInterval(timer);
+    // `"IntersectionObserver" in window` would narrow `window` to never in the
+    // else branch, which is where the timer lives.
+    if (typeof IntersectionObserver === "undefined") {
+      // No observer: better a band that cycles from the top than one frozen
+      // on step 01 forever. Deferred a frame rather than set synchronously,
+      // which would cascade a second render out of this effect.
+      const frame = window.requestAnimationFrame(() => setStepsLive(true));
+      const fallback = window.setInterval(() => {
+        setActiveStep((current) => (current + 1) % 3);
+      }, STEP_CYCLE_MS);
+      return () => {
+        window.cancelAnimationFrame(frame);
+        window.clearInterval(fallback);
+      };
+    }
+    let timer = 0;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          if (timer) return;
+          setActiveStep(0);
+          setStepsLive(true);
+          // Matches the widget animation cycle so each story finishes before
+          // the section moves on.
+          timer = window.setInterval(() => {
+            setActiveStep((current) => (current + 1) % 3);
+          }, STEP_CYCLE_MS);
+        } else {
+          window.clearInterval(timer);
+          timer = 0;
+          setStepsLive(false);
+          setActiveStep(0);
+        }
+      },
+      { threshold: 0.15 },
+    );
+    observer.observe(band);
+    return () => {
+      window.clearInterval(timer);
+      observer.disconnect();
+    };
   }, []);
 
   // The callback route exchanges the recovery code server-side, so the client
@@ -6450,7 +6522,7 @@ export default function MarketplaceApp({
         <div className="how-intro">
           <h2>Find it. Message. <em>Make it happen.</em></h2>
         </div>
-        <div className="steps">
+        <div className={stepsLive ? "steps steps-live" : "steps"} ref={stepsRef}>
           {[
             {
               icon: "⌕",
