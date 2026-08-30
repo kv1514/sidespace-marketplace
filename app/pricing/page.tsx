@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import PublicSiteApp from "../components/PublicSiteApp";
+import { OG_IMAGE } from "@/lib/site-metadata";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/pricing" },
@@ -7,6 +8,7 @@ export const metadata: Metadata = {
   description:
     "SideSpace is free during early access. Planned future pricing is clearly separated from what is live today.",
   openGraph: {
+    images: OG_IMAGE,
     url: "/pricing",
     title: "SideSpace pricing - free during early access",
     description:

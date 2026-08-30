@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { OG_IMAGE } from "@/lib/site-metadata";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -8,6 +9,7 @@ export const metadata: Metadata = {
   // canonical hint - so sharing this page unfurled as the homepage.
   alternates: { canonical: "/privacy" },
   openGraph: {
+    images: OG_IMAGE,
     type: "article",
     siteName: "SideSpace",
     url: "/privacy",
@@ -15,6 +17,7 @@ export const metadata: Metadata = {
     description: "What SideSpace collects, why, and what stays private.",
   },
   twitter: {
+    images: OG_IMAGE,
     card: "summary",
     title: "Privacy Policy · SideSpace",
     description: "What SideSpace collects, why, and what stays private.",
