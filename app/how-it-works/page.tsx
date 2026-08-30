@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import PublicSiteApp from "../components/PublicSiteApp";
+import { OG_IMAGE } from "@/lib/site-metadata";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/how-it-works" },
@@ -7,6 +8,7 @@ export const metadata: Metadata = {
   description:
     "See how advertisers discover local attention and how creators list social, physical, and sponsorship inventory on SideSpace.",
   openGraph: {
+    images: OG_IMAGE,
     url: "/how-it-works",
     title: "How SideSpace works",
     description:

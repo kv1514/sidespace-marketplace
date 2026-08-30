@@ -71,13 +71,24 @@ export default function PublicSiteApp({
         ),
       })),
     );
+    // Briefs last, then samples last within what is left. A "Business brief"
+    // is a business asking for space rather than space to book, so it reads
+    // oddly as the first card in a list of inventory. It stays in the
+    // marketplace, at the end, rather than being dropped.
+    //
+    // The cap is the same on every route now. It was 8 on home, which is fewer
+    // rows than the home page actually presents - a hero offering four kinds
+    // of inventory plus a physical and an audience section - so a kind that
+    // was not among the eight newest listings had nothing to show at all.
     return (loaded.length ? loaded : fallback)
       .sort(
         (left, right) =>
+          Number(left.channel === "Business brief") -
+            Number(right.channel === "Business brief") ||
           Number(left.owner.is_demo) - Number(right.owner.is_demo),
       )
-      .slice(0, route === "home" ? 8 : 24);
-  }, [initialListings, route]);
+      .slice(0, 24);
+  }, [initialListings]);
 
   // Public pages only need enough account state to render the right header.
   // Load the Supabase browser client after hydration so the initial marketing

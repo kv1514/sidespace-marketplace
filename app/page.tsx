@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PublicSiteApp from "./components/PublicSiteApp";
 import InviteMarketplaceBridge from "./components/InviteMarketplaceBridge";
+import { OG_IMAGE } from "@/lib/site-metadata";
 import {
   isInviteToken,
   loadInvite,
@@ -15,6 +16,7 @@ export const metadata: Metadata = {
   description:
     "Book creators offering social, physical, and sponsorship inventory—or list the way you can advertise.",
   openGraph: {
+    images: OG_IMAGE,
     url: "/",
     title: "SideSpace - Local attention, now bookable",
     description:
@@ -35,7 +37,11 @@ export default async function Home({
     // longer pays for the complete browser it does not render.
     loadMarketplaceSnapshot({
       profileLimit: 8,
-      listingLimit: 8,
+      // The hero introduces four kinds of inventory and the two sections
+      // below it show physical and audience examples, so eight rows was
+      // never enough to fill the page from: whichever kind happened not to
+      // be in the eight newest listings had nothing to show.
+      listingLimit: 24,
       label: "home",
     }),
   ]);

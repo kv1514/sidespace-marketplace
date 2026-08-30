@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import PublicSiteApp from "../components/PublicSiteApp";
+import { OG_IMAGE } from "@/lib/site-metadata";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/pricing" },
@@ -7,6 +8,7 @@ export const metadata: Metadata = {
   description:
     "List and browse without a subscription. Paid SideSpace campaigns use a clear 5% business fee and 5% creator fee.",
   openGraph: {
+    images: OG_IMAGE,
     url: "/pricing",
     title: "SideSpace pricing - 5% + 5% marketplace fees",
     description:

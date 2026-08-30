@@ -3,6 +3,7 @@ import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import "lenis/dist/lenis.css";
 import "./public-site.css";
+import { OG_IMAGE } from "@/lib/site-metadata";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://sidespace-marketplace.vercel.app"),
@@ -25,14 +26,14 @@ export const metadata: Metadata = {
     title: "SideSpace - Local attention, now bookable",
     description:
       "Book creators offering social, physical, and sponsorship inventory—or list the way you can advertise.",
-    images: ["/og-card.jpg"],
+    images: OG_IMAGE,
   },
   twitter: {
     card: "summary_large_image",
     title: "SideSpace - Local attention, now bookable",
     description:
       "Book creator-led social audiences, physical placements, and sponsorships—or list the way you can advertise.",
-    images: ["/og-card.jpg"],
+    images: OG_IMAGE,
   },
 };
 
