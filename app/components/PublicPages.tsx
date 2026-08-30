@@ -98,6 +98,26 @@ const INVENTORY_TYPES = [
 ];
 
 /**
+ * Editorial overrides: the listing a tab should show when we have a preference.
+ *
+ * The rule below picks the newest listing of the right kind, which is the
+ * right default and keeps working as listings come and go. This is the
+ * exception for when a particular listing is simply the better shop window -
+ * here, a car with a real listing photo and a title that says what it is,
+ * rather than a newer one called "My car" illustrated with its owner's profile
+ * picture.
+ *
+ * Keyed by tab label so it reads as an editorial choice rather than a rule.
+ * A pin is resolved inside the same filtered set as everything else, so it can
+ * never reintroduce a brief, and it falls back to the rule the moment the
+ * listing stops being available - deleted, deactivated, or simply pushed out
+ * of the rows the page fetches. Removing an entry restores the default.
+ */
+const HERO_PINS: Record<string, string> = {
+  Vehicle: "3aeba0db-3bf1-4acc-a51a-eba0f1417f64",
+};
+
+/**
  * The listing each tab shows.
  *
  * This used to be `listings[active]` - the card was chosen by which tab was
@@ -117,7 +137,12 @@ function pickInventory(listings: PublicListing[]) {
     const matches = bookable.filter((listing) =>
       type.match.test(listing.channel),
     );
-    return matches.find((listing) => !listing.owner.is_demo) ?? matches[0];
+    const pinned = HERO_PINS[type.label];
+    return (
+      (pinned && matches.find((listing) => listing.id === pinned)) ||
+      matches.find((listing) => !listing.owner.is_demo) ||
+      matches[0]
+    );
   });
 }
 
