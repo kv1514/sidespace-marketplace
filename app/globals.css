@@ -8552,3 +8552,155 @@ html.reveal-ready [data-reveal].is-visible {
 .how-section .steps article.step-active .step-progress::after {
   transition: transform var(--step-cycle) linear;
 }
+
+/* ========================================================================
+   Recovered onboarding motion and progressive disclosure
+
+   The recovered flow already renders these states in MarketplaceApp.tsx.
+   Keep the rules at the end of the stylesheet so they layer onto the active
+   app shell without replacing its newer public-site treatment. */
+
+.modal-card:has(.onboarding-form) {
+  max-height: calc(100dvh - 24px);
+}
+
+.onboarding-slide[data-direction="forward"] {
+  animation: onboarding-forward 240ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.onboarding-slide[data-direction="back"] {
+  animation: onboarding-back 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes onboarding-forward {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes onboarding-back {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.onboarding-identity-fields {
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 6px;
+}
+
+.onboarding-identity-fields > * {
+  grid-column: 1;
+}
+
+.progressive-field {
+  animation: progressive-field-in 420ms
+    cubic-bezier(0.25, 0.8, 0.25, 1) both;
+  transform-origin: top left;
+}
+
+@keyframes progressive-field-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.onboarding-form .role-choice-grid > button {
+  min-height: 176px;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.onboarding-form .role-choice-grid > button:active,
+.onboarding-form .onboarding-actions .button:active {
+  transform: scale(0.98);
+}
+
+.onboarding-form .button {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.onboarding-primary-action-enter {
+  animation: onboarding-primary-action-in 320ms
+    cubic-bezier(0.25, 0.8, 0.25, 1) 20ms both;
+  display: inline-flex;
+  transform-origin: 100% 50%;
+}
+
+@keyframes onboarding-primary-action-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 620px) {
+  .modal-card:has(.onboarding-form) {
+    max-height: 100dvh;
+  }
+
+  .onboarding-form .role-choice-grid > button {
+    min-height: 138px;
+  }
+
+  .onboarding-form .onboarding-actions {
+    gap: 10px;
+  }
+
+  .onboarding-form .onboarding-actions .button,
+  .onboarding-form .onboarding-actions > button:not(.button) {
+    padding-inline: 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-slide,
+  .progressive-field {
+    animation: none;
+    transition: none;
+  }
+
+  .onboarding-primary-action-enter {
+    animation: none;
+  }
+
+  .onboarding-form .role-choice-grid > button:active,
+  .onboarding-form .onboarding-actions .button:active {
+    transform: none;
+  }
+
+  .onboarding-form .onboarding-actions::before {
+    opacity: 1;
+    transform: none;
+  }
+}
