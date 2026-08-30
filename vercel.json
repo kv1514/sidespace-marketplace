@@ -2,8 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/release-payouts",
-      "schedule": "* * * * *"
+      "schedule": "0 9 * * *"
     }
   ]
 }
-
