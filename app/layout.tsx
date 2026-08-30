@@ -17,21 +17,21 @@ export const metadata: Metadata = {
     template: "%s · SideSpace",
   },
   description:
-    "Book local creators, storefront windows, vehicles, counters, and community boards. Free to join, and the owner sets the price.",
+    "Book creator listings for social audiences, storefront windows, vehicles, counters, and community boards. Free to join, and the creator sets the price.",
   openGraph: {
     type: "website",
     siteName: "SideSpace",
     url: "https://sidespace-marketplace.vercel.app",
     title: "SideSpace - Local attention, now bookable",
     description:
-      "Book local creators, storefronts, vehicles, newsletters, and sponsorship opportunities—or list the attention you already own.",
+      "Book creators offering social, physical, and sponsorship inventory—or list the way you can advertise.",
     images: ["/og-card.jpg"],
   },
   twitter: {
     card: "summary_large_image",
     title: "SideSpace - Local attention, now bookable",
     description:
-      "Book creators and real-world local ad space—or list the attention you already own.",
+      "Book creator-led social audiences, physical placements, and sponsorships—or list the way you can advertise.",
     images: ["/og-card.jpg"],
   },
 };

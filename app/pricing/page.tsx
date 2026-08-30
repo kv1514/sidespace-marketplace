@@ -5,12 +5,12 @@ export const metadata: Metadata = {
   alternates: { canonical: "/pricing" },
   title: "Pricing",
   description:
-    "SideSpace is free during early access. Planned future pricing is clearly separated from what is live today.",
+    "List and browse without a subscription. Paid SideSpace campaigns use a clear 5% business fee and 5% creator fee.",
   openGraph: {
     url: "/pricing",
-    title: "SideSpace pricing - free during early access",
+    title: "SideSpace pricing - 5% + 5% marketplace fees",
     description:
-      "No platform fee is charged today. Future paid features are not active plans.",
+      "Businesses pay the campaign price plus 5%; creators receive the campaign price minus 5%. Applicable tax is calculated at checkout.",
   },
 };
 

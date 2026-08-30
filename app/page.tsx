@@ -13,12 +13,12 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
   title: "SideSpace - Local attention, now bookable",
   description:
-    "Book local creators, storefronts, vehicles, newsletters, teams, and sponsorship opportunities—or list the attention you already own.",
+    "Book creators offering social, physical, and sponsorship inventory—or list the way you can advertise.",
   openGraph: {
     url: "/",
     title: "SideSpace - Local attention, now bookable",
     description:
-      "The marketplace for creators, storefronts, vehicles, sponsorships, and other local advertising space.",
+      "The marketplace for creators with social audiences, physical placements, sponsorships, and more.",
   },
 };
 

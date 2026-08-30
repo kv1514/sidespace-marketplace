@@ -47,8 +47,8 @@ function initials(name: string) {
 
 const STEPS = [
   {
-    title: "List the space",
-    body: "A window, a counter, a car door, a story on your feed. Add a photo and name your price.",
+    title: "List what you have",
+    body: "An online audience, a window, a counter, a car door, or a story on your feed. Add a photo and name your price.",
   },
   {
     title: "A business finds it",
@@ -59,8 +59,8 @@ const STEPS = [
     body: "Accept, decline, or counter with a different number. Nothing is agreed until you say so.",
   },
   {
-    title: "Run it",
-    body: "You settle directly with the business. SideSpace takes no cut and holds no money.",
+    title: "Pay securely",
+    body: "Stripe hosts checkout and payouts. SideSpace shows the business and creator fees before payment.",
   },
 ];
 
@@ -68,7 +68,7 @@ const FEATURES = [
   {
     tag: "No minimum spend",
     title: "Priced for the block, not the brand",
-    body: "Rates are set by the people who own the space, so a two-person bakery can afford to be seen this week.",
+    body: "Rates are set by the people offering the inventory, so a two-person bakery can afford to be seen this week.",
   },
   {
     tag: "You approve everything",
@@ -88,19 +88,19 @@ const FEATURES = [
   {
     tag: "No broker",
     title: "You talk to each other",
-    body: "Messages go directly between the business and the person who owns the space. No agency in the middle.",
+    body: "Messages go directly between the business and the Creator offering the inventory. No agency in the middle.",
   },
   {
-    tag: "Free during early access",
-    title: "No fees, no card",
-    body: "Listing is free, browsing is free, and there is no commission while we are in early access.",
+    tag: "No subscription",
+    title: "Clear fees only when paid",
+    body: "Listing and browsing are free. Businesses pay 5% and creators pay 5% on completed campaign payments.",
   },
 ];
 
 const COMPARISON = [
   ["Getting started", "Call for a rate card, wait", "Post a listing in a minute"],
   ["Minimum spend", "Hundreds, often more", "None"],
-  ["Who you deal with", "An agency or an ad platform", "The person who owns the space"],
+  ["Who you deal with", "An agency or an ad platform", "The Creator offering the inventory"],
   ["Setting the price", "Take the rate you are given", "You name it, and you can counter"],
   ["Local reach", "Sold by postcode, roughly", "A specific window on a specific street"],
   ["Cost to list", "Not an option for most spaces", "Free"],
@@ -209,7 +209,7 @@ export default async function PreviewPage() {
 
           <HeroLine delay={0.08}>
             <h1 className={styles.heroTitle}>
-              Every space
+              Every Creator offer
               <br />
               has an audience.
             </h1>
@@ -217,17 +217,17 @@ export default async function PreviewPage() {
 
           <HeroLine delay={0.16}>
             <p className={styles.lede}>
-              SideSpace is a marketplace for the advertising space already
-              around you, a cafe window, a car door, a club hoodie, a story on
-              someone&apos;s feed. Local businesses book it directly from the
-              person who owns it.
+              SideSpace is a marketplace for the advertising reach already
+              around you, from a cafe window and a car door to a club hoodie or
+              a story on someone&apos;s feed. Local businesses book it directly
+              from the Creator offering it.
             </p>
           </HeroLine>
 
           <HeroLine delay={0.24}>
             <div className={styles.heroCta}>
               <Link className={`${styles.btn} ${styles.btnAccent}`} href="/">
-                List your space
+                List what you have to advertise
               </Link>
               <a className={`${styles.btn} ${styles.btnGhost}`} href="#market">
                 Browse the marketplace
@@ -281,13 +281,13 @@ export default async function PreviewPage() {
         <Reveal>
           <p className={styles.eyebrow}>Process</p>
           <h2 className={styles.sectionHead}>
-            From a window to a booking
+            From a Creator offer to a booking
             <br />
             in four steps.
           </h2>
           <p className={styles.sectionSub}>
             No agency, no rate card, no minimum. You keep control of the price
-            and of who runs on your space.
+            and of who approves what runs.
           </p>
         </Reveal>
 
@@ -366,7 +366,9 @@ export default async function PreviewPage() {
                 <div className={styles.cardBody}>
                   <div className={styles.cardTop}>
                     <span className={styles.tag}>{String(listing.channel)}</span>
-                    <span className={styles.price}>${String(listing.price)}</span>
+                  <span className={styles.price}>
+                    ${(Number(listing.price_cents) / 100).toFixed(2)}
+                  </span>
                   </div>
                   <h3>{String(listing.title)}</h3>
                   <p>{String(listing.description ?? "").slice(0, 110)}</p>
@@ -388,7 +390,7 @@ export default async function PreviewPage() {
         <Reveal>
           <p className={styles.eyebrow}>Members</p>
           <h2 className={styles.sectionHead}>
-            Hosts and businesses,
+            Creators and businesses,
             <br />
             side by side.
           </h2>
@@ -461,9 +463,9 @@ export default async function PreviewPage() {
       <div className={styles.cta}>
         <Reveal>
           <h2 className={styles.ctaTitle}>
-            Ready to rent out
-            <br />
-            your side space?
+            Ready to put your reach
+              <br />
+            to work?
           </h2>
           <p className={styles.lede}>
             Free to list, free to browse, and you approve everything before it

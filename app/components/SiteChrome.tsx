@@ -7,7 +7,6 @@ export type SideSpaceRoute =
   | "home"
   | "marketplace"
   | "how-it-works"
-  | "physical-spaces"
   | "creators"
   | "pricing"
   | "dashboard";
@@ -24,11 +23,6 @@ const PUBLIC_LINKS: Array<{
 }> = [
   { href: "/marketplace", label: "Marketplace", route: "marketplace" },
   { href: "/how-it-works", label: "How it works", route: "how-it-works" },
-  {
-    href: "/physical-spaces",
-    label: "Physical spaces",
-    route: "physical-spaces",
-  },
   { href: "/creators", label: "Creators", route: "creators" },
   { href: "/pricing", label: "Pricing", route: "pricing" },
 ];

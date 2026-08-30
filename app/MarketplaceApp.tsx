@@ -24,6 +24,12 @@ import {
   localProfiles,
 } from "@/app/localMarketplaceData";
 import {
+  calculatePaymentBreakdown,
+  centsToInputDollars,
+  dollarsToCents,
+  formatCents,
+} from "@/lib/payments/fees";
+import {
   DashboardGate,
   LandingPage,
 } from "@/app/components/PublicPages";
@@ -32,6 +38,9 @@ import {
   SiteHeader,
   type SideSpaceRoute,
 } from "@/app/components/SiteChrome";
+
+const stripeTestModeConfigured =
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.startsWith("pk_test_") ?? false;
 
 // `consumer` is retired from the product but stays in the union, in roleCopy and
 // in the DB CHECK. Legacy rows still carry it, roleLabel() dereferences
@@ -44,13 +53,20 @@ type Role =
   | "creator"
   | "space_owner"
   | "sponsor_host";
-type RoleFilter = "all" | "supply" | Exclude<Role, "consumer">;
+type RoleFilter = "all" | "supply" | "business" | "creator";
+type CreatorOfferType = "social" | "physical" | "sponsorship";
 
 type Profile = {
   id: string;
   auth_user_id: string | null;
   role: Role;
   extra_roles?: Role[];
+  /** Which Creator inventory path to reopen by default. Businesses keep null. */
+  creator_offer?: CreatorOfferType | null;
+  /** Every Creator inventory path this profile can publish. */
+  creator_offers?: CreatorOfferType[];
+  /** Business brief preferences used to rank creator recommendations. */
+  business_preferences?: BusinessPreferences | null;
   display_name: string;
   handle: string | null;
   bio: string;
@@ -103,15 +119,15 @@ type Listing = {
   title: string;
   channel: string;
   format: string;
-  price: number;
+  price_cents: number;
   price_unit: string;
   description: string;
   demographics: string;
   image_url: string;
   image_urls?: string[];
   location_area?: string;
-  /** Upper end of a budget range; `price` stays the lower end. */
-  price_max?: number | null;
+  /** Upper end of a budget range; `price_cents` stays the lower end. */
+  price_max_cents?: number | null;
   /** Physical space only: what can go up, who installs it, and how big it is. */
   surface_types?: string[];
   install_by?: string | null;
@@ -177,26 +193,114 @@ type CampaignRequest = {
   campaign_name: string;
   goals: string;
   requested_deliverables: string;
-  budget: number;
+  budget_cents: number;
   start_date: string;
   end_date: string;
   notes: string;
   status:
     | "pending"
     | "accepted"
+    | "confirmed"
     | "declined"
     | "countered"
     | "cancelled"
-    | "completed";
-  counter_budget: number | null;
+    | "completed"
+    | "refunded"
+    | "disputed";
+  counter_budget_cents: number | null;
+  accepted_subtotal_cents: number | null;
+  payer_profile_id: string | null;
+  payee_profile_id: string | null;
   counter_message: string;
   created_at: string;
   updated_at: string;
   // Null once the listing is paused or removed: RLS only exposes active
   // listings to the requester, so the embed comes back empty.
-  listing: Pick<Listing, "id" | "title" | "channel" | "price" | "price_unit"> | null;
+  listing: Pick<Listing, "id" | "title" | "channel" | "price_cents" | "price_unit"> | null;
   requester: Pick<Profile, "id" | "display_name" | "avatar_url" | "city">;
   owner: Pick<Profile, "id" | "display_name" | "avatar_url" | "city">;
+};
+
+type PaymentTransaction = {
+  id: string;
+  campaign_request_id: string;
+  business_profile_id: string;
+  creator_profile_id: string;
+  campaign_name: string;
+  listing_title: string;
+  business_name: string;
+  creator_name: string;
+  currency: string;
+  subtotal_cents: number;
+  buyer_fee_cents: number;
+  creator_fee_cents: number;
+  customer_total_cents: number;
+  creator_payout_cents: number;
+  payout_amount_cents: number;
+  platform_gross_revenue_cents: number;
+  tax_cents: number;
+  refunded_cents: number;
+  status: string;
+  workflow_status: string;
+  payout_status: string;
+  delivered_at: string | null;
+  review_deadline: string | null;
+  confirmed_at: string | null;
+  issue_reported_at: string | null;
+  issue_status: string;
+  escalated_at: string | null;
+  payout_released_at: string | null;
+  payout_last_error: string | null;
+  dispute_status: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+  issue:
+    | {
+        id: string;
+        details: string;
+        status: string;
+        reported_at: string;
+        resolution_attempted_at: string | null;
+        escalated_at: string | null;
+        resolved_at: string | null;
+        resolution_action: string | null;
+        resolution_notes: string;
+      }
+    | null;
+  review: CreatorReview | null;
+};
+
+type StripeAccountStatus = {
+  connected: boolean;
+  ready: boolean;
+  chargesEnabled?: boolean;
+  payoutsEnabled?: boolean;
+  detailsSubmitted?: boolean;
+  requirementsDue?: string[];
+};
+
+type CreatorPortfolioItem = {
+  id: string;
+  creator_profile_id: string;
+  title: string;
+  description: string;
+  kind: "video" | "project" | "campaign" | "case_study" | "other";
+  media_url: string;
+  project_url: string;
+  sort_order: number;
+  published: boolean;
+  created_at: string;
+};
+
+type CreatorReview = {
+  id: string;
+  payment_transaction_id: string;
+  payer_profile_id: string;
+  creator_profile_id: string;
+  rating: number;
+  review_text: string;
+  created_at: string;
 };
 
 type VerificationRequest = {
@@ -209,6 +313,16 @@ type VerificationRequest = {
   message: string;
   status: "pending" | "approved" | "rejected";
   created_at: string;
+};
+
+type BusinessPreferences = {
+  categories: string[];
+  goal: string;
+  briefScope: "" | "physical" | "virtual" | "both";
+  placements: string[];
+  targetPlatforms: string[];
+  wantedArea: string;
+  timing: string;
 };
 
 const roleCopy: Record<
@@ -225,14 +339,14 @@ const roleCopy: Record<
   },
   business: {
     label: "Business",
-    short: "Run a campaign with creators, spaces, and local teams",
+    short: "Run a campaign with creators and local advertising inventory",
     eyebrow: "I want to advertise",
     icon: "◆",
   },
   creator: {
     label: "Creator",
-    short: "Sell posts, stories, and video to local brands",
-    eyebrow: "I have an audience",
+    short: "I have a way to advertise.",
+    eyebrow: "I have reach to offer",
     icon: "@",
   },
   space_owner: {
@@ -259,16 +373,12 @@ const roleCopy: Record<
 const PICKABLE_ROLES: Role[] = [
   "business",
   "creator",
-  "space_owner",
-  "sponsor_host",
 ];
 
 /** Roles that can be held alongside a primary one, per profiles_extra_roles_valid. */
 const EXTRA_ROLE_OPTIONS: Role[] = [
   "business",
   "creator",
-  "space_owner",
-  "sponsor_host",
 ];
 
 const legacyDemoProfiles: Profile[] = [
@@ -311,7 +421,8 @@ const legacyDemoProfiles: Profile[] = [
   {
     id: "33333333-3333-4333-8333-333333333333",
     auth_user_id: null,
-    role: "space_owner",
+    role: "creator",
+    creator_offer: "physical",
     display_name: "Jay Morrison",
     handle: "Silver ’84 Volvo",
     bio: "A restored wagon parked in a high-footfall arts district and driven through downtown every weekday.",
@@ -329,7 +440,8 @@ const legacyDemoProfiles: Profile[] = [
   {
     id: "44444444-4444-4444-8444-444444444444",
     auth_user_id: null,
-    role: "space_owner",
+    role: "creator",
+    creator_offer: "physical",
     display_name: "Campus Corner",
     handle: "Student-run space network",
     bio: "Storefront windows and benches along the busiest off-campus routes.",
@@ -389,7 +501,7 @@ const legacyListingSeeds: Omit<Listing, "owner">[] = [
     title: "Story set + saved highlight",
     channel: "Instagram",
     format: "3 frames · 48 hr highlight",
-    price: 145,
+    price_cents: 14_500,
     price_unit: "campaign",
     description:
       "A natural three-frame story with a clear call to action, kept in my Local Finds highlight.",
@@ -403,7 +515,7 @@ const legacyListingSeeds: Omit<Listing, "owner">[] = [
     title: "An honest neighborhood food feature",
     channel: "TikTok",
     format: "30–45 sec · link in bio",
-    price: 220,
+    price_cents: 22_000,
     price_unit: "video",
     description:
       "One fast, useful food feature filmed on location and posted when my local audience is most active.",
@@ -417,7 +529,7 @@ const legacyListingSeeds: Omit<Listing, "owner">[] = [
     title: "Rear-window campaign",
     channel: "Vehicle",
     format: "18 × 24 in · weather-safe",
-    price: 85,
+    price_cents: 8_500,
     price_unit: "week",
     description:
       "Rear-window placement on a vintage wagon that moves through Portland’s east-side neighborhoods.",
@@ -431,7 +543,7 @@ const legacyListingSeeds: Omit<Listing, "owner">[] = [
     title: "Two-location campus run",
     channel: "Storefront",
     format: "2 placements · weekly proof",
-    price: 160,
+    price_cents: 16_000,
     price_unit: "week",
     description:
       "Two high-visibility placements near campus with timestamped setup and weekly proof photos.",
@@ -445,7 +557,7 @@ const legacyListingSeeds: Omit<Listing, "owner">[] = [
     title: "Second-store launch partners",
     channel: "Business brief",
     format: "Stories · tasting · street placement",
-    price: 250,
+    price_cents: 25_000,
     price_unit: "partner",
     description:
       "Paid launch brief for creators and spaces with a genuine connection to neighborhood coffee culture.",
@@ -568,6 +680,29 @@ const CREATOR_PLATFORMS = [
   "podcast",
   "twitch",
 ] as const;
+
+/** Every kind of advertising inventory a Creator can bring to SideSpace. */
+const CREATOR_OFFER_TYPES: Array<{
+  value: CreatorOfferType;
+  label: string;
+  help: string;
+}> = [
+  {
+    value: "social",
+    label: "Online",
+    help: "Social posts, video, newsletters, or podcasts",
+  },
+  {
+    value: "physical",
+    label: "Physical",
+    help: "Windows, walls, vehicles, rooms, or boards",
+  },
+  {
+    value: "sponsorship",
+    label: "Sponsorship",
+    help: "Teams, events, jerseys, banners, and named tiers",
+  },
+];
 
 /** Suggestion chips for `format`, filtered to the platforms actually picked. */
 const CREATOR_OFFER_EXAMPLES: Record<string, string[]> = {
@@ -1004,7 +1139,7 @@ const PRICE_UNIT_OPTIONS = [
 ];
 
 const PRICE_UNIT_CHIPS: Record<string, string[]> = {
-  creator: ["post", "video", "story", "campaign"],
+  creator: ["post", "video", "story", "campaign", "week", "month", "day"],
   space_owner: ["week", "month", "day", "campaign"],
 };
 
@@ -1039,6 +1174,38 @@ type SponsorTier = {
   benefits: string[];
 };
 
+type CreatorOfferDetails = {
+  title: string;
+  format: string;
+  price: number | null;
+  price_unit: string;
+  description: string;
+  priceMax: number | null;
+  spaceKind: string;
+  streetAddress: string;
+  location_area: string;
+  spaceSize: string;
+  surfaces: string[];
+  installBy: "" | "owner" | "renter" | "either";
+  traffic: string;
+  trafficCount: number | null;
+  availability: string;
+  orgKind: string;
+  orgOther: string;
+  surfaceOther: string;
+  reach: string;
+  reachCount: number | null;
+  funding: string;
+  benefits: string[];
+  season: string;
+  tiers: SponsorTier[];
+};
+
+type CreatorOfferTouched = {
+  title: boolean;
+  description: boolean;
+};
+
 type OnboardingAnswers = {
   // Step 1 - identity, asked of every role exactly once.
   display_name: string;
@@ -1053,6 +1220,14 @@ type OnboardingAnswers = {
   platforms: string[];
   socials: Record<string, string>;
   followers: number | null;
+  /** The currently visible Creator inventory workspace. */
+  creatorOffer: "" | CreatorOfferType;
+  /** Every Creator inventory path selected in the multi-select. */
+  creatorOffers: CreatorOfferType[];
+  /** The saved field values for each selected Creator inventory path. */
+  creatorOfferDetails: Record<CreatorOfferType, CreatorOfferDetails>;
+  /** Whether the member has replaced the generated title/body per path. */
+  creatorOfferTouched: Record<CreatorOfferType, CreatorOfferTouched>;
   // The listing every role publishes.
   title: string;
   format: string;
@@ -1436,6 +1611,193 @@ const ROLE_SWITCH_KEEPS = [
   "followers",
 ] as const;
 
+const CREATOR_OFFER_VALUES: CreatorOfferType[] = [
+  "social",
+  "physical",
+  "sponsorship",
+];
+
+function emptyCreatorOfferDetails(
+  offer: CreatorOfferType = "social",
+): CreatorOfferDetails {
+  return {
+    title: "",
+    format: "",
+    price: null,
+    price_unit: defaultCreatorPriceUnit(offer),
+    description: "",
+    priceMax: null,
+    spaceKind: "",
+    streetAddress: "",
+    location_area: "",
+    spaceSize: "",
+    surfaces: [],
+    installBy: "",
+    traffic: "",
+    trafficCount: null,
+    availability: "",
+    orgKind: "",
+    orgOther: "",
+    surfaceOther: "",
+    reach: "",
+    reachCount: null,
+    funding: "",
+    benefits: [],
+    season: "",
+    tiers: [emptyTier("Gold")],
+  };
+}
+
+function emptyCreatorOfferDetailsMap() {
+  return CREATOR_OFFER_VALUES.reduce(
+    (map, offer) => {
+      map[offer] = emptyCreatorOfferDetails(offer);
+      return map;
+    },
+    {} as Record<CreatorOfferType, CreatorOfferDetails>,
+  );
+}
+
+function emptyCreatorOfferTouched() {
+  return CREATOR_OFFER_VALUES.reduce(
+    (map, offer) => {
+      map[offer] = { title: false, description: false };
+      return map;
+    },
+    {} as Record<CreatorOfferType, CreatorOfferTouched>,
+  );
+}
+
+function cloneCreatorOfferDetails(
+  details: CreatorOfferDetails,
+): CreatorOfferDetails {
+  return {
+    ...details,
+    surfaces: [...details.surfaces],
+    benefits: [...details.benefits],
+    tiers: details.tiers.map((tier) => ({
+      ...tier,
+      benefits: [...tier.benefits],
+    })),
+  };
+}
+
+function selectedCreatorOffers(
+  answers: Pick<OnboardingAnswers, "creatorOffers" | "creatorOffer">,
+) {
+  const selected = Array.isArray(answers.creatorOffers)
+    ? answers.creatorOffers.filter((offer): offer is CreatorOfferType =>
+        CREATOR_OFFER_VALUES.includes(offer),
+      )
+    : [];
+  const unique = Array.from(new Set(selected));
+  if (unique.length) return unique;
+  return answers.creatorOffer &&
+    CREATOR_OFFER_VALUES.includes(answers.creatorOffer)
+    ? [answers.creatorOffer]
+    : [];
+}
+
+function creatorOfferDetailsFromAnswers(
+  answers: OnboardingAnswers,
+): CreatorOfferDetails {
+  return {
+    title: answers.title,
+    format: answers.format,
+    price: answers.price,
+    price_unit: answers.price_unit,
+    description: answers.description,
+    priceMax: answers.priceMax,
+    spaceKind: answers.spaceKind,
+    streetAddress: answers.streetAddress,
+    location_area: answers.location_area,
+    spaceSize: answers.spaceSize,
+    surfaces: [...answers.surfaces],
+    installBy: answers.installBy,
+    traffic: answers.traffic,
+    trafficCount: answers.trafficCount,
+    availability: answers.availability,
+    orgKind: answers.orgKind,
+    orgOther: answers.orgOther,
+    surfaceOther: answers.surfaceOther,
+    reach: answers.reach,
+    reachCount: answers.reachCount,
+    funding: answers.funding,
+    benefits: [...answers.benefits],
+    season: answers.season,
+    tiers: answers.tiers.map((tier) => ({
+      ...tier,
+      benefits: [...tier.benefits],
+    })),
+  };
+}
+
+function creatorOfferView(
+  answers: OnboardingAnswers,
+  offer: CreatorOfferType,
+): OnboardingAnswers {
+  const stored = answers.creatorOfferDetails?.[offer];
+  const details =
+    answers.creatorOffer === offer
+      ? creatorOfferDetailsFromAnswers(answers)
+      : stored
+        ? cloneCreatorOfferDetails(stored)
+        : emptyCreatorOfferDetails(offer);
+  return {
+    ...answers,
+    ...details,
+    creatorOffer: offer,
+    creatorOffers: [offer],
+  };
+}
+
+function normalizeOnboardingAnswers(
+  raw: Partial<OnboardingAnswers> | undefined,
+): OnboardingAnswers {
+  const merged = { ...emptyAnswers(), ...(raw ?? {}) } as OnboardingAnswers;
+  const details = emptyCreatorOfferDetailsMap();
+  const rawDetails = raw?.creatorOfferDetails;
+  for (const offer of CREATOR_OFFER_VALUES) {
+    const supplied = rawDetails?.[offer];
+    details[offer] = supplied
+      ? {
+          ...emptyCreatorOfferDetails(offer),
+          ...supplied,
+          surfaces: [...(supplied.surfaces ?? [])],
+          benefits: [...(supplied.benefits ?? [])],
+          tiers: (supplied.tiers ?? [emptyTier("Gold")]).map((tier) => ({
+            ...emptyTier("Gold"),
+            ...tier,
+            benefits: [...(tier.benefits ?? [])],
+          })),
+        }
+      : details[offer];
+  }
+  const active =
+    merged.creatorOffer && CREATOR_OFFER_VALUES.includes(merged.creatorOffer)
+      ? merged.creatorOffer
+      : "";
+  // Drafts saved before the per-offer map existed still have their active
+  // fields at the root. Preserve them as the first selected offer rather than
+  // making the member retype the listing.
+  if (active && !rawDetails?.[active]) {
+    details[active] = creatorOfferDetailsFromAnswers(merged);
+  }
+  const touched = emptyCreatorOfferTouched();
+  for (const offer of CREATOR_OFFER_VALUES) {
+    touched[offer] = {
+      ...touched[offer],
+      ...(raw?.creatorOfferTouched?.[offer] ?? {}),
+    };
+  }
+  return {
+    ...merged,
+    creatorOffers: selectedCreatorOffers(merged),
+    creatorOfferDetails: details,
+    creatorOfferTouched: touched,
+  };
+}
+
 /**
  * Whether a role switch would throw away work.
  *
@@ -1475,6 +1837,10 @@ function emptyAnswers(): OnboardingAnswers {
     platforms: [],
     socials: {},
     followers: null,
+    creatorOffer: "",
+    creatorOffers: [],
+    creatorOfferDetails: emptyCreatorOfferDetailsMap(),
+    creatorOfferTouched: emptyCreatorOfferTouched(),
     title: "",
     format: "",
     price: null,
@@ -1556,7 +1922,7 @@ const UUID_PARAM =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function inviteRole(invite: Invite): Role {
-  return invite.intent === "SUPPLY" ? "space_owner" : "business";
+  return invite.intent === "SUPPLY" ? "creator" : "business";
 }
 
 /**
@@ -1594,8 +1960,30 @@ function answersFromProfile(
   // seedRolePickers(null) - keeps it, and a real profile always wins.
   const base = !source && invite ? prefillFromInvite(invite) : emptyAnswers();
   if (!source) return base;
-  return {
+  const storedCreatorOffer =
+    source.creator_offer === "social" ||
+    source.creator_offer === "physical" ||
+    source.creator_offer === "sponsorship"
+      ? source.creator_offer
+      : "";
+  const storedCreatorOffers = Array.from(
+    new Set(
+      (Array.isArray(source.creator_offers) ? source.creator_offers : []).filter(
+        (offer): offer is CreatorOfferType =>
+          CREATOR_OFFER_VALUES.includes(offer),
+      ),
+    ),
+  );
+  const creatorOffers = storedCreatorOffers.length
+    ? storedCreatorOffers
+    : storedCreatorOffer
+      ? [storedCreatorOffer]
+      : [];
+  return normalizeOnboardingAnswers({
     ...base,
+    creatorOffer:
+      creatorOffers[0] || storedCreatorOffer || creatorOfferForRole(source.role),
+    creatorOffers,
     display_name: source.display_name ?? "",
     city: source.city ?? "",
     bio: source.bio ?? "",
@@ -1613,7 +2001,7 @@ function answersFromProfile(
     platforms: Object.entries(source.social_links ?? {})
       .filter(([, value]) => Boolean(value))
       .map(([key]) => key),
-  };
+  });
 }
 
 /** A date N days from today, as the YYYY-MM-DD a `date` column wants. */
@@ -1631,6 +2019,48 @@ function joinList(items: string[]) {
 }
 
 /**
+ * Space owners and sponsorship hosts are legacy profile roles. Their inventory
+ * now lives under Creator, but old rows still need their original listing
+ * shape until a member edits or republishes them.
+ */
+function creatorOfferForRole(
+  role: Role | null | undefined,
+  answers?: Pick<OnboardingAnswers, "creatorOffer" | "creatorOffers">,
+): "" | CreatorOfferType {
+  if (role === "space_owner") return "physical";
+  if (role === "sponsor_host") return "sponsorship";
+  if (role === "creator") {
+    return (
+      answers?.creatorOffers?.[0] ||
+      answers?.creatorOffer ||
+      "social"
+    );
+  }
+  return "";
+}
+
+function isPhysicalOffer(role: Role, answers: OnboardingAnswers) {
+  return creatorOfferForRole(role, answers) === "physical";
+}
+
+function isSponsorshipOffer(role: Role, answers: OnboardingAnswers) {
+  return creatorOfferForRole(role, answers) === "sponsorship";
+}
+
+function defaultCreatorPriceUnit(offer: CreatorOfferType) {
+  return offer === "physical" ? "week" : "post";
+}
+
+function creatorPricePresets(offer: "" | CreatorOfferType) {
+  return offer === "physical" ? PRICE_CHIPS.space_owner : PRICE_CHIPS.creator;
+}
+
+/** A legacy role is still allowed in stored data, but reads as Creator now. */
+function canonicalRole(role: Role): Role {
+  return role === "space_owner" || role === "sponsor_host" ? "creator" : role;
+}
+
+/**
  * The reach number and its unit.
  *
  * Returns null when the member said "Not sure" so the caller can leave whatever
@@ -1641,14 +2071,14 @@ function deriveReach(
   role: Role,
   answers: OnboardingAnswers,
 ): { avg_views: number | null; reach_unit: string | null } {
-  if (role === "space_owner") {
+  if (isPhysicalOffer(role, answers)) {
     // The typed count wins. The chips are shortcuts that fill it in, so an
     // owner who knows their real number is never overruled by a bracket.
     const count = answers.trafficCount ?? null;
     if (!count || count < 1) return { avg_views: null, reach_unit: null };
     return { avg_views: count, reach_unit: "people a day" };
   }
-  if (role === "sponsor_host") {
+  if (isSponsorshipOffer(role, answers)) {
     const chip = SPONSOR_REACH_CHIPS.find((item) => item.label === answers.reach);
     const count = answers.reachCount ?? null;
     if (!count || count < 1) return { avg_views: null, reach_unit: null };
@@ -1701,7 +2131,7 @@ function reachSentence(answers: OnboardingAnswers): string {
 function composeDescription(role: Role, answers: OnboardingAnswers): string {
   const bio = answers.bio.trim();
   const city = answers.city.trim();
-  if (role === "creator") {
+  if (creatorOfferForRole(role, answers) === "social") {
     const platforms = answers.platforms
       .map((key) => socialPlatforms.find((p) => p.key === key)?.label ?? key)
       .filter(Boolean);
@@ -1716,7 +2146,7 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
       .filter(Boolean)
       .join(" ");
   }
-  if (role === "space_owner") {
+  if (isPhysicalOffer(role, answers)) {
     const where = answers.location_area.trim() || city;
     const size = answers.spaceSize.trim();
     const install = INSTALL_CHIPS.find(
@@ -1776,8 +2206,9 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
       // business that picked a range.
       answers.price
         ? `Our budget is ${priceLabel({
-            price: answers.price,
-            price_max: answers.priceMax,
+            price_cents: dollarsToCents(answers.price),
+            price_max_cents:
+              answers.priceMax == null ? null : dollarsToCents(answers.priceMax),
           })}.`
         : "",
       artwork,
@@ -1787,7 +2218,7 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
       .filter(Boolean)
       .join(" ");
   }
-  if (role === "sponsor_host") {
+  if (isSponsorshipOffer(role, answers)) {
     const funding = answers.funding.trim();
     return [
       orgLabel(answers) ? `${orgLabel(answers)}${city ? ` in ${city}` : ""}.` : "",
@@ -1896,7 +2327,7 @@ function composeTitle(
 ): string {
   const name = answers.display_name.trim();
   const city = answers.city.trim();
-  if (role === "space_owner") {
+  if (isPhysicalOffer(role, answers)) {
     if (!answers.spaceKind) return "";
     // "Window, Brea" was the weakest title of the four roles: two windows in
     // one town produced a byte-identical headline and neither said whose it
@@ -1906,7 +2337,7 @@ function composeTitle(
     if (name) return where ? `${name} — ${kind} in ${where}` : `${name} — ${kind}`;
     return where ? `${answers.spaceKind}, ${where}` : answers.spaceKind;
   }
-  if (role === "creator") {
+  if (creatorOfferForRole(role, answers) === "social") {
     const primary = answers.platforms[0];
     const label = socialPlatforms.find((p) => p.key === primary)?.label;
     if (!label) return name;
@@ -1922,7 +2353,7 @@ function composeTitle(
     );
     return name ? `${name} — ${month} campaign` : "";
   }
-  if (role === "sponsor_host") {
+  if (isSponsorshipOffer(role, answers)) {
     if (!name) return "";
     // Every team used to get the identical "- season sponsor", so two teams
     // in one town were indistinguishable and the same team relisting next
@@ -1966,7 +2397,9 @@ function effectiveTitle(
   // fitTitle here rather than at the publish call, so the preview, the
   // validator and the insert cannot disagree about the headline: the cap is
   // applied once, to the value all three read.
-  if (role === "sponsor_host") return fitTitle(composeTitle(role, answers, tier));
+  if (isSponsorshipOffer(role, answers)) {
+    return fitTitle(composeTitle(role, answers, tier));
+  }
   return fitTitle(
     touched.title ? answers.title : composeTitle(role, answers),
   );
@@ -1979,7 +2412,7 @@ function effectiveDescription(
   tier?: SponsorTier,
 ) {
   const body = descriptionBody(role, answers, touched);
-  if (role !== "sponsor_host") return body;
+  if (!isSponsorshipOffer(role, answers)) return body;
   return [body, tierSentences(answers, tier)].filter(Boolean).join(" ");
 }
 
@@ -2039,8 +2472,8 @@ function buildListingDraft(
   const base = {
     title: effectiveTitle(role, answers, touched, tier),
     description: effectiveDescription(role, answers, touched, tier),
-    price: answers.price ?? 0,
-    price_max: null as number | null,
+    price_cents: dollarsToCents(answers.price ?? 0),
+    price_max_cents: null as number | null,
     format: answers.format.trim(),
     demographics: "",
     location_area: "",
@@ -2060,7 +2493,7 @@ function buildListingDraft(
     price_unit: "campaign",
   };
 
-  if (role === "creator") {
+  if (creatorOfferForRole(role, answers) === "social") {
     return {
       ...base,
       channel: creatorChannel(answers),
@@ -2068,7 +2501,7 @@ function buildListingDraft(
     };
   }
 
-  if (role === "space_owner") {
+  if (isPhysicalOffer(role, answers)) {
     const kind = SPACE_KIND_CHIPS.find((item) => item.label === answers.spaceKind);
     const free = AVAILABILITY_CHIPS.find(
       (item) => item.label === answers.availability,
@@ -2079,7 +2512,8 @@ function buildListingDraft(
       ...base,
       channel: kind?.channel ?? "Other",
       price_unit: unit,
-      price_max: answers.priceMax ?? null,
+      price_max_cents:
+        answers.priceMax == null ? null : dollarsToCents(answers.priceMax),
       // Falls back to the city they already gave, so this is a real optional
       // field: the placeholder shows what will be used, and clearing it is
       // allowed rather than snapping back under their cursor.
@@ -2131,14 +2565,15 @@ function buildListingDraft(
         scope !== "virtual"
           ? answers.wantedArea.trim() || answers.city.trim()
           : "",
-      price_max: answers.priceMax ?? null,
+      price_max_cents:
+        answers.priceMax == null ? null : dollarsToCents(answers.priceMax),
       availability_notes: answers.timing,
       available_from: timing ? isoDaysFromToday(0) : null,
       available_to: timing ? isoDaysFromToday(timing.days) : null,
     };
   }
 
-  if (role === "sponsor_host") {
+  if (isSponsorshipOffer(role, answers)) {
     const season = SPONSOR_SEASON_CHIPS.find(
       (item) => item.label === answers.season,
     );
@@ -2149,8 +2584,9 @@ function buildListingDraft(
       // The form promised "per sponsor" while the card rendered "/ partner",
       // on the same screen. One word, and the form's was the honest one.
       price_unit: "sponsor",
-      price: tier?.price ?? answers.price ?? 0,
-      price_max: tier?.priceMax ?? null,
+      price_cents: dollarsToCents(tier?.price ?? answers.price ?? 0),
+      price_max_cents:
+        tier?.priceMax == null ? null : dollarsToCents(tier.priceMax),
       sponsor_tier: tier?.name.trim() || null,
       sponsor_slots: tier?.slots ?? null,
       format: sponsorOfferLine(perks),
@@ -2177,7 +2613,31 @@ function buildListingDrafts(
   answers: OnboardingAnswers,
   touched: { title: boolean; description: boolean },
 ) {
-  if (role !== "sponsor_host") return [buildListingDraft(role, answers, touched)];
+  if (canonicalRole(role) === "creator") {
+    const offers = selectedCreatorOffers(answers);
+    return offers.flatMap((offer) => {
+      const view = creatorOfferView(answers, offer);
+      const offerTouched =
+        offer === answers.creatorOffer
+          ? touched
+          : answers.creatorOfferTouched?.[offer] ?? {
+              title: false,
+              description: false,
+            };
+      if (!isSponsorshipOffer("creator", view)) {
+        return [buildListingDraft("creator", view, offerTouched)];
+      }
+      const tiers = completeTiers(view);
+      return tiers.length
+        ? tiers.map((tier) =>
+            buildListingDraft("creator", view, offerTouched, tier),
+          )
+        : [buildListingDraft("creator", view, offerTouched)];
+    });
+  }
+  if (!isSponsorshipOffer(role, answers)) {
+    return [buildListingDraft(role, answers, touched)];
+  }
   const tiers = completeTiers(answers);
   if (!tiers.length) return [buildListingDraft(role, answers, touched)];
   return tiers.map((tier) => buildListingDraft(role, answers, touched, tier));
@@ -2250,7 +2710,290 @@ function tierProblems(answers: OnboardingAnswers): Array<[string, string]> {
 function completeTiers(answers: OnboardingAnswers): SponsorTier[] {
   return answers.tiers
     .filter((tier) => tier.name.trim() && tier.price && tier.price >= 1)
+    .slice()
     .sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
+}
+
+function creatorOfferLabel(offer: CreatorOfferType) {
+  return (
+    CREATOR_OFFER_TYPES.find((item) => item.value === offer)?.label ?? offer
+  );
+}
+
+function creatorOfferIsReady(
+  answers: OnboardingAnswers,
+  offer: CreatorOfferType,
+) {
+  const view = creatorOfferView(answers, offer);
+  const touched = view.creatorOfferTouched?.[offer] ?? {
+    title: false,
+    description: false,
+  };
+  const titleReady =
+    isSponsorshipOffer("creator", view) ||
+    effectiveTitle("creator", view, touched).trim().length >=
+      LISTING_READY_MIN.title;
+  const descriptionReady =
+    descriptionBody("creator", view, touched).trim().length >=
+    LISTING_READY_MIN.description;
+  const priceReady = isSponsorshipOffer("creator", view)
+    ? tierProblems(view).length === 0
+    : Boolean(view.price && view.price >= 1) &&
+      !(
+        typeof view.priceMax === "number" &&
+        typeof view.price === "number" &&
+        view.priceMax < view.price
+      );
+  if (!titleReady || !descriptionReady || !priceReady) return false;
+  if (offer === "social") {
+    return view.platforms.length > 0 && view.format.trim().length >= 10;
+  }
+  if (offer === "physical") {
+    return Boolean(
+      view.spaceKind &&
+        view.spaceSize.trim() &&
+        view.surfaces.length &&
+        (!view.surfaces.includes(SURFACE_OTHER) || view.surfaceOther.trim()) &&
+        view.installBy &&
+        view.trafficCount &&
+        view.trafficCount >= 1 &&
+        view.availability,
+    );
+  }
+  return Boolean(
+    view.orgKind &&
+      (view.orgKind !== SPONSOR_ORG_OTHER || view.orgOther.trim()) &&
+      view.funding.trim() &&
+      view.reachCount &&
+      view.reachCount >= 1 &&
+      view.season &&
+      view.benefits.length &&
+      tierProblems(view).length === 0,
+  );
+}
+
+function emptyBusinessPreferences(): BusinessPreferences {
+  return {
+    categories: [],
+    goal: "",
+    briefScope: "",
+    placements: [],
+    targetPlatforms: [],
+    wantedArea: "",
+    timing: "",
+  };
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function normalizeBusinessPreferences(
+  raw: unknown,
+  fallbackCategories: string[] = [],
+): BusinessPreferences {
+  const source =
+    raw && typeof raw === "object"
+      ? (raw as Partial<BusinessPreferences>)
+      : {};
+  const briefScope =
+    source.briefScope === "physical" ||
+    source.briefScope === "virtual" ||
+    source.briefScope === "both"
+      ? source.briefScope
+      : "";
+  return {
+    ...emptyBusinessPreferences(),
+    categories: stringArray(source.categories).length
+      ? stringArray(source.categories)
+      : [...fallbackCategories],
+    goal: typeof source.goal === "string" ? source.goal : "",
+    briefScope,
+    placements: stringArray(source.placements),
+    targetPlatforms: stringArray(source.targetPlatforms),
+    wantedArea: typeof source.wantedArea === "string" ? source.wantedArea : "",
+    timing: typeof source.timing === "string" ? source.timing : "",
+  };
+}
+
+function businessPreferencesFromAnswers(
+  answers: OnboardingAnswers,
+): BusinessPreferences {
+  return {
+    categories: [...answers.categories],
+    goal: answers.goal,
+    briefScope: answers.briefScope,
+    placements: [...answers.placements],
+    targetPlatforms: [...answers.targetPlatforms],
+    wantedArea: answers.wantedArea.trim(),
+    timing: answers.timing,
+  };
+}
+
+function businessPreferencesForProfile(
+  profile: Profile,
+  ownListings: Listing[] = [],
+): BusinessPreferences {
+  if (profile.business_preferences) {
+    return normalizeBusinessPreferences(
+      profile.business_preferences,
+      profile.categories,
+    );
+  }
+  const brief = ownListings.find((listing) => isBrief(listing));
+  if (!brief) {
+    return normalizeBusinessPreferences(null, profile.categories);
+  }
+  return normalizeBusinessPreferences(
+    {
+      categories: profile.categories,
+      briefScope: brief.brief_scope,
+      placements: brief.format
+        .split(/\n|,\s*/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+      targetPlatforms: brief.target_platforms,
+      wantedArea: brief.location_area,
+      timing: brief.availability_notes,
+    },
+    profile.categories,
+  );
+}
+
+type CreatorRecommendation = {
+  listing: Listing;
+  score: number;
+  reasons: string[];
+};
+
+function lower(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function recommendationCategoryOverlap(
+  categories: string[],
+  listing: Listing,
+) {
+  const listingText = [
+    listing.title,
+    listing.format,
+    listing.description,
+    listing.owner.bio,
+    ...(listing.owner.categories ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return categories.filter((category) =>
+    listingText.includes(category.trim().toLowerCase()),
+  );
+}
+
+function creatorPostRecommendations(
+  listings: Listing[],
+  profile: Profile,
+  ownListings: Listing[],
+  blockedProfileIds: string[],
+): CreatorRecommendation[] {
+  const preferences = businessPreferencesForProfile(profile, ownListings);
+  const targetPlatforms = preferences.targetPlatforms.map(lower);
+  const wantedArea = lower(preferences.wantedArea || profile.city);
+  const goalText = lower(preferences.goal);
+  const goalWords = goalText
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 3);
+  return listings
+    .filter((listing) => {
+      if (listing.owner.id === profile.id) return false;
+      if (blockedProfileIds.includes(listing.owner.id)) return false;
+      if (isInternalAccount(listing.owner) || isBrief(listing)) return false;
+      // A Physical-only brief should surface windows, walls, and vehicles in
+      // the marketplace instead of filling this creator-post lane with
+      // inventory the business explicitly ruled out.
+      if (preferences.briefScope === "physical") return false;
+      if (!profileHasRole(listing.owner, "creator")) return false;
+      return [
+        "Instagram",
+        "TikTok",
+        "YouTube",
+        "X",
+        "Facebook",
+        "Newsletter",
+        "Podcast",
+        "Twitch",
+        "LinkedIn",
+      ].includes(listing.channel);
+    })
+    .map((listing) => {
+      const reasons: string[] = [];
+      let score = 0;
+      const platformMatch = targetPlatforms.includes(lower(listing.channel));
+      if (platformMatch) {
+        score += 38;
+        reasons.push("matches your target platform");
+      }
+      if (
+        preferences.briefScope === "virtual" ||
+        preferences.briefScope === "both"
+      ) {
+        score += 6;
+        reasons.push("fits your virtual brief");
+      }
+      const categoryOverlap = recommendationCategoryOverlap(
+        preferences.categories,
+        listing,
+      );
+      if (categoryOverlap.length) {
+        score += Math.min(30, categoryOverlap.length * 15);
+        reasons.push("fits " + categoryOverlap.slice(0, 2).join(" and "));
+      }
+      const locationText = lower(
+        listing.location_area || listing.owner.city,
+      );
+      if (wantedArea && locationText.includes(wantedArea)) {
+        score += 18;
+        reasons.push("near " + preferences.wantedArea);
+      } else if (
+        lower(listing.owner.city).split(",")[0] ===
+        lower(preferences.wantedArea || profile.city).split(",")[0]
+      ) {
+        score += 12;
+        reasons.push("in your local market");
+      }
+      const listingText = lower(
+        [
+          listing.title,
+          listing.format,
+          listing.description,
+          listing.owner.bio,
+        ].join(" "),
+      );
+      if (goalWords.some((word) => listingText.includes(word))) {
+        score += 10;
+        reasons.push("supports your campaign goal");
+      }
+      if (
+        preferences.timing &&
+        lower(listing.availability_notes).includes(lower(preferences.timing))
+      ) {
+        score += 8;
+        reasons.push("fits your timing");
+      }
+      if (listing.owner.verified) {
+        score += 5;
+        reasons.push("SideSpace verified");
+      }
+      if (!reasons.length) reasons.push("available in your marketplace");
+      return { listing, score, reasons };
+    })
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        listingRank(a.listing) - listingRank(b.listing) ||
+        shuffleKey(a.listing.id) - shuffleKey(b.listing.id),
+    )
+    .slice(0, 4);
 }
 
 /**
@@ -2376,7 +3119,7 @@ function compactNumber(value: number) {
 }
 
 function roleLabel(role: Role) {
-  return roleCopy[role].label;
+  return roleCopy[canonicalRole(role)].label;
 }
 
 /**
@@ -2403,21 +3146,55 @@ function formatOffer(raw: string) {
 /**
  * What a listing costs, as a card should read it.
  *
- * A business brief now carries a budget RANGE - `price` is the low end and
- * `price_max` the high end - because "what's your budget" is a band, not a
+ * A business brief now carries a budget RANGE - `price_cents` is the low end and
+ * `price_max_cents` the high end - because "what's your budget" is a band, not a
  * number. Every other listing has a single price and renders unchanged.
  */
-function priceLabel(listing: Pick<Listing, "price" | "price_max">) {
-  const low = listing.price;
-  const high = listing.price_max;
+function priceLabel(listing: Pick<Listing, "price_cents" | "price_max_cents">) {
+  const low = listing.price_cents;
+  const high = listing.price_max_cents;
   if (typeof high === "number" && high > low) {
-    return `$${low}–$${high}`;
+    return `${formatCents(low)}–${formatCents(high)}`;
   }
-  return `$${low}`;
+  return formatCents(low);
 }
 
 function isBrief(listing: Pick<Listing, "channel">) {
   return listing.channel === "Business brief";
+}
+
+/** Legacy listings keep their original channel, but edit as Creator inventory. */
+function isPhysicalListing(
+  listing: Pick<
+    Listing,
+    | "channel"
+    | "surface_types"
+    | "install_by"
+    | "space_size"
+    | "street_address"
+  >,
+) {
+  return (
+    ["Storefront", "Vehicle", "Wall / mural", "Room / interior", "Community board"].includes(
+      listing.channel,
+    ) ||
+    Boolean(
+      listing.surface_types?.length ||
+        listing.install_by ||
+        listing.space_size ||
+        listing.street_address,
+    )
+  );
+}
+
+/** Legacy listings keep their original channel, but edit as Creator inventory. */
+function isSponsorshipListing(
+  listing: Pick<Listing, "channel" | "sponsor_tier" | "sponsor_slots">,
+) {
+  return (
+    listing.channel === "Sponsorship" ||
+    Boolean(listing.sponsor_tier || listing.sponsor_slots)
+  );
 }
 
 /**
@@ -2486,14 +3263,16 @@ function profileRoles(profile: Pick<Profile, "role" | "extra_roles">): Role[] {
   const extras = (profile.extra_roles ?? []).filter(
     (role): role is Role => role !== profile.role,
   );
-  return [profile.role, ...extras];
+  return Array.from(
+    new Set([profile.role, ...extras].map((role) => canonicalRole(role))),
+  );
 }
 
 function profileHasRole(
   profile: Pick<Profile, "role" | "extra_roles">,
   role: Role,
 ) {
-  return profileRoles(profile).includes(role);
+  return profileRoles(profile).includes(canonicalRole(role));
 }
 
 function rolesLabel(profile: Pick<Profile, "role" | "extra_roles">) {
@@ -2611,6 +3390,16 @@ function windowNote(startDays: number | null, days: number) {
 function displayDate(value?: string | null) {
   if (!value) return "Flexible";
   return DATE_FORMAT.format(new Date(`${value}T00:00:00Z`));
+}
+
+function displayDateTime(value?: string | null) {
+  if (!value) return "Not set";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 function safeProfiles(value: unknown): Profile[] {
@@ -2844,6 +3633,190 @@ function Modal({
   );
 }
 
+function CreatorOfferSwitcher({
+  answers,
+  onSelect,
+}: {
+  answers: OnboardingAnswers;
+  onSelect: (offer: CreatorOfferType) => void;
+}) {
+  const offers = selectedCreatorOffers(answers);
+  if (!offers.length) return null;
+  return (
+    <div className="creator-offer-workspace field-wide">
+      <div className="creator-offer-workspace-heading">
+        <div>
+          <span>Selected offers</span>
+          <strong>Fill in each one before you publish.</strong>
+        </div>
+        <small>
+          {offers.length} listing{offers.length === 1 ? "" : "s"} planned
+        </small>
+      </div>
+      <div
+        className="creator-offer-tabs"
+        role="tablist"
+        aria-label="Choose which offer to edit"
+      >
+        {offers.map((offer) => {
+          const active = answers.creatorOffer === offer;
+          const ready = creatorOfferIsReady(answers, offer);
+          return (
+            <button
+              key={offer}
+              type="button"
+              className={"creator-offer-tab" + (active ? " active" : "")}
+              role="tab"
+              aria-selected={active}
+              onClick={() => onSelect(offer)}
+            >
+              <span>{creatorOfferLabel(offer)}</span>
+              <small>{ready ? "Ready" : "Needs details"}</small>
+            </button>
+          );
+        })}
+      </div>
+      <p className="creator-offer-workspace-note">
+        You are editing{" "}
+        <b>{creatorOfferLabel(answers.creatorOffer || offers[0])}</b>. Each
+        selected path gets its own listing, and you can come back to edit any
+        of them later.
+      </p>
+    </div>
+  );
+}
+
+function PreferenceChipGroup({
+  label,
+  options,
+  selected,
+  multi = false,
+  onPick,
+}: {
+  label: string;
+  options: Array<{ label: string; value: string }>;
+  selected: string | string[];
+  multi?: boolean;
+  onPick: (value: string) => void;
+}) {
+  return (
+    <fieldset className="preference-chip-group">
+      <legend>{label}</legend>
+      <div className="preference-chip-row">
+        {options.map((option) => {
+          const active = multi
+            ? (selected as string[]).includes(option.value)
+            : selected === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className={active ? "active" : ""}
+              aria-pressed={active}
+              onClick={() => onPick(option.value)}
+            >
+              {multi && active ? "✓ " : ""}
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+function OnboardingPreviewCards({
+  role,
+  answers,
+  touched,
+  previewPhotoUrl,
+}: {
+  role: Role;
+  answers: OnboardingAnswers;
+  touched: { title: boolean; description: boolean };
+  previewPhotoUrl: string;
+}) {
+  const drafts = buildListingDrafts(role, answers, touched);
+  const isMulti = drafts.length > 1;
+  return (
+    <div
+      className={"onboarding-preview field-wide" + (isMulti ? " has-multiple" : "")}
+    >
+      <div className="onboarding-preview-heading">
+        <span>
+          {isMulti
+            ? "These are the " + drafts.length + " listings people will see"
+            : "This is what people will see"}
+        </span>
+        {isMulti && (
+          <small>One card per selected offer or sponsorship tier.</small>
+        )}
+      </div>
+      <div className="preview-card-grid">
+        {drafts.map((draft, index) => {
+          const hasPrice = draft.price_cents > 0;
+          return (
+            <article
+              className="preview-card"
+              key={draft.channel + "-" + String(index)}
+            >
+              {previewPhotoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  className="preview-card-photo"
+                  src={previewPhotoUrl}
+                  alt=""
+                />
+              ) : (
+                <p className="preview-card-photo is-empty">
+                  Add a photo above — it fills the top half of your card.
+                </p>
+              )}
+              <div className="preview-card-top">
+                <span
+                  className={
+                    role === "business"
+                      ? "preview-chip is-brief"
+                      : "preview-chip"
+                  }
+                >
+                  {role === "business" ? "Wanted" : draft.channel}
+                </span>
+                <small className="preview-offer">
+                  {answers.display_name.trim() || "Your name"}
+                  {answers.city.trim() ? " · " + answers.city.trim() : ""}
+                </small>
+              </div>
+              <div className="preview-card-body">
+                <strong>{draft.title || "Untitled listing"}</strong>
+                <span className="preview-offer">
+                  {draft.format.trim()
+                    ? role === "business"
+                      ? "Looking for " + draft.format.trim()
+                      : "You get " + formatOffer(draft.format)
+                    : "Add what people get above."}
+                </span>
+                <p className="preview-card-blurb">
+                  {draft.description || "Your description will show here."}
+                </p>
+                <div className="preview-card-foot">
+                  {role === "business" && (
+                    <span className="preview-lead">Budget</span>
+                  )}
+                  <b className={hasPrice ? undefined : "preview-price-empty"}>
+                    {hasPrice ? priceLabel(draft) : "Add a price"}
+                  </b>
+                  <small>/ {draft.price_unit}</small>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function MarketplaceApp({
   initialProfiles = null,
   initialListings = null,
@@ -2897,6 +3870,9 @@ export default function MarketplaceApp({
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
   const [accountOpen, setAccountOpen] = useState(false);
+  const [businessPreferencesDraft, setBusinessPreferencesDraft] =
+    useState<BusinessPreferences>(() => emptyBusinessPreferences());
+  const [preferencesSaving, setPreferencesSaving] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingPreview, setOnboardingPreview] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(1);
@@ -2930,7 +3906,7 @@ export default function MarketplaceApp({
       }
       setOnboardingDraft({
         role: parsed.role ?? null,
-        answers: { ...emptyAnswers(), ...parsed.answers },
+        answers: normalizeOnboardingAnswers(parsed.answers),
       });
     } catch {
       // Unparseable or unavailable storage. The draft is a convenience.
@@ -3027,18 +4003,29 @@ export default function MarketplaceApp({
   const [listingFeedback, setListingFeedback] = useState("");
   const [formatPreview, setFormatPreview] = useState("");
   const [editingListing, setEditingListing] = useState<Listing | null>(null);
+  const [newListingOffer, setNewListingOffer] =
+    useState<CreatorOfferType>("social");
   // Which role's questions the listing editor should ask. An existing listing
   // keeps whatever shape it was published with; a new one follows the member.
   // A brief is identified by its CHANNEL, not by the owner's role - a space
   // owner can post a brief too - so the two are deliberately separate.
   const listingRole: Role | null = profile?.role ?? null;
   // Who is asked for platforms, handles and a follower count when editing their
-  // profile. Creators, plus anyone who already carries that data from an older
-  // row so they can still change or clear it.
+  // social offer. Anyone who already carries that data from an older row can
+  // still change or clear it.
   const showAudienceFields =
-    selectedRole === "creator" ||
-    Boolean(profile?.followers) ||
-    Object.values(profile?.social_links ?? {}).some(Boolean);
+    selectedRole === "creator" &&
+    (answers.creatorOffer === "social" ||
+      Boolean(profile?.followers) ||
+      Object.values(profile?.social_links ?? {}).some(Boolean));
+  const editingListingIsPhysical =
+    listingRole === "space_owner" ||
+    Boolean(editingListing && isPhysicalListing(editingListing)) ||
+    Boolean(!editingListing && canonicalRole(listingRole ?? "consumer") === "creator" && newListingOffer === "physical");
+  const editingListingIsSponsorship =
+    listingRole === "sponsor_host" ||
+    Boolean(editingListing && isSponsorshipListing(editingListing)) ||
+    Boolean(!editingListing && canonicalRole(listingRole ?? "consumer") === "creator" && newListingOffer === "sponsorship");
   const editingListingIsBrief = editingListing
     ? isBrief(editingListing)
     : listingRole === "business";
@@ -3092,6 +4079,15 @@ export default function MarketplaceApp({
   const [activeContact, setActiveContact] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [campaignRequests, setCampaignRequests] = useState<CampaignRequest[]>([]);
+  const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransaction[]>([]);
+  const [creatorPortfolio, setCreatorPortfolio] = useState<CreatorPortfolioItem[]>([]);
+  const [creatorReviews, setCreatorReviews] = useState<CreatorReview[]>([]);
+  const [selectedCreatorPortfolio, setSelectedCreatorPortfolio] =
+    useState<CreatorPortfolioItem[]>([]);
+  const [selectedCreatorReviews, setSelectedCreatorReviews] =
+    useState<CreatorReview[]>([]);
+  const [stripeAccountStatus, setStripeAccountStatus] =
+    useState<StripeAccountStatus | null>(null);
   const [campaignListing, setCampaignListing] = useState<Listing | null>(null);
   const [counteringRequest, setCounteringRequest] = useState<CampaignRequest | null>(null);
   const [verificationRequest, setVerificationRequest] =
@@ -3224,12 +4220,13 @@ export default function MarketplaceApp({
   const loadAccountMarketplaceState = useCallback(
     async (ownProfile: Profile) => {
       if (!supabase) return;
-      const [campaignResult, verificationResult, blocksResult] =
+      const stripeConfigured = stripeTestModeConfigured;
+      const [campaignResult, verificationResult, blocksResult, transactionsResult, stripeStatusResult] =
         await Promise.all([
           supabase
             .from("campaign_requests")
             .select(
-              "*, listing:listings!campaign_requests_listing_id_fkey(id,title,channel,price,price_unit), requester:profiles!campaign_requests_requester_profile_id_fkey(id,display_name,avatar_url,city), owner:profiles!campaign_requests_owner_profile_id_fkey(id,display_name,avatar_url,city)",
+              "*, listing:listings!campaign_requests_listing_id_fkey(id,title,channel,price_cents,price_unit), requester:profiles!campaign_requests_requester_profile_id_fkey(id,display_name,avatar_url,city), owner:profiles!campaign_requests_owner_profile_id_fkey(id,display_name,avatar_url,city)",
             )
             .or(
               `requester_profile_id.eq.${ownProfile.id},owner_profile_id.eq.${ownProfile.id}`,
@@ -3246,6 +4243,12 @@ export default function MarketplaceApp({
               "blocked_profile_id, blocked:profiles!profile_blocks_blocked_profile_id_fkey(id,display_name,avatar_url,city)",
             )
             .eq("blocker_profile_id", ownProfile.id),
+          stripeConfigured
+            ? fetch("/api/stripe/transactions", { cache: "no-store" })
+            : Promise.resolve(null),
+          stripeConfigured
+            ? fetch("/api/stripe/connect/status", { cache: "no-store" })
+            : Promise.resolve(null),
         ]);
 
       if (!campaignResult.error) {
@@ -3257,6 +4260,43 @@ export default function MarketplaceApp({
         setVerificationRequest(
           (verificationResult.data as VerificationRequest | null) ?? null,
         );
+      }
+      if (transactionsResult?.ok) {
+        const payload = (await transactionsResult.json()) as {
+          transactions?: PaymentTransaction[];
+        };
+        setPaymentTransactions(payload.transactions ?? []);
+      }
+      if (stripeStatusResult?.ok) {
+        setStripeAccountStatus(
+          (await stripeStatusResult.json()) as StripeAccountStatus,
+        );
+      }
+      if (canonicalRole(ownProfile.role) === "creator") {
+        const [portfolioResult, reviewsResult] = await Promise.all([
+          supabase
+            .from("creator_portfolio_items")
+            .select("*")
+            .eq("creator_profile_id", ownProfile.id)
+            .order("sort_order", { ascending: true })
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("creator_reviews")
+            .select("*")
+            .eq("creator_profile_id", ownProfile.id)
+            .order("created_at", { ascending: false }),
+        ]);
+        if (!portfolioResult.error) {
+          setCreatorPortfolio(
+            (portfolioResult.data as CreatorPortfolioItem[] | null) ?? [],
+          );
+        }
+        if (!reviewsResult.error) {
+          setCreatorReviews((reviewsResult.data as CreatorReview[] | null) ?? []);
+        }
+      } else {
+        setCreatorPortfolio([]);
+        setCreatorReviews([]);
       }
       let blockedIds = blockedIdsRef.current;
       if (!blocksResult.error) {
@@ -3291,6 +4331,44 @@ export default function MarketplaceApp({
     },
     [countUnread, supabase],
   );
+
+  useEffect(() => {
+    if (!supabase || !selectedListing) {
+      return;
+    }
+    let cancelled = false;
+    const creatorId = selectedListing.owner.id;
+    void Promise.all([
+      supabase
+        .from("creator_portfolio_items")
+        .select("*")
+        .eq("creator_profile_id", creatorId)
+        .eq("published", true)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("creator_reviews")
+        .select("*")
+        .eq("creator_profile_id", creatorId)
+        .order("created_at", { ascending: false })
+        .limit(12),
+    ]).then(([portfolioResult, reviewsResult]) => {
+      if (cancelled) return;
+      setSelectedCreatorPortfolio(
+        portfolioResult.error
+          ? []
+          : ((portfolioResult.data as CreatorPortfolioItem[] | null) ?? []),
+      );
+      setSelectedCreatorReviews(
+        reviewsResult.error
+          ? []
+          : ((reviewsResult.data as CreatorReview[] | null) ?? []),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedListing, supabase]);
 
   const loadOwnProfile = useCallback(
     async (currentUser: User) => {
@@ -3344,7 +4422,7 @@ export default function MarketplaceApp({
       // away - which is exactly what "it kicked me out while typing" was.
       // Only seed the picker and open the modal when it is not already open.
       if (!onboardingOpenRef.current) {
-        const stored = (own?.role as Role | undefined) ?? null;
+        const stored = own?.role ? canonicalRole(own.role) : null;
         const pickable =
           stored && PICKABLE_ROLES.includes(stored) ? stored : null;
         setSelectedRole(pickable);
@@ -3370,15 +4448,18 @@ export default function MarketplaceApp({
 
     let mounted = true;
     const startup = window.setTimeout(() => {
-      const needsPublicMarketplace = [
+      const needsMarketplaceInventory = [
         "home",
         "marketplace",
-        "physical-spaces",
         "creators",
+        // The business dashboard ranks creator posts from this same bounded,
+        // public inventory. Without the fetch, it stayed on demo fallbacks
+        // even after the member's account and preferences had loaded.
+        "dashboard",
       ].includes(route);
       void Promise.all([
         supabase.auth.getUser(),
-        needsPublicMarketplace ? loadMarketplace() : Promise.resolve(),
+        needsMarketplaceInventory ? loadMarketplace() : Promise.resolve(),
       ]).then(
         ([authResult]) => {
           if (!mounted) return;
@@ -3843,6 +4924,19 @@ export default function MarketplaceApp({
       );
   }, [activeChannel, blocksPending, blockedProfileIds, listings, query, roleFilter]);
 
+  const creatorRecommendations = useMemo(
+    () =>
+      profile?.role === "business" && !blocksPending
+        ? creatorPostRecommendations(
+            listings,
+            profile,
+            ownListings,
+            blockedProfileIds,
+          )
+        : [],
+    [blocksPending, blockedProfileIds, listings, ownListings, profile],
+  );
+
   // Reveal widgets as they scroll into view, and cycle the how-it-works steps
   // so the section reads as something live rather than static copy.
   useEffect(() => {
@@ -3995,6 +5089,32 @@ export default function MarketplaceApp({
   }, [route]);
 
   useEffect(() => {
+    if (route !== "dashboard" || !profile || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const checkout = url.searchParams.get("checkout");
+    const connect = url.searchParams.get("connect");
+    if (!checkout && !connect) return;
+    url.searchParams.delete("checkout");
+    url.searchParams.delete("session_id");
+    url.searchParams.delete("connect");
+    window.history.replaceState({}, "", url.toString());
+    const timer = window.setTimeout(() => {
+      setAccountOpen(true);
+      setToast(
+        checkout === "success"
+          ? "Payment submitted. Stripe is confirming it now."
+          : checkout === "cancelled"
+            ? "Checkout was cancelled. Nothing was marked paid."
+            : connect === "return"
+              ? "Stripe setup returned successfully. We are refreshing your payout status."
+              : "Continue the secure Stripe setup to receive payouts.",
+      );
+      void loadAccountMarketplaceState(profile);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadAccountMarketplaceState, profile, route]);
+
+  useEffect(() => {
     if (selectedListing || typeof window === "undefined") return;
     // Blocks load after the marketplace, so opening a deep link before they
     // are known would show a blocked member's listing, and the early return
@@ -4078,7 +5198,7 @@ export default function MarketplaceApp({
    * were still in state and got written on the next save.
    */
   function seedRolePickers(source: Profile | null) {
-    const stored = (source?.role as Role | undefined) ?? null;
+    const stored = source?.role ? canonicalRole(source.role) : null;
     // A retired `consumer` row has no card to highlight, so treat it as
     // unanswered and make them choose rather than pre-selecting something they
     // never picked.
@@ -4110,6 +5230,102 @@ export default function MarketplaceApp({
     setGalleryFiles([]);
   }
 
+  function openAccountPanel() {
+    setAccountOpen(true);
+    if (profile) {
+      setBusinessPreferencesDraft(
+        businessPreferencesForProfile(profile, ownListings),
+      );
+      void loadOwnListings(profile);
+    }
+  }
+
+  function updateCreatorOfferSelection(
+    offer: CreatorOfferType,
+    remove = false,
+  ) {
+    const currentOffers = selectedCreatorOffers(answers);
+    const details = {
+      ...answers.creatorOfferDetails,
+    };
+    const touched = {
+      ...answers.creatorOfferTouched,
+    };
+    if (answers.creatorOffer) {
+      details[answers.creatorOffer] = creatorOfferDetailsFromAnswers(answers);
+      touched[answers.creatorOffer] = {
+        title: titleTouched,
+        description: descriptionTouched,
+      };
+    }
+    const nextOffers = remove
+      ? currentOffers.filter((item) => item !== offer)
+      : currentOffers.includes(offer)
+        ? currentOffers
+        : [...currentOffers, offer];
+    const nextActive =
+      remove && answers.creatorOffer === offer
+        ? nextOffers[0] ?? ""
+        : answers.creatorOffer || offer;
+    const nextDetails = nextActive
+      ? details[nextActive] ?? emptyCreatorOfferDetails(nextActive)
+      : emptyCreatorOfferDetails("social");
+    const nextTouched = nextActive
+      ? touched[nextActive] ?? { title: false, description: false }
+      : { title: false, description: false };
+    setTitleTouched(nextTouched.title);
+    setDescriptionTouched(nextTouched.description);
+    setAnswers({
+      ...answers,
+      creatorOffers: nextOffers,
+      creatorOffer: nextActive,
+      creatorOfferDetails: details,
+      creatorOfferTouched: touched,
+      ...cloneCreatorOfferDetails(nextDetails),
+    });
+  }
+
+  function toggleCreatorOffer(offer: CreatorOfferType) {
+    const selected = selectedCreatorOffers(answers);
+    updateCreatorOfferSelection(offer, selected.includes(offer));
+  }
+
+  function switchCreatorOffer(offer: CreatorOfferType) {
+    if (!selectedCreatorOffers(answers).includes(offer)) return;
+    updateCreatorOfferSelection(offer);
+  }
+
+  async function saveBusinessPreferences(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    if (!supabase || !profile) {
+      setToast("Sign in to save campaign preferences.");
+      return;
+    }
+    setPreferencesSaving(true);
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ business_preferences: businessPreferencesDraft })
+      .eq("id", profile.id)
+      .select()
+      .single();
+    setPreferencesSaving(false);
+    if (error) {
+      setToast(friendlyDbError(error));
+      return;
+    }
+    const saved = data as Profile;
+    setProfile(saved);
+    setBusinessPreferencesDraft(
+      normalizeBusinessPreferences(
+        saved.business_preferences,
+        saved.categories,
+      ),
+    );
+    setToast("Campaign preferences saved. Recommendations are up to date.");
+  }
+
   /**
    * Reopen onboarding to finish a listing.
    *
@@ -4122,13 +5338,24 @@ export default function MarketplaceApp({
     seedRolePickers(profile);
     const draft = onboardingDraft;
     if (draft) {
-      if (draft.role && PICKABLE_ROLES.includes(draft.role)) {
-        setSelectedRole(draft.role);
+      const draftRole = draft.role ? canonicalRole(draft.role) : null;
+      if (draftRole && PICKABLE_ROLES.includes(draftRole)) {
+        setSelectedRole(draftRole);
         setRoleTouched(true);
       }
-      setAnswers(draft.answers);
-      setTitleTouched(Boolean(draft.answers.title));
-      setDescriptionTouched(Boolean(draft.answers.description));
+      const draftAnswers = normalizeOnboardingAnswers(draft.answers);
+      setAnswers(draftAnswers);
+      const activeOffer = draftAnswers.creatorOffer;
+      setTitleTouched(
+        activeOffer
+          ? draftAnswers.creatorOfferTouched[activeOffer].title
+          : Boolean(draftAnswers.title),
+      );
+      setDescriptionTouched(
+        activeOffer
+          ? draftAnswers.creatorOfferTouched[activeOffer].description
+          : Boolean(draftAnswers.description),
+      );
     }
     setOnboardingMode("setup");
     setOnboardingStep(5);
@@ -4263,6 +5490,8 @@ export default function MarketplaceApp({
 
   function openListing(listing: Listing) {
     setSelectedPhotoIndex(0);
+    setSelectedCreatorPortfolio([]);
+    setSelectedCreatorReviews([]);
     setSelectedListing(listing);
     const url = new URL(window.location.href);
     url.searchParams.set("listing", listing.id);
@@ -4378,36 +5607,145 @@ export default function MarketplaceApp({
     if (onboardingMode === "edit" || !role) return out;
 
     if (role === "creator") {
-      need(!answers.platforms.length, "Pick at least one place you post.", "platforms");
+      const offers = selectedCreatorOffers(answers);
       need(
-        answers.format.trim().length < 10,
-        "Say what a brand actually gets.",
-        "format",
+        !offers.length,
+        "Choose at least one way you can advertise.",
+        "creatorOffer",
       );
-    }
-    if (role === "space_owner") {
-      need(!answers.spaceKind, "Pick what kind of space this is.", "spaceKind");
-      need(!answers.spaceSize.trim(), "Say roughly how big it is.", "spaceSize");
-      need(
-        !answers.surfaces.length,
-        "Pick what can actually go up there.",
-        "surfaces",
-      );
-      need(
-        answers.surfaces.includes(SURFACE_OTHER) && !answers.surfaceOther.trim(),
-        "Say what else can go up there.",
-        "surfaceOther",
-      );
-      need(!answers.installBy, "Say who puts it up.", "installBy");
-      // The count, not the chip: an owner who typed 850 and never touched a
-      // chip has answered this, and an owner who picked "I'll count it myself"
-      // and left the box empty has not.
-      need(
-        !answers.trafficCount || answers.trafficCount < 1,
-        "Add roughly how many people walk past a day.",
-        "trafficCount",
-      );
-      need(!answers.availability, "Pick when the space is free.", "availability");
+      for (const offer of offers) {
+        const view = creatorOfferView(answers, offer);
+        const field = (name: string) => "offer:" + offer + ":" + name;
+        if (offer === "social") {
+          need(
+            !view.platforms.length,
+            "Pick at least one place you post for your Online offer.",
+            field("platforms"),
+          );
+          need(
+            view.format.trim().length < 10,
+            "Say what a brand actually gets in your Online offer.",
+            field("format"),
+          );
+        }
+        if (offer === "physical") {
+          need(
+            !view.spaceKind,
+            "Pick what kind of space your Physical offer is.",
+            field("spaceKind"),
+          );
+          need(
+            !view.spaceSize.trim(),
+            "Say roughly how big your Physical offer is.",
+            field("spaceSize"),
+          );
+          need(
+            !view.surfaces.length,
+            "Pick what can actually go up in your Physical offer.",
+            field("surfaces"),
+          );
+          need(
+            view.surfaces.includes(SURFACE_OTHER) && !view.surfaceOther.trim(),
+            "Say what else can go up in your Physical offer.",
+            field("surfaceOther"),
+          );
+          need(
+            !view.installBy,
+            "Say who puts up your Physical offer.",
+            field("installBy"),
+          );
+          need(
+            !view.trafficCount || view.trafficCount < 1,
+            "Add roughly how many people walk past your Physical offer a day.",
+            field("trafficCount"),
+          );
+          need(
+            !view.availability,
+            "Pick when your Physical offer is free.",
+            field("availability"),
+          );
+        }
+        if (offer === "sponsorship") {
+          need(
+            !view.orgKind,
+            "Pick what kind of organization your Sponsorship offer is.",
+            field("orgKind"),
+          );
+          need(
+            view.orgKind === SPONSOR_ORG_OTHER && !view.orgOther.trim(),
+            "Say what kind of organization your Sponsorship offer is.",
+            field("orgOther"),
+          );
+          need(
+            !view.funding.trim(),
+            "Say what your Sponsorship offer is raising for.",
+            field("funding"),
+          );
+          need(
+            !view.reachCount || view.reachCount < 1,
+            "Add roughly how many people will see your Sponsorship offer.",
+            field("reachCount"),
+          );
+          need(
+            !view.season,
+            "Pick how long your Sponsorship offer lasts.",
+            field("season"),
+          );
+          need(
+            !view.benefits.length,
+            "Pick what a Sponsorship offer could give a sponsor.",
+            field("benefits"),
+          );
+          out.push(
+            ...tierProblems(view).map(
+              ([message, tierField]) =>
+                [message, field(tierField)] as [string, string],
+            ),
+          );
+        }
+        const touched =
+          offer === answers.creatorOffer
+            ? { title: titleTouched, description: descriptionTouched }
+            : view.creatorOfferTouched?.[offer] ?? {
+                title: false,
+                description: false,
+              };
+        const shownTitle = effectiveTitle("creator", view, touched);
+        const shownDescription = descriptionBody("creator", view, touched);
+        if (offer !== "sponsorship") {
+          need(
+            shownTitle.trim().length < LISTING_READY_MIN.title,
+            shownTitle.trim()
+              ? "That " + creatorOfferLabel(offer) + " title is too short."
+              : "Give your " + creatorOfferLabel(offer) + " offer a title.",
+            field("title"),
+          );
+          need(
+            !view.price || view.price < 1,
+            "Set a price for your " + creatorOfferLabel(offer) + " offer.",
+            field("price"),
+          );
+        }
+        if (
+          offer === "physical" &&
+          typeof view.priceMax === "number" &&
+          typeof view.price === "number" &&
+          view.priceMax < view.price
+        ) {
+          need(
+            true,
+            "The top of your Physical price range is below the bottom.",
+            field("priceMax"),
+          );
+        }
+        need(
+          shownDescription.trim().length < LISTING_READY_MIN.description,
+          "Add a bit more detail to your " +
+            creatorOfferLabel(offer) +
+            " offer.",
+          field("description"),
+        );
+      }
     }
     if (role === "business") {
       // Same order the questions are rendered in, so the error scrolls forward
@@ -4435,46 +5773,18 @@ export default function MarketplaceApp({
       );
       need(!answers.timing, "Pick when you want it to run.", "timing");
     }
-    if (role === "sponsor_host") {
-      // Same order the questions render in.
-      need(
-        !answers.orgKind,
-        "Pick what kind of organization you are.",
-        "orgKind",
-      );
-      need(
-        answers.orgKind === SPONSOR_ORG_OTHER && !answers.orgOther.trim(),
-        "Say what kind of organization you are.",
-        "orgOther",
-      );
-      need(
-        !answers.funding.trim(),
-        "Say what you're raising for — a few words is enough.",
-        "funding",
-      );
-      need(
-        !answers.reachCount || answers.reachCount < 1,
-        "Add roughly how many people will see it.",
-        "reachCount",
-      );
-      need(!answers.season, "Pick how long a sponsorship lasts.", "season");
-      need(!answers.benefits.length, "Pick what a sponsor could get.", "benefits");
-      out.push(...tierProblems(answers));
-    }
     // Validate exactly what the member can see, via the same helpers publish
     // uses - so an emptied field fails here instead of silently republishing
     // the draft they deleted.
     const touched = { title: titleTouched, description: descriptionTouched };
-    const shownTitle = effectiveTitle(role, answers, touched);
-    const shownDescription = descriptionBody(role, answers, touched);
-    // A sponsorship host has no single title or price - both are per tier and
-    // tierProblems already checked every one of them.
-    if (role !== "sponsor_host") {
+    if (role === "business") {
+      const shownTitle = effectiveTitle(role, answers, touched);
+      const shownDescription = descriptionBody(role, answers, touched);
       need(
         shownTitle.trim().length < LISTING_READY_MIN.title,
         shownTitle.trim()
           ? "That title is too short — the marketplace sorts thin listings last."
-          : "Give this a title.",
+          : "Give this brief a title.",
         "title",
       );
       need(
@@ -4482,23 +5792,21 @@ export default function MarketplaceApp({
         "Set a price of at least $1.",
         "price",
       );
+      // listings_price_max_valid (0017) rejects a max below the min at the
+      // database, where it surfaces as a generic "something went wrong".
+      need(
+        typeof answers.priceMax === "number" &&
+          typeof answers.price === "number" &&
+          answers.priceMax < answers.price,
+        "The top of the range is below the bottom.",
+        "priceMax",
+      );
+      need(
+        shownDescription.trim().length < LISTING_READY_MIN.description,
+        "Add a bit more detail — a sentence or two is what makes a card worth opening.",
+        "description",
+      );
     }
-    // listings_price_max_valid (0017) rejects a max below the min at the
-    // database, where it surfaces as a generic "something went wrong". Both
-    // roles that can set a band are checked here, in the order the two inputs
-    // sit on screen.
-    need(
-      typeof answers.priceMax === "number" &&
-        typeof answers.price === "number" &&
-        answers.priceMax < answers.price,
-      "The top of the range is below the bottom.",
-      "priceMax",
-    );
-    need(
-      shownDescription.trim().length < 60,
-      "Add a bit more detail — a sentence or two is what makes a card worth opening.",
-      "description",
-    );
     return out;
   }
 
@@ -4511,13 +5819,28 @@ export default function MarketplaceApp({
         ? 1
         : 2;
     }
-    if (field === "role") return 1;
-    if (["display_name", "city", "bio", "contact_email"].includes(field)) {
+    const fieldName =
+      field.match(/^offer:(social|physical|sponsorship):(.+)$/)?.[2] ?? field;
+    if (fieldName === "role") return 1;
+    if (["display_name", "city", "bio", "contact_email"].includes(fieldName)) {
       return 2;
     }
 
     const stepThree: Record<string, string[]> = {
-      creator: ["platforms"],
+      creator: [
+        "creatorOffer",
+        "platforms",
+        "spaceKind",
+        "streetAddress",
+        "location_area",
+        "spaceSize",
+        "orgKind",
+        "orgOther",
+        "funding",
+        "reach",
+        "reachCount",
+        "season",
+      ],
       space_owner: ["spaceKind", "streetAddress", "location_area", "spaceSize"],
       business: [
         "promoting",
@@ -4538,16 +5861,16 @@ export default function MarketplaceApp({
         "season",
       ],
     };
-    if (selectedRole && stepThree[selectedRole]?.includes(field)) return 3;
+    if (selectedRole && stepThree[selectedRole]?.includes(fieldName)) return 3;
     if (
       selectedRole === "business" &&
-      ["price", "priceMax"].includes(field)
+      ["price", "priceMax"].includes(fieldName)
     ) {
       return 4;
     }
     if (
-      field === "benefits" ||
-      field.startsWith("tier") ||
+      fieldName === "benefits" ||
+      fieldName.startsWith("tier") ||
       [
         "format",
         "surfaces",
@@ -4558,7 +5881,7 @@ export default function MarketplaceApp({
         "availability",
         "artwork",
         "timing",
-      ].includes(field)
+      ].includes(fieldName)
     ) {
       return 4;
     }
@@ -4639,14 +5962,21 @@ export default function MarketplaceApp({
 
   function reportMissing(problem: [string, string]) {
     const [message, field] = problem;
+    const offerField = field.match(
+      /^offer:(social|physical|sponsorship):(.+)$/,
+    );
+    const fieldName = offerField?.[2] ?? field;
+    if (offerField && offerField[1] !== answers.creatorOffer) {
+      switchCreatorOffer(offerField[1] as CreatorOfferType);
+    }
     const targetStep = onboardingStepForField(field);
     if (targetStep !== onboardingStep) {
       goToOnboardingStep(targetStep);
       window.requestAnimationFrame(() =>
-        window.requestAnimationFrame(() => scrollToField(field)),
+        window.requestAnimationFrame(() => scrollToField(fieldName)),
       );
     } else {
-      window.requestAnimationFrame(() => scrollToField(field));
+      window.requestAnimationFrame(() => scrollToField(fieldName));
     }
     setOnboardingError(message);
   }
@@ -4783,7 +6113,15 @@ export default function MarketplaceApp({
         ? await igAvatarPromiseRef.current
         : igAvatar;
 
-      const reach = deriveReach(role, answers);
+      const creatorOffers =
+        canonicalRole(role) === "creator"
+          ? selectedCreatorOffers(answers)
+          : [];
+      const primaryCreatorOffer = creatorOffers[0];
+      const reachAnswers = primaryCreatorOffer
+        ? creatorOfferView(answers, primaryCreatorOffer)
+        : answers;
+      const reach = deriveReach(role, reachAnswers);
       // Onboarding no longer asks for a handle - a business gives its business
       // name and everyone else an email - but an existing handle is preserved
       // rather than blanked out from under a legacy member.
@@ -4794,6 +6132,23 @@ export default function MarketplaceApp({
       const payload = {
         auth_user_id: user.id,
         role,
+        creator_offer:
+          canonicalRole(role) === "creator"
+            ? primaryCreatorOffer ||
+              existing?.creator_offer ||
+              creatorOfferForRole(role, answers) ||
+              "social"
+            : null,
+        creator_offers:
+          canonicalRole(role) === "creator"
+            ? creatorOffers.length
+              ? creatorOffers
+              : [existing?.creator_offer || "social"]
+            : [],
+        business_preferences:
+          role === "business" && onboardingMode === "setup"
+            ? businessPreferencesFromAnswers(answers)
+            : existing?.business_preferences ?? null,
         extra_roles: Array.from(
           new Set(
             extraRoles.filter(
@@ -4807,12 +6162,12 @@ export default function MarketplaceApp({
         contact_email: answers.contact_email.trim(),
         city: answers.city.trim(),
         bio: answers.bio.trim(),
-        // A sponsorship host is never shown the category chips - what they
+        // A sponsorship offer is never shown the category chips - what they
         // are is already answered, in their own words, by the organisation
         // chip. Reusing it costs them no taps and makes "robotics" or
         // "festival" find them.
         categories:
-          role === "sponsor_host" && orgLabel(answers)
+          isSponsorshipOffer(role, answers) && orgLabel(answers)
             ? [orgLabel(answers)]
             : answers.categories,
         // A null follower count means "not answered", and must not overwrite a
@@ -4882,7 +6237,7 @@ export default function MarketplaceApp({
           chosenListingFiles,
           "listings",
         );
-        // Plural. A sponsorship host publishes one row per tier; everyone
+        // Plural. A sponsorship offer publishes one row per tier; everyone
         // else publishes exactly one, which is the same code path with a
         // one-element array.
         const drafts = buildListingDrafts(role, answers, {
@@ -4925,8 +6280,8 @@ export default function MarketplaceApp({
         setToast(
           role === "business"
             ? "Your brief is live. We’ll tell you the moment someone answers."
-            : drafts.length > 1
-              ? `You’re live. ${drafts.length} sponsorship tiers are on the marketplace.`
+              : canonicalRole(role) === "creator" && drafts.length > 1
+                ? "You’re live. " + drafts.length + " listings are on the marketplace."
               : `You’re live. “${drafts[0].title}” is on the marketplace.`,
         );
         return;
@@ -5011,8 +6366,10 @@ export default function MarketplaceApp({
         title: String(values.get("title") ?? "").trim(),
         channel: String(values.get("channel") ?? "").trim(),
         format: String(values.get("format") ?? "").trim(),
-        price: Number(values.get("price") ?? 0),
-        price_max: Number(values.get("price_max") ?? 0) || null,
+        price_cents: dollarsToCents(String(values.get("price") ?? "0")),
+        price_max_cents: values.get("price_max")
+          ? dollarsToCents(String(values.get("price_max")))
+          : null,
         price_unit: String(values.get("price_unit") ?? "campaign").trim(),
         description: String(values.get("description") ?? "").trim(),
         demographics: String(values.get("demographics") ?? "").trim(),
@@ -5074,14 +6431,14 @@ export default function MarketplaceApp({
       if (missing) {
         throw new Error(`Add ${missing[1]} before publishing.`);
       }
-      if (!Number.isFinite(fields.price) || fields.price < 0) {
+      if (!Number.isSafeInteger(fields.price_cents) || fields.price_cents < 0) {
         throw new Error("Enter a price of 0 or more.");
       }
       // listings_price_max_valid (0017) rejects this at the database, where it
       // reaches the member as an unreadable 23514.
       if (
-        typeof fields.price_max === "number" &&
-        fields.price_max < fields.price
+        typeof fields.price_max_cents === "number" &&
+        fields.price_max_cents < fields.price_cents
       ) {
         throw new Error("The top of the range is below the bottom.");
       }
@@ -5459,7 +6816,7 @@ export default function MarketplaceApp({
         campaign_name: campaignName,
         goals,
         requested_deliverables: deliverables,
-        budget,
+        budget_cents: dollarsToCents(budget),
         start_date: startDate,
         end_date: endDate,
         notes,
@@ -5528,7 +6885,7 @@ export default function MarketplaceApp({
     const { error } = await supabase.rpc("respond_campaign_request", {
       request_id: request.id,
       next_status: status,
-      proposed_budget: null,
+      proposed_budget_cents: null,
       response_message: "",
     });
     setBusy(false);
@@ -5541,12 +6898,179 @@ export default function MarketplaceApp({
     }
     setToast(
       status === "accepted"
-        ? "Campaign accepted. Continue the details in Messages."
+        ? "Campaign accepted. Payment is required before the work is confirmed."
         : status === "declined"
           ? "Campaign request declined."
           : "Campaign request cancelled.",
     );
     await loadAccountMarketplaceState(profile);
+  }
+
+  async function openStripeFlow(
+    endpoint: "/api/stripe/connect/onboard" | "/api/stripe/connect/login",
+  ) {
+    setBusy(true);
+    try {
+      const response = await fetch(endpoint, { method: "POST" });
+      const payload = (await response.json()) as { url?: string; error?: string };
+      if (!response.ok || !payload.url) {
+        throw new Error(payload.error || "Stripe did not return a secure link.");
+      }
+      window.location.assign(payload.url);
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Could not open Stripe. Please try again.",
+      );
+      setBusy(false);
+    }
+  }
+
+  async function startCampaignCheckout(campaignRequestId: string) {
+    if (!profile) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ campaignRequestId }),
+      });
+      const payload = (await response.json()) as { url?: string; error?: string };
+      if (!response.ok || !payload.url) {
+        throw new Error(payload.error || "Checkout could not be created.");
+      }
+      window.location.assign(payload.url);
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Checkout could not be created. Please try again.",
+      );
+      setBusy(false);
+      await loadAccountMarketplaceState(profile);
+    }
+  }
+
+  async function runCampaignPaymentAction(
+    transaction: PaymentTransaction,
+    action: "deliver" | "confirm" | "report_issue" | "escalate",
+  ) {
+    if (!profile) return;
+    let details: string | undefined;
+    if (action === "report_issue") {
+      const entered = window.prompt(
+        "Describe what is incomplete or needs to be resolved. The Creator will be able to discuss it with you in Messages.",
+      );
+      if (entered === null) return;
+      details = entered.trim();
+      if (details.length < 10) {
+        setToast("Please describe the issue in at least 10 characters.");
+        return;
+      }
+    }
+    setBusy(true);
+    try {
+      const response = await fetch(
+        `/api/payments/transactions/${transaction.id}/actions`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action, details }),
+        },
+      );
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "That action could not be completed.");
+      setToast(
+        action === "deliver"
+          ? "Campaign marked delivered. The payer now has 72 hours to review it."
+          : action === "confirm"
+            ? "Work confirmed. The Creator payout was released."
+            : action === "report_issue"
+              ? "Issue reported. The payout remains pending while you resolve it together."
+              : "Issue escalated to SideSpace for staff review.",
+      );
+      await loadAccountMarketplaceState(profile);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "That action could not be completed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitCreatorPortfolioItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !profile || canonicalRole(profile.role) !== "creator") return;
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    setBusy(true);
+    const { error } = await supabase.from("creator_portfolio_items").insert({
+      creator_profile_id: profile.id,
+      title: String(values.get("title") ?? "").trim(),
+      description: String(values.get("description") ?? "").trim(),
+      kind: String(values.get("kind") ?? "project"),
+      media_url: String(values.get("media_url") ?? "").trim(),
+      project_url: String(values.get("project_url") ?? "").trim(),
+      sort_order: creatorPortfolio.length,
+      published: true,
+    });
+    setBusy(false);
+    if (error) return setToast(friendlyDbError(error));
+    form.reset();
+    setToast("Portfolio item published to your Creator profile.");
+    await loadAccountMarketplaceState(profile);
+  }
+
+  async function deleteCreatorPortfolioItem(itemId: string) {
+    if (!supabase || !profile) return;
+    setBusy(true);
+    const { error } = await supabase
+      .from("creator_portfolio_items")
+      .delete()
+      .eq("id", itemId)
+      .eq("creator_profile_id", profile.id);
+    setBusy(false);
+    if (error) return setToast(friendlyDbError(error));
+    setToast("Portfolio item removed.");
+    await loadAccountMarketplaceState(profile);
+  }
+
+  async function submitCreatorReview(transaction: PaymentTransaction) {
+    if (!profile) return;
+    const ratingInput = window.prompt("Rate the Creator from 1 to 5.", "5");
+    if (ratingInput === null) return;
+    const rating = Number(ratingInput);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      setToast("Choose a whole-number rating from 1 to 5.");
+      return;
+    }
+    const review = window.prompt(
+      "Share what the Creator delivered and what it was like to work together.",
+    );
+    if (review === null) return;
+    if (review.trim().length < 10) {
+      setToast("Write at least 10 characters so the review is useful.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await fetch(
+        `/api/payments/transactions/${transaction.id}/review`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ rating, review: review.trim() }),
+        },
+      );
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Review could not be saved.");
+      setToast("Review published on the Creator's profile.");
+      await loadAccountMarketplaceState(profile);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Review could not be saved.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submitCounteroffer(event: FormEvent<HTMLFormElement>) {
@@ -5557,7 +7081,9 @@ export default function MarketplaceApp({
     const { error } = await supabase.rpc("respond_campaign_request", {
       request_id: counteringRequest.id,
       next_status: "countered",
-      proposed_budget: Number(values.get("counter_budget") ?? 0),
+      proposed_budget_cents: dollarsToCents(
+        String(values.get("counter_budget") ?? "0"),
+      ),
       response_message: String(values.get("counter_message") ?? "").trim(),
     });
     setBusy(false);
@@ -5834,6 +7360,12 @@ export default function MarketplaceApp({
     setProfileChecked(false);
     setOwnListings([]);
     setCampaignRequests([]);
+    setPaymentTransactions([]);
+    setCreatorPortfolio([]);
+    setCreatorReviews([]);
+    setSelectedCreatorPortfolio([]);
+    setSelectedCreatorReviews([]);
+    setStripeAccountStatus(null);
     setVerificationRequest(null);
     setBlockedProfileIds([]);
     setBlockedLoaded(false);
@@ -6276,13 +7808,14 @@ export default function MarketplaceApp({
     requireAccount(() => {
       if (profile?.role === "consumer") {
         setToast(
-          "Switch your profile to Business, Creator, or Space owner to publish a listing.",
+          "Finish your Business or Creator profile before publishing a listing.",
         );
         return;
       }
       setListingFeedback("");
       setFormatPreview("");
       setEditingListing(null);
+      setNewListingOffer("social");
       setListingOpen(true);
     });
   }
@@ -6291,6 +7824,13 @@ export default function MarketplaceApp({
     setListingFeedback("");
     setFormatPreview(listing.format ?? "");
     setEditingListing(listing);
+    setNewListingOffer(
+      isSponsorshipListing(listing)
+        ? "sponsorship"
+        : isPhysicalListing(listing)
+          ? "physical"
+          : "social",
+    );
     setAccountOpen(false);
     setListingOpen(true);
   }
@@ -6380,10 +7920,7 @@ export default function MarketplaceApp({
           setAuthMode("signup");
           setAuthOpen(true);
         }}
-        onAccount={() => {
-          setAccountOpen(true);
-          if (profile) void loadOwnListings(profile);
-        }}
+        onAccount={openAccountPanel}
       />
 
       {route === "dashboard" && (loading || (user && !profile && !profileChecked) ? (
@@ -6421,12 +7958,9 @@ export default function MarketplaceApp({
               </button>
               <button
                 className="button button-ghost"
-                onClick={() => {
-                  setAccountOpen(true);
-                  void loadOwnListings(profile);
-                }}
+                onClick={openAccountPanel}
               >
-                Settings <span>⚙</span>
+                Account <span>↗</span>
               </button>
             </div>
           </div>
@@ -6517,6 +8051,291 @@ export default function MarketplaceApp({
               ));
             })()}
           </div>
+
+          <div className="dashboard-workspace">
+            <section
+              className="dashboard-panel dashboard-inventory-panel"
+              id="dashboard-listings"
+              data-reveal
+            >
+              <header className="dashboard-panel-heading">
+                <div>
+                  <p className="eyebrow">Your inventory</p>
+                  <h2>What people can book.</h2>
+                  <p>Keep your live offers clear, current, and easy to reach.</p>
+                </div>
+                {profile.role !== "consumer" && (
+                  <button
+                    className="button button-dark button-small"
+                    onClick={openListingEditor}
+                  >
+                    New listing <span>＋</span>
+                  </button>
+                )}
+              </header>
+              {ownListingsLoading ? (
+                <div className="dashboard-panel-empty">Loading your listings…</div>
+              ) : ownListings.length ? (
+                <div className="dashboard-listing-list">
+                  {ownListings.slice(0, 4).map((listing) => (
+                    <article className="dashboard-listing-row" key={listing.id}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={listing.image_url || DEFAULT_LISTING_IMAGE}
+                        alt=""
+                        loading="lazy"
+                      />
+                      <div className="dashboard-listing-copy">
+                        <div>
+                          <span
+                            className={
+                              "listing-status status-" + listing.status
+                            }
+                          >
+                            {listing.status}
+                          </span>
+                          <small>{listing.channel}</small>
+                        </div>
+                        <strong>{listing.title}</strong>
+                        <p>
+                          {priceLabel(listing)} / {listing.price_unit}
+                        </p>
+                      </div>
+                      <div className="dashboard-row-actions">
+                        <button onClick={() => openListing(listing)}>View</button>
+                        <button onClick={() => openListingEdit(listing)}>Edit</button>
+                      </div>
+                    </article>
+                  ))}
+                  {ownListings.length > 4 && (
+                    <button
+                      className="dashboard-text-action"
+                      onClick={openAccountPanel}
+                    >
+                      View all {ownListings.length} listings →
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="dashboard-panel-empty">
+                  <strong>Your first listing belongs here.</strong>
+                  <p>Put your audience, space, or campaign brief in front of the marketplace.</p>
+                  {profile.role !== "consumer" && (
+                    <button
+                      className="button button-coral button-small"
+                      onClick={openListingEditor}
+                    >
+                      Create a listing <span>↗</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </section>
+
+            <section
+              className="dashboard-panel dashboard-campaigns-panel"
+              id="dashboard-campaigns"
+              data-reveal
+            >
+              {(() => {
+                const activeRequests = campaignRequests
+                  .filter((request) =>
+                    ["pending", "countered", "accepted", "confirmed"].includes(
+                      request.status,
+                    ),
+                  )
+                  .slice(0, 4);
+                return (
+                  <>
+                    <header className="dashboard-panel-heading">
+                      <div>
+                        <p className="eyebrow">Campaigns</p>
+                        <h2>Work in motion.</h2>
+                        <p>Requests, replies, and next actions in one place.</p>
+                      </div>
+                      <button
+                        className="dashboard-text-action"
+                        onClick={openAccountPanel}
+                      >
+                        View all →
+                      </button>
+                    </header>
+                    {activeRequests.length ? (
+                      <div className="dashboard-request-list">
+                        {activeRequests.map((request) => {
+                          const incoming =
+                            request.owner_profile_id === profile.id;
+                          const other = incoming
+                            ? request.requester
+                            : request.owner;
+                          return (
+                            <article
+                              className="dashboard-request-row"
+                              key={request.id}
+                            >
+                              <span className="dashboard-request-avatar">
+                                {initials(other.display_name)}
+                              </span>
+                              <div className="dashboard-request-copy">
+                                <div>
+                                  <small>
+                                    {incoming ? "Incoming" : "You sent"} ·{" "}
+                                    {request.status}
+                                  </small>
+                                  <b>{formatCents(request.budget_cents)}</b>
+                                </div>
+                                <strong>{request.campaign_name}</strong>
+                                <p>
+                                  {request.listing?.title ?? "Listing"} ·{" "}
+                                  {other.display_name}
+                                </p>
+                              </div>
+                              <div className="dashboard-row-actions">
+                                {incoming && request.status === "pending" && (
+                                  <button
+                                    className="dashboard-row-primary"
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void respondToCampaignRequest(
+                                        request,
+                                        "accepted",
+                                      )
+                                    }
+                                  >
+                                    Accept
+                                  </button>
+                                )}
+                                {incoming &&
+                                  ["pending", "countered"].includes(
+                                    request.status,
+                                  ) && (
+                                    <button
+                                      onClick={() => setCounteringRequest(request)}
+                                    >
+                                      Counter
+                                    </button>
+                                  )}
+                                {!incoming && request.status === "countered" && (
+                                  <button
+                                    className="dashboard-row-primary"
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void respondToCampaignRequest(
+                                        request,
+                                        "accepted",
+                                      )
+                                    }
+                                  >
+                                    Accept counter
+                                  </button>
+                                )}
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="dashboard-panel-empty">
+                        <strong>No active campaigns yet.</strong>
+                        <p>
+                          Browse the marketplace, or publish an offer so the
+                          right partner can find you.
+                        </p>
+                        <a
+                          className="button button-ghost button-small"
+                          href="/marketplace"
+                        >
+                          Browse marketplace <span>↗</span>
+                        </a>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </section>
+          </div>
+
+          {profile.role === "business" && (
+            <section
+              className="dashboard-panel dashboard-recommendations-panel"
+              id="creator-recommendations"
+              data-reveal
+            >
+              <header className="dashboard-panel-heading">
+                <div>
+                  <p className="eyebrow">Recommended for your campaign</p>
+                  <h2>Creator posts that fit your brief.</h2>
+                  <p>
+                    Ranked from your category, goal, platform, timing, and
+                    location preferences.
+                  </p>
+                </div>
+                <button
+                  className="button button-ghost button-small"
+                  onClick={openAccountPanel}
+                >
+                  Edit preferences <span>⚙</span>
+                </button>
+              </header>
+              {creatorRecommendations.length ? (
+                <div className="dashboard-recommendation-grid">
+                  {creatorRecommendations.map((recommendation) => (
+                    <article
+                      className="dashboard-recommendation-card"
+                      key={recommendation.listing.id}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={
+                          recommendation.listing.image_url ||
+                          DEFAULT_LISTING_IMAGE
+                        }
+                        alt=""
+                        loading="lazy"
+                      />
+                      <div className="dashboard-recommendation-body">
+                        <div className="dashboard-recommendation-meta">
+                          <span>{recommendation.listing.channel}</span>
+                          <small>
+                            {recommendation.listing.owner.display_name} ·{" "}
+                            {recommendation.listing.owner.city}
+                          </small>
+                        </div>
+                        <strong>{recommendation.listing.title}</strong>
+                        <p>{recommendation.listing.description}</p>
+                        <small className="dashboard-recommendation-reason">
+                          {recommendation.reasons.slice(0, 2).join(" · ")}
+                        </small>
+                        <div className="dashboard-recommendation-actions">
+                          <button
+                            onClick={() =>
+                              openCampaignRequest(recommendation.listing)
+                            }
+                          >
+                            Request <span>↗</span>
+                          </button>
+                          <button
+                            className="dashboard-text-action"
+                            onClick={() => openListing(recommendation.listing)}
+                          >
+                            View details
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="dashboard-panel-empty">
+                  <strong>We’re still building your shortlist.</strong>
+                  <p>
+                    Add a target platform or category in preferences, then
+                    refresh the marketplace as new creators join.
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
 
           <ol className="dashboard-checklist" data-reveal>
             <li className={profile.onboarding_complete ? "done" : ""}>
@@ -6815,8 +8634,8 @@ export default function MarketplaceApp({
               setChannelFilter("All");
             }}
           >
-            <strong>I have space to offer</strong>
-            <small>Find businesses looking to work with you</small>
+            <strong>I have advertising to offer</strong>
+            <small>List your audience, placement, or sponsorship inventory</small>
           </button>
           {roleFilter !== "all" && (
             <button
@@ -6845,11 +8664,10 @@ export default function MarketplaceApp({
               left the active filter signalled by background colour alone. */}
           <div className="role-tabs" role="group" aria-label="Listing owner type">
             {(
-              [
+                [
                 ["all", "Everything"],
-                ["supply", "Space available"],
+                ["supply", "Advertising available"],
                 ["creator", "Creators"],
-                ["space_owner", "Physical spaces"],
                 ["business", "Space wanted"],
               ] as Array<[RoleFilter, string]>
             ).map(([value, label]) => (
@@ -7149,7 +8967,7 @@ export default function MarketplaceApp({
               {[
                 ["Getting started", "Call for a rate card, wait", "Post a listing in a minute"],
                 ["Minimum spend", "Hundreds, often more", "None"],
-                ["Who you deal with", "An agency or an ad platform", "The person who owns the space"],
+                ["Who you deal with", "An agency or an ad platform", "The Creator offering the inventory"],
                 ["Setting the price", "Take the rate you are given", "You name it, and you can counter"],
                 ["Local reach", "Sold by postcode, roughly", "A specific window on a specific street"],
                 ["Cost to list", "Not an option for most spaces", "Free"],
@@ -7169,12 +8987,9 @@ export default function MarketplaceApp({
           <div>
             <p className="eyebrow">Pricing</p>
             <h2>Start free. Grow when you are ready.</h2>
-            {/* Nothing is charged today and SideSpace does not process
-                payments, so these rates have to read as future pricing.
-                The Terms say the same thing; the two must not disagree. */}
             <p className="pricing-note">
-              SideSpace is free while we are in early access. Nothing below is
-              charged yet, and members arrange payment between themselves.
+              Profiles, listings, browsing, requests, and messages have no
+              subscription. Campaign fees apply only when accepted work is paid.
             </p>
           </div>
         </div>
@@ -7190,7 +9005,7 @@ export default function MarketplaceApp({
               <p>For small businesses testing their first local campaigns.</p>
             </div>
             <ul>
-              <li><b>No fees</b> during early access</li>
+              <li><b>No subscription</b> or listing fee</li>
               <li>Browse every creator and space</li>
               <li>Direct private messaging</li>
               <li>No minimum campaign spend</li>
@@ -7207,20 +9022,20 @@ export default function MarketplaceApp({
           </article>
 
           <article className="pricing-card pricing-card-featured">
-            <span className="popular-badge">Best for frequent campaigns</span>
+            <span className="popular-badge">Businesses</span>
             <div>
-              <span className="plan-label">SideSpace Pro</span>
-              <h3>Pro</h3>
+              <span className="plan-label">Paid campaign</span>
+              <h3>5%</h3>
               <p className="plan-price">
-                <strong>$49</strong><span>/month, later</span>
+                <strong>+5%</strong><span>buyer fee</span>
               </p>
-              <p>Lower campaign fees and stronger tools for growing brands.</p>
+              <p>Added to the accepted campaign price before tax.</p>
             </div>
             <ul>
-              <li>Lower campaign fee when pricing starts</li>
-              <li>Priority marketplace placement <i>(planned)</i></li>
-              <li>Advanced campaign analytics <i>(planned)</i></li>
-              <li>Smart partner recommendations <i>(planned)</i></li>
+              <li>Hosted Stripe Checkout</li>
+              <li>Tax calculated when applicable</li>
+              <li>One-time invoice receipt</li>
+              <li>No monthly plan</li>
             </ul>
             <button
               className="pricing-button pricing-button-lime"
@@ -7229,28 +9044,34 @@ export default function MarketplaceApp({
                 setAuthOpen(true);
               }}
             >
-              Start with free early access <span>↗</span>
+              Find a campaign partner <span>↗</span>
             </button>
           </article>
 
           <article className="pricing-card">
             <div>
-              <span className="plan-label">Larger advertisers</span>
-              <h3>Enterprise</h3>
-              <p className="plan-price plan-price-custom">
-                <strong>Custom</strong>
+              <span className="plan-label">Creators and hosts</span>
+              <h3>5%</h3>
+              <p className="plan-price">
+                <strong>−5%</strong><span>creator fee</span>
               </p>
-              <p>Flexible support and pricing for multi-market campaigns.</p>
+              <p>Deducted from the accepted campaign price.</p>
             </div>
             <ul>
-              <li>Custom volume pricing</li>
-              <li>Multi-user campaign support</li>
-              <li>Priority onboarding</li>
-              <li>Additional reporting and service</li>
+              <li>Stripe-hosted payout onboarding</li>
+              <li>Clear earnings before acceptance</li>
+              <li>Payment status in SideSpace</li>
+              <li>No subscription or listing fee</li>
             </ul>
-            <a className="pricing-button" href={`mailto:${SUPPORT_EMAIL}`}>
-              Talk with the SideSpace team <span>↗</span>
-            </a>
+            <button
+              className="pricing-button"
+              onClick={() => {
+                setAuthMode("signup");
+                setAuthOpen(true);
+              }}
+            >
+              List your reach <span>↗</span>
+            </button>
           </article>
         </div>
 
@@ -7290,8 +9111,7 @@ export default function MarketplaceApp({
         <nav>
           <a href="#how">How it works</a>
           <a href="#market">Marketplace</a>
-          <a href="#spaces">Physical spaces</a>
-          <a href="#creators">Creators &amp; businesses</a>
+          <a href="#creators">Creator inventory</a>
           <a href="#pricing">Pricing</a>
           <a href="/terms">Terms</a>
           <a href="/privacy">Privacy</a>
@@ -7505,6 +9325,201 @@ export default function MarketplaceApp({
               </button>
             </div>
 
+            {profile.role === "business" && (
+              <section
+                className="account-section preferences-section"
+                id="campaign-preferences"
+              >
+                <div className="account-section-heading">
+                  <div>
+                    <p className="eyebrow">Campaign preferences</p>
+                    <h3>Tell us what a good creator looks like.</h3>
+                    <p className="account-section-lede">
+                      These choices shape the creator posts we put first on your
+                      dashboard. Change them whenever your next campaign changes.
+                    </p>
+                  </div>
+                  <span className="section-count">Always editable</span>
+                </div>
+                <form
+                  className="preferences-form"
+                  onSubmit={saveBusinessPreferences}
+                >
+                  <div className="preferences-grid">
+                    <PreferenceChipGroup
+                      label="Your category"
+                      multi
+                      options={CATEGORY_CHIPS.map((value) => ({
+                        label: value,
+                        value,
+                      }))}
+                      selected={businessPreferencesDraft.categories}
+                      onPick={(value) =>
+                        setBusinessPreferencesDraft((current) => ({
+                          ...current,
+                          categories: current.categories.includes(value)
+                            ? current.categories.filter((item) => item !== value)
+                            : [...current.categories, value],
+                        }))
+                      }
+                    />
+                    <PreferenceChipGroup
+                      label="Campaign goal"
+                      options={BUSINESS_GOAL_CHIPS.map(({ label }) => ({
+                        label,
+                        value: label,
+                      }))}
+                      selected={businessPreferencesDraft.goal}
+                      onPick={(value) =>
+                        setBusinessPreferencesDraft((current) => ({
+                          ...current,
+                          goal: current.goal === value ? "" : value,
+                        }))
+                      }
+                    />
+                    <PreferenceChipGroup
+                      label="What you want to book"
+                      options={BRIEF_SCOPE_CHIPS.map(({ label, value }) => ({
+                        label,
+                        value,
+                      }))}
+                      selected={businessPreferencesDraft.briefScope}
+                      onPick={(value) =>
+                        setBusinessPreferencesDraft((current) => ({
+                          ...current,
+                          briefScope:
+                            current.briefScope === value
+                              ? ""
+                              : (value as BusinessPreferences["briefScope"]),
+                        }))
+                      }
+                    />
+                    <PreferenceChipGroup
+                      label="Physical placements"
+                      multi
+                      options={BRIEF_PHYSICAL_CHIPS.map((value) => ({
+                        label: value,
+                        value,
+                      }))}
+                      selected={businessPreferencesDraft.placements}
+                      onPick={(value) =>
+                        setBusinessPreferencesDraft((current) => ({
+                          ...current,
+                          placements: current.placements.includes(value)
+                            ? current.placements.filter((item) => item !== value)
+                            : [...current.placements, value],
+                        }))
+                      }
+                    />
+                    <PreferenceChipGroup
+                      label="Creator platforms"
+                      multi
+                      options={BRIEF_PLATFORM_CHIPS.map((value) => ({
+                        label: value,
+                        value,
+                      }))}
+                      selected={businessPreferencesDraft.targetPlatforms}
+                      onPick={(value) =>
+                        setBusinessPreferencesDraft((current) => ({
+                          ...current,
+                          targetPlatforms: current.targetPlatforms.includes(value)
+                            ? current.targetPlatforms.filter((item) => item !== value)
+                            : [...current.targetPlatforms, value],
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="preferences-input-grid">
+                    <label>
+                      Preferred area
+                      <span className="optional">optional</span>
+                      <small>Used to prioritize local creators and spaces.</small>
+                      <input
+                        value={businessPreferencesDraft.wantedArea}
+                        onChange={(event) =>
+                          setBusinessPreferencesDraft((current) => ({
+                            ...current,
+                            wantedArea: event.target.value,
+                          }))
+                        }
+                        placeholder={profile.city || "Downtown Berkeley"}
+                      />
+                    </label>
+                    <PreferenceChipGroup
+                      label="Timing"
+                      options={BUSINESS_TIMING_CHIPS.map(({ label }) => ({
+                        label,
+                        value: label,
+                      }))}
+                      selected={businessPreferencesDraft.timing}
+                      onPick={(value) =>
+                        setBusinessPreferencesDraft((current) => ({
+                          ...current,
+                          timing: current.timing === value ? "" : value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="preferences-save-row">
+                    <p>Recommendations refresh as soon as you save.</p>
+                    <button
+                      className="button button-dark button-small"
+                      disabled={preferencesSaving}
+                    >
+                      {preferencesSaving ? "Saving…" : "Save preferences"}{" "}
+                      <span>✓</span>
+                    </button>
+                  </div>
+                </form>
+              </section>
+            )}
+
+            {stripeTestModeConfigured && (
+              <section className="account-section" id="payouts">
+                <div className="account-section-heading">
+                  <div>
+                    <p className="eyebrow">Stripe payouts</p>
+                    <h3>Get paid through a verified account.</h3>
+                  </div>
+                  <span className="section-count">
+                    {stripeAccountStatus?.ready
+                      ? "Ready"
+                      : stripeAccountStatus?.connected
+                        ? "Needs attention"
+                        : "Not set up"}
+                  </span>
+                </div>
+                <div className="account-empty">
+                  <strong>
+                    {stripeAccountStatus?.ready
+                      ? "Your Stripe account can receive campaign payouts."
+                      : "Finish Stripe's secure onboarding before a business can pay you."}
+                  </strong>
+                  <p>
+                    Stripe collects identity and bank details on its hosted pages.
+                    SideSpace never stores your bank account information.
+                  </p>
+                  <button
+                    className="button button-dark button-small"
+                    disabled={busy}
+                    onClick={() =>
+                      void openStripeFlow(
+                        stripeAccountStatus?.ready
+                          ? "/api/stripe/connect/login"
+                          : "/api/stripe/connect/onboard",
+                      )
+                    }
+                  >
+                    {stripeAccountStatus?.ready
+                      ? "Manage payouts in Stripe"
+                      : stripeAccountStatus?.connected
+                        ? "Continue Stripe setup"
+                        : "Set up Stripe payouts"}
+                  </button>
+                </div>
+              </section>
+            )}
+
             <section className="account-section" id="campaign-requests">
               <div className="account-section-heading">
                 <div>
@@ -7519,6 +9534,14 @@ export default function MarketplaceApp({
                   {campaignRequests.map((request) => {
                     const incoming = request.owner_profile_id === profile.id;
                     const other = incoming ? request.requester : request.owner;
+                    const payment = paymentTransactions.find(
+                      (item) => item.campaign_request_id === request.id,
+                    );
+                    const isPayer = request.payer_profile_id === profile.id;
+                    const isPayee = request.payee_profile_id === profile.id;
+                    const acceptedMoney = request.accepted_subtotal_cents
+                      ? calculatePaymentBreakdown(request.accepted_subtotal_cents)
+                      : null;
                     return (
                       <article className="campaign-request-card" key={request.id}>
                         <header>
@@ -7539,8 +9562,8 @@ export default function MarketplaceApp({
                               {other.display_name}
                             </p>
                           </div>
-                          <span className={`request-status status-${request.status}`}>
-                            {request.status}
+                          <span className={`request-status status-${payment?.status ?? request.status}`}>
+                            {payment?.status?.replaceAll("_", " ") ?? request.status}
                           </span>
                         </header>
                         <div className="campaign-request-facts">
@@ -7550,7 +9573,7 @@ export default function MarketplaceApp({
                           </span>
                           <span>
                             <small>Budget</small>
-                            <b>${request.budget}</b>
+                            <b>{formatCents(request.budget_cents)}</b>
                           </span>
                           <span>
                             <small>Requested</small>
@@ -7574,17 +9597,55 @@ export default function MarketplaceApp({
                             {request.notes}
                           </p>
                         )}
-                        {request.counter_budget != null && (
+                        {request.counter_budget_cents != null && (
                           <div className="counter-summary">
                             <strong>
                               {request.status === "accepted"
-                                ? `Agreed at $${request.counter_budget}`
-                                : `Counteroffer: $${request.counter_budget}`}
+                                ? `Agreed at ${formatCents(request.counter_budget_cents)}`
+                                : `Counteroffer: ${formatCents(request.counter_budget_cents)}`}
                             </strong>
                             {request.counter_message && (
                               <p>{request.counter_message}</p>
                             )}
                           </div>
+                        )}
+                        {acceptedMoney && isPayer && (
+                          <div className="campaign-request-facts">
+                            <span>
+                              <small>Campaign</small>
+                              <b>{formatCents(acceptedMoney.subtotalCents)}</b>
+                            </span>
+                            <span>
+                              <small>SideSpace buyer fee (5%)</small>
+                              <b>{formatCents(acceptedMoney.buyerFeeCents)}</b>
+                            </span>
+                            <span>
+                              <small>Total before tax</small>
+                              <b>{formatCents(acceptedMoney.customerTotalCents)}</b>
+                            </span>
+                          </div>
+                        )}
+                        {acceptedMoney && isPayee && (
+                          <div className="campaign-request-facts">
+                            <span>
+                              <small>Campaign</small>
+                              <b>{formatCents(acceptedMoney.subtotalCents)}</b>
+                            </span>
+                            <span>
+                              <small>SideSpace creator fee (5%)</small>
+                              <b>−{formatCents(acceptedMoney.creatorFeeCents)}</b>
+                            </span>
+                            <span>
+                              <small>Your earnings</small>
+                              <b>{formatCents(acceptedMoney.creatorPayoutCents)}</b>
+                            </span>
+                          </div>
+                        )}
+                        {(payment?.tax_cents ?? 0) > 0 && isPayer && (
+                          <p className="campaign-request-brief">
+                            <small>Tax collected by Stripe</small>
+                            {formatCents(payment?.tax_cents ?? 0)}
+                          </p>
                         )}
                         <div className="campaign-request-actions">
                           {/* Owners can act after countering - the earlier gate
@@ -7645,15 +9706,42 @@ export default function MarketplaceApp({
                             </button>
                           )}
                           {request.status === "accepted" && (
-                            <button
-                              className="button button-coral button-small"
-                              onClick={() => {
-                                setAccountOpen(false);
-                                openInbox();
-                              }}
-                            >
-                              Continue in Messages
-                            </button>
+                            <>
+                              {isPayer && (
+                                <button
+                                  className="button button-coral button-small"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void startCampaignCheckout(request.id)
+                                  }
+                                >
+                                  {payment?.status === "checkout_open"
+                                    ? "Continue secure checkout"
+                                    : "Pay securely with Stripe"}
+                                </button>
+                              )}
+                              {isPayee && !stripeAccountStatus?.ready && (
+                                <button
+                                  className="button button-dark button-small"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void openStripeFlow(
+                                      "/api/stripe/connect/onboard",
+                                    )
+                                  }
+                                >
+                                  Finish payout setup
+                                </button>
+                              )}
+                              <button
+                                onClick={() => {
+                                  setAccountOpen(false);
+                                  openInbox();
+                                }}
+                              >
+                                Continue in Messages
+                              </button>
+                            </>
                           )}
                         </div>
                       </article>
@@ -7667,6 +9755,324 @@ export default function MarketplaceApp({
                 </div>
               )}
             </section>
+
+            {paymentTransactions.length > 0 && (
+              <section className="account-section" id="payments">
+                <div className="account-section-heading">
+                  <div>
+                    <p className="eyebrow">Payments and earnings</p>
+                    <h3>A durable record of every Stripe checkout.</h3>
+                  </div>
+                  <span className="section-count">
+                    {paymentTransactions.length} total
+                  </span>
+                </div>
+                <div className="campaign-request-list">
+                  {paymentTransactions.map((transaction) => {
+                    const buyer = transaction.business_profile_id === profile.id;
+                    const reviewExpired = transaction.review_deadline
+                      ? Date.now() >= new Date(transaction.review_deadline).getTime()
+                      : false;
+                    const statusLabel =
+                      transaction.payout_status === "released"
+                        ? "Payout released"
+                        : transaction.payout_status === "releasing"
+                          ? "Releasing payout"
+                          : transaction.workflow_status === "awaiting_payer_review"
+                            ? "Awaiting payer review"
+                            : transaction.issue_status === "escalated"
+                              ? "Issue escalated"
+                              : transaction.issue_status === "open"
+                                ? "Issue open"
+                                : transaction.payout_status === "pending"
+                                  ? "Payout pending"
+                                  : transaction.workflow_status.replaceAll("_", " ");
+                    return (
+                      <article className="campaign-request-card" key={transaction.id}>
+                        <header>
+                          <div>
+                            <small>{buyer ? "Business payment" : "Creator earnings"}</small>
+                            <h4>{transaction.campaign_name}</h4>
+                            <p>{transaction.listing_title}</p>
+                          </div>
+                          <span className={`request-status status-${transaction.workflow_status}`}>
+                            {statusLabel}
+                          </span>
+                        </header>
+                        <div className="campaign-request-facts">
+                          <span>
+                            <small>{buyer ? "Campaign" : "Gross campaign"}</small>
+                            <b>{formatCents(transaction.subtotal_cents)}</b>
+                          </span>
+                          <span>
+                            <small>{buyer ? "Buyer fee" : "Creator fee"}</small>
+                            <b>
+                              {buyer ? "" : "−"}
+                              {formatCents(
+                                buyer
+                                  ? transaction.buyer_fee_cents
+                                  : transaction.creator_fee_cents,
+                              )}
+                            </b>
+                          </span>
+                          <span>
+                            <small>{buyer ? "Total before tax" : "Your earnings"}</small>
+                            <b>
+                              {formatCents(
+                                buyer
+                                  ? transaction.customer_total_cents
+                                  : transaction.creator_payout_cents,
+                              )}
+                            </b>
+                          </span>
+                        </div>
+                        {transaction.refunded_cents > 0 && (
+                          <p className="campaign-request-brief">
+                            <small>Refunded</small>
+                            {formatCents(transaction.refunded_cents)}
+                          </p>
+                        )}
+                        {transaction.payout_status === "pending" &&
+                          transaction.workflow_status === "paid_payout_pending" && (
+                            <div className="campaign-request-brief">
+                              <small>{buyer ? "Creator payout" : "Payment pending"}</small>
+                              {buyer
+                                ? "Your payment is verified. The Creator can begin work; their payout stays pending until delivery is reviewed."
+                                : "The customer paid in full. Your earnings remain pending until you mark the campaign delivered and the review period ends."}
+                            </div>
+                          )}
+                        {transaction.delivered_at && transaction.review_deadline && (
+                          <div className="campaign-request-brief">
+                            <small>
+                              {buyer
+                                ? "Creator marked this campaign delivered"
+                                : "Review period ends"}
+                            </small>
+                            {buyer && `Delivered ${displayDateTime(transaction.delivered_at)}. `}
+                            Review deadline: {displayDateTime(transaction.review_deadline)}.
+                            {!buyer && " Payout is expected after that time unless the payer reports an issue."}
+                            {reviewExpired &&
+                              transaction.payout_status !== "released" &&
+                              transaction.issue_status === "none" &&
+                              " The deadline has passed; automatic release is processing server-side."}
+                          </div>
+                        )}
+                        {transaction.issue_status !== "none" && transaction.issue && (
+                          <div className="counter-summary">
+                            <strong>
+                              {transaction.issue_status === "escalated"
+                                ? "Issue escalated to SideSpace"
+                                : transaction.issue_status === "resolved"
+                                  ? "Issue resolved"
+                                  : "Resolve with the Creator"}
+                            </strong>
+                            <p>{transaction.issue.details}</p>
+                            {transaction.issue_status === "open" && (
+                              <p>
+                                Payout remains pending. Use Messages to try to resolve the issue
+                                directly before escalating it.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {transaction.payout_status === "released" && (
+                          <div className="campaign-request-brief">
+                            <small>Payout released</small>
+                            {buyer
+                              ? "The Creator payout has been released and this campaign is complete."
+                              : `${formatCents(transaction.payout_amount_cents)} was released${
+                                  transaction.payout_released_at
+                                    ? ` on ${displayDateTime(transaction.payout_released_at)}`
+                                    : ""
+                                }.`}
+                          </div>
+                        )}
+                        {transaction.review && (
+                          <div className="campaign-request-brief">
+                            <small>Creator review · {transaction.review.rating}/5</small>
+                            {transaction.review.review_text}
+                          </div>
+                        )}
+                        {transaction.payout_last_error && (
+                          <div className="campaign-request-brief">
+                            <small>Payout release needs attention</small>
+                            SideSpace could not finish the transfer yet. It is safe to retry; no
+                            duplicate payout will be created.
+                          </div>
+                        )}
+                        <div className="campaign-request-actions">
+                          {!buyer &&
+                            transaction.workflow_status === "paid_payout_pending" &&
+                            transaction.payout_status === "pending" && (
+                              <button
+                                className="button button-dark button-small"
+                                disabled={busy}
+                                onClick={() =>
+                                  void runCampaignPaymentAction(transaction, "deliver")
+                                }
+                              >
+                                {busy ? "Updating..." : "Mark campaign delivered"}
+                              </button>
+                            )}
+                          {buyer &&
+                            transaction.workflow_status === "awaiting_payer_review" &&
+                            transaction.issue_status === "none" &&
+                            transaction.payout_status === "pending" &&
+                            !reviewExpired && (
+                              <>
+                                <button
+                                  className="button button-coral button-small"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void runCampaignPaymentAction(transaction, "confirm")
+                                  }
+                                >
+                                  {busy ? "Releasing..." : "Confirm work completed"}
+                                </button>
+                                <button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void runCampaignPaymentAction(transaction, "report_issue")
+                                  }
+                                >
+                                  Report an issue
+                                </button>
+                              </>
+                            )}
+                          {transaction.issue_status === "open" && (
+                            <button
+                              onClick={() => {
+                                setAccountOpen(false);
+                                openInbox();
+                              }}
+                            >
+                              Resolve with the Creator
+                            </button>
+                          )}
+                          {buyer && transaction.issue_status === "open" && (
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                void runCampaignPaymentAction(transaction, "escalate")
+                              }
+                            >
+                              Escalate to SideSpace
+                            </button>
+                          )}
+                          {buyer &&
+                            transaction.payout_status === "released" &&
+                            !transaction.review && (
+                              <button
+                                className="button button-dark button-small"
+                                disabled={busy}
+                                onClick={() => void submitCreatorReview(transaction)}
+                              >
+                                Review Creator
+                              </button>
+                            )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {canonicalRole(profile.role) === "creator" && (
+              <section className="account-section" id="portfolio">
+                <div className="account-section-heading">
+                  <div>
+                    <p className="eyebrow">Public Creator portfolio</p>
+                    <h3>Show businesses work they can trust.</h3>
+                    <p>
+                      Add campaign examples, videos, case studies, or project links.
+                      Published items appear with your marketplace listings.
+                    </p>
+                  </div>
+                  <span className="section-count">{creatorPortfolio.length} items</span>
+                </div>
+                {creatorPortfolio.length > 0 && (
+                  <div className="campaign-request-list">
+                    {creatorPortfolio.map((item) => (
+                      <article className="campaign-request-card" key={item.id}>
+                        <header>
+                          <div>
+                            <small>{item.kind.replaceAll("_", " ")}</small>
+                            <h4>{item.title}</h4>
+                          </div>
+                          <span className="request-status status-active">Published</span>
+                        </header>
+                        {item.description && <p>{item.description}</p>}
+                        <div className="campaign-request-actions">
+                          {(item.project_url || item.media_url) && (
+                            <a
+                              className="button button-dark button-small"
+                              href={item.project_url || item.media_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              View work ↗
+                            </a>
+                          )}
+                          <button
+                            disabled={busy}
+                            onClick={() => void deleteCreatorPortfolioItem(item.id)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+                <form className="field-grid campaign-form" onSubmit={submitCreatorPortfolioItem}>
+                  <label>
+                    Work title
+                    <input name="title" required minLength={2} maxLength={120} />
+                  </label>
+                  <label>
+                    Type
+                    <select name="kind" defaultValue="project">
+                      <option value="video">Video</option>
+                      <option value="campaign">Campaign</option>
+                      <option value="case_study">Case study</option>
+                      <option value="project">Project</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+                  <label>
+                    Media URL
+                    <input name="media_url" type="url" placeholder="https://…" />
+                  </label>
+                  <label>
+                    Project URL
+                    <input name="project_url" type="url" placeholder="https://…" />
+                  </label>
+                  <label className="field-wide">
+                    What did you make?
+                    <textarea
+                      name="description"
+                      maxLength={1200}
+                      placeholder="Scope, deliverables, result, and your role."
+                    />
+                  </label>
+                  <button className="button button-dark field-wide" disabled={busy}>
+                    {busy ? "Publishing..." : "Add to public portfolio"}
+                  </button>
+                </form>
+                {creatorReviews.length > 0 && (
+                  <div className="campaign-request-brief">
+                    <small>Verified campaign reviews</small>
+                    {creatorReviews.length} review{creatorReviews.length === 1 ? "" : "s"} ·{" "}
+                    {(
+                      creatorReviews.reduce((sum, review) => sum + review.rating, 0) /
+                      creatorReviews.length
+                    ).toFixed(1)}
+                    /5 average
+                  </div>
+                )}
+              </section>
+            )}
 
             <section className="account-section">
               <div className="account-section-heading">
@@ -8194,7 +10600,7 @@ export default function MarketplaceApp({
             )}
 
             {/* ---------------------------------------------------------------
-                STEP 1 - identity. Identical for all four roles.
+                STEP 1 - identity. Shared by both marketplace roles.
                 --------------------------------------------------------------- */}
             {(onboardingStep === 1 ||
               (onboardingMode === "setup" && onboardingStep === 2)) && (
@@ -8264,13 +10670,7 @@ export default function MarketplaceApp({
                   {(onboardingMode === "edit" || onboardingStep === 2) && (
                 <div className="field-grid onboarding-identity-fields">
                   <label>
-                    {selectedRole === "business"
-                      ? "Business name"
-                      : selectedRole === "sponsor_host"
-                        ? "Team or organization name"
-                        : selectedRole === "space_owner"
-                          ? "Your name or business"
-                          : "Your name"}
+                    {selectedRole === "business" ? "Business name" : "Your name"}
                     <input
                       autoFocus={onboardingMode === "setup" && onboardingStep === 2}
                       name="display_name"
@@ -8286,11 +10686,7 @@ export default function MarketplaceApp({
                       placeholder={
                         selectedRole === "business"
                           ? "Brea Coffee Bar"
-                          : selectedRole === "sponsor_host"
-                            ? "Brea Robotics 4414"
-                            : selectedRole === "space_owner"
-                              ? "Maya’s Barbershop"
-                              : "Maya Alvarez"
+                          : "Maya Alvarez"
                       }
                     />
                   </label>
@@ -8324,17 +10720,11 @@ export default function MarketplaceApp({
                   <label className="field-wide progressive-field">
                     {selectedRole === "business"
                       ? "One line about your business"
-                      : selectedRole === "sponsor_host"
-                        ? "One line about your team"
-                        : selectedRole === "space_owner"
-                          ? "One line about you or your business"
-                          : "One line about you"}
+                      : "One line about you"}
                     <small>
                       {selectedRole === "business"
                         ? "What you do, in a sentence. This sits under your name on the brief."
-                        : selectedRole === "sponsor_host"
-                          ? "Who you are and what you do. Sponsors read this first."
-                          : "One sentence. It sits under your name on every card."}
+                        : "One sentence. It sits under your name on every card."}
                       {" "}
                       <span
                         className="field-character-count"
@@ -8360,11 +10750,7 @@ export default function MarketplaceApp({
                       placeholder={
                         selectedRole === "business"
                           ? "Third-wave coffee bar on Birch, open since 2019."
-                          : selectedRole === "sponsor_host"
-                            ? "High school robotics team, 28 students, competes statewide."
-                            : selectedRole === "space_owner"
-                              ? "Corner barbershop with a 6-foot street-facing window."
-                              : "Analog fashion and honest city guides for East LA."
+                          : "Analog fashion and honest city guides for East LA."
                       }
                     />
                   </label>
@@ -8374,9 +10760,7 @@ export default function MarketplaceApp({
                   <>
                   <label className="field-wide media-upload-field progressive-field">
                     <OptionalFieldLabel>
-                      {selectedRole === "business" || selectedRole === "sponsor_host"
-                        ? "Add your logo"
-                        : "Add a profile photo"}
+                      {selectedRole === "business" ? "Add your logo" : "Add a profile photo"}
                     </OptionalFieldLabel>
                     <input
                       ref={avatarInputRef}
@@ -8476,12 +10860,8 @@ export default function MarketplaceApp({
                           : selectedRole === "business"
                             ? "Next: your campaign"
                             : selectedRole === "creator"
-                              ? "Next: what you sell"
-                              : selectedRole === "space_owner"
-                                ? "Next: your space"
-                                : selectedRole === "sponsor_host"
-                                  ? "Next: your sponsorship"
-                                  : "Next"}{" "}
+                              ? "Next: what you have to advertise"
+                              : "Next"}{" "}
                         <span>→</span>
                       </button>
                     </span>
@@ -8584,19 +10964,23 @@ export default function MarketplaceApp({
                         ? "Review what people will see."
                         : onboardingStep === 4
                           ? selectedRole === "creator"
-                            ? "Build your first offer."
-                            : selectedRole === "space_owner"
-                              ? "Make the space bookable."
-                              : selectedRole === "business"
-                                ? "Set the practical details."
-                                : "Build the sponsorship levels."
+                            ? answers.creatorOffer === "physical"
+                              ? "Make the placement bookable."
+                              : answers.creatorOffer === "sponsorship"
+                                ? "Build the sponsorship levels."
+                                : answers.creatorOffer === "social"
+                                  ? "Build your first offer."
+                                  : "Choose your way to advertise."
+                            : "Set the practical details."
                           : selectedRole === "creator"
-                            ? "Tell us about your audience."
-                            : selectedRole === "space_owner"
-                              ? "Show us the space."
-                              : selectedRole === "business"
-                                ? "Shape the campaign."
-                                : "Tell us about the organization."}
+                            ? answers.creatorOffer === "physical"
+                              ? "Show us the placement."
+                              : answers.creatorOffer === "sponsorship"
+                                ? "Tell us about the organization."
+                                : answers.creatorOffer === "social"
+                                  ? "Tell us about your audience."
+                                  : "Choose your way to advertise."
+                            : "Shape the campaign."}
                     </h3>
                     <p>
                       {onboardingStep === 5
@@ -8605,8 +10989,16 @@ export default function MarketplaceApp({
                           ? "Clear expectations make the first conversation much easier."
                           : selectedRole === "business"
                             ? "A focused brief gets better replies from creators and local spaces."
-                            : "A few specific answers make your listing easier to trust."}
+                            : answers.creatorOffer
+                              ? "A few specific answers make your listing easier to trust."
+                              : "Start by choosing the kind of advertising you have."}
                     </p>
+                    {selectedRole === "creator" && onboardingStep > 3 && (
+                      <CreatorOfferSwitcher
+                        answers={answers}
+                        onSelect={switchCreatorOffer}
+                      />
+                    )}
 
                     {/* ---------------- CREATOR ---------------- */}
                     {selectedRole === "creator" && (
@@ -8614,28 +11006,75 @@ export default function MarketplaceApp({
                         {onboardingStep === 3 && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>Your audience</span>
-                          <h4>Where can brands find you?</h4>
+                          <span>Your way to advertise</span>
+                          <h4>What do you have to offer?</h4>
                           <p>
-                            Choose every platform you use, then add the profiles
-                            you want to show.
+                            Select every kind of reach you want to put to work.
+                            We’ll create one listing for each.
                           </p>
                         </div>
-                        <CreatorAudienceFields
+                        <div
+                          className="scope-grid creator-offer-grid"
+                          data-field="creatorOffer"
+                          role="group"
+                          aria-label="What kind of advertising you offer"
+                        >
+                          {CREATOR_OFFER_TYPES.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              aria-pressed={answers.creatorOffers.includes(
+                                option.value,
+                              )}
+                              className={
+                                answers.creatorOffers.includes(option.value)
+                                  ? "active"
+                                  : ""
+                              }
+                              onClick={() => toggleCreatorOffer(option.value)}
+                            >
+                              <strong>{option.label}</strong>
+                              <small>{option.help}</small>
+                              <span className="offer-card-state">
+                                {answers.creatorOffers.includes(option.value)
+                                  ? "✓ Selected"
+                                  : "Select"}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                        <CreatorOfferSwitcher
                           answers={answers}
-                          setAnswers={setAnswers}
-                          igAvatarBusy={igAvatarBusy}
-                          igAvatar={igAvatar}
-                          igStats={igStats}
-                          onCheckInstagram={(handle) =>
-                            void syncInstagramAvatar(handle)
-                          }
+                          onSelect={switchCreatorOffer}
                         />
+
+                        {answers.creatorOffer === "social" && (
+                          <>
+                          <div className="form-subsection field-wide">
+                            <span>Your audience</span>
+                            <h4>Where can brands find you?</h4>
+                            <p>
+                              Choose every platform you use, then add the profiles
+                              you want to show.
+                            </p>
+                          </div>
+                          <CreatorAudienceFields
+                            answers={answers}
+                            setAnswers={setAnswers}
+                            igAvatarBusy={igAvatarBusy}
+                            igAvatar={igAvatar}
+                            igStats={igStats}
+                            onCheckInstagram={(handle) =>
+                              void syncInstagramAvatar(handle)
+                            }
+                          />
+                          </>
+                        )}
 
                         </>
                         )}
 
-                        {onboardingStep === 4 && (
+                        {onboardingStep === 4 && answers.creatorOffer === "social" && (
                         <>
                         <div className="form-subsection field-wide">
                           <span>Your first offer</span>
@@ -8742,8 +11181,8 @@ export default function MarketplaceApp({
                       </>
                     )}
 
-                    {/* ---------------- SPACE OWNER ---------------- */}
-                    {selectedRole === "space_owner" && (
+                    {/* ---------------- CREATOR: PHYSICAL PLACEMENT ---------------- */}
+                    {selectedRole === "creator" && answers.creatorOffer === "physical" && (
                       <>
                         {onboardingStep === 3 && (
                         <>
@@ -9441,8 +11880,8 @@ export default function MarketplaceApp({
                       </>
                     )}
 
-                    {/* ---------------- SPONSORSHIP HOST ---------------- */}
-                    {selectedRole === "sponsor_host" && (
+                    {/* ---------------- CREATOR: SPONSORSHIP ---------------- */}
+                    {selectedRole === "creator" && answers.creatorOffer === "sponsorship" && (
                       <>
                         {onboardingStep === 3 && (
                         <>
@@ -9889,34 +12328,34 @@ export default function MarketplaceApp({
                       <span>
                         {selectedRole === "business"
                           ? "Your brief"
-                          : selectedRole === "creator"
-                            ? "Your offer"
-                            : selectedRole === "space_owner"
-                              ? "Your space"
-                              : "Your sponsorship"}
+                          : answers.creatorOffer === "physical"
+                            ? "Your placement"
+                            : answers.creatorOffer === "sponsorship"
+                              ? "Your sponsorship"
+                              : "Your offer"}
                       </span>
                       <h4>
                         {selectedRole === "business"
                           ? "Name the brief and set the budget."
-                          : selectedRole === "creator"
-                            ? "Name the offer and set your rate."
-                            : selectedRole === "space_owner"
-                              ? "Name the space and set the rent."
-                              : "Tell them who they’d be backing."}
+                          : answers.creatorOffer === "physical"
+                            ? "Name the placement and set the rent."
+                            : answers.creatorOffer === "sponsorship"
+                              ? "Tell them who they’d be backing."
+                              : "Name the offer and set your rate."}
                       </h4>
                     </div>
                     <div className="field-grid">
-                      {/* A sponsorship host named each level in the tier editor,
+                      {/* A sponsorship offer names each level in the tier editor,
                           and every tier composes its own headline from that name
                           plus what they are raising for. One shared title input
                           here would overwrite all three. */}
-                      {selectedRole !== "sponsor_host" && (
+                      {!isSponsorshipOffer(selectedRole ?? "creator", answers) && (
                       <label className="field-wide">
                         {selectedRole === "business"
                           ? "Name this brief"
-                          : selectedRole === "creator"
-                            ? "Name this offer"
-                            : "Name this space"}
+                          : answers.creatorOffer === "physical"
+                            ? "Name this placement"
+                            : "Name this offer"}
                         <input
                           data-field="title"
                           maxLength={120}
@@ -9930,17 +12369,25 @@ export default function MarketplaceApp({
                             setAnswers((current) => ({
                               ...current,
                               title: event.target.value,
+                              creatorOfferTouched: current.creatorOffer
+                                ? {
+                                    ...current.creatorOfferTouched,
+                                    [current.creatorOffer]: {
+                                      ...current.creatorOfferTouched[
+                                        current.creatorOffer
+                                      ],
+                                      title: true,
+                                    },
+                                  }
+                                : current.creatorOfferTouched,
                             }));
                           }}
                           placeholder={
                             selectedRole === "business"
                               ? "Brea Coffee Bar — our new cold brew"
-                              : selectedRole === "creator"
-                                ? "Instagram Reel — Maya Alvarez"
-                                : // Was "Cafe window, Brea", left behind when
-                                  // the composed title started leading with the
-                                  // owner's name.
-                                  "Maya’s Barbershop — window in Downtown Brea"
+                              : answers.creatorOffer === "physical"
+                                ? "Maya’s Barbershop — window in Downtown Brea"
+                                : "Instagram Reel — Maya Alvarez"
                           }
                         />
                       </label>
@@ -9949,9 +12396,9 @@ export default function MarketplaceApp({
                           again here would duplicate both the question and the
                           data-field the validator scrolls to. */}
                       {selectedRole !== "business" &&
-                        selectedRole !== "sponsor_host" && (
+                        !isSponsorshipOffer(selectedRole ?? "creator", answers) && (
                       <label>
-                        {selectedRole === "space_owner" ? "Price from" : "Price"}
+                        {answers.creatorOffer === "physical" ? "Price from" : "Price"}
                         <input
                           type="number"
                           min={1}
@@ -9978,7 +12425,7 @@ export default function MarketplaceApp({
                           one number, so "$150-400 depending on how long" was
                           unsayable - the same band a business brief has had
                           since price_max landed. */}
-                      {selectedRole === "space_owner" && (
+                      {isPhysicalOffer(selectedRole ?? "creator", answers) && (
                         <label>
                           <OptionalFieldLabel>up to</OptionalFieldLabel>
                           <small>Leave blank for a flat rate.</small>
@@ -10000,7 +12447,7 @@ export default function MarketplaceApp({
                           />
                         </label>
                       )}
-                      {selectedRole === "sponsor_host" ? null : selectedRole ===
+                      {isSponsorshipOffer(selectedRole ?? "creator", answers) ? null : selectedRole ===
                         "business" ? (
                         <p className="offer-preview">Budget is per campaign</p>
                       ) : (
@@ -10009,7 +12456,7 @@ export default function MarketplaceApp({
                           <select
                             value={
                               answers.price_unit ||
-                              (selectedRole === "space_owner" ? "week" : "post")
+                              (answers.creatorOffer === "physical" ? "week" : "post")
                             }
                             onChange={(event) =>
                               setAnswers((current) => ({
@@ -10031,12 +12478,16 @@ export default function MarketplaceApp({
                         </label>
                       )}
                     </div>
-                    {selectedRole !== "sponsor_host" &&
+                    {selectedRole !== "business" &&
+                      !isSponsorshipOffer(selectedRole ?? "creator", answers) &&
                       Boolean(PRICE_CHIPS[selectedRole ?? ""]) && (
                       <ChipRow
                         field="price_presets"
                         label="Or pick a common rate"
-                        options={(PRICE_CHIPS[selectedRole ?? ""] ?? []).map(
+                        options={(selectedRole === "creator"
+                          ? creatorPricePresets(answers.creatorOffer)
+                          : PRICE_CHIPS[selectedRole ?? ""] ?? []
+                        ).map(
                           (amount) => `$${amount}`,
                         )}
                         selected={answers.price ? [`$${answers.price}`] : []}
@@ -10052,19 +12503,19 @@ export default function MarketplaceApp({
                       <label className="field-wide">
                         {selectedRole === "business"
                           ? "What should whoever answers know?"
-                          : selectedRole === "creator"
-                            ? "What does a brand get, in your words?"
-                            : selectedRole === "space_owner"
-                              ? "What is the space actually like?"
-                              : "Why should someone sponsor you?"}
+                          : answers.creatorOffer === "physical"
+                            ? "What is the placement actually like?"
+                            : answers.creatorOffer === "sponsorship"
+                              ? "Why should someone sponsor you?"
+                              : "What does a brand get, in your words?"}
                         <small>
                           {selectedRole === "business"
                             ? "We drafted this from your answers. Say what the artwork is and anything a creator or space owner must know."
-                            : selectedRole === "creator"
-                              ? "We drafted this from your answers. Add turnaround, what you will not do, anything a brand should know."
-                              : selectedRole === "space_owner"
-                                ? "We drafted this from your answers. Add the size, what sticks to it, and who walks past."
-                                : "We drafted this from your answers. Add what the season looks like and who turns up."}
+                            : answers.creatorOffer === "physical"
+                              ? "We drafted this from your answers. Add the size, what sticks to it, and who walks past."
+                              : answers.creatorOffer === "sponsorship"
+                                ? "We drafted this from your answers. Add what the season looks like and who turns up."
+                                : "We drafted this from your answers. Add turnaround, what you will not do, anything a brand should know."}
                         </small>
                         <textarea
                           data-field="description"
@@ -10081,6 +12532,17 @@ export default function MarketplaceApp({
                             setAnswers((current) => ({
                               ...current,
                               description: event.target.value,
+                              creatorOfferTouched: current.creatorOffer
+                                ? {
+                                    ...current.creatorOfferTouched,
+                                    [current.creatorOffer]: {
+                                      ...current.creatorOfferTouched[
+                                        current.creatorOffer
+                                      ],
+                                      description: true,
+                                    },
+                                  }
+                                : current.creatorOfferTouched,
                             }));
                           }}
                         />
@@ -10088,7 +12550,7 @@ export default function MarketplaceApp({
                             so it is deliberately not in the box. Saying so is
                             what stops a host from typing it themselves and
                             ending up with it on the card twice. */}
-                        {selectedRole === "sponsor_host" && (
+                        {isSponsorshipOffer(selectedRole ?? "creator", answers) && (
                           <span className="chip-note">
                             Each tier card ends with its own perks line
                             {completeTiers(answers)[0]?.name.trim()
@@ -10104,9 +12566,19 @@ export default function MarketplaceApp({
                         answers. A business sees the Wanted variant because it
                         passes the same isBrief check the real card does, so
                         the preview cannot drift from the marketplace. */}
-                    <div className="onboarding-preview field-wide">
+                    <>
+                    <OnboardingPreviewCards
+                      role={selectedRole ?? "creator"}
+                      answers={answers}
+                      touched={{
+                        title: titleTouched,
+                        description: descriptionTouched,
+                      }}
+                      previewPhotoUrl={previewPhotoUrl}
+                    />
+                    <div className="onboarding-preview-legacy field-wide">
                       <span>
-                        {selectedRole === "sponsor_host" &&
+                        {isSponsorshipOffer(selectedRole ?? "creator", answers) &&
                         completeTiers(answers).length > 1
                           ? `This is what people will see — ${
                               completeTiers(answers).length
@@ -10196,7 +12668,7 @@ export default function MarketplaceApp({
                             )}
                             <b
                               className={
-                                (selectedRole === "sponsor_host"
+                                (isSponsorshipOffer(selectedRole ?? "creator", answers)
                                   ? completeTiers(answers)[0]?.price
                                   : answers.price)
                                   ? undefined
@@ -10204,11 +12676,11 @@ export default function MarketplaceApp({
                               }
                             >
                               {(() => {
-                                // A sponsorship host has no single price; the
+                                // A sponsorship offer has no single price; the
                                 // top tier is what this card shows.
                                 const top = completeTiers(answers)[0];
                                 const price =
-                                  selectedRole === "sponsor_host"
+                                  isSponsorshipOffer(selectedRole ?? "creator", answers)
                                     ? top?.price
                                     : answers.price;
                                 // Not "$0". Before a price is entered the old
@@ -10217,11 +12689,15 @@ export default function MarketplaceApp({
                                 // field still to fill in.
                                 if (!price) return "Add a price";
                                 return priceLabel({
-                                  price,
-                                  price_max:
-                                    selectedRole === "sponsor_host"
-                                      ? (top?.priceMax ?? null)
-                                      : answers.priceMax,
+                                  price_cents: dollarsToCents(price),
+                                  price_max_cents:
+                                    isSponsorshipOffer(selectedRole ?? "creator", answers)
+                                      ? top?.priceMax == null
+                                        ? null
+                                        : dollarsToCents(top.priceMax)
+                                      : answers.priceMax == null
+                                        ? null
+                                        : dollarsToCents(answers.priceMax),
                                 });
                               })()}
                             </b>
@@ -10243,6 +12719,7 @@ export default function MarketplaceApp({
                         </div>
                       </div>
                     </div>
+                    </>
 
                     </>
                     )}
@@ -10396,6 +12873,57 @@ export default function MarketplaceApp({
                   : "What are you offering?"}
               </h4>
             </div>
+            {canonicalRole(profile?.role ?? "consumer") === "creator" &&
+              !editingListing && (
+              <div className="field-wide">
+                <div className="form-subsection">
+                  <span>Creator inventory</span>
+                  <h4>What kind of advertising do you have?</h4>
+                  <p>
+                    Pick the shape of this listing so we can keep the useful
+                    details with it.
+                  </p>
+                </div>
+                <div
+                  className="scope-grid creator-offer-grid"
+                  data-field="creatorOffer"
+                  role="group"
+                  aria-label="What kind of advertising this listing offers"
+                >
+                  {CREATOR_OFFER_TYPES.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={newListingOffer === option.value}
+                      className={
+                        newListingOffer === option.value ? "active" : ""
+                      }
+                      onClick={(event) => {
+                        setNewListingOffer(option.value);
+                        const channel =
+                          event.currentTarget.form?.elements.namedItem("channel");
+                        const priceUnit =
+                          event.currentTarget.form?.elements.namedItem("price_unit");
+                        if (channel instanceof HTMLSelectElement) {
+                          channel.value =
+                            option.value === "physical"
+                              ? "Storefront"
+                              : option.value === "sponsorship"
+                                ? "Sponsorship"
+                                : "Instagram";
+                        }
+                        if (priceUnit instanceof HTMLSelectElement) {
+                          priceUnit.value = defaultCreatorPriceUnit(option.value);
+                        }
+                      }}
+                    >
+                      <strong>{option.label}</strong>
+                      <small>{option.help}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <label className="field-wide">
               {editingListingIsBrief ? "Name the brief" : "Listing title"}
               <small>
@@ -10421,7 +12949,14 @@ export default function MarketplaceApp({
               <select
                 name="channel"
                 required
-                defaultValue={editingListing?.channel ?? "Instagram"}
+                defaultValue={
+                  editingListing?.channel ??
+                  (newListingOffer === "physical"
+                    ? "Storefront"
+                    : newListingOffer === "sponsorship"
+                      ? "Sponsorship"
+                      : "Instagram")
+                }
               >
                 {/* A listing whose channel is not one of these had no
                     matching option, so the select fell back to the first and
@@ -10522,7 +13057,11 @@ export default function MarketplaceApp({
                 max="2000000000"
                 min="2"
                 required
-                defaultValue={editingListing?.price ?? ""}
+                defaultValue={
+                  editingListing
+                    ? centsToInputDollars(editingListing.price_cents)
+                    : ""
+                }
                 placeholder="2"
               />
               <small>Start at $2, or set any higher price that fits your placement.</small>
@@ -10539,7 +13078,11 @@ export default function MarketplaceApp({
                 type="number"
                 min="1"
                 max="2000000000"
-                defaultValue={editingListing?.price_max ?? ""}
+                defaultValue={
+                  editingListing?.price_max_cents == null
+                    ? ""
+                    : centsToInputDollars(editingListing.price_max_cents)
+                }
                 placeholder="400"
               />
             </label>
@@ -10548,7 +13091,14 @@ export default function MarketplaceApp({
               <small>What one unit of your price covers.</small>
               <select
                 name="price_unit"
-                defaultValue={editingListing?.price_unit ?? "campaign"}
+                defaultValue={
+                  editingListing?.price_unit ??
+                  (newListingOffer === "physical"
+                    ? "week"
+                    : newListingOffer === "sponsorship"
+                      ? "sponsor"
+                      : "post")
+                }
               >
                 {/* Same reasoning as `channel` above. Production carries
                     'story set' and 'run' from the 0002 seeds and onboarding now
@@ -10635,11 +13185,13 @@ export default function MarketplaceApp({
               <small>
                 {editingListingIsBrief
                   ? "What you’re promoting, what the artwork is, and anything whoever answers must know."
-                  : listingRole === "creator"
-                    ? "What a brand gets, your turnaround, and anything you won’t do."
-                    : listingRole === "sponsor_host"
+                  : editingListingIsPhysical
+                    ? "What it is, where exactly it sits, and who walks past."
+                    : editingListingIsSponsorship
                       ? "What the season looks like, who turns up, and what a sponsor’s money pays for."
-                      : "What it is, where exactly it sits, and who walks past."}
+                      : listingRole === "creator"
+                        ? "What a brand gets, your turnaround, and anything you won’t do."
+                        : "What it is, where exactly it sits, and who walks past."}
               </small>
               <textarea
                 name="description"
@@ -10693,7 +13245,7 @@ export default function MarketplaceApp({
                 component: the form is uncontrolled, and FormData.getAll gives
                 us the array for free with no state to seed or keep in sync.
                 ------------------------------------------------------------ */}
-            {listingRole === "space_owner" && (
+            {editingListingIsPhysical && (
               <>
                 {/* Presence marker. An unchecked checkbox group and an
                     ABSENT one both yield [] from getAll, so without this a
@@ -10762,7 +13314,7 @@ export default function MarketplaceApp({
               </>
             )}
 
-            {listingRole === "sponsor_host" && (
+            {editingListingIsSponsorship && (
               <>
                 <input type="hidden" name="has_sponsor_section" value="1" />
                 <div className="form-subsection field-wide">
@@ -10960,6 +13512,49 @@ export default function MarketplaceApp({
                 </span>
               </div>
               <SocialLinks profile={selectedListing.owner} />
+              {(selectedCreatorReviews.length > 0 || selectedCreatorPortfolio.length > 0) && (
+                <div className="detail-terms">
+                  {selectedCreatorReviews.length > 0 && (
+                    <div>
+                      <small>Verified SideSpace reviews</small>
+                      <p>
+                        <strong>
+                          {(
+                            selectedCreatorReviews.reduce(
+                              (sum, review) => sum + review.rating,
+                              0,
+                            ) / selectedCreatorReviews.length
+                          ).toFixed(1)}
+                          /5
+                        </strong>{" "}
+                        from {selectedCreatorReviews.length} completed campaign
+                        {selectedCreatorReviews.length === 1 ? "" : "s"}
+                      </p>
+                      <p>“{selectedCreatorReviews[0].review_text}”</p>
+                    </div>
+                  )}
+                  {selectedCreatorPortfolio.length > 0 && (
+                    <div>
+                      <small>Creator portfolio</small>
+                      {selectedCreatorPortfolio.map((item) => (
+                        <p key={item.id}>
+                          <strong>{item.title}</strong>
+                          {item.description ? ` — ${item.description}` : ""}{" "}
+                          {(item.project_url || item.media_url) && (
+                            <a
+                              href={item.project_url || item.media_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              View {item.kind.replaceAll("_", " ")} ↗
+                            </a>
+                          )}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <h2>{selectedListing.title}</h2>
               <p>{selectedListing.description}</p>
               <div className="detail-facts">
@@ -11022,7 +13617,7 @@ export default function MarketplaceApp({
               <div className="detail-price">
                 <div>
                   <small>Starting at</small>
-                  <strong>${selectedListing.price}</strong>
+                  <strong>{formatCents(selectedListing.price_cents)}</strong>
                   <span> / {selectedListing.price_unit}</span>
                 </div>
                 <div className="detail-primary-actions">
@@ -11154,13 +13749,13 @@ export default function MarketplaceApp({
                 max="2000000000"
                 min="0"
                 required
-                defaultValue={campaignListing.price}
+                defaultValue={centsToInputDollars(campaignListing.price_cents)}
               />
             </label>
             <label>
               Listing rate
               <input
-                value={`$${campaignListing.price} / ${campaignListing.price_unit}`}
+                value={`${formatCents(campaignListing.price_cents)} / ${campaignListing.price_unit}`}
                 readOnly
               />
             </label>
@@ -11224,7 +13819,10 @@ export default function MarketplaceApp({
                 // the requester's original number meant an owner revising
                 // only the wording silently withdrew their own price.
                 defaultValue={
-                  counteringRequest.counter_budget ?? counteringRequest.budget
+                  centsToInputDollars(
+                    counteringRequest.counter_budget_cents ??
+                      counteringRequest.budget_cents,
+                  )
                 }
               />
             </label>

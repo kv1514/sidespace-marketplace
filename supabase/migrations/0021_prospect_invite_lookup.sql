@@ -20,6 +20,25 @@
 --
 -- SECURITY DEFINER with an empty search_path, so `outreach.prospects` is
 -- resolved literally and cannot be shadowed by a caller-controlled schema.
+-- The live outreach queue has additional operator-only columns. This minimal
+-- private shape lets clean local and CI databases compile the lookup without
+-- inventing any prospect records or exposing the schema through PostgREST.
+create schema if not exists outreach;
+revoke all on schema outreach from public, anon, authenticated;
+
+create table if not exists outreach.prospects (
+  id uuid primary key,
+  business text not null,
+  city text not null,
+  category text not null,
+  owner_first_name text,
+  intent text not null,
+  has_physical_space boolean not null default false
+);
+
+alter table outreach.prospects enable row level security;
+revoke all on outreach.prospects from public, anon, authenticated;
+
 create or replace function public.invite_prospect(token uuid)
 returns table (
   business text,

@@ -5,9 +5,12 @@ import { useEffect } from "react";
 const DESKTOP_QUERY = "(hover: hover) and (pointer: fine) and (min-width: 761px)";
 
 /**
- * Adds Lenis only where smooth wheel scrolling is useful. The controller is
- * intentionally lazy and manually driven: it does not add React work to a
- * frame, and it stops its RAF as soon as Lenis has settled.
+ * Adds Lenis only where smooth wheel scrolling is useful.
+ *
+ * Lenis owns one continuous animation loop while it is mounted. The previous
+ * implementation manually scheduled RAFs from both Lenis events and native
+ * clicks/resizes, which could leave an upward anchor transition being advanced
+ * twice in the same frame. That presented as the page jumping up and down.
  */
 export default function SmoothScroll() {
   useEffect(() => {
@@ -44,7 +47,7 @@ export default function SmoothScroll() {
 
         const lenis = new Lenis({
           anchors: true,
-          autoRaf: false,
+          autoRaf: true,
           // A slightly quicker lerp keeps wheel input responsive while still
           // carrying enough momentum to feel continuous.
           lerp: 0.16,
@@ -53,45 +56,8 @@ export default function SmoothScroll() {
           syncTouch: false,
           stopInertiaOnNavigate: true,
         });
-        let frame = 0;
-
-        const schedule = () => {
-          if (!frame) frame = window.requestAnimationFrame(draw);
-        };
-
-        const draw = (time: number) => {
-          frame = 0;
-          lenis.raf(time);
-
-          if (lenis.isScrolling === "smooth") schedule();
-        };
-
-        const unsubscribeVirtualScroll = lenis.on("virtual-scroll", schedule);
-        const unsubscribeScroll = lenis.on("scroll", () => {
-          if (lenis.isScrolling === "smooth") schedule();
-        });
-        const onClick = (event: MouseEvent) => {
-          if (
-            event.target instanceof Element &&
-            event.target.closest("a[href]")
-          ) {
-            schedule();
-          }
-        };
-        const onResize = () => schedule();
-
-        // Capture schedules anchor transitions before Lenis handles the link.
-        // The listener is passive and never interferes with browser input.
-        document.addEventListener("click", onClick, true);
-        window.addEventListener("resize", onResize, { passive: true });
-        schedule();
 
         destroyInstance = () => {
-          if (frame) window.cancelAnimationFrame(frame);
-          unsubscribeVirtualScroll();
-          unsubscribeScroll();
-          document.removeEventListener("click", onClick, true);
-          window.removeEventListener("resize", onResize);
           lenis.destroy();
         };
       } catch {

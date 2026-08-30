@@ -6,12 +6,12 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/creators" },
-  title: "Creators, audiences, and sponsorships",
+  title: "Creators and local advertising inventory",
   description:
-    "List Instagram, TikTok, YouTube, newsletters, teams, events, and other local audience opportunities on SideSpace.",
+    "List social audiences, physical placements, newsletters, teams, events, and other local advertising inventory on SideSpace.",
   openGraph: {
     url: "/creators",
-    title: "Creators and audience owners on SideSpace",
+    title: "Creators and local advertising inventory on SideSpace",
     description:
       "Define your offer, set your price, and talk directly with local businesses.",
   },

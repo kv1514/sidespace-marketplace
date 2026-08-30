@@ -1695,7 +1695,7 @@ html.lenis {
   border: 1px solid var(--ss-ink);
   margin: 16px auto;
   max-width: calc(1536px - 32px);
-  padding: clamp(76px, 10vw, 146px) clamp(24px, 7vw, 108px);
+  padding: clamp(76px, 10vw, 146px) clamp(24px, 5.5vw, 88px);
   position: relative;
   text-align: center;
 }
@@ -1714,6 +1714,7 @@ html.lenis {
 .ss-final-call::after { bottom: 12%; right: 6%; transform: rotate(8deg); }
 
 .ss-final-call h2 {
+  font-size: clamp(52px, 7.5vw, 88px);
   margin-left: auto;
   margin-right: auto;
   max-width: 1050px;
@@ -1721,6 +1722,41 @@ html.lenis {
 
 .ss-final-call h2 em {
   color: var(--ss-ink);
+}
+
+.ss-everywhere-highlight {
+  display: inline-block;
+  isolation: isolate;
+  position: relative;
+  white-space: nowrap;
+  z-index: 0;
+}
+
+.ss-everywhere-highlight__base {
+  display: block;
+}
+
+.ss-everywhere-highlight__reveal {
+  background: var(--ss-ink);
+  box-sizing: border-box;
+  clip-path: inset(0 100% 0 0);
+  color: var(--ss-white);
+  display: block;
+  inset: -0.04em -0.09em -0.06em;
+  padding: 0.04em 0.09em 0.06em;
+  position: absolute;
+  transition: clip-path 860ms var(--ss-ease-in-out);
+  white-space: nowrap;
+  will-change: clip-path;
+  z-index: 1;
+}
+
+.ss-everywhere-break {
+  display: inline;
+}
+
+.ss-final-call.is-highlighted .ss-everywhere-highlight__reveal {
+  clip-path: inset(0);
 }
 
 .ss-final-call > div {
@@ -2866,6 +2902,10 @@ html.lenis {
     font-size: clamp(42px, 12vw, 62px);
   }
 
+  .ss-everywhere-break {
+    display: none;
+  }
+
   .ss-audience-controls {
     grid-template-columns: 1fr;
   }
@@ -3201,6 +3241,12 @@ html.lenis {
   .ss-transform-progress,
   .ss-transform-line b {
     animation: none;
+  }
+
+  .ss-everywhere-highlight__reveal {
+    clip-path: inset(0);
+    transition: none;
+    will-change: auto;
   }
 
   .ss-category-reel {

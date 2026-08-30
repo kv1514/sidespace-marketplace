@@ -60,7 +60,7 @@ export const PUBLIC_PROFILE_COLUMNS =
  * surfaces as the public marketplace failing to load, not a missing field.
  */
 export const PUBLIC_LISTING_COLUMNS =
-  "id,owner_profile_id,title,channel,format,price,price_unit,description,demographics,image_url,status,created_at,updated_at,image_urls,location_area,availability_notes,available_from,available_to,lead_time_days,minimum_booking,deliverables,cancellation_policy,price_max,brief_scope,target_platforms,surface_types,install_by,space_size,sponsor_tier,sponsor_slots";
+  "id,owner_profile_id,title,channel,format,price_cents,price_unit,description,demographics,image_url,status,created_at,updated_at,image_urls,location_area,availability_notes,available_from,available_to,lead_time_days,minimum_booking,deliverables,cancellation_policy,price_max_cents,brief_scope,target_platforms,surface_types,install_by,space_size,sponsor_tier,sponsor_slots";
 
 /**
  * Anonymous, cookie-free Supabase client for public data.

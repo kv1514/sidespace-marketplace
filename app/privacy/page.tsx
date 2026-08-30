@@ -28,7 +28,7 @@ export default function PrivacyPage() {
         ← SideSpace
       </Link>
       <h1>Privacy Policy</h1>
-      <p className="legal-updated">Last updated: August 16, 2026</p>
+      <p className="legal-updated">Last updated: August 29, 2026</p>
 
       <h2>1. What we collect</h2>
       <ul>
@@ -48,6 +48,14 @@ export default function PrivacyPage() {
           through the site.
         </li>
         <li>
+          <strong>Payment and payout information.</strong> Stripe collects the
+          payment method, billing address, tax information, identity details,
+          and bank details needed for Checkout and connected-account payouts.
+          SideSpace stores Stripe object identifiers, transaction amounts,
+          invoice and payment status, refunds, and disputes. SideSpace does not
+          store full card or bank account numbers.
+        </li>
+        <li>
           <strong>Instagram profile data, at your request.</strong> If you
           enter an Instagram handle, we look up that account&apos;s public
           profile photo and follower count to prefill your profile. We only do
@@ -64,9 +72,11 @@ export default function PrivacyPage() {
       <p>
         To run the marketplace: showing your profile and listings to potential
         partners, delivering messages, prefilling your profile when you ask,
-        keeping the service secure, and understanding which pages get visited
-        so we can improve the product. We do not sell your data, and we do not
-        use it for third-party advertising.
+        processing campaign payments and payouts, calculating tax, producing
+        invoice records, handling refunds and disputes, keeping the service
+        secure, and understanding which pages get visited so we can improve the
+        product. We do not sell your data, and we do not use it for third-party
+        advertising.
       </p>
 
       <h2>3. What is public and what is private</h2>
@@ -74,21 +84,25 @@ export default function PrivacyPage() {
         SideSpace is a marketplace, so profiles, listings, and the photos on
         them are public and visible to anyone who visits the site. Your email
         address and password are never public. Messages are private between
-        you and the person you are talking to.
+        you and the person you are talking to. Payment and payout details are
+        visible only to the relevant member, SideSpace administrators who need
+        them to operate the service, and Stripe.
       </p>
 
       <h2>4. Where your data lives</h2>
       <p>
         Account data, profiles, listings, messages, and photos are stored with
         Supabase (our database and authentication provider). The site is hosted
-        on Vercel. Both process data on our behalf under their own security
-        practices.
+        on Vercel. Stripe processes Checkout, connected-account onboarding,
+        payouts, invoices, taxes, refunds, and disputes. These providers process
+        data under their own security and privacy practices.
       </p>
 
       <h2>5. Who we share data with</h2>
       <p>
         Only the service providers that make the site run: Supabase (database,
-        authentication, file storage), Vercel (hosting and analytics), and
+        authentication, file storage), Vercel (hosting and analytics), Stripe
+        (payments, payouts, invoicing, tax, fraud prevention, and disputes), and
         Google. We do not sell or rent personal data to anyone.
       </p>
       <p>
@@ -102,10 +116,13 @@ export default function PrivacyPage() {
       <h2>6. Keeping and deleting data</h2>
       <p>
         We keep your data while your account exists. Deleting your account in
-        Account settings permanently removes your profile, listings, messages,
-        and uploaded photos, including the underlying files. You can also
-        remove individual photos at any time, and pause a listing so it is no
-        longer visible to anyone.
+        Account settings removes or de-identifies your public profile,
+        listings, messages, and uploaded photos, including the underlying
+        files. We may retain payment, payout, invoice, tax, refund, dispute, and
+        fraud-prevention records for legal, accounting, and security purposes,
+        and while a transaction or dispute remains open. You can also remove
+        individual photos at any time, and pause a listing so it is no longer
+        visible to anyone.
       </p>
 
       <h2>7. Children</h2>
@@ -117,7 +134,7 @@ export default function PrivacyPage() {
 
       <h2>8. Changes to this policy</h2>
       <p>
-        If our data practices change, for example when payments launch, we
+        If our data practices or payment providers change, we
         will update this page and its date, and flag material changes on the
         site.
       </p>

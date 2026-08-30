@@ -1,6 +1,6 @@
 # SideSpace — Vercel + Supabase
 
-This is the production-ready Next.js version of SideSpace. It is intentionally
+This is the Next.js version of SideSpace. It is intentionally
 kept in `vercel-app/` so the existing Sites deployment can remain online during
 the migration.
 
@@ -25,24 +25,32 @@ the migration.
 - Responsive marketplace UI with realistic seeded sample content
 - Clearly labeled demo members with a one-time automated sample reply
 - Vercel-compatible Next.js App Router configuration
+- Test-mode Stripe Checkout, Connect Express payouts, one-time invoices, Stripe
+  Tax, webhook reconciliation, and a durable marketplace payment ledger
+
+See [docs/STRIPE_MARKETPLACE.md](docs/STRIPE_MARKETPLACE.md) for the money
+model, local sandbox setup, webhook events, test cards, refund/dispute runbook,
+and live-launch gates.
 
 ## Local setup
 
-1. Create a Supabase project.
-2. Open the Supabase SQL editor and run
-   `supabase/migrations/0001_initial.sql`.
+1. Create a Supabase project, or run the local stack with Docker using
+   `supabase start`.
+2. Apply every migration in order with `supabase db reset` locally or the
+   repository's normal Supabase migration deployment workflow. Do not run only
+   the initial migration.
 3. In Supabase Authentication:
    - set the Site URL to the final Vercel domain;
    - add `http://localhost:3000/auth/callback` and the Vercel callback URL to
      Redirect URLs;
    - enable Google and add its client ID and secret if Google sign-in is wanted.
-4. Copy `.env.example` to `.env.local` and add the project URL and publishable
-   key.
+4. Copy `.env.example` to `.env.local` and add the Supabase values. Add only
+   Stripe sandbox/test keys for the marketplace integration; never commit them.
 5. Install and run:
 
    ```bash
-   npm install
-   npm run dev
+   pnpm install
+   pnpm dev
    ```
 
 ## Deploy to Vercel
@@ -53,6 +61,8 @@ Development:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (server-only)
+- Stripe variables documented in `docs/STRIPE_MARKETPLACE.md`
 
 Deploy, then add the production callback URL to Supabase:
 

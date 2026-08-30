@@ -107,7 +107,7 @@ Under 150 words.
 sending to. It is not tracking — it is what makes the site know who arrived.
 
 Opening it prefills onboarding with their business name and town, and puts them
-in the right flow (SUPPLY lands on Physical space, DEMAND on Business), so a
+in the right flow (SUPPLY lands on Creator, DEMAND on Business), so a
 salon owner who got a personal email is not then asked to type her own salon's
 name into a blank form. Everything is editable and the pane says where it came
 from.
@@ -137,7 +137,7 @@ Leads with honesty about being early there, and turns that into the ask.
 >
 > We're live around Southern California and only just starting in the East Bay, which is why
 > you're getting a real email instead of a launch announcement. If you've got a window or a bit of
-> counter, you can list it and earn from it. Free to list, no fees during early access.
+> counter, you can list it and earn from it. It is free to list; SideSpace deducts a clear 5% creator fee only when a paid campaign happens.
 >
 > Any interest in being the first {Berkeley / Oakland / SF} listing?
 >
@@ -155,9 +155,9 @@ The Aug 22 emails were already strong on the hook. Five things were costing repl
 1. **"Hi there"** when the site names a person. Your best thread — Peri at Simply Bhonu, who
    asked for a call — opened with "Hi Peri."
 2. **Ten facts in one paragraph.** The draft crammed in: marketplace, four space types, owner sets
-   price, owner approves, free to list, free to browse, no fees, no payment processing, settle
-   directly, 26 listings. Cut to four. "We don't process payments, you two settle directly" raises
-   a question — *so how do I get paid?* — instead of answering one. Save it for the call.
+   price, owner approves, free to list, free to browse, fees, Stripe processing, payouts, and 26
+   listings. Cut to four. If payment comes up, say it plainly: businesses pay 5%, creators pay 5%,
+   and Stripe handles the secure checkout and payout.
 3. **Doubled ask.** "Any chance you're up for a 10 minute call? Email works if that's easier."
    Two options is a decision; one is a yes/no. And "any chance you're up for" pre-apologizes.
 4. **No signature block.** Commercial email needs a real identity and an opt-out — CAN-SPAM, and

@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/how-it-works" },
   title: "How it works",
   description:
-    "See how advertisers discover local attention and how creators, owners, and hosts list, negotiate, and accept campaigns on SideSpace.",
+    "See how advertisers discover local attention and how creators list social, physical, and sponsorship inventory on SideSpace.",
   openGraph: {
     url: "/how-it-works",
     title: "How SideSpace works",

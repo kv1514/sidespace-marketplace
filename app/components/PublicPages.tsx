@@ -7,6 +7,7 @@
 import Link from "next/link";
 import NextImage from "next/image";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { formatCents } from "@/lib/payments/fees";
 import HeroCanvas from "./HeroCanvas";
 import {
   type CSSProperties,
@@ -22,8 +23,8 @@ export type PublicListing = {
   title: string;
   channel: string;
   format: string;
-  price: number;
-  price_max?: number | null;
+  price_cents: number;
+  price_max_cents?: number | null;
   price_unit: string;
   description: string;
   image_url: string;
@@ -38,9 +39,11 @@ export type PublicListing = {
 };
 
 function price(listing: PublicListing) {
-  const low = Number(listing.price || 0);
-  const high = Number(listing.price_max || 0);
-  return high > low ? `$${low}–$${high}` : `$${low}`;
+  const low = Number(listing.price_cents || 0);
+  const high = Number(listing.price_max_cents || 0);
+  return high > low
+    ? `${formatCents(low)}–${formatCents(high)}`
+    : formatCents(low);
 }
 
 const INVENTORY_TYPES = [
@@ -562,11 +565,52 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
 }
 
 function FinalCall({ onList }: { onList: () => void }) {
+  const sectionRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+
+    const revealHighlight = () => {
+      section.classList.add("is-highlighted");
+    };
+
+    if (
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      !("IntersectionObserver" in window)
+    ) {
+      revealHighlight();
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        revealHighlight();
+        observer.disconnect();
+      },
+      { rootMargin: "0px 0px -18% 0px", threshold: 0.2 },
+    );
+
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <section className="ss-final-call">
+    <section className="ss-final-call" ref={sectionRef}>
       <p className="ss-kicker">THE SPACE BETWEEN A BUSINESS AND ITS NEXT CUSTOMER</p>
       <h2 data-ss-parallax="0.045" data-ss-parallax-max="28">
-        Attention is already everywhere.
+        Attention is already
+        <br className="ss-everywhere-break" />{" "}
+        <span className="ss-everywhere-highlight">
+          <span className="ss-everywhere-highlight__base">everywhere.</span>
+          <span
+            aria-hidden="true"
+            className="ss-everywhere-highlight__reveal"
+          >
+            everywhere.
+          </span>
+        </span>
         <br />
         <em>SideSpace makes it bookable.</em>
       </h2>
@@ -626,15 +670,15 @@ export function LandingPage({
             <em>now bookable.</em>
           </h1>
           <p className="ss-hero-deck">
-            Book creators, storefronts, vehicles, sponsorships, and other local
-            advertising space—or list the attention you already own.
+            Book creators offering social, physical, and sponsorship inventory—or
+            list the way you can advertise.
           </p>
           <div className="ss-hero-actions">
             <Link className="ss-button is-dark" href="/marketplace">
               Browse the marketplace <span>↗</span>
             </Link>
             <button className="ss-button is-light" onClick={onList}>
-              List your space or audience <span>＋</span>
+              List what you have to advertise <span>＋</span>
             </button>
           </div>
           <ul className="ss-proof-row" aria-label="SideSpace benefits">
@@ -680,11 +724,11 @@ export function LandingPage({
               onClick={() => setAudience("offer")}
               onMouseEnter={() => setAudience("offer")}
             >
-              <span>02 / OWNERS, CREATORS &amp; HOSTS</span>
+              <span>02 / CREATORS &amp; LOCAL OWNERS</span>
               <strong>I have attention to offer</strong>
               <p>
-                List the audience or physical space you control, set your price,
-                and talk directly with businesses.
+                List the audience, placement, or sponsorship inventory you
+                control, set your price, and talk directly with businesses.
               </p>
             </button>
           </div>
@@ -998,71 +1042,6 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
   );
 }
 
-export function PhysicalSpacesPage({
-  listings,
-  onList,
-  onOpenListing,
-}: {
-  listings: PublicListing[];
-  onList: () => void;
-  onOpenListing: (listingId: string) => void;
-}) {
-  const physical = listings.filter((listing) =>
-    /window|storefront|vehicle|wall|counter|board|farm|cafe|bakery|physical/i.test(
-      `${listing.channel} ${listing.title}`,
-    ),
-  );
-  const examples = (physical.length ? physical : listings).slice(0, 3);
-
-  return (
-    <>
-      <section className="ss-page-hero ss-physical-hero" id="main-content">
-        <div data-ss-parallax="0.045" data-ss-parallax-max="28">
-          <p className="ss-kicker">PHYSICAL SPACES</p>
-          <h1>Ordinary space.<br /><em>Unexpected value.</em></h1>
-          <p>
-            A window, counter, wall, car, board, or patch of land can become a
-            precise local advertising placement—on terms the owner controls.
-          </p>
-          <button className="ss-button is-dark" onClick={onList}>List a physical space <span>↗</span></button>
-        </div>
-        <div className="ss-physical-collage">
-          <figure><img data-ss-parallax="0.12" data-ss-parallax-max="52" src="/photos/corner-store.jpg" alt="Corner storefront with street-facing windows" /><figcaption>WINDOW / STREET</figcaption></figure>
-          <figure><img data-ss-parallax="0.18" data-ss-parallax-max="64" src="/photos/jay-volvo.jpg" alt="Vintage car used on a local route" /><figcaption>VEHICLE / ROUTE</figcaption></figure>
-          <figure><img data-ss-parallax="0.15" data-ss-parallax-max="58" src="/photos/roadside-farm-stand.jpg" alt="Roadside farm stand" /><figcaption>LAND / ROADSIDE</figcaption></figure>
-        </div>
-      </section>
-
-      <section className="ss-space-index">
-        {[
-          ["01", "Windows", "Street-facing glass, doors, and display panes"],
-          ["02", "Counters", "Where customers pause, wait, and decide"],
-          ["03", "Vehicles", "Cars, vans, trailers, and regular local routes"],
-          ["04", "Walls", "Interior, exterior, temporary, or painted surfaces"],
-          ["05", "Boards", "Community, venue, lobby, and notice boards"],
-          ["06", "Land & venues", "Roadside space, fields, rooms, and gathering places"],
-        ].map(([number, title, copy]) => <article key={title}><span>{number}</span><h2>{title}</h2><p>{copy}</p></article>)}
-      </section>
-
-      <section className="ss-control-section">
-        <header className="ss-section-heading is-horizontal" data-ss-parallax="0.04" data-ss-parallax-max="26"><div><p className="ss-kicker">THE OWNER STAYS IN CONTROL</p><h2>Useful details,<br /><em>before the first message.</em></h2></div><p>A good physical listing makes the practical questions visible and leaves the final agreement to the people involved.</p></header>
-        <div className="ss-control-grid">
-          <article><span>LOCATION</span><strong>Where people will see it</strong><p>City and general area are public. Exact private details can stay in the conversation.</p></article>
-          <article><span>PLACEMENT</span><strong>What can actually go there</strong><p>Dimensions, materials, surfaces, and who handles installation.</p></article>
-          <article><span>AVAILABILITY</span><strong>When it is free</strong><p>Dates, lead time, minimum booking, and any practical restrictions.</p></article>
-          <article><span>PRICE</span><strong>The owner sets the rate</strong><p>Daily, weekly, monthly, or a custom unit that matches the space.</p></article>
-        </div>
-      </section>
-
-      <section className="ss-live-preview">
-        <header className="ss-section-heading is-horizontal" data-ss-parallax="0.04" data-ss-parallax-max="26"><div><p className="ss-kicker">PHYSICAL INVENTORY</p><h2>Real places in<br /><em>the marketplace.</em></h2></div><Link href="/marketplace?intent=supply">See all physical listings ↗</Link></header>
-        <div className="ss-preview-grid is-three">{examples.map((listing) => <ListingPreviewCard listing={listing} onOpen={onOpenListing} key={listing.id} />)}</div>
-      </section>
-      <FinalCall onList={onList} />
-    </>
-  );
-}
-
 export function CreatorsPage({
   listings,
   onList,
@@ -1072,22 +1051,22 @@ export function CreatorsPage({
   onList: () => void;
   onOpenListing: (listingId: string) => void;
 }) {
-  const digital = listings.filter((listing) =>
-    /instagram|tiktok|youtube|newsletter|creator|sponsor|story|video/i.test(
+  const creatorInventory = listings.filter((listing) =>
+    /instagram|tiktok|youtube|newsletter|creator|sponsor|story|video|window|storefront|vehicle|wall|counter|board|room|placement/i.test(
       `${listing.channel} ${listing.title}`,
     ),
   );
-  const examples = (digital.length ? digital : listings).slice(0, 4);
+  const examples = (creatorInventory.length ? creatorInventory : listings).slice(0, 4);
 
   return (
     <>
       <section className="ss-page-hero ss-creators-hero" id="main-content">
         <div data-ss-parallax="0.045" data-ss-parallax-max="28">
-          <p className="ss-kicker">CREATORS, AUDIENCES &amp; SPONSORSHIP HOSTS</p>
+          <p className="ss-kicker">CREATORS &amp; LOCAL INVENTORY</p>
           <h1>Your local reach<br /><em>can work for you.</em></h1>
           <p>
-            List the attention people already give you—on social, in a
-            newsletter, around a team, or at a local event. You choose the offer,
+            List the way you can advertise—on social, in a newsletter, on a
+            storefront, around a team, or at a local event. You choose the offer,
             the price, and every campaign.
           </p>
           <button className="ss-button is-dark" onClick={onList}>List my reach <span>↗</span></button>
@@ -1103,6 +1082,7 @@ export function CreatorsPage({
         {[
           ["Social", "Instagram, TikTok, YouTube, and the formats your audience expects."],
           ["Newsletters", "A useful local recommendation delivered to a known reader base."],
+          ["Placements", "Windows, walls, vehicles, counters, rooms, and boards people already pass."],
           ["Teams", "Season, event, jersey, banner, and community sponsorship opportunities."],
           ["Events", "Gatherings, markets, showcases, and recurring local occasions."],
           ["Organizations", "Clubs, causes, and community groups with meaningful local reach."],
@@ -1113,14 +1093,14 @@ export function CreatorsPage({
       <section className="ss-creator-offer">
         <div><p className="ss-kicker">BUILD AN OFFER PEOPLE CAN UNDERSTAND</p><h2>You know your audience.<br /><em>You define the inventory.</em></h2></div>
         <ol>
-          <li><span>01</span><div><strong>Say where the attention lives.</strong><p>Platform, newsletter, team, event, or organization.</p></div></li>
+          <li><span>01</span><div><strong>Say where the attention lives.</strong><p>Platform, newsletter, placement, team, event, or organization.</p></div></li>
           <li><span>02</span><div><strong>Describe exactly what a business gets.</strong><p>Frames, video length, placement, mention, tier, or sponsor benefit.</p></div></li>
           <li><span>03</span><div><strong>Set the price and boundaries.</strong><p>You can discuss, counter, accept, or decline every request.</p></div></li>
         </ol>
       </section>
 
       <section className="ss-live-preview">
-        <header className="ss-section-heading is-horizontal" data-ss-parallax="0.04" data-ss-parallax-max="26"><div><p className="ss-kicker">AUDIENCE INVENTORY</p><h2>Creators and hosts<br /><em>already listing.</em></h2></div><Link href="/marketplace?intent=supply">Explore audience listings ↗</Link></header>
+        <header className="ss-section-heading is-horizontal" data-ss-parallax="0.04" data-ss-parallax-max="26"><div><p className="ss-kicker">CREATOR INVENTORY</p><h2>Creators and local owners<br /><em>already listing.</em></h2></div><Link href="/marketplace?intent=supply">Explore creator listings ↗</Link></header>
         <div className="ss-preview-grid">{examples.map((listing) => <ListingPreviewCard listing={listing} onOpen={onOpenListing} key={listing.id} />)}</div>
       </section>
       <FinalCall onList={onList} />
@@ -1132,37 +1112,37 @@ export function PricingPage({ onJoin }: { onJoin: () => void }) {
   return (
     <>
       <section className="ss-page-hero ss-pricing-hero" id="main-content">
-        <p className="ss-kicker">PRICING / EARLY ACCESS</p>
-        <h1 data-ss-parallax="0.05" data-ss-parallax-max="30">SideSpace is free<br /><em>during early access.</em></h1>
+        <p className="ss-kicker">PRICING / PAY AS YOU GO</p>
+        <h1 data-ss-parallax="0.05" data-ss-parallax-max="30">Free to join.<br /><em>Clear campaign fees.</em></h1>
         <p>
           Create a profile, publish listings, browse the marketplace, send
-          campaign requests, and message members directly. SideSpace does not
-          charge a platform fee today.
+          campaign requests, and message members without a subscription.
+          SideSpace charges each side only when an accepted campaign is paid.
         </p>
-        <button className="ss-button is-dark" onClick={onJoin}>Join free during early access <span>↗</span></button>
+        <button className="ss-button is-dark" onClick={onJoin}>Create a free account <span>↗</span></button>
       </section>
 
       <section className="ss-current-pricing" aria-labelledby="current-pricing-title">
         <div className="ss-current-flag" data-ss-parallax="0.06" data-ss-parallax-max="28"><span>CURRENT</span><b>LIVE NOW</b></div>
-        <div data-ss-parallax="0.11" data-ss-parallax-max="42"><p className="ss-kicker">EARLY ACCESS</p><h2 id="current-pricing-title">Free</h2><p className="ss-price"><strong>$0</strong><span>/ month</span></p></div>
-        <ul data-ss-parallax="0.08" data-ss-parallax-max="34"><li>No fee to create or browse listings</li><li>Direct private messaging</li><li>Campaign requests and counteroffers</li><li>Owners set their own price</li><li>No minimum campaign spend from SideSpace</li></ul>
+        <div data-ss-parallax="0.11" data-ss-parallax-max="42"><p className="ss-kicker">MARKETPLACE</p><h2 id="current-pricing-title">5% + 5%</h2><p className="ss-price"><strong>$0</strong><span>/ month</span></p></div>
+        <ul data-ss-parallax="0.08" data-ss-parallax-max="34"><li>Businesses pay the agreed campaign price plus 5%</li><li>Creators receive the agreed price minus 5%</li><li>Applicable tax is calculated at Stripe Checkout</li><li>Stripe hosts checkout, invoices, and payout onboarding</li><li>No subscription or minimum campaign spend</li></ul>
         <button onClick={onJoin}>Create a free account ↗</button>
       </section>
 
       <section className="ss-future-pricing" aria-labelledby="future-pricing-title">
-        <header><div><p className="ss-kicker">FUTURE / PLANNED</p><h2 id="future-pricing-title">What may come later.</h2></div><p>These are product directions, not active plans or things you can purchase today.</p></header>
+        <header><div><p className="ss-kicker">EXAMPLE / EXACT MATH</p><h2 id="future-pricing-title">A $100 campaign, end to end.</h2></div><p>Fees are rounded to the nearest cent and shown before the business opens Stripe Checkout.</p></header>
         <div>
-          <article><span>PLANNED</span><h3>Pro tools</h3><p>Additional campaign and marketplace tools for frequent users may become a paid plan later.</p><ul><li>Advanced campaign analytics</li><li>Additional discovery tools</li><li>Priority support options</li></ul></article>
-          <article><span>PLANNED</span><h3>Marketplace fees</h3><p>SideSpace may introduce transaction or campaign fees in the future. None are charged today.</p><ul><li>Terms shown before activation</li><li>No silent change to current campaigns</li><li>Clear notice before anything is billable</li></ul></article>
+          <article><span>BUSINESS</span><h3>Pays $105 before tax</h3><p>The $100 campaign subtotal plus a $5 SideSpace buyer fee.</p><ul><li>$100 agreed campaign</li><li>$5 buyer fee</li><li>Tax added when applicable</li></ul></article>
+          <article><span>CREATOR</span><h3>Earns $95</h3><p>The $100 campaign subtotal minus a $5 SideSpace creator fee.</p><ul><li>$100 gross campaign</li><li>$5 creator fee</li><li>$95 creator payout before Stripe payout adjustments</li></ul></article>
         </div>
       </section>
 
       <section className="ss-pricing-truth">
-        <h2>No checkout. No hidden “current” plan.</h2>
-        <p>Members arrange payment between themselves during early access. SideSpace does not currently process the transaction.</p>
+        <h2>Hosted checkout. No hidden subscription.</h2>
+        <p>The business sees the campaign, buyer fee, and tax before paying. A verified Stripe webhook—not the browser redirect—confirms the campaign.</p>
       </section>
 
-      <section className="ss-page-cta"><p className="ss-kicker">FREE DURING EARLY ACCESS</p><h2>Start with the marketplace, then join when you are ready.</h2><div><Link className="ss-button is-light" href="/marketplace">Browse first ↗</Link><button className="ss-button is-dark" onClick={onJoin}>Join SideSpace ＋</button></div></section>
+      <section className="ss-page-cta"><p className="ss-kicker">FREE TO JOIN</p><h2>Start with the marketplace, then pay only for accepted work.</h2><div><Link className="ss-button is-light" href="/marketplace">Browse first ↗</Link><button className="ss-button is-dark" onClick={onJoin}>Join SideSpace ＋</button></div></section>
     </>
   );
 }

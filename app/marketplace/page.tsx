@@ -8,12 +8,12 @@ export const metadata: Metadata = {
   alternates: { canonical: "/marketplace" },
   title: "Marketplace",
   description:
-    "Browse local creators, physical ad space, newsletters, sponsorships, and business campaign briefs on SideSpace.",
+    "Browse creator listings for social audiences, physical placements, sponsorships, and business campaign briefs on SideSpace.",
   openGraph: {
     url: "/marketplace",
     title: "Browse the SideSpace marketplace",
     description:
-      "Search real local attention: creators, storefronts, vehicles, sponsorships, and more.",
+    "Search real local attention from creators: storefronts, vehicles, sponsorships, and more.",
   },
 };
 
@@ -22,8 +22,6 @@ const ROLE_FILTERS = new Set([
   "supply",
   "business",
   "creator",
-  "space_owner",
-  "sponsor_host",
 ]);
 
 export default async function Marketplace({
@@ -45,8 +43,12 @@ export default async function Marketplace({
       ? "supply"
       : intent === "offer"
         ? "business"
-        : typeof params.role === "string" && ROLE_FILTERS.has(params.role)
-          ? params.role
+        : typeof params.role === "string"
+          ? params.role === "space_owner" || params.role === "sponsor_host"
+            ? "creator"
+            : ROLE_FILTERS.has(params.role)
+              ? params.role
+              : "all"
           : "all";
 
   return (
@@ -62,9 +64,7 @@ export default async function Marketplace({
         | "all"
         | "supply"
         | "business"
-        | "creator"
-        | "space_owner"
-        | "sponsor_host"}
+        | "creator"}
     />
   );
 }

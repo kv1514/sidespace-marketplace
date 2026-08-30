@@ -11,7 +11,6 @@ import {
   CreatorsPage,
   HowItWorksPage,
   LandingPage,
-  PhysicalSpacesPage,
   PricingPage,
   type PublicListing,
 } from "@/app/components/PublicPages";
@@ -187,13 +186,6 @@ export default function PublicSiteApp({
       )}
       {route === "how-it-works" && (
         <HowItWorksPage onJoin={() => openAuth("signup")} />
-      )}
-      {route === "physical-spaces" && (
-        <PhysicalSpacesPage
-          listings={listings}
-          onList={listAttention}
-          onOpenListing={openListing}
-        />
       )}
       {route === "creators" && (
         <CreatorsPage
