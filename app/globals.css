@@ -6889,61 +6889,6 @@ html.reveal-ready [data-reveal].is-visible {
   order: 6;
 }
 
-/* ---------------------------------------------------------------------------
-   What is still outstanding.
-
-   Deliberately NOT styled as an error: nothing has gone wrong while somebody
-   is still filling a form in, and painting this the same red as .form-feedback
-   would make the real failure banner mean nothing. Quiet, tappable, and it
-   sits directly above the button that will otherwise refuse to move.
-   --------------------------------------------------------------------------- */
-.onboarding-form .onboarding-todo {
-  align-items: baseline;
-  background: var(--paper-2);
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  color: var(--ink-soft);
-  display: flex;
-  flex-wrap: wrap;
-  font-family: var(--display);
-  font-size: 13px;
-  gap: 4px 9px;
-  letter-spacing: 0;
-  line-height: 1.45;
-  margin: 22px 0 0;
-  min-height: 44px;
-  padding: 12px 15px;
-  text-align: left;
-  text-transform: none;
-  width: 100%;
-}
-
-.onboarding-form button.onboarding-todo {
-  cursor: pointer;
-}
-
-.onboarding-form button.onboarding-todo:hover {
-  border-color: var(--ink);
-}
-
-/* The count is the label; the question itself is what they act on. */
-.onboarding-form .onboarding-todo > span {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.onboarding-form .onboarding-todo > b {
-  color: var(--ink);
-  font-weight: 500;
-}
-
-.onboarding-form .onboarding-todo.is-ready {
-  border-style: dashed;
-}
-
 .onboarding-form .tier-empty {
   color: var(--ink-soft);
   font-size: 12.5px;
@@ -7059,6 +7004,18 @@ html.reveal-ready [data-reveal].is-visible {
   letter-spacing: 0.08em;
   margin-left: 6px;
   text-transform: uppercase;
+}
+
+.onboarding-form .field-label-line {
+  align-items: baseline;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: 100%;
+}
+
+.onboarding-form .field-label-line .optional {
+  margin-left: 0;
 }
 
 /* A caption for a chip row that is not the only question under its heading.
@@ -7186,6 +7143,19 @@ html.reveal-ready [data-reveal].is-visible {
   line-height: 1.4;
   margin-top: -2px;
   text-transform: none;
+}
+
+.onboarding-form .field-character-count {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.onboarding-form .field-character-count[data-complete="true"] {
+  color: var(--ink-soft);
 }
 
 /* The upload field was a solid lime slab - the loudest thing on a pane whose
@@ -7866,14 +7836,47 @@ html.reveal-ready [data-reveal].is-visible {
   margin-bottom: 26px;
 }
 
-/* The footer is a bar, so it should read as one rather than as a stray white
-   rectangle floating over the sheet. */
+/* Keep the action row on the modal surface. The controls provide the visual
+   emphasis; a full-width color wash made the footer look like a separate box. */
 .onboarding-form .onboarding-actions {
-  background: var(--paper);
-  border-top: 1px solid var(--line);
+  background: transparent;
+  border-top: 0;
   margin-top: 8px;
   padding-bottom: max(14px, env(safe-area-inset-bottom));
   padding-top: 14px;
+  position: relative;
+}
+
+.onboarding-form .onboarding-actions::before {
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--line) 12%,
+    var(--line) 88%,
+    transparent
+  );
+  content: "";
+  height: 1px;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.onboarding-form .onboarding-actions[data-ready="true"]::before {
+  animation: onboarding-actions-divider-in 220ms
+    cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes onboarding-actions-divider-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 /* --- Order inside a field label -----------------------------------------
@@ -8548,4 +8551,156 @@ html.reveal-ready [data-reveal].is-visible {
    measuring now. */
 .how-section .steps article.step-active .step-progress::after {
   transition: transform var(--step-cycle) linear;
+}
+
+/* ========================================================================
+   Recovered onboarding motion and progressive disclosure
+
+   The recovered flow already renders these states in MarketplaceApp.tsx.
+   Keep the rules at the end of the stylesheet so they layer onto the active
+   app shell without replacing its newer public-site treatment. */
+
+.modal-card:has(.onboarding-form) {
+  max-height: calc(100dvh - 24px);
+}
+
+.onboarding-slide[data-direction="forward"] {
+  animation: onboarding-forward 240ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.onboarding-slide[data-direction="back"] {
+  animation: onboarding-back 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes onboarding-forward {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes onboarding-back {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.onboarding-identity-fields {
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 6px;
+}
+
+.onboarding-identity-fields > * {
+  grid-column: 1;
+}
+
+.progressive-field {
+  animation: progressive-field-in 420ms
+    cubic-bezier(0.25, 0.8, 0.25, 1) both;
+  transform-origin: top left;
+}
+
+@keyframes progressive-field-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.onboarding-form .role-choice-grid > button {
+  min-height: 176px;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.onboarding-form .role-choice-grid > button:active,
+.onboarding-form .onboarding-actions .button:active {
+  transform: scale(0.98);
+}
+
+.onboarding-form .button {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.onboarding-primary-action-enter {
+  animation: onboarding-primary-action-in 320ms
+    cubic-bezier(0.25, 0.8, 0.25, 1) 20ms both;
+  display: inline-flex;
+  transform-origin: 100% 50%;
+}
+
+@keyframes onboarding-primary-action-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 620px) {
+  .modal-card:has(.onboarding-form) {
+    max-height: 100dvh;
+  }
+
+  .onboarding-form .role-choice-grid > button {
+    min-height: 138px;
+  }
+
+  .onboarding-form .onboarding-actions {
+    gap: 10px;
+  }
+
+  .onboarding-form .onboarding-actions .button,
+  .onboarding-form .onboarding-actions > button:not(.button) {
+    padding-inline: 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-slide,
+  .progressive-field {
+    animation: none;
+    transition: none;
+  }
+
+  .onboarding-primary-action-enter {
+    animation: none;
+  }
+
+  .onboarding-form .role-choice-grid > button:active,
+  .onboarding-form .onboarding-actions .button:active {
+    transform: none;
+  }
+
+  .onboarding-form .onboarding-actions::before {
+    opacity: 1;
+    transform: none;
+  }
 }
