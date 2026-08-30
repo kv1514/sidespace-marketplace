@@ -1126,6 +1126,26 @@ type OnboardingAnswers = {
  * Multi-select chips carry a leading check when active so their state does not
  * rest on the lime fill alone.
  */
+function OptionalFieldLabel({ children }: { children: ReactNode }) {
+  return (
+    <span className="field-label-line">
+      {children}
+      {" "}
+      <span className="optional">optional</span>
+    </span>
+  );
+}
+
+function getBioRequirementHint(value: string) {
+  const remaining = Math.max(0, 10 - value.trim().length);
+
+  if (remaining === 0) {
+    return "Minimum reached";
+  }
+
+  return `${remaining} more ${remaining === 1 ? "character" : "characters"} needed`;
+}
+
 function ChipRow({
   options,
   selected,
@@ -1133,6 +1153,7 @@ function ChipRow({
   multi = false,
   field,
   label,
+  optional = false,
 }: {
   options: string[];
   selected: string[];
@@ -1140,6 +1161,7 @@ function ChipRow({
   multi?: boolean;
   field: string;
   label: string;
+  optional?: boolean;
 }) {
   // The label used to live only in aria-label, so a sighted member met several
   // required chip rows as unheaded rows of pills - "pick what kind of business
@@ -1150,6 +1172,8 @@ function ChipRow({
     <>
       <span className="chip-label" id={labelId}>
         {label}
+        {" "}
+        {optional && <span className="optional">optional</span>}
       </span>
       <div
         className="filter-row onboarding-chips"
@@ -2856,6 +2880,8 @@ export default function MarketplaceApp({
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
   );
+  const localPreviewAvailable =
+    !configured && process.env.NODE_ENV === "development";
   const supabase = useMemo(
     () => (configured ? createClient() : null),
     [configured],
@@ -2872,7 +2898,9 @@ export default function MarketplaceApp({
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
   const [accountOpen, setAccountOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingPreview, setOnboardingPreview] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(1);
+  const [onboardingDirection, setOnboardingDirection] = useState<1 | -1>(1);
   // Mirrors onboardingOpen for callbacks with stale closures (loadOwnProfile
   // is memoized against supabase only).
   const onboardingOpenRef = useRef(false);
@@ -4103,19 +4131,39 @@ export default function MarketplaceApp({
       setDescriptionTouched(Boolean(draft.answers.description));
     }
     setOnboardingMode("setup");
-    setOnboardingStep(2);
+    setOnboardingStep(5);
     setOnboardingOpen(true);
   }
 
   /** Open the modal as the profile editor rather than first-run setup. */
   function openProfileEditor(step: 1 | 2 = 1) {
     seedRolePickers(profile);
+    setOnboardingPreview(false);
     setOnboardingMode("edit");
     setOnboardingStep(step);
     setOnboardingOpen(true);
   }
 
+  /**
+   * Run the complete first-use flow without inventing a fake Supabase session.
+   * This exists only in `next dev` when the public Supabase variables are
+   * absent. Validation, progressive disclosure, transitions, and the final
+   * listing preview are real; the final action deliberately writes nothing.
+   */
+  function openOnboardingPreview() {
+    seedRolePickers(null);
+    setOnboardingPreview(true);
+    setOnboardingMode("setup");
+    setOnboardingStep(1);
+    setAuthOpen(false);
+    setOnboardingOpen(true);
+  }
+
   function requireAccount(action: () => void) {
+    if (localPreviewAvailable) {
+      openOnboardingPreview();
+      return;
+    }
     if (!configured) {
       setToast("Connect Supabase to enable public accounts and messaging.");
       return;
@@ -4294,42 +4342,39 @@ export default function MarketplaceApp({
    * Collecting the whole list lets the flow say what is outstanding while they
    * are still filling it in.
    */
-  function missingAnswers(): Array<[string, string]> {
+  function allMissingAnswers(): Array<[string, string]> {
     const role = selectedRole;
     const out: Array<[string, string]> = [];
     const need = (unmet: boolean, message: string, field: string) => {
       if (unmet) out.push([message, field]);
     };
 
-    if (onboardingStep === 1) {
-      need(!roleTouched || !role, "Pick how you’ll use SideSpace first.", "role");
-      need(
-        !answers.display_name.trim(),
-        "Add your display name before continuing.",
-        "display_name",
-      );
-      need(
-        !answers.city.trim(),
-        "Add your city or market before continuing.",
-        "city",
-      );
-      need(
-        answers.bio.trim().length < 10,
-        "Add one line about you — at least a few words.",
-        "bio",
-      );
-      // Only a MALFORMED address is a problem; leaving it blank is allowed.
-      need(
-        role !== "business" &&
-          Boolean(answers.contact_email.trim()) &&
-          !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(answers.contact_email.trim()),
-        "That email doesn't look right.",
-        "contact_email",
-      );
-      return out;
-    }
+    need(!roleTouched || !role, "Pick how you’ll use SideSpace first.", "role");
+    need(
+      !answers.display_name.trim(),
+      "Add your display name before continuing.",
+      "display_name",
+    );
+    need(
+      !answers.city.trim(),
+      "Add your city or market before continuing.",
+      "city",
+    );
+    need(
+      answers.bio.trim().length < 10,
+      "Add one line about you — at least a few words.",
+      "bio",
+    );
+    // Only a MALFORMED address is a problem; leaving it blank is allowed.
+    need(
+      role !== "business" &&
+        Boolean(answers.contact_email.trim()) &&
+        !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(answers.contact_email.trim()),
+      "That email doesn't look right.",
+      "contact_email",
+    );
 
-    // Step 2 in edit mode only ever touches profile fields, all optional.
+    // Edit mode only touches profile fields. Its second screen is optional.
     if (onboardingMode === "edit" || !role) return out;
 
     if (role === "creator") {
@@ -4457,9 +4502,98 @@ export default function MarketplaceApp({
     return out;
   }
 
-  /** What publish blocks on: the first thing still missing, or nothing. */
+  /** The setup slide that owns a field, used by validation and Back links. */
+  function onboardingStepForField(field: string) {
+    if (onboardingMode === "edit") {
+      return ["role", "display_name", "city", "bio", "contact_email"].includes(
+        field,
+      )
+        ? 1
+        : 2;
+    }
+    if (field === "role") return 1;
+    if (["display_name", "city", "bio", "contact_email"].includes(field)) {
+      return 2;
+    }
+
+    const stepThree: Record<string, string[]> = {
+      creator: ["platforms"],
+      space_owner: ["spaceKind", "streetAddress", "location_area", "spaceSize"],
+      business: [
+        "promoting",
+        "categories",
+        "goal",
+        "briefScope",
+        "placements",
+        "targetPlatforms",
+        "wantedArea",
+        "deliverables",
+      ],
+      sponsor_host: [
+        "orgKind",
+        "orgOther",
+        "funding",
+        "reach",
+        "reachCount",
+        "season",
+      ],
+    };
+    if (selectedRole && stepThree[selectedRole]?.includes(field)) return 3;
+    if (
+      selectedRole === "business" &&
+      ["price", "priceMax"].includes(field)
+    ) {
+      return 4;
+    }
+    if (
+      field === "benefits" ||
+      field.startsWith("tier") ||
+      [
+        "format",
+        "surfaces",
+        "surfaceOther",
+        "installBy",
+        "traffic",
+        "trafficCount",
+        "availability",
+        "artwork",
+        "timing",
+      ].includes(field)
+    ) {
+      return 4;
+    }
+    return 5;
+  }
+
+  function missingAnswers() {
+    return allMissingAnswers().filter(
+      ([, field]) => onboardingStepForField(field) === onboardingStep,
+    );
+  }
+
+  function isCurrentOnboardingStepComplete() {
+    return missingAnswers().length === 0;
+  }
+
+  /** What the current slide blocks on: the first thing missing, or nothing. */
   function firstMissingAnswer(): [string, string] | null {
     return missingAnswers()[0] ?? null;
+  }
+
+  function onboardingStepCount() {
+    return onboardingMode === "edit" ? 2 : 5;
+  }
+
+  function goToOnboardingStep(step: number) {
+    const next = Math.max(1, Math.min(onboardingStepCount(), step));
+    setOnboardingDirection(next >= onboardingStep ? 1 : -1);
+    setOnboardingError("");
+    setOnboardingStep(next);
+    window.requestAnimationFrame(() => {
+      onboardingFormRef.current
+        ?.closest<HTMLElement>(".modal-card")
+        ?.scrollTo({ top: 0, behavior: "auto" });
+    });
   }
 
   /**
@@ -4505,8 +4639,16 @@ export default function MarketplaceApp({
 
   function reportMissing(problem: [string, string]) {
     const [message, field] = problem;
+    const targetStep = onboardingStepForField(field);
+    if (targetStep !== onboardingStep) {
+      goToOnboardingStep(targetStep);
+      window.requestAnimationFrame(() =>
+        window.requestAnimationFrame(() => scrollToField(field)),
+      );
+    } else {
+      window.requestAnimationFrame(() => scrollToField(field));
+    }
     setOnboardingError(message);
-    scrollToField(field);
   }
 
   function advanceOnboarding() {
@@ -4515,8 +4657,7 @@ export default function MarketplaceApp({
       reportMissing(problem);
       return;
     }
-    setOnboardingError("");
-    setOnboardingStep(2);
+    goToOnboardingStep(onboardingStep + 1);
   }
 
   async function signInWithGoogle() {
@@ -4557,9 +4698,8 @@ export default function MarketplaceApp({
    */
   async function publishOnboarding(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !user) return;
 
-    const problem = firstMissingAnswer();
+    const problem = allMissingAnswers()[0] ?? null;
     if (problem) {
       reportMissing(problem);
       return;
@@ -4571,6 +4711,16 @@ export default function MarketplaceApp({
       reportMissing(["Pick how you’ll use SideSpace first.", "role"]);
       return;
     }
+
+    if (onboardingPreview) {
+      setOnboardingOpen(false);
+      setOnboardingPreview(false);
+      setOnboardingStep(1);
+      setToast("Onboarding preview complete. Nothing was saved.");
+      return;
+    }
+
+    if (!supabase || !user) return;
 
     setBusy(true);
     let savedProfile: Profile | null = null;
@@ -6287,23 +6437,17 @@ export default function MarketplaceApp({
               href="/marketplace?role=business"
             >
               <span>I&rsquo;m a creator or host</span>
-              <strong>See businesses looking for reach</strong>
-              <p>
-                Browse briefs from businesses that want creators and local
-                spaces, then message them directly.
-              </p>
-              <b>Browse business briefs →</b>
+              <strong>Find business briefs</strong>
+              <p>See local campaigns that need your audience or space.</p>
+              <b>Browse briefs →</b>
             </a>
             <a
               className="dashboard-path"
               href="/marketplace?role=supply"
             >
               <span>I&rsquo;m a business</span>
-              <strong>Pick creators and spaces to book</strong>
-              <p>
-                Every creator, window, vehicle, and board currently listed —
-                choose who fits your campaign and send a request.
-              </p>
+              <strong>Book local reach</strong>
+              <p>Choose a creator or physical space, then send a request.</p>
               <b>Browse creators and spaces →</b>
             </a>
           </div>
@@ -6526,8 +6670,8 @@ export default function MarketplaceApp({
           {[
             {
               icon: "⌕",
-              title: "Discover",
-              copy: "Filter creators, businesses, and spaces by the reach you need.",
+              title: "Find the right fit",
+              copy: "Search local creators, briefs, and physical spaces.",
               widget: (
                 <div className="mock mock-search" aria-hidden="true">
                   <div className="mock-field">
@@ -6568,8 +6712,8 @@ export default function MarketplaceApp({
             },
             {
               icon: "@",
-              title: "Message privately",
-              copy: "Talk through the idea, timeline, price, and creative details.",
+              title: "Talk it through",
+              copy: "Agree on the idea, timing, price, and creative details.",
               widget: (
                 <div className="mock mock-chat" aria-hidden="true">
                   <div className="mock-bubble them">
@@ -6591,8 +6735,8 @@ export default function MarketplaceApp({
             },
             {
               icon: "✓",
-              title: "Make it happen",
-              copy: "Agree on the work and build a local campaign people remember.",
+              title: "Book the work",
+              copy: "Confirm the plan and put the local campaign in motion.",
               widget: (
                 <div className="mock mock-deal" aria-hidden="true">
                   <div className="mock-deal-head">
@@ -6617,6 +6761,10 @@ export default function MarketplaceApp({
             <article
               key={step.title}
               className={activeStep === index ? "step-active" : ""}
+              aria-current={activeStep === index ? "step" : undefined}
+              tabIndex={0}
+              onClick={() => setActiveStep(index)}
+              onFocus={() => setActiveStep(index)}
               onMouseEnter={() => setActiveStep(index)}
             >
               <span>{`0${index + 1}`}</span>
@@ -7187,98 +7335,117 @@ export default function MarketplaceApp({
           </div>
           {!configured && (
             <div className="setup-notice">
-              <strong>Backend connection needed</strong>
+              <strong>
+                {localPreviewAvailable
+                  ? "Local onboarding preview"
+                  : "Backend connection needed"}
+              </strong>
               <p>
-                This preview is using seeded marketplace data. Add the two
-                Supabase environment variables to activate accounts.
+                {localPreviewAvailable
+                  ? "Test every onboarding step with seeded data. Preview mode never creates an account or saves anything."
+                  : "This preview is using seeded marketplace data. Add the two Supabase environment variables to activate accounts."}
               </p>
             </div>
           )}
-          {googleOAuthEnabled && (
+          {localPreviewAvailable ? (
+            <button
+              type="button"
+              className="button button-dark button-full preview-onboarding-button"
+              onClick={openOnboardingPreview}
+            >
+              Preview onboarding <span>→</span>
+            </button>
+          ) : (
             <>
+              {googleOAuthEnabled && (
+                <>
+                  <button
+                    className="google-button"
+                    onClick={signInWithGoogle}
+                  >
+                    <b>G</b> Continue with Google
+                  </button>
+                  <div className="form-divider">
+                    <span>or use email</span>
+                  </div>
+                </>
+              )}
+              <form className="stack-form" onSubmit={handleAuth}>
+                {authMode === "signup" && (
+                  <label>
+                    Your name
+                    <input name="name" required placeholder="Alex Morgan" />
+                  </label>
+                )}
+                <label>
+                  Email address
+                  <input
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    placeholder="you@example.com"
+                  />
+                </label>
+                <label>
+                  Password
+                  <input
+                    name="password"
+                    type="password"
+                    minLength={8}
+                    autoComplete={
+                      authMode === "signup" ? "new-password" : "current-password"
+                    }
+                    required
+                    placeholder="At least 8 characters"
+                  />
+                </label>
+                <button
+                  className="button button-dark button-full"
+                  disabled={busy || !configured}
+                >
+                  {busy
+                    ? "One moment..."
+                    : authMode === "signup"
+                      ? "Create my account"
+                      : "Sign in"}
+                  <span>↗</span>
+                </button>
+                {authMode === "signin" && (
+                  <button
+                    type="button"
+                    className="switch-auth"
+                    disabled={busy || !configured}
+                    onClick={(event) => {
+                      const form = event.currentTarget.form;
+                      const field = form?.elements.namedItem("email");
+                      const address =
+                        field instanceof HTMLInputElement ? field.value : "";
+                      void emailPasswordReset(address);
+                    }}
+                  >
+                    Forgot your password?
+                  </button>
+                )}
+              </form>
               <button
-                className="google-button"
-                onClick={signInWithGoogle}
+                className="switch-auth"
+                onClick={() =>
+                  setAuthMode((mode) =>
+                    mode === "signup" ? "signin" : "signup",
+                  )
+                }
               >
-                <b>G</b> Continue with Google
+                {authMode === "signup"
+                  ? "Already a member? Sign in"
+                  : "New here? Create an account"}
               </button>
-              <div className="form-divider">
-                <span>or use email</span>
-              </div>
+              <p className="security-note">
+                Passwords are handled by Supabase Auth and never stored in the
+                SideSpace application database.
+              </p>
             </>
           )}
-          <form className="stack-form" onSubmit={handleAuth}>
-            {authMode === "signup" && (
-              <label>
-                Your name
-                <input name="name" required placeholder="Alex Morgan" />
-              </label>
-            )}
-            <label>
-              Email address
-              <input
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                placeholder="you@example.com"
-              />
-            </label>
-            <label>
-              Password
-              <input
-                name="password"
-                type="password"
-                minLength={8}
-                autoComplete={
-                  authMode === "signup" ? "new-password" : "current-password"
-                }
-                required
-                placeholder="At least 8 characters"
-              />
-            </label>
-            <button
-              className="button button-dark button-full"
-              disabled={busy || !configured}
-            >
-              {busy
-                ? "One moment..."
-                : authMode === "signup"
-                  ? "Create my account"
-                  : "Sign in"}
-              <span>↗</span>
-            </button>
-            {authMode === "signin" && (
-              <button
-                type="button"
-                className="switch-auth"
-                disabled={busy || !configured}
-                onClick={(event) => {
-                  const form = event.currentTarget.form;
-                  const field = form?.elements.namedItem("email");
-                  const address =
-                    field instanceof HTMLInputElement ? field.value : "";
-                  void emailPasswordReset(address);
-                }}
-              >
-                Forgot your password?
-              </button>
-            )}
-          </form>
-          <button
-            className="switch-auth"
-            onClick={() =>
-              setAuthMode((mode) => (mode === "signup" ? "signin" : "signup"))
-            }
-          >
-            {authMode === "signup"
-              ? "Already a member? Sign in"
-              : "New here? Create an account"}
-          </button>
-          <p className="security-note">
-            Passwords are handled by Supabase Auth and never stored in the
-            SideSpace application database.
-          </p>
         </Modal>
       )}
 
@@ -7932,16 +8099,19 @@ export default function MarketplaceApp({
         </Modal>
       )}
 
-      {onboardingOpen && user && (
+      {onboardingOpen && (user || onboardingPreview) && (
         <Modal
           elevated
           label={
-            onboardingMode === "edit"
+            onboardingPreview
+              ? "Preview SideSpace onboarding"
+              : onboardingMode === "edit"
               ? "Edit your SideSpace profile"
               : "Set up your SideSpace account"
           }
           onClose={() => {
             setOnboardingOpen(false);
+            setOnboardingPreview(false);
             setOnboardingStep(1);
             setOnboardingError("");
             resetIgAvatarSync();
@@ -7951,7 +8121,9 @@ export default function MarketplaceApp({
           <div className="onboarding-top">
             <div>
               <p className="eyebrow">
-                {onboardingMode === "edit"
+                {onboardingPreview
+                  ? "Local onboarding preview"
+                  : onboardingMode === "edit"
                   ? "Edit your profile"
                   : "Set up your account"}
               </p>
@@ -7962,14 +8134,28 @@ export default function MarketplaceApp({
               </h2>
             </div>
             <div className="step-count">
-              <span className={onboardingStep >= 1 ? "active" : ""} />
-              <span className={onboardingStep >= 2 ? "active" : ""} />
-              <small>Step {onboardingStep} of 2</small>
+              {Array.from({ length: onboardingStepCount() }, (_, index) => (
+                <span
+                  className={onboardingStep >= index + 1 ? "active" : ""}
+                  key={index}
+                />
+              ))}
+              <small>
+                Step {onboardingStep} of {onboardingStepCount()}
+              </small>
             </div>
           </div>
 
           {onboardingMode === "setup" &&
-            (invite && !profile ? (
+            (onboardingPreview ? (
+              <div className="setup-notice preview-mode-notice">
+                <strong>Nothing in this preview is saved.</strong>
+                <p>
+                  Use any sample answers you like. You are testing the real
+                  five-step flow, validation, transitions, and listing preview.
+                </p>
+              </div>
+            ) : invite && !profile ? (
               /* An invited business should never be asked to type its own
                  name. But a prefill they cannot see the origin of is just the
                  form asserting things about them, which is the thing this
@@ -7990,8 +8176,8 @@ export default function MarketplaceApp({
               <div className="setup-notice">
                 <strong>Nobody can see you yet.</strong>
                 <p>
-                  Your profile appears in search once you finish this. It is two
-                  screens.
+                  Your profile appears in search once you finish. Each screen
+                  asks for one small part of your listing.
                 </p>
               </div>
             ))}
@@ -8010,10 +8196,24 @@ export default function MarketplaceApp({
             {/* ---------------------------------------------------------------
                 STEP 1 - identity. Identical for all four roles.
                 --------------------------------------------------------------- */}
-            {onboardingStep === 1 && (
-              <div className="form-step active">
-                <h3>Which of these is you?</h3>
-                <p>This changes what we ask next. You can add more later.</p>
+            {(onboardingStep === 1 ||
+              (onboardingMode === "setup" && onboardingStep === 2)) && (
+              <div
+                className="form-step active onboarding-slide"
+                data-direction={onboardingDirection > 0 ? "forward" : "back"}
+                key={`${onboardingMode}-${onboardingStep}`}
+              >
+                <h3>
+                  {onboardingStep === 1
+                    ? "Which of these is you?"
+                    : "Start with the basics."}
+                </h3>
+                <p>
+                  {onboardingStep === 1
+                    ? "This changes what we ask next. You can add more later."
+                    : "A few details make the rest of your listing feel personal."}
+                </p>
+                {onboardingStep === 1 && (
                 <div className="role-choice-grid" data-field="role">
                   {PICKABLE_ROLES.map((role) => (
                     <button
@@ -8059,8 +8259,10 @@ export default function MarketplaceApp({
                     </button>
                   ))}
                 </div>
+                )}
 
-                <div className="field-grid">
+                  {(onboardingMode === "edit" || onboardingStep === 2) && (
+                <div className="field-grid onboarding-identity-fields">
                   <label>
                     {selectedRole === "business"
                       ? "Business name"
@@ -8070,6 +8272,7 @@ export default function MarketplaceApp({
                           ? "Your name or business"
                           : "Your name"}
                     <input
+                      autoFocus={onboardingMode === "setup" && onboardingStep === 2}
                       name="display_name"
                       data-field="display_name"
                       maxLength={80}
@@ -8091,7 +8294,9 @@ export default function MarketplaceApp({
                       }
                     />
                   </label>
-                  <label>
+                  {(onboardingMode === "edit" ||
+                    Boolean(answers.display_name.trim())) && (
+                  <label className="progressive-field">
                     Where are you based?
                     <small>City and state. This is how buyers filter.</small>
                     <input
@@ -8109,12 +8314,14 @@ export default function MarketplaceApp({
                       placeholder="Brea, CA"
                     />
                   </label>
+                  )}
                   <datalist id="onboarding-market-list">
                     {knownMarkets.map((market) => (
                       <option key={market} value={market} />
                     ))}
                   </datalist>
-                  <label className="field-wide">
+                  {(onboardingMode === "edit" || Boolean(answers.city.trim())) && (
+                  <label className="field-wide progressive-field">
                     {selectedRole === "business"
                       ? "One line about your business"
                       : selectedRole === "sponsor_host"
@@ -8128,6 +8335,16 @@ export default function MarketplaceApp({
                         : selectedRole === "sponsor_host"
                           ? "Who you are and what you do. Sponsors read this first."
                           : "One sentence. It sits under your name on every card."}
+                      {" "}
+                      <span
+                        className="field-character-count"
+                        aria-live="polite"
+                        data-complete={
+                          answers.bio.trim().length >= 10 ? "true" : "false"
+                        }
+                      >
+                        {getBioRequirementHint(answers.bio)}
+                      </span>
                     </small>
                     <input
                       name="bio"
@@ -8151,10 +8368,16 @@ export default function MarketplaceApp({
                       }
                     />
                   </label>
-                  <label className="field-wide media-upload-field">
-                    {selectedRole === "business" || selectedRole === "sponsor_host"
-                      ? "Add your logo"
-                      : "Add a profile photo"}
+                  )}
+                  {(onboardingMode === "edit" ||
+                    answers.bio.trim().length > 0) && (
+                  <>
+                  <label className="field-wide media-upload-field progressive-field">
+                    <OptionalFieldLabel>
+                      {selectedRole === "business" || selectedRole === "sponsor_host"
+                        ? "Add your logo"
+                        : "Add a profile photo"}
+                    </OptionalFieldLabel>
                     <input
                       ref={avatarInputRef}
                       name="avatar_file"
@@ -8176,8 +8399,8 @@ export default function MarketplaceApp({
                       more - it was a unique-indexed field that meant nothing
                       to the person filling it in. */}
                   {selectedRole === "business" ? (
-                    <label>
-                      Your name
+                    <label className="progressive-field">
+                      <OptionalFieldLabel>Your name</OptionalFieldLabel>
                       <small>Who a booker is actually writing to.</small>
                       {/* Every other example in this flow is invented -
                           "Maya Alvarez", "Brea Coffee Bar". This placeholder
@@ -8198,8 +8421,8 @@ export default function MarketplaceApp({
                       />
                     </label>
                   ) : (
-                    <label>
-                      Email
+                    <label className="progressive-field">
+                      <OptionalFieldLabel>Email</OptionalFieldLabel>
                       <small>How people reach you about a booking.</small>
                       <input
                         name="contact_email"
@@ -8219,56 +8442,52 @@ export default function MarketplaceApp({
                       />
                     </label>
                   )}
+                  </>
+                  )}
                 </div>
+                )}
 
-                {/* What is still outstanding, live, next to the button that
-                    will refuse to move without it. Before this the only way to
-                    find out was to press the button and be bounced to a field;
-                    on step 2 a space owner has nine of these to discover one
-                    at a time. */}
-                {(() => {
-                  const left = missingAnswers();
-                  if (!left.length) {
-                    return (
-                      <p className="onboarding-todo is-ready">
-                        Everything’s answered.
-                      </p>
-                    );
-                  }
-                  return (
+                {(onboardingStep > 1 || isCurrentOnboardingStepComplete()) && (
+                <div
+                  className="onboarding-actions"
+                  data-ready={isCurrentOnboardingStepComplete() ? "true" : "false"}
+                >
+                  {onboardingMode === "setup" && onboardingStep === 2 ? (
                     <button
                       type="button"
-                      className="onboarding-todo"
-                      onClick={() => scrollToField(left[0][1])}
+                      onClick={() => goToOnboardingStep(1)}
                     >
-                      <span>
-                        {left.length} still to answer
-                      </span>
-                      <b>{left[0][0]}</b>
+                      ← Back
                     </button>
-                  );
-                })()}
-                <div className="onboarding-actions">
-                  <span />
-                  <button
-                    type="button"
-                    className="button button-dark"
-                    onClick={advanceOnboarding}
-                  >
-                    {onboardingMode === "edit"
-                      ? "Next: your details"
-                      : selectedRole === "business"
-                        ? "Next: your campaign"
-                        : selectedRole === "creator"
-                          ? "Next: what you sell"
-                          : selectedRole === "space_owner"
-                            ? "Next: your space"
-                            : selectedRole === "sponsor_host"
-                              ? "Next: your sponsorship"
-                              : "Next"}{" "}
-                    <span>→</span>
-                  </button>
+                  ) : (
+                    <span />
+                  )}
+                  {isCurrentOnboardingStepComplete() && (
+                    <span className="onboarding-primary-action-enter">
+                      <button
+                        type="button"
+                        className="button button-dark"
+                        onClick={advanceOnboarding}
+                      >
+                        {onboardingStep === 1
+                          ? onboardingMode === "edit"
+                            ? "Next: your details"
+                            : "Continue"
+                          : selectedRole === "business"
+                            ? "Next: your campaign"
+                            : selectedRole === "creator"
+                              ? "Next: what you sell"
+                              : selectedRole === "space_owner"
+                                ? "Next: your space"
+                                : selectedRole === "sponsor_host"
+                                  ? "Next: your sponsorship"
+                                  : "Next"}{" "}
+                        <span>→</span>
+                      </button>
+                    </span>
+                  )}
                 </div>
+                )}
               </div>
             )}
 
@@ -8277,8 +8496,13 @@ export default function MarketplaceApp({
                 Conditionally RENDERED, not display:none, so an unchosen role's
                 controls are genuinely absent from the DOM.
                 --------------------------------------------------------------- */}
-            {onboardingStep === 2 && (
-              <div className="form-step active">
+            {((onboardingMode === "edit" && onboardingStep === 2) ||
+              (onboardingMode === "setup" && onboardingStep >= 3)) && (
+              <div
+                className="form-step active onboarding-slide"
+                data-direction={onboardingDirection > 0 ? "forward" : "back"}
+                key={`${onboardingMode}-${onboardingStep}`}
+              >
                 {onboardingMode === "edit" ? (
                   <>
                     <h3>Your details</h3>
@@ -8319,7 +8543,7 @@ export default function MarketplaceApp({
                     )}
                     <div className="field-grid">
                       <label className="field-wide media-upload-field">
-                        Profile photos
+                        <OptionalFieldLabel>Profile photos</OptionalFieldLabel>
                         <input
                           name="gallery_files"
                           type="file"
@@ -8339,6 +8563,7 @@ export default function MarketplaceApp({
                     <ChipRow
                       field="categories"
                       label="What kind of work"
+                      optional
                       multi
                       options={CATEGORY_CHIPS}
                       selected={answers.categories}
@@ -8355,27 +8580,39 @@ export default function MarketplaceApp({
                 ) : (
                   <>
                     <h3>
-                      {selectedRole === "creator"
-                        ? "What can a brand book from you?"
-                        : selectedRole === "space_owner"
-                          ? "What space can someone rent?"
-                          : selectedRole === "business"
-                            ? "What do you want to run?"
-                            : "What can a sponsor get?"}
+                      {onboardingStep === 5
+                        ? "Review what people will see."
+                        : onboardingStep === 4
+                          ? selectedRole === "creator"
+                            ? "Build your first offer."
+                            : selectedRole === "space_owner"
+                              ? "Make the space bookable."
+                              : selectedRole === "business"
+                                ? "Set the practical details."
+                                : "Build the sponsorship levels."
+                          : selectedRole === "creator"
+                            ? "Tell us about your audience."
+                            : selectedRole === "space_owner"
+                              ? "Show us the space."
+                              : selectedRole === "business"
+                                ? "Shape the campaign."
+                                : "Tell us about the organization."}
                     </h3>
                     <p>
-                      {selectedRole === "creator"
-                        ? "One offer is enough to start. You can add more in a minute."
-                        : selectedRole === "space_owner"
-                          ? "Start with one. A photo and a clear price are what make it bookable."
+                      {onboardingStep === 5
+                        ? "Make any final edits, then publish when it feels right."
+                        : onboardingStep === 4
+                          ? "Clear expectations make the first conversation much easier."
                           : selectedRole === "business"
-                            ? "We’ll post this as a brief. Creators, spaces and local teams answer it — you pick who."
-                            : "Sponsors want to know who they’d be backing and what their logo goes on."}
+                            ? "A focused brief gets better replies from creators and local spaces."
+                            : "A few specific answers make your listing easier to trust."}
                     </p>
 
                     {/* ---------------- CREATOR ---------------- */}
                     {selectedRole === "creator" && (
                       <>
+                        {onboardingStep === 3 && (
+                        <>
                         <div className="form-subsection field-wide">
                           <span>Your audience</span>
                           <h4>Where can brands find you?</h4>
@@ -8395,6 +8632,11 @@ export default function MarketplaceApp({
                           }
                         />
 
+                        </>
+                        )}
+
+                        {onboardingStep === 4 && (
+                        <>
                         <div className="form-subsection field-wide">
                           <span>Your first offer</span>
                           <h4>What does a brand actually get?</h4>
@@ -8461,6 +8703,7 @@ export default function MarketplaceApp({
                         <ChipRow
                           field="categories"
                           label="What kind of work"
+                          optional
                           multi
                           options={CATEGORY_CHIPS}
                           selected={answers.categories}
@@ -8475,7 +8718,9 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label className="field-wide media-upload-field">
-                            Photos of your work
+                            <OptionalFieldLabel>
+                              Photos of your work
+                            </OptionalFieldLabel>
                             <input
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
@@ -8492,12 +8737,16 @@ export default function MarketplaceApp({
                             </small>
                           </label>
                         </div>
+                        </>
+                        )}
                       </>
                     )}
 
                     {/* ---------------- SPACE OWNER ---------------- */}
                     {selectedRole === "space_owner" && (
                       <>
+                        {onboardingStep === 3 && (
+                        <>
                         <div className="form-subsection field-wide">
                           <span>The space</span>
                           <h4>What kind of space is it?</h4>
@@ -8516,7 +8765,7 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label className="field-wide">
-                            Exact address <span className="optional">optional</span>
+                            <OptionalFieldLabel>Exact address</OptionalFieldLabel>
                             {/* This used to end "listings are fetched whole,
                                 so do not put anything here you would not make
                                 public" - true when written, and false since
@@ -8565,7 +8814,9 @@ export default function MarketplaceApp({
                             )}
                           </label>
                           <label>
-                            What buyers see on the card
+                            <OptionalFieldLabel>
+                              What buyers see on the card
+                            </OptionalFieldLabel>
                             <small>
                               A street or neighborhood. Shown publicly instead of
                               the full address.
@@ -8605,7 +8856,9 @@ export default function MarketplaceApp({
                             />
                           </label>
                           <label className="field-wide media-upload-field">
-                            Photos of the space
+                            <OptionalFieldLabel>
+                              Photos of the space
+                            </OptionalFieldLabel>
                             <input
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
@@ -8623,6 +8876,11 @@ export default function MarketplaceApp({
                           </label>
                         </div>
 
+                        </>
+                        )}
+
+                        {onboardingStep === 4 && (
+                        <>
                         <div className="form-subsection field-wide">
                           <span>What can go up</span>
                           <h4>What works here, and who puts it up?</h4>
@@ -8780,12 +9038,16 @@ export default function MarketplaceApp({
                             </p>
                           ) : null;
                         })()}
+                        </>
+                        )}
                       </>
                     )}
 
                     {/* ---------------- BUSINESS ---------------- */}
                     {selectedRole === "business" && (
                       <>
+                        {onboardingStep === 3 && (
+                        <>
                         <div className="form-subsection field-wide">
                           <span>What you’re promoting</span>
                           <h4>What are you actually running this for?</h4>
@@ -8817,6 +9079,7 @@ export default function MarketplaceApp({
                         <ChipRow
                           field="categories"
                           label="What kind of business you are"
+                          optional
                           multi
                           options={CATEGORY_CHIPS}
                           selected={answers.categories}
@@ -8903,7 +9166,9 @@ export default function MarketplaceApp({
                               />
                               <div className="field-grid">
                                 <label className="field-wide">
-                                  Where do you want it?
+                                  <OptionalFieldLabel>
+                                    Where do you want it?
+                                  </OptionalFieldLabel>
                                   <small>
                                     The neighborhood or street you want to be
                                     seen on — not necessarily where you are.
@@ -8956,7 +9221,9 @@ export default function MarketplaceApp({
                               />
                               <div className="field-grid">
                                 <label className="field-wide">
-                                  Anything a creator must include?
+                                  <OptionalFieldLabel>
+                                    Anything a creator must include?
+                                  </OptionalFieldLabel>
                                   <input
                                     data-field="deliverables"
                                     maxLength={200}
@@ -9019,6 +9286,11 @@ export default function MarketplaceApp({
                             </>
                           )}
 
+                        </>
+                        )}
+
+                        {onboardingStep === 4 && (
+                        <>
                         {/* The artwork they need carried. Uploaded here so a
                             creator or space owner can see exactly what they'd
                             be posting before they answer. */}
@@ -9028,7 +9300,7 @@ export default function MarketplaceApp({
                         </div>
                         <div className="field-grid">
                           <label className="field-wide media-upload-field">
-                            Flyer, story, or clip
+                            <OptionalFieldLabel>Flyer, story, or clip</OptionalFieldLabel>
                             <input
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
@@ -9049,6 +9321,7 @@ export default function MarketplaceApp({
                         <ChipRow
                           field="artwork"
                           label="Who makes the artwork"
+                          optional
                           options={[
                             "I’ll supply the artwork",
                             "I need help making it",
@@ -9124,8 +9397,8 @@ export default function MarketplaceApp({
                             />
                           </label>
                           <label>
-                            up to
-                            <small>Optional. Leave blank for a flat budget.</small>
+                            <OptionalFieldLabel>up to</OptionalFieldLabel>
+                            <small>Leave blank for a flat budget.</small>
                             <input
                               type="number"
                               min={1}
@@ -9163,12 +9436,16 @@ export default function MarketplaceApp({
                             </p>
                           ) : null;
                         })()}
+                        </>
+                        )}
                       </>
                     )}
 
                     {/* ---------------- SPONSORSHIP HOST ---------------- */}
                     {selectedRole === "sponsor_host" && (
                       <>
+                        {onboardingStep === 3 && (
+                        <>
                         <div className="form-subsection field-wide">
                           <span>Your organization</span>
                           <h4>What are you?</h4>
@@ -9319,6 +9596,11 @@ export default function MarketplaceApp({
                           ) : null;
                         })()}
 
+                        </>
+                        )}
+
+                        {onboardingStep === 4 && (
+                        <>
                         <div className="form-subsection field-wide">
                           <span>The menu</span>
                           <h4>What could a sponsor get?</h4>
@@ -9419,8 +9701,8 @@ export default function MarketplaceApp({
                                 />
                               </label>
                               <label>
-                                Spots at this level
-                                <small>Optional.</small>
+                                <OptionalFieldLabel>Spots at this level</OptionalFieldLabel>
+                                <small>Leave blank if you don’t need a cap.</small>
                                 <input
                                   type="number"
                                   min={1}
@@ -9483,8 +9765,8 @@ export default function MarketplaceApp({
                                 </span>
                               </label>
                               <label>
-                                up to
-                                <small>Optional. Leave blank for a flat tier.</small>
+                                <OptionalFieldLabel>up to</OptionalFieldLabel>
+                                <small>Leave blank for a flat tier.</small>
                                 <input
                                   type="number"
                                   min={1}
@@ -9579,7 +9861,7 @@ export default function MarketplaceApp({
                         )}
                         <div className="field-grid">
                           <label className="field-wide media-upload-field">
-                            Photos
+                            <OptionalFieldLabel>Photos</OptionalFieldLabel>
                             <input
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
@@ -9595,10 +9877,14 @@ export default function MarketplaceApp({
                             </small>
                           </label>
                         </div>
+                        </>
+                        )}
                       </>
                     )}
 
                     {/* ---------------- shared: title, price, description ------- */}
+                    {onboardingStep === 5 && (
+                    <>
                     <div className="form-subsection field-wide">
                       <span>
                         {selectedRole === "business"
@@ -9694,8 +9980,8 @@ export default function MarketplaceApp({
                           since price_max landed. */}
                       {selectedRole === "space_owner" && (
                         <label>
-                          up to
-                          <small>Optional. Leave blank for a flat rate.</small>
+                          <OptionalFieldLabel>up to</OptionalFieldLabel>
+                          <small>Leave blank for a flat rate.</small>
                           <input
                             type="number"
                             min={1}
@@ -9958,6 +10244,9 @@ export default function MarketplaceApp({
                       </div>
                     </div>
 
+                    </>
+                    )}
+
                   </>
                 )}
 
@@ -9965,6 +10254,8 @@ export default function MarketplaceApp({
                     drive the role badge and the marketplace filter, and if this
                     only rendered during setup an established member could never
                     add or drop one - the old flow offered it in both modes. */}
+                {(onboardingMode === "edit" || onboardingStep === 5) && (
+                <>
                 <div className="form-subsection field-wide">
                   <span>Anything else?</span>
                   <h4>Do you do more than one of these?</h4>
@@ -9975,6 +10266,7 @@ export default function MarketplaceApp({
                 <ChipRow
                   field="extra_roles"
                   label="Other things you do"
+                  optional
                   multi
                   options={EXTRA_ROLE_OPTIONS.filter(
                     (role) => role !== selectedRole,
@@ -9992,66 +10284,56 @@ export default function MarketplaceApp({
                     );
                   }}
                 />
+                </>
+                )}
 
-                {/* What is still outstanding, live, next to the button that
-                    will refuse to move without it. Before this the only way to
-                    find out was to press the button and be bounced to a field;
-                    on step 2 a space owner has nine of these to discover one
-                    at a time. */}
-                {(() => {
-                  const left = missingAnswers();
-                  // In edit mode step 2 is the profile editor: nothing on
-                  // it is required, so a "ready" badge would be answering a
-                  // question nobody asked.
-                  if (!left.length) {
-                    if (onboardingMode === "edit") return null;
-                    return (
-                      <p className="onboarding-todo is-ready">
-                        Everything’s answered.
-                      </p>
-                    );
-                  }
-                  return (
-                    <button
-                      type="button"
-                      className="onboarding-todo"
-                      onClick={() => scrollToField(left[0][1])}
-                    >
-                      <span>
-                        {left.length} still to answer
-                      </span>
-                      <b>{left[0][0]}</b>
-                    </button>
-                  );
-                })()}
-                <div className="onboarding-actions">
+                <div
+                  className="onboarding-actions"
+                  data-ready={isCurrentOnboardingStepComplete() ? "true" : "false"}
+                >
                   <button
                     type="button"
-                    onClick={() => {
-                      setOnboardingError("");
-                      setOnboardingStep(1);
-                    }}
+                    onClick={() => goToOnboardingStep(onboardingStep - 1)}
                   >
                     ← Back
                   </button>
-                  <button
-                    type="submit"
-                    className="button button-coral"
-                    // Also gated on the Instagram lookup: publishOnboarding
-                    // snapshots `answers` before it awaits that promise, so a
-                    // follower count the lookup fills in afterwards would be
-                    // saved as 0 while the member reads "Found @you - 18.4K".
-                    disabled={busy || igAvatarBusy}
-                  >
-                    {busy
-                      ? "Publishing…"
-                      : onboardingMode === "edit"
-                        ? "Save changes"
-                        : selectedRole === "business"
-                          ? "Post my brief"
-                          : "Publish and finish"}{" "}
-                    <span>✓</span>
-                  </button>
+                  {isCurrentOnboardingStepComplete() && (
+                    <span className="onboarding-primary-action-enter">
+                      {onboardingMode === "setup" && onboardingStep < 5 ? (
+                        <button
+                          type="button"
+                          className="button button-dark"
+                          onClick={advanceOnboarding}
+                        >
+                          {onboardingStep === 3
+                            ? "Next: the details"
+                            : "Next: review"}{" "}
+                          <span>→</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          className="button button-coral"
+                          // Also gated on the Instagram lookup: publishOnboarding
+                          // snapshots `answers` before it awaits that promise, so a
+                          // follower count the lookup fills in afterwards would be
+                          // saved as 0 while the member reads "Found @you - 18.4K".
+                          disabled={busy || igAvatarBusy}
+                        >
+                          {busy
+                            ? "Publishing…"
+                            : onboardingPreview
+                              ? "Finish preview"
+                              : onboardingMode === "edit"
+                                ? "Save changes"
+                                : selectedRole === "business"
+                                  ? "Post my brief"
+                                  : "Publish and finish"}{" "}
+                          <span>✓</span>
+                        </button>
+                      )}
+                    </span>
+                  )}
                 </div>
               </div>
             )}
