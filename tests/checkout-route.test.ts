@@ -146,7 +146,7 @@ describe("checkout route authorization", () => {
   // campaign died on a Postgres 23502 that surfaced as a generic 500. This
   // drives the route all the way to the insert and asserts the payload carries
   // every column the schema requires, rather than only the one that regressed.
-  it("inserts a ledger row carrying every column the schema requires", async () => {
+  it("returns a Stripe checkout URL and writes every column the schema requires", async () => {
     // From 20260830060711 and 20260830120000: NOT NULL, no default, and not
     // generated. Kept as a literal so adding such a column to the table
     // without adding it here is a failing test rather than a 500 in production.
@@ -193,20 +193,38 @@ describe("checkout route authorization", () => {
 
     // payment_transactions: first the "does one already exist" lookup (no), then
     // the insert whose payload this test exists to inspect.
+    // The row the insert is expected to return, shaped like transactionColumns.
+    const insertedRow = {
+      id: "txn-1",
+      status: "requires_checkout",
+      checkout_attempt: 0,
+      stripe_checkout_session_id: null,
+      subtotal_cents: 10_000,
+      business_profile_id: "business-1",
+      creator_profile_id: "creator-1",
+    };
+    // The final UPDATE ends in .in(...), which is what gets awaited.
+    const updateChain = {
+      eq: vi.fn(),
+      in: vi.fn().mockResolvedValue({ error: null }),
+    };
+    updateChain.eq.mockReturnValue(updateChain);
+
     const transactionQuery: Record<string, ReturnType<typeof vi.fn>> = {
       select: vi.fn(),
       eq: vi.fn(),
+      // First read: "does a transaction already exist for this campaign?" - no.
       maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-      single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      // Read after the insert: the row just written.
+      single: vi.fn().mockResolvedValue({ data: insertedRow, error: null }),
       insert: vi.fn((payload: Record<string, unknown>) => {
         insertPayload = payload;
         return transactionQuery;
       }),
-      update: vi.fn(),
+      update: vi.fn(() => updateChain),
     };
     transactionQuery.select.mockReturnValue(transactionQuery);
     transactionQuery.eq.mockReturnValue(transactionQuery);
-    transactionQuery.update.mockReturnValue(transactionQuery);
 
     const admin = {
       from: vi.fn((table: string) => {
@@ -243,7 +261,14 @@ describe("checkout route authorization", () => {
       },
     });
 
-    await POST(checkoutRequest());
+    const response = await POST(checkoutRequest());
+
+    // The whole point: a real Stripe-hosted checkout URL comes back.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      url: "https://checkout.stripe.com/c/pay/cs_test",
+      reused: false,
+    });
 
     // Read through a fresh binding: the assignment happens inside the insert
     // mock, which TypeScript's control-flow analysis cannot see, so it narrows
