@@ -50,3 +50,35 @@ describe("SideSpace 5% + 5% marketplace economics", () => {
     expect(() => calculatePaymentBreakdown(-1)).toThrow(/non-negative/);
   });
 });
+
+// The database enforces the same arithmetic in `payment_transaction_fee_math`:
+//
+//   CHECK (customer_total_cents  = subtotal_cents + buyer_fee_cents
+//      AND creator_payout_cents  = subtotal_cents - creator_fee_cents
+//      AND platform_gross_revenue_cents = buyer_fee_cents + creator_fee_cents)
+//
+// A breakdown that violates it does not fail a unit test - it fails the INSERT in
+// `api/stripe/checkout`, as an opaque 23514 in production, on every payment.
+// So assert the constraint here, where a rounding change gets caught in CI.
+describe("breakdowns satisfy the payment_transactions CHECK constraints", () => {
+  const subtotals = [
+    1, 2, 9, 10, 11, 33, 99, 101, 333, 999, 1_001, 4_999, 9_999, 10_001,
+    12_345, 50_505, 99_999, 123_456, 1_000_001,
+  ];
+
+  it.each(subtotals)("a $%d-cent subtotal inserts cleanly", (subtotal) => {
+    const b = calculatePaymentBreakdown(subtotal);
+
+    expect(b.customerTotalCents).toBe(b.subtotalCents + b.buyerFeeCents);
+    expect(b.creatorPayoutCents).toBe(b.subtotalCents - b.creatorFeeCents);
+    expect(b.platformGrossRevenueCents).toBe(b.buyerFeeCents + b.creatorFeeCents);
+
+    // The column-level `>= 0` / `> 0` checks on the same table.
+    expect(b.subtotalCents).toBeGreaterThan(0);
+    expect(b.customerTotalCents).toBeGreaterThan(0);
+    expect(b.buyerFeeCents).toBeGreaterThanOrEqual(0);
+    expect(b.creatorFeeCents).toBeGreaterThanOrEqual(0);
+    expect(b.creatorPayoutCents).toBeGreaterThanOrEqual(0);
+    expect(b.platformGrossRevenueCents).toBeGreaterThanOrEqual(0);
+  });
+});
