@@ -12,6 +12,7 @@ import HeroCanvas from "./HeroCanvas";
 import {
   type CSSProperties,
   type KeyboardEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useRef,
@@ -929,23 +930,70 @@ export function LandingPage({
   );
 }
 
-const ADVERTISER_STEPS = [
-  ["Search", "Filter by place, format, audience, or local market."],
-  ["Discover", "Open a listing and see who controls it, what is included, and the rate."],
-  ["Request", "Send campaign goals, timing, deliverables, and a working budget."],
-  ["Message", "Talk directly, ask questions, and negotiate the details."],
-  ["Agree", "Accept the plan together, then run the campaign."],
-] as const;
-
-const OWNER_STEPS = [
-  ["List", "Describe the audience, surface, route, team, or event you control."],
-  ["Price", "Set your own rate, availability, lead time, and practical limits."],
-  ["Receive", "Get a real campaign request instead of a vague cold message."],
-  ["Negotiate", "Counter the price or clarify what the business needs."],
-  ["Accept", "Agree only when the campaign fits you and your audience."],
-] as const;
-
 type JourneySide = "advertiser" | "owner";
+
+type JourneyStep = {
+  eyebrow: string;
+  title: string;
+  copy: string;
+};
+
+const JOURNEY_STEPS: Record<JourneySide, readonly JourneyStep[]> = {
+  advertiser: [
+    {
+      eyebrow: "FIND",
+      title: "Browse real offerings.",
+      copy: "Search by place, format, audience, or local market and see exactly who controls each listing.",
+    },
+    {
+      eyebrow: "COMPARE",
+      title: "Build a focused shortlist.",
+      copy: "Compare the rate, timing, reach, and format before choosing who you want to work with.",
+    },
+    {
+      eyebrow: "REQUEST",
+      title: "Send a clear offer.",
+      copy: "Share the campaign goal, dates, deliverables, and working budget with the creator.",
+    },
+    {
+      eyebrow: "DISCUSS",
+      title: "Work out the details.",
+      copy: "Message directly, answer questions, and respond when the creator counters your offer.",
+    },
+    {
+      eyebrow: "AGREE",
+      title: "Confirm the right fit.",
+      copy: "Accept the final price and plan together so everyone knows what happens next.",
+    },
+  ],
+  owner: [
+    {
+      eyebrow: "CREATE",
+      title: "Post what you can offer.",
+      copy: "Turn an audience, window, wall, route, team, or event into a specific bookable listing.",
+    },
+    {
+      eyebrow: "SET TERMS",
+      title: "Name your price and boundaries.",
+      copy: "Choose the rate, availability, lead time, deliverables, and practical limits you control.",
+    },
+    {
+      eyebrow: "REVIEW",
+      title: "Compare incoming offers.",
+      copy: "See each business's budget, dates, campaign idea, and requested deliverables side by side.",
+    },
+    {
+      eyebrow: "RESPOND",
+      title: "Counter or clarify.",
+      copy: "Ask questions, suggest a different price, or decline anything that is not right for you.",
+    },
+    {
+      eyebrow: "CHOOSE",
+      title: "Accept the offer that fits.",
+      copy: "You make the final call. Agree only when the business, timing, and campaign feel right.",
+    },
+  ],
+};
 
 const JOURNEY_OPTIONS: ReadonlyArray<{ side: JourneySide; label: string }> = [
   { side: "advertiser", label: "I want to advertise" },
@@ -957,23 +1005,231 @@ const JOURNEY_DEMO_IMAGES = [
   "/photos/market-creator.jpg",
 ] as const;
 
+const JOURNEY_CURSOR_LABELS: Record<JourneySide, readonly string[]> = {
+  advertiser: ["OPEN", "COMPARE", "SEND", "ACCEPT", "NEXT"],
+  owner: ["CONTINUE", "PUBLISH", "REVIEW", "COUNTER", "ACCEPT"],
+};
+
+function JourneyDemoCursor({ onDemonstrate, side, step }: { onDemonstrate: () => void; side: JourneySide; step: number }) {
+  return (
+    <div aria-hidden="true" className={`ss-demo-cursor is-${side}-${step}`}>
+      <span className="ss-demo-cursor-ripple" />
+      <span
+        className="ss-demo-cursor-trigger"
+        onAnimationEnd={(event) => {
+          if (event.animationName === "ss-demo-cursor-trigger") onDemonstrate();
+        }}
+      />
+      <svg fill="none" viewBox="0 0 24 30">
+        <path d="M3 2.5v20.1l5.2-4.3 4.1 8.2 3.7-1.9-4-7.9h7.2L3 2.5Z" />
+      </svg>
+      <b>{JOURNEY_CURSOR_LABELS[side][step]}</b>
+    </div>
+  );
+}
+
+function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
+  const [selectedItem, setSelectedItem] = useState(0);
+  const [actionComplete, setActionComplete] = useState(false);
+  const [termsEnabled, setTermsEnabled] = useState([true, true]);
+
+  function demonstrateAction() {
+    if (side === "advertiser") {
+      if (step === 0 || step === 1) setSelectedItem(1);
+      else setActionComplete(true);
+      return;
+    }
+
+    if (step === 2) setSelectedItem(1);
+    else setActionComplete(true);
+  }
+
+  function withCursor(scene: ReactNode) {
+    return <>{scene}<JourneyDemoCursor onDemonstrate={demonstrateAction} side={side} step={step} /></>;
+  }
+
+  if (side === "advertiser") {
+    if (step === 0) {
+      return withCursor(
+        <div className="ss-demo-scene is-searching">
+          <div className="ss-scene-search"><span>⌕</span><strong><i>Creator or storefront near Fullerton</i></strong><kbd>↵</kbd></div>
+          <div className="ss-scene-results">
+            <button aria-pressed={selectedItem === 0} className={selectedItem === 0 ? "is-selected" : undefined} onClick={() => setSelectedItem(0)} type="button"><img src="/photos/corner-store.jpg" alt="" /><span><small>STOREFRONT · 0.8 MI</small><strong>Front window placement</strong><em>$240 / 2 weeks</em></span><b>01</b></button>
+            <button aria-pressed={selectedItem === 1} className={selectedItem === 1 ? "is-selected" : undefined} data-cursor-target onClick={() => setSelectedItem(1)} type="button"><img src="/photos/market-creator.jpg" alt="" /><span><small>LOCAL CREATOR · 1.4 MI</small><strong>Story + saved highlight</strong><em>$180 / campaign</em></span><b>02</b></button>
+          </div>
+          <p className="ss-demo-hint">Choose either result to preview the selection.</p>
+        </div>
+      );
+    }
+
+    if (step === 1) {
+      const shortlist = [
+        ["Storefront window", "$240", "5 days"],
+        ["Creator story", "$180", "3 days"],
+        ["Cafe counter cards", "$95", "2 days"],
+      ];
+
+      return withCursor(
+        <div className="ss-demo-scene is-comparing">
+          <div className="ss-scene-title"><small>YOUR SHORTLIST</small><strong>Three ways to reach the neighborhood</strong><span>3 saved</span></div>
+          <div className="ss-compare-head"><span>OFFERING</span><span>RATE</span><span>LEAD TIME</span></div>
+          {shortlist.map(([name, rate, lead], index) => <button aria-pressed={selectedItem === index} className={selectedItem === index ? "ss-compare-row is-best" : "ss-compare-row"} data-cursor-target={index === 1 ? true : undefined} key={name} onClick={() => setSelectedItem(index)} type="button"><span><i>{index + 1}</i>{name}</span><strong>{rate}</strong><span>{lead}</span></button>)}
+          <div className="ss-scene-note"><i>✓</i><span><strong>Selected for the brief</strong>{shortlist[selectedItem][0]} · {shortlist[selectedItem][2]} lead time</span></div>
+        </div>
+      );
+    }
+
+    if (step === 2) {
+      return withCursor(
+        <div className="ss-demo-scene is-requesting">
+          <div className="ss-scene-title"><small>CAMPAIGN REQUEST</small><strong>Neighborhood launch weekend</strong><span>DRAFT</span></div>
+          <div className="ss-request-grid">
+            <label><span>RUN DATES</span><strong>SEP 12 — SEP 14</strong></label>
+            <label><span>WORKING BUDGET</span><strong>$600</strong></label>
+          </div>
+          <div className="ss-request-brief"><span>WHAT SHOULD RUN?</span><p>One story showing the opening, saved to a local guide highlight for two weeks.</p></div>
+          <div className="ss-scene-action"><span>{actionComplete ? "Offer delivered to Maya" : "3 deliverables attached"}</span><button className={actionComplete ? "is-complete" : undefined} data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? "OFFER SENT ✓" : "SEND OFFER ↗"}</button></div>
+        </div>
+      );
+    }
+
+    if (step === 3) {
+      return withCursor(
+        <div className="ss-demo-scene is-talking">
+          <div className="ss-thread-person"><span>MC</span><div><strong>Maya Chen</strong><small>LOCAL CREATOR · ACTIVE NOW</small></div><b>•••</b></div>
+          <div className="ss-scene-thread">
+            <p>Could the story stay in your local guide highlight for two weeks?</p>
+            <p>Yes. I can include that for $640 total.</p>
+          </div>
+          {actionComplete ? (
+            <div className="ss-payout-screen"><span>PAYMENT SECURED</span><strong>$640</strong><p>Creator payout is scheduled after the campaign is completed.</p><div><small>RECIPIENT</small><b>Maya Chen</b><small>STATUS</small><b>READY</b></div></div>
+          ) : (
+            <div className="ss-counter-card"><span>COUNTER OFFER</span><strong>$640</strong><small>Story + 2-week saved highlight</small><div><button data-cursor-target onClick={() => setActionComplete(true)} type="button">ACCEPT</button><button onClick={() => setActionComplete(false)} type="button">REPLY</button></div></div>
+          )}
+        </div>
+      );
+    }
+
+    return withCursor(
+      <div className="ss-demo-scene is-agreed">
+        <div className="ss-agreed-mark">✓</div>
+        <small>CAMPAIGN AGREED</small>
+        <h3>Neighborhood launch weekend</h3>
+        <p>Maya Chen × Little Sun Coffee</p>
+        <div className="ss-agreed-details"><span><small>DATES</small><strong>SEP 12 — 14</strong></span><span><small>AGREED TOTAL</small><strong>$640</strong></span></div>
+        <button className={`ss-agreed-next${actionComplete ? " is-open" : ""}`} data-cursor-target={actionComplete ? undefined : true} onClick={() => setActionComplete(true)} type="button"><i>{actionComplete ? "✓" : "01"}</i><span><strong>{actionComplete ? "Asset thread ready" : "Next up"}</strong>{actionComplete ? "Brief, files, and final details are now in one place." : "Share final assets in the campaign thread."}</span></button>
+      </div>
+    );
+  }
+
+  if (step === 0) {
+    return withCursor(
+      <div className="ss-demo-scene is-listing">
+        <div className="ss-listing-photo"><img src="/photos/market-creator.jpg" alt="" /><span>＋ ADD PHOTOS</span></div>
+        <div className="ss-listing-form"><small>{actionComplete ? "DRAFT SAVED" : "NEW OFFERING"}</small><h3>Local story + saved highlight</h3><div><button aria-pressed={selectedItem === 0} className={selectedItem === 0 ? "is-active" : undefined} onClick={() => setSelectedItem(0)} type="button">CREATOR</button><button aria-pressed={selectedItem === 1} className={selectedItem === 1 ? "is-active" : undefined} onClick={() => setSelectedItem(1)} type="button">PHYSICAL</button><button aria-pressed={selectedItem === 2} className={selectedItem === 2 ? "is-active" : undefined} onClick={() => setSelectedItem(2)} type="button">SPONSORSHIP</button></div><p>Reach neighbors who follow local food, shops, and weekend plans.</p><button className={actionComplete ? "is-complete" : undefined} data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? "DRAFT SAVED ✓" : "CONTINUE ↗"}</button></div>
+      </div>
+    );
+  }
+
+  if (step === 1) {
+    return withCursor(
+      <div className="ss-demo-scene is-terms">
+        <div className="ss-scene-title"><small>PRICE &amp; AVAILABILITY</small><strong>You decide the terms</strong><span>STEP 2 / 3</span></div>
+        <div className="ss-terms-rate"><span>YOUR RATE</span><strong><i>$</i>180</strong><small>PER CAMPAIGN</small></div>
+        <div className="ss-terms-grid"><label><span>LEAD TIME</span><strong>3 days</strong></label><label><span>AVAILABLE</span><strong>Thu — Sun</strong></label></div>
+        <button aria-pressed={termsEnabled[0]} className="ss-terms-rule" onClick={() => setTermsEnabled((current) => [!current[0], current[1]])} type="button"><span>Saved highlight included</span><i>{termsEnabled[0] ? "YES" : "NO"}</i></button>
+        <button aria-pressed={termsEnabled[1]} className="ss-terms-rule" onClick={() => setTermsEnabled((current) => [current[0], !current[1]])} type="button"><span>Product approval required</span><i>{termsEnabled[1] ? "YES" : "NO"}</i></button>
+        <div className="ss-scene-action"><span>{actionComplete ? "Your offering is now visible" : "You can change these anytime"}</span><button className={actionComplete ? "is-complete" : undefined} data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? "PUBLISHED ✓" : "PUBLISH OFFERING ↗"}</button></div>
+      </div>
+    );
+  }
+
+  if (step === 2) {
+    const offers = [
+      ["Little Sun Coffee", "$600", "SEP 12 — 14"],
+      ["Morrow Records", "$425", "SEP 20 — 22"],
+      ["Cedar Run Club", "$260", "OCT 04"],
+    ];
+
+    return withCursor(
+      <div className="ss-demo-scene is-offers">
+        <div className="ss-scene-title"><small>3 INCOMING OFFERS</small><strong>Choose what fits your audience</strong><span>{offers[selectedItem][1]} SELECTED</span></div>
+        {offers.map(([name, rate, dates], index) => <button aria-pressed={selectedItem === index} className={selectedItem === index ? "is-best" : undefined} data-cursor-target={index === 1 ? true : undefined} key={name} onClick={() => setSelectedItem(index)} type="button"><span>{name.slice(0, 2).toUpperCase()}</span><span><strong>{name}</strong><small>{dates}</small></span><b>{rate}</b><i>{selectedItem === index ? "SELECTED" : "VIEW"}</i></button>)}
+      </div>
+    );
+  }
+
+  if (step === 3) {
+    return withCursor(
+      <div className="ss-demo-scene is-talking">
+        <div className="ss-thread-person"><span>LS</span><div><strong>Little Sun Coffee</strong><small>BUSINESS · CAMPAIGN REQUEST</small></div><b>•••</b></div>
+        <div className="ss-scene-thread"><p>Could we include a saved highlight for two weeks?</p><p>Yes—that would bring the total to $640.</p></div>
+        <div className={`ss-counter-compose${actionComplete ? " is-complete" : ""}`}><span>{actionComplete ? "COUNTER SENT" : "YOUR COUNTER"}</span><strong>{actionComplete ? "✓" : "$640"}</strong><p>Includes story + two-week saved highlight.</p><button data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? "SENT ✓" : "SEND COUNTER ↗"}</button></div>
+      </div>
+    );
+  }
+
+  return withCursor(
+    actionComplete ? (
+      <div className="ss-demo-scene is-payout">
+        <div className="ss-payout-mark">✓</div>
+        <small>PAYOUT DETAILS</small>
+        <h3>$640</h3>
+        <p>Scheduled after the campaign is completed.</p>
+        <div className="ss-payout-breakdown"><span><small>FROM</small><strong>Little Sun Coffee</strong></span><span><small>CAMPAIGN</small><strong>SEP 12 — 14</strong></span><span><small>STATUS</small><strong>READY</strong></span></div>
+      </div>
+    ) : (
+      <div className="ss-demo-scene is-accepting">
+        <small>FINAL OFFER</small>
+        <h3>Neighborhood launch weekend</h3>
+        <p>Little Sun Coffee wants a story and two-week saved highlight.</p>
+        <div className="ss-final-offer"><span><small>DATES</small><strong>SEP 12 — 14</strong></span><span><small>YOU RECEIVE</small><strong>$640</strong></span></div>
+        <button data-cursor-target onClick={() => setActionComplete(true)} type="button">ACCEPT OFFER ↗</button>
+      </div>
+    )
+  );
+}
+
 export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
   const [side, setSide] = useState<JourneySide>("advertiser");
+  const [activeStep, setActiveStep] = useState(0);
+  const [stepDirection, setStepDirection] = useState(1);
+  const [isJourneyInView, setIsJourneyInView] = useState(false);
+  const [isJourneyPaused, setIsJourneyPaused] = useState(false);
+  const [isPageVisible, setIsPageVisible] = useState(true);
+  const journeyRef = useRef<HTMLElement>(null);
+  const pointerInteractionRef = useRef(false);
   const reduceMotion = useReducedMotion() ?? false;
-  const steps = side === "advertiser" ? ADVERTISER_STEPS : OWNER_STEPS;
-  const direction = side === "owner" ? 1 : -1;
+  const steps = JOURNEY_STEPS[side];
+  const journeyPlaying = !reduceMotion && isJourneyInView && !isJourneyPaused && isPageVisible;
+  const sideDirection = side === "owner" ? 1 : -1;
   const contentTransition = reduceMotion
     ? { duration: 0.14, ease: "linear" as const }
     : { type: "spring" as const, bounce: 0, duration: 0.36 };
   const contentVariants = {
     enter: (enterDirection: number) => ({
       opacity: 0,
-      x: reduceMotion ? 0 : enterDirection * 18,
+      transform: reduceMotion ? "translate3d(0,0,0)" : `translate3d(${enterDirection * 18}px,0,0)`,
     }),
-    center: { opacity: 1, x: 0 },
+    center: { opacity: 1, transform: "translate3d(0,0,0)" },
     exit: (exitDirection: number) => ({
       opacity: 0,
-      x: reduceMotion ? 0 : exitDirection * -18,
+      transform: reduceMotion ? "translate3d(0,0,0)" : `translate3d(${exitDirection * -18}px,0,0)`,
+    }),
+  };
+  const sceneVariants = {
+    enter: (enterDirection: number) => ({
+      opacity: 0,
+      transform: reduceMotion
+        ? "translate3d(0,0,0)"
+        : `translate3d(0,${enterDirection * 14}px,0) scale(0.99)`,
+    }),
+    center: { opacity: 1, transform: "translate3d(0,0,0) scale(1)" },
+    exit: (exitDirection: number) => ({
+      opacity: 0,
+      transform: reduceMotion
+        ? "translate3d(0,0,0)"
+        : `translate3d(0,${exitDirection * -10}px,0) scale(0.995)`,
     }),
   };
 
@@ -985,6 +1241,46 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
       image.src = src;
     });
   }, []);
+
+  useEffect(() => {
+    const section = journeyRef.current;
+    if (!section || !("IntersectionObserver" in window)) {
+      setIsJourneyInView(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsJourneyInView(entry.isIntersecting),
+      { rootMargin: "-12% 0px -12% 0px", threshold: 0.16 },
+    );
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => setIsPageVisible(!document.hidden);
+    handleVisibilityChange();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  function selectSide(nextSide: JourneySide) {
+    if (nextSide === side) return;
+    setSide(nextSide);
+    setActiveStep(0);
+    setStepDirection(1);
+  }
+
+  function selectStep(nextStep: number) {
+    setStepDirection(nextStep >= activeStep ? 1 : -1);
+    setActiveStep(nextStep);
+  }
+
+  function advanceJourney() {
+    if (!journeyPlaying) return;
+    setStepDirection(1);
+    setActiveStep((current) => (current + 1) % steps.length);
+  }
 
   function handleJourneyKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     let nextSide: JourneySide | null = null;
@@ -998,7 +1294,7 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
     if (!nextSide) return;
 
     event.preventDefault();
-    setSide(nextSide);
+    selectSide(nextSide);
     document.getElementById(`ss-journey-${nextSide}-tab`)?.focus();
   }
 
@@ -1021,7 +1317,7 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
                 aria-selected={isSelected}
                 id={`ss-journey-${option.side}-tab`}
                 key={option.side}
-                onClick={() => setSide(option.side)}
+                onClick={() => selectSide(option.side)}
                 onKeyDown={handleJourneyKeyDown}
                 role="tab"
                 tabIndex={isSelected ? 0 : -1}
@@ -1047,27 +1343,49 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
 
       <section
         aria-labelledby={`ss-journey-${side}-tab`}
-        className="ss-journey"
+        className={`ss-journey${journeyPlaying ? " is-playing" : " is-paused"}`}
         id="ss-journey-panel"
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsJourneyPaused(false);
+        }}
+        onFocusCapture={() => {
+          if (!pointerInteractionRef.current) setIsJourneyPaused(true);
+        }}
+        onKeyDownCapture={() => setIsJourneyPaused(true)}
+        onPointerCancelCapture={() => { pointerInteractionRef.current = false; }}
+        onPointerDownCapture={() => { pointerInteractionRef.current = true; }}
+        onPointerUpCapture={() => { pointerInteractionRef.current = false; }}
+        ref={journeyRef}
         role="tabpanel"
       >
         <div className="ss-journey-steps">
-          <AnimatePresence custom={direction} initial={false} mode="popLayout">
+          <AnimatePresence custom={sideDirection} initial={false} mode="popLayout">
             <motion.div
               animate="center"
               className="ss-journey-steps-content"
-              custom={direction}
+              custom={sideDirection}
               exit="exit"
               initial="enter"
               key={side}
               transition={contentTransition}
               variants={contentVariants}
             >
-              {steps.map(([title, copy], index) => (
-                <article key={title}>
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  <div><h2>{title}</h2><p>{copy}</p></div>
-                </article>
+              <div className="ss-journey-step-intro">
+                <span>{side === "advertiser" ? "FOR BUSINESSES" : "FOR CREATORS"}</span>
+                <p>{reduceMotion ? "Choose a step to explore the journey." : "Follow the journey, or choose any step."}</p>
+              </div>
+              {steps.map((step, index) => (
+                <button
+                  aria-current={activeStep === index ? "step" : undefined}
+                  className={activeStep === index ? "is-active" : undefined}
+                  key={step.title}
+                  onClick={() => selectStep(index)}
+                  type="button"
+                >
+                  <span>{String(index + 1).padStart(2, "0")} / {step.eyebrow}</span>
+                  <div><h2>{step.title}</h2><p>{step.copy}</p></div>
+                  <i aria-hidden="true" className="ss-journey-step-progress" onAnimationEnd={advanceJourney} />
+                </button>
               ))}
             </motion.div>
           </AnimatePresence>
@@ -1077,34 +1395,24 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
           data-ss-parallax="0.13"
           data-ss-parallax-max="58"
         >
-          <AnimatePresence custom={direction} initial={false} mode="popLayout">
+          <div className="ss-demo-window">
+            <header><i /><i /><i /><span>SIDESPACE / {side === "advertiser" ? "BUSINESS" : "CREATOR"}</span><b>{String(activeStep + 1).padStart(2, "0")} / {String(steps.length).padStart(2, "0")}</b></header>
+            <AnimatePresence custom={stepDirection} initial={false} mode="wait">
             <motion.div
               animate="center"
-              className="ss-demo-window"
-              custom={direction}
+              className="ss-demo-stage"
+              custom={stepDirection}
               exit="exit"
               initial="enter"
-              key={side}
-              transition={contentTransition}
-              variants={contentVariants}
+              key={`${side}-${activeStep}`}
+              transition={reduceMotion ? { duration: 0.14 } : { duration: 0.42, ease: [0.23, 1, 0.32, 1] }}
+              variants={sceneVariants}
             >
-              <header><i /><i /><i /><span>SIDESPACE / {side.toUpperCase()}</span></header>
-              <div className="ss-demo-search">
-                <span>⌕</span>
-                <p>{side === "advertiser" ? "Window, creator, or event near me" : "What kind of attention do you control?"}</p>
-                <b>↵</b>
-              </div>
-              <div className="ss-demo-listing">
-                <img src={side === "advertiser" ? "/photos/corner-store.jpg" : "/photos/market-creator.jpg"} alt="" />
-                <div><small>{side === "advertiser" ? "STOREFRONT" : "CREATOR / LOCAL AUDIENCE"}</small><strong>{side === "advertiser" ? "Two-week front window placement" : "Local story and saved highlight"}</strong><span>Owner-controlled · Direct message</span></div>
-              </div>
-              <div className="ss-demo-thread">
-                <p>{side === "advertiser" ? "Can we use the left pane for two weeks?" : "The audience is strongest Thursday through Sunday."}</p>
-                <p>{side === "advertiser" ? "Yes. I can install it Monday morning." : "That works. Could we include a saved highlight?"}</p>
-              </div>
-              <div className="ss-demo-agreement"><span>CAMPAIGN DETAILS AGREED</span><b>✓</b></div>
+              <JourneyScene side={side} step={activeStep} />
             </motion.div>
-          </AnimatePresence>
+            </AnimatePresence>
+            <footer><span>{steps[activeStep].eyebrow}</span><div aria-hidden="true">{steps.map((_, index) => <i className={index <= activeStep ? "is-filled" : undefined} key={index} />)}</div><b>{journeyPlaying ? "PLAYING" : reduceMotion ? "MANUAL" : "PAUSED"}</b></footer>
+          </div>
         </div>
       </section>
 
