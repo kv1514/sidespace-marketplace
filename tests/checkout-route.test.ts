@@ -139,4 +139,112 @@ describe("checkout route authorization", () => {
     });
     expect(mocks.getStripe).not.toHaveBeenCalled();
   });
+
+  it("stores the payout amount when creating the first checkout transaction", async () => {
+    const campaignQuery = queryResult({
+      data: acceptedCampaign(),
+      error: null,
+    });
+    const creatorAccountQuery = queryResult({
+      data: {
+        stripe_connected_account_id: "acct_creator",
+        charges_enabled: true,
+        payouts_enabled: true,
+        details_submitted: true,
+        requirements_due: [],
+      },
+      error: null,
+    });
+    const payerAccountQuery = queryResult({
+      data: {
+        profile_id: "business-1",
+        stripe_customer_id: "cus_business",
+      },
+      error: null,
+    });
+    const initialTransactionQuery = queryResult({ data: null, error: null });
+    const insertedTransaction = {
+      id: "transaction-1",
+      status: "requires_checkout",
+      checkout_attempt: 0,
+      stripe_checkout_session_id: null,
+      subtotal_cents: 10_000,
+      business_profile_id: "business-1",
+      creator_profile_id: "creator-1",
+    };
+    const insertQuery = {
+      insert: vi.fn(),
+      select: vi.fn(),
+      single: vi.fn().mockResolvedValue({
+        data: insertedTransaction,
+        error: null,
+      }),
+    };
+    insertQuery.insert.mockReturnValue(insertQuery);
+    insertQuery.select.mockReturnValue(insertQuery);
+
+    const updateQuery = {
+      update: vi.fn(),
+      eq: vi.fn(),
+      in: vi.fn().mockResolvedValue({ error: null }),
+    };
+    updateQuery.update.mockReturnValue(updateQuery);
+    updateQuery.eq.mockReturnValue(updateQuery);
+
+    const admin = {
+      from: vi
+        .fn()
+        .mockReturnValueOnce(campaignQuery)
+        .mockReturnValueOnce(creatorAccountQuery)
+        .mockReturnValueOnce(payerAccountQuery)
+        .mockReturnValueOnce(initialTransactionQuery)
+        .mockReturnValueOnce(insertQuery)
+        .mockReturnValueOnce(updateQuery),
+    };
+    const stripe = {
+      accounts: {
+        retrieve: vi.fn().mockResolvedValue({
+          deleted: false,
+          charges_enabled: true,
+          payouts_enabled: true,
+          details_submitted: true,
+          requirements: { currently_due: [] },
+        }),
+      },
+      checkout: {
+        sessions: {
+          create: vi.fn().mockResolvedValue({
+            id: "cs_test_123",
+            livemode: false,
+            url: "https://checkout.stripe.com/c/pay/cs_test_123",
+            expires_at: 1_800_000_000,
+          }),
+        },
+      },
+    };
+    mocks.requireAuthenticatedProfile.mockResolvedValue({
+      user: { id: "user-1", email: "buyer@example.com" },
+      profile: {
+        id: "business-1",
+        contact_email: "buyer@example.com",
+        display_name: "Brea Bakery",
+      },
+      admin,
+    });
+    mocks.getStripe.mockReturnValue(stripe);
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      url: "https://checkout.stripe.com/c/pay/cs_test_123",
+      reused: false,
+    });
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        creator_payout_cents: 9_500,
+        payout_amount_cents: 9_500,
+      }),
+    );
+  });
 });

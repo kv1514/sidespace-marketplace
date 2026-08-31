@@ -163,6 +163,7 @@ export async function POST(request: Request) {
           creator_fee_cents: snapshot.creatorFeeCents,
           customer_total_cents: snapshot.customerTotalCents,
           creator_payout_cents: snapshot.creatorPayoutCents,
+          payout_amount_cents: snapshot.creatorPayoutCents,
           platform_gross_revenue_cents: snapshot.platformGrossRevenueCents,
           stripe_connected_account_id: creatorAccount.stripe_connected_account_id,
           stripe_customer_id: customerId,
