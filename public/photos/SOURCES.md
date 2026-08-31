@@ -20,3 +20,4 @@ under the Unsplash License.
 
 - `youshi-chen.png`: supplied by the listing owner (Youshi Chen), used with permission.
 - `dylan-youtube.jpg`: Dylan Nguyen's own YouTube channel avatar (youtube.com/@DylanNguyenn), used for his listing with his permission.
+- `room-114-door.jpg`: photo of the actual Room 114 dorm room, supplied by the listing owner.
