@@ -9,7 +9,7 @@ import { getStripeAccountReadiness } from "../lib/payments/connect";
 import { webhookClaimAction } from "../lib/stripe/events";
 
 describe("creator payout eligibility", () => {
-  it("requires every Stripe capability and no outstanding requirement", () => {
+  it("requires payouts, submitted details and no outstanding requirement", () => {
     expect(
       getStripeAccountReadiness({
         charges_enabled: true,
@@ -28,11 +28,37 @@ describe("creator payout eligibility", () => {
     ).toBe(false);
     expect(
       getStripeAccountReadiness({
+        charges_enabled: true,
+        payouts_enabled: false,
+        details_submitted: true,
+        requirements_due: [],
+      }).ready,
+    ).toBe(false);
+    expect(
+      getStripeAccountReadiness({
+        charges_enabled: true,
+        payouts_enabled: true,
+        details_submitted: false,
+        requirements_due: [],
+      }).ready,
+    ).toBe(false);
+  });
+
+  // The shape onboarding actually produces. `capabilities: { transfers }` is
+  // all connect/onboard requests, and Stripe leaves charges_enabled false for
+  // a transfers-only Express account - so a creator who finished onboarding
+  // correctly used to fail this gate, and every checkout against them 409'd.
+  // The charge is taken on the platform account; the creator only receives a
+  // transfer, so charge capability is not theirs to have.
+  it("accepts a transfers-only account, which is what onboarding creates", () => {
+    expect(
+      getStripeAccountReadiness({
         charges_enabled: false,
         payouts_enabled: true,
         details_submitted: true,
+        requirements_due: [],
       }).ready,
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
