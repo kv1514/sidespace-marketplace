@@ -15,15 +15,32 @@ export async function requireAuthenticatedProfile() {
   if (authError || !user) throw new ApiError("Sign in to continue.", 401);
 
   const admin = createAdminClient();
-  const { data: profile, error } = await admin
+  // contact_email moved to profile_contacts: `profiles` is readable by every
+  // anonymous caller, so it cannot hold anyone's address. Read through the
+  // service-role client, which is the only role that can see the table.
+  const { data: row, error } = await admin
     .from("profiles")
-    .select("id,auth_user_id,display_name,contact_email,onboarding_complete")
+    .select(
+      "id,auth_user_id,display_name,onboarding_complete,profile_contacts(contact_email)",
+    )
     .eq("auth_user_id", user.id)
     .single();
-  if (error || !profile) throw new ApiError("Complete your SideSpace profile first.", 403);
-  if (!profile.onboarding_complete) {
+  if (error || !row) throw new ApiError("Complete your SideSpace profile first.", 403);
+  if (!row.onboarding_complete) {
     throw new ApiError("Complete onboarding before using payments.", 403);
   }
+
+  const contacts = Array.isArray(row.profile_contacts)
+    ? row.profile_contacts[0]
+    : row.profile_contacts;
+  const profile = {
+    id: row.id,
+    auth_user_id: row.auth_user_id,
+    display_name: row.display_name,
+    onboarding_complete: row.onboarding_complete,
+    contact_email: (contacts as { contact_email?: string | null } | null)
+      ?.contact_email ?? null,
+  };
 
   return { user, profile, admin };
 }

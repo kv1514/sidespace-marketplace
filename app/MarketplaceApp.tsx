@@ -15,6 +15,12 @@ import {
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import {
+  loadProfileContacts,
+  saveProfileContacts,
+  splitProfileWrite,
+  withProfileContacts,
+} from "@/lib/profile-contacts";
+import {
   PUBLIC_LISTING_COLUMNS,
   PUBLIC_PROFILE_COLUMNS,
 } from "@/lib/supabase/public";
@@ -4398,7 +4404,16 @@ export default function MarketplaceApp({
         setToast("We could not load your saved profile. Please refresh and try again.");
         return;
       }
-      const own = (data as Profile | null) ?? null;
+      const ownRow = (data as Profile | null) ?? null;
+      // contact_email, contact_name and business_preferences live in
+      // profile_contacts now - profiles is readable by every anonymous
+      // visitor. Folded back on here so the rest of the app sees one profile.
+      const own = ownRow
+        ? withProfileContacts(
+            ownRow,
+            await loadProfileContacts(supabase, ownRow.id),
+          )
+        : null;
       profileLoadFailedRef.current = false;
       // Publish the profile BEFORE the account queries, not after. The two
       // calls below are five more round trips, and for their whole duration
@@ -5314,18 +5329,18 @@ export default function MarketplaceApp({
       return;
     }
     setPreferencesSaving(true);
-    const { data, error } = await supabase
-      .from("profiles")
-      .update({ business_preferences: businessPreferencesDraft })
-      .eq("id", profile.id)
-      .select()
-      .single();
+    const { error } = await saveProfileContacts(supabase, profile.id, {
+      business_preferences: businessPreferencesDraft,
+    });
     setPreferencesSaving(false);
     if (error) {
       setToast(friendlyDbError(error));
       return;
     }
-    const saved = data as Profile;
+    const saved = {
+      ...profile,
+      business_preferences: businessPreferencesDraft,
+    } as Profile;
     setProfile(saved);
     setBusinessPreferencesDraft(
       normalizeBusinessPreferences(
@@ -6079,7 +6094,13 @@ export default function MarketplaceApp({
           "We could not reach your profile just now. Check your connection and try again, nothing was lost.",
         );
       }
-      const existing = (fresh as Profile | null) ?? null;
+      const freshRow = (fresh as Profile | null) ?? null;
+      const existing = freshRow
+        ? withProfileContacts(
+            freshRow,
+            await loadProfileContacts(supabase, freshRow.id),
+          )
+        : null;
       profileLoadFailedRef.current = false;
 
       const avatarFiles = avatarFile && avatarFile.size > 0 ? [avatarFile] : [];
@@ -6223,17 +6244,42 @@ export default function MarketplaceApp({
         is_demo: false,
       };
 
+      // The private fields are peeled off before the write: profiles is
+      // world-readable, so anything private left in this payload would be
+      // republished to every anonymous caller.
+      const { profile: profileWrite, contacts } = splitProfileWrite(payload);
       const result = existing
         ? await supabase
             .from("profiles")
-            .update(payload)
+            .update(profileWrite)
             .eq("id", existing.id)
             .select()
             .single()
-        : await supabase.from("profiles").insert(payload).select().single();
+        : await supabase
+            .from("profiles")
+            .insert(profileWrite)
+            .select()
+            .single();
       if (result.error) throw result.error;
 
-      savedProfile = result.data as Profile;
+      const writtenProfile = result.data as Profile;
+      // Deliberately not fatal. The profile row is already committed, and
+      // these three fields are recoverable by saving again - contact_email in
+      // particular only overrides the account address the payment routes
+      // already fall back to. Failing onboarding here would strand a member
+      // whose profile did save.
+      const contactsWrite = await saveProfileContacts(
+        supabase,
+        writtenProfile.id,
+        contacts,
+      );
+      if (contactsWrite.error) {
+        console.error(
+          "Could not save private profile fields",
+          contactsWrite.error,
+        );
+      }
+      savedProfile = withProfileContacts(writtenProfile, contacts) as Profile;
       setProfile(savedProfile);
 
       if (onboardingMode === "setup") {
