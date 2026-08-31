@@ -139,4 +139,120 @@ describe("checkout route authorization", () => {
     });
     expect(mocks.getStripe).not.toHaveBeenCalled();
   });
+
+  // Every guard above short-circuits before the ledger insert, which is how
+  // `payout_amount_cents` came to be missing from it without a test noticing:
+  // the column is NOT NULL with no default, so the first real checkout for any
+  // campaign died on a Postgres 23502 that surfaced as a generic 500. This
+  // drives the route all the way to the insert and asserts the payload carries
+  // every column the schema requires, rather than only the one that regressed.
+  it("inserts a ledger row carrying every column the schema requires", async () => {
+    // From 20260830060711 and 20260830120000: NOT NULL, no default, and not
+    // generated. Kept as a literal so adding such a column to the table
+    // without adding it here is a failing test rather than a 500 in production.
+    const REQUIRED_COLUMNS = [
+      "campaign_request_id",
+      "listing_id",
+      "business_profile_id",
+      "creator_profile_id",
+      "campaign_name",
+      "listing_title",
+      "business_name",
+      "creator_name",
+      "subtotal_cents",
+      "buyer_fee_cents",
+      "creator_fee_cents",
+      "customer_total_cents",
+      "creator_payout_cents",
+      "payout_amount_cents",
+      "platform_gross_revenue_cents",
+      "stripe_connected_account_id",
+    ];
+
+    const readyAccount = {
+      stripe_connected_account_id: "acct_ready",
+      charges_enabled: true,
+      payouts_enabled: true,
+      details_submitted: true,
+      requirements_due: [],
+    };
+
+    let insertPayload: Record<string, unknown> | null = null;
+
+    const campaignQuery = queryResult({ data: acceptedCampaign(), error: null });
+    // stripe_accounts is read twice: the creator's payout account, then the
+    // payer's customer record. Giving the payer an existing customer id keeps
+    // this test on the path it is actually about - the ledger insert - instead
+    // of the customer-creation branch.
+    const creatorAccountQuery = queryResult({ data: readyAccount, error: null });
+    const payerAccountQuery = queryResult({
+      data: { profile_id: "business-1", stripe_customer_id: "cus_existing" },
+      error: null,
+    });
+    let stripeAccountReads = 0;
+
+    // payment_transactions: first the "does one already exist" lookup (no), then
+    // the insert whose payload this test exists to inspect.
+    const transactionQuery: Record<string, ReturnType<typeof vi.fn>> = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      insert: vi.fn((payload: Record<string, unknown>) => {
+        insertPayload = payload;
+        return transactionQuery;
+      }),
+      update: vi.fn(),
+    };
+    transactionQuery.select.mockReturnValue(transactionQuery);
+    transactionQuery.eq.mockReturnValue(transactionQuery);
+    transactionQuery.update.mockReturnValue(transactionQuery);
+
+    const admin = {
+      from: vi.fn((table: string) => {
+        if (table === "campaign_requests") return campaignQuery;
+        if (table === "stripe_accounts") {
+          stripeAccountReads += 1;
+          return stripeAccountReads === 1 ? creatorAccountQuery : payerAccountQuery;
+        }
+        return transactionQuery;
+      }),
+    };
+
+    mocks.requireAuthenticatedProfile.mockResolvedValue({
+      user: { id: "user-1", email: "buyer@example.com" },
+      profile: {
+        id: "business-1",
+        display_name: "Brea Bakery",
+        contact_email: "buyer@example.com",
+      },
+      admin,
+    });
+    mocks.getStripe.mockReturnValue({
+      accounts: { retrieve: vi.fn().mockResolvedValue(readyAccount) },
+      customers: { create: vi.fn().mockResolvedValue({ id: "cus_test" }) },
+      checkout: {
+        sessions: {
+          create: vi.fn().mockResolvedValue({
+            id: "cs_test",
+            url: "https://checkout.stripe.com/c/pay/cs_test",
+            livemode: false,
+            expires_at: 0,
+          }),
+        },
+      },
+    });
+
+    await POST(checkoutRequest());
+
+    // Read through a fresh binding: the assignment happens inside the insert
+    // mock, which TypeScript's control-flow analysis cannot see, so it narrows
+    // the captured variable to null and then to never.
+    const payload = insertPayload as Record<string, unknown> | null;
+    expect(payload).not.toBeNull();
+    const supplied = Object.keys(payload ?? {});
+    expect(REQUIRED_COLUMNS.filter((c) => !supplied.includes(c))).toEqual([]);
+    // The release transfers this amount; creator_payout_cents is its ceiling.
+    expect(payload?.payout_amount_cents).toBe(payload?.creator_payout_cents);
+  });
 });

@@ -163,6 +163,10 @@ export async function POST(request: Request) {
           creator_fee_cents: snapshot.creatorFeeCents,
           customer_total_cents: snapshot.customerTotalCents,
           creator_payout_cents: snapshot.creatorPayoutCents,
+          // NOT NULL with no default, and the amount actually transferred on
+          // release - creator_payout_cents is the ceiling a refund adjusts
+          // down from, which is what the 20260830120000 backfill seeded it to.
+          payout_amount_cents: snapshot.creatorPayoutCents,
           platform_gross_revenue_cents: snapshot.platformGrossRevenueCents,
           stripe_connected_account_id: creatorAccount.stripe_connected_account_id,
           stripe_customer_id: customerId,
