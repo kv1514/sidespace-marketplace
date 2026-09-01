@@ -5,7 +5,7 @@ import {
   requireAuthenticatedProfile,
 } from "@/lib/payments/auth";
 import { getStripeAccountReadiness } from "@/lib/payments/connect";
-import { getStripe } from "@/lib/stripe/server";
+import { getStripe, stripeKeyMode } from "@/lib/stripe/server";
 
 function safeAccountStatus(account: {
   charges_enabled: boolean;
@@ -37,10 +37,12 @@ export async function GET() {
     if (!profileCanReceivePayouts(profile)) {
       throw new ApiError("Stripe payouts are available to creator profiles.", 403);
     }
+    const livemode = stripeKeyMode() === "live";
     const { data: saved, error: savedError } = await admin
       .from("stripe_accounts")
       .select("stripe_connected_account_id")
       .eq("profile_id", profile.id)
+      .eq("livemode", livemode)
       .maybeSingle();
     if (savedError) throw savedError;
     if (!saved?.stripe_connected_account_id) {
@@ -69,7 +71,8 @@ export async function GET() {
         requirements_due: status.requirementsDue,
         onboarding_completed_at: status.ready ? new Date().toISOString() : null,
       })
-      .eq("profile_id", profile.id);
+      .eq("profile_id", profile.id)
+      .eq("livemode", livemode);
     if (updateError) throw updateError;
 
     return Response.json(status, {

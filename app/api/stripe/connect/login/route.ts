@@ -5,7 +5,7 @@ import {
   requireAuthenticatedProfile,
   requireSameOrigin,
 } from "@/lib/payments/auth";
-import { getStripe } from "@/lib/stripe/server";
+import { getStripe, stripeKeyMode } from "@/lib/stripe/server";
 import { requireStripeHostedUrl } from "@/lib/stripe/urls";
 import { enforcePaymentRateLimit } from "@/lib/payments/rate-limit";
 
@@ -16,6 +16,7 @@ export async function POST(request: Request) {
     if (!profileCanReceivePayouts(profile)) {
       throw new ApiError("Stripe payouts are available to creator profiles.", 403);
     }
+    const livemode = stripeKeyMode() === "live";
     await enforcePaymentRateLimit(admin, {
       bucket: "stripe_connect_login",
       profileId: profile.id,
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
       .from("stripe_accounts")
       .select("stripe_connected_account_id")
       .eq("profile_id", profile.id)
+      .eq("livemode", livemode)
       .maybeSingle();
     if (savedError) throw savedError;
     if (!saved?.stripe_connected_account_id) {

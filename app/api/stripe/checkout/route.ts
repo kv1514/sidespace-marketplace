@@ -106,6 +106,7 @@ export async function POST(request: Request) {
       );
     }
     const snapshot = createTrustedPaymentSnapshot(campaign);
+    const livemode = stripeKeyMode() === "live";
     if (snapshot.businessProfileId !== profile.id) {
       throw new ApiError("Only the business paying for this campaign can check out.", 403);
     }
@@ -129,6 +130,7 @@ export async function POST(request: Request) {
         "stripe_connected_account_id,charges_enabled,payouts_enabled,details_submitted,requirements_due",
       )
       .eq("profile_id", snapshot.creatorProfileId)
+      .eq("livemode", livemode)
       .maybeSingle();
     if (accountError) throw accountError;
     if (
@@ -156,6 +158,7 @@ export async function POST(request: Request) {
       .from("stripe_accounts")
       .select("profile_id,stripe_customer_id")
       .eq("profile_id", profile.id)
+      .eq("livemode", livemode)
       .maybeSingle();
     if (payerAccountError) throw payerAccountError;
     let customerId = payerAccount?.stripe_customer_id ?? null;
@@ -174,8 +177,10 @@ export async function POST(request: Request) {
             .from("stripe_accounts")
             .update({ stripe_customer_id: customerId })
             .eq("profile_id", profile.id)
+            .eq("livemode", livemode)
         : await admin.from("stripe_accounts").insert({
             profile_id: profile.id,
+            livemode,
             stripe_customer_id: customerId,
           });
       if (error) {
@@ -184,6 +189,7 @@ export async function POST(request: Request) {
           .from("stripe_accounts")
           .select("stripe_customer_id")
           .eq("profile_id", profile.id)
+          .eq("livemode", livemode)
           .single();
         if (raced.error || raced.data?.stripe_customer_id !== customerId) {
           throw error;

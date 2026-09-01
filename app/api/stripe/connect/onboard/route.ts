@@ -6,7 +6,7 @@ import {
   requireSameOrigin,
 } from "@/lib/payments/auth";
 import { getAppOrigin } from "@/lib/payments/checkout";
-import { getStripe } from "@/lib/stripe/server";
+import { getStripe, stripeKeyMode } from "@/lib/stripe/server";
 import { requireStripeHostedUrl } from "@/lib/stripe/urls";
 import { enforcePaymentRateLimit } from "@/lib/payments/rate-limit";
 
@@ -36,10 +36,12 @@ export async function POST(request: Request) {
     });
     const origin = getAppOrigin(request.url);
     const stripe = getStripe();
+    const livemode = stripeKeyMode() === "live";
     const { data: saved, error: savedError } = await admin
       .from("stripe_accounts")
       .select("profile_id,stripe_connected_account_id")
       .eq("profile_id", profile.id)
+      .eq("livemode", livemode)
       .maybeSingle();
     if (savedError) throw savedError;
 
@@ -62,6 +64,7 @@ export async function POST(request: Request) {
       accountId = account.id;
       const accountState = {
         profile_id: profile.id,
+        livemode,
         stripe_connected_account_id: account.id,
         charges_enabled: account.charges_enabled,
         payouts_enabled: account.payouts_enabled,
@@ -74,6 +77,7 @@ export async function POST(request: Request) {
             .from("stripe_accounts")
             .update(accountState)
             .eq("profile_id", profile.id)
+            .eq("livemode", livemode)
         : await admin.from("stripe_accounts").insert(accountState);
       if (error) {
         if (error.code !== "23505") throw error;
@@ -81,6 +85,7 @@ export async function POST(request: Request) {
           .from("stripe_accounts")
           .select("stripe_connected_account_id")
           .eq("profile_id", profile.id)
+          .eq("livemode", livemode)
           .single();
         if (
           raced.error ||

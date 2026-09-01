@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   requireAuthenticatedProfile: vi.fn(),
   enforcePaymentRateLimit: vi.fn(),
   getStripe: vi.fn(),
+  stripeKeyMode: vi.fn(),
 }));
 
 vi.mock("@/lib/payments/auth", () => {
@@ -40,6 +41,7 @@ vi.mock("@/lib/payments/rate-limit", () => ({
 }));
 vi.mock("@/lib/stripe/server", () => ({
   getStripe: mocks.getStripe,
+  stripeKeyMode: mocks.stripeKeyMode,
 }));
 
 import { POST as onboardPOST } from "../app/api/stripe/connect/onboard/route";
@@ -122,6 +124,7 @@ describe("Stripe Connect lifecycle routes", () => {
     vi.clearAllMocks();
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://sidespace.example");
     vi.stubEnv("STRIPE_CONNECT_COUNTRY", "US");
+    mocks.stripeKeyMode.mockReturnValue("test");
     mocks.enforcePaymentRateLimit.mockResolvedValue(undefined);
   });
 
@@ -162,6 +165,7 @@ describe("Stripe Connect lifecycle routes", () => {
     expect(inserted).toHaveLength(1);
     expect(inserted[0]).toMatchObject({
       profile_id: profile.id,
+      livemode: false,
       stripe_connected_account_id: "acct_new",
       requirements_due: ["individual.verification.document"],
     });
@@ -171,6 +175,28 @@ describe("Stripe Connect lifecycle routes", () => {
       refresh_url: "https://sidespace.example/dashboard?connect=refresh",
       return_url: "https://sidespace.example/dashboard?connect=return",
     });
+  });
+
+  it("keeps live Connect accounts separate from sandbox accounts", async () => {
+    mocks.stripeKeyMode.mockReturnValue("live");
+    const { admin } = authenticatedAdmin(null);
+    const { stripe } = stripeMock();
+    const inserted: Record<string, unknown>[] = [];
+    const lookup = accountLookup(null);
+    admin.from.mockReturnValue({
+      ...lookup,
+      insert: vi.fn((payload: Record<string, unknown>) => {
+        inserted.push(payload);
+        return Promise.resolve({ error: null });
+      }),
+    } as unknown as typeof lookup);
+
+    const response = await onboardPOST(request("/api/stripe/connect/onboard"));
+
+    expect(response.status).toBe(200);
+    expect(lookup.eq).toHaveBeenCalledWith("livemode", true);
+    expect(inserted[0]).toMatchObject({ livemode: true });
+    expect(stripe.accounts.create).toHaveBeenCalledTimes(1);
   });
 
   it("reuses a saved Connect account instead of creating a second one", async () => {
@@ -196,9 +222,11 @@ describe("Stripe Connect lifecycle routes", () => {
     const { admin } = authenticatedAdmin(account);
     const { stripe } = stripeMock();
     const lookup = accountLookup(account);
-    const update = vi.fn().mockReturnValue({
-      eq: vi.fn().mockResolvedValue({ error: null }),
-    });
+    const updateChain = { eq: vi.fn() };
+    updateChain.eq
+      .mockReturnValueOnce(updateChain)
+      .mockResolvedValueOnce({ error: null });
+    const update = vi.fn().mockReturnValue(updateChain);
     admin.from.mockReturnValue({
       select: lookup.select,
       eq: lookup.eq,

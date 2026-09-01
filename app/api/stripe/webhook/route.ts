@@ -635,7 +635,11 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
   }
 }
 
-async function syncConnectedAccount(admin: AdminClient, account: Stripe.Account) {
+async function syncConnectedAccount(
+  admin: AdminClient,
+  account: Stripe.Account,
+  livemode: boolean,
+) {
   const { requirementsDue, ready } = getStripeAccountReadiness(account);
   const { error } = await admin
     .from("stripe_accounts")
@@ -646,7 +650,8 @@ async function syncConnectedAccount(admin: AdminClient, account: Stripe.Account)
       requirements_due: requirementsDue,
       onboarding_completed_at: ready ? new Date().toISOString() : null,
     })
-    .eq("stripe_connected_account_id", account.id);
+    .eq("stripe_connected_account_id", account.id)
+    .eq("livemode", livemode);
   if (error) throw error;
 }
 
@@ -673,7 +678,7 @@ async function processEvent(admin: AdminClient, event: Stripe.Event) {
       await syncDispute(admin, event.data.object);
       break;
     case "account.updated":
-      await syncConnectedAccount(admin, event.data.object);
+      await syncConnectedAccount(admin, event.data.object, event.livemode);
       break;
     default:
       break;
