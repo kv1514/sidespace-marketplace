@@ -161,7 +161,11 @@ export function normalizeListingDraft(
 
   const title = text(raw.title, TITLE_MAX);
   const format = text(raw.format, FORMAT_MAX);
-  if (!title || !format) return null;
+  const description = text(raw.description, LONG_MAX);
+  // A blank is the model declining to invent, which is the point. The first
+  // live draft was thrown away for an empty offer line the owner had never
+  // stated; only a draft with nothing in it at all is unusable.
+  if (!title && !format && !description) return null;
 
   const defaultChannel =
     kind === "physical" ? "Storefront" : kind === "sponsorship" ? "Sponsorship" : "Instagram";
@@ -178,7 +182,7 @@ export function normalizeListingDraft(
     title,
     channel: oneOf(raw.channel, DRAFT_CHANNELS, defaultChannel),
     format,
-    description: text(raw.description, LONG_MAX),
+    description,
     demographics: text(raw.demographics, 240),
     location_area: text(raw.location_area, 120),
     space_size: text(raw.space_size, SPACE_SIZE_MAX),

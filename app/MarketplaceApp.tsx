@@ -6609,10 +6609,12 @@ export default function MarketplaceApp({
         if (match) element.value = value;
       }
     };
-    setValue("title", draft.title);
+    // Only write what the model actually said. A blank means "not stated",
+    // and must never wipe something the member already typed or saved.
+    if (draft.title) setValue("title", draft.title);
     setValue("channel", draft.channel);
-    setValue("format", draft.format);
-    setValue("description", draft.description);
+    if (draft.format) setValue("format", draft.format);
+    if (draft.description) setValue("description", draft.description);
     if (draft.demographics) setValue("demographics", draft.demographics);
     if (draft.location_area) setValue("location_area", draft.location_area);
     if (draft.space_size) setValue("space_size", draft.space_size);
@@ -6637,7 +6639,7 @@ export default function MarketplaceApp({
           radio.checked = radio.value === draft.install_by;
         });
     }
-    setFormatPreview(draft.format);
+    if (draft.format) setFormatPreview(draft.format);
   }
 
   /**

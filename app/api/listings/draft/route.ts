@@ -52,14 +52,15 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
         : "a placement a local creator sells on their own social account, newsletter, or site";
   return [
     "You draft listings for SideSpace, a marketplace where local businesses rent everyday advertising space from the people who own it.",
-    `This listing is ${what}. Write it in the owner's voice, first person, plain and specific. No marketing fluff, no exclamation marks, no emoji, and never mention AI.`,
+    `This listing is ${what}. Write it in the owner's voice, first person, like a sharp copywriter for a local marketplace: confident, concrete, benefit-led. Lead with the strongest fact. Turn every fact the owner gave into a reason a buyer would want the spot - where it sits becomes who passes it, a number becomes reach, timing becomes when the ad works. Specific beats general; short sentences beat long ones. No exclamation marks, no emoji, no clichés ("perfect opportunity", "don't miss out", "great exposure"), and never mention AI.`,
     "",
     "Use only what the photo shows and the notes say. NEVER infer, estimate, round up, or invent: not a price, not a size, not a foot-traffic, follower, or attendance number, not an address, not an availability window, not who installs. If the owner did not state it and the photo does not show it, leave that field empty (null for price) and ask for it in questions. A blank the owner fills is right; a number you made up is a failure.",
     "",
     "Field rules:",
-    "- title: at most 8 words. Name the space and, if known, the street or area. Example: \"Cafe window, Main Street\".",
-    "- format: finishes the sentence \"You get ...\" exactly as it should read on the card. Example: \"one letter-size poster in my front window for a week\".",
-    "- description: two to four sentences. What it is, where exactly it sits, who walks or scrolls past.",
+    "- title: at most 9 words, specific and appealing: the space plus its best locator. Examples: \"Dorm door by the 4th-floor stairwell, Blackwell\", \"Cafe window, Main Street\".",
+    "- channel: for a physical space, the closest of Storefront, Vehicle, Wall / mural, Room / interior, Community board. A door, hallway, or room is Room / interior. Use Other only when none fits.",
+    "- format: finishes the sentence \"You get ...\" exactly as it should read on the card. Example: \"one letter-size poster in my front window for a week\". Only when the owner said what they are offering - what goes up and for how long; otherwise empty, and ask.",
+    "- description: three to five sentences that sell the spot using only the owner's facts. Open with what it is and exactly where. Then who passes or sees it and why that audience matters to an advertiser. Then what goes up, how, and what the owner handles. Make the reader picture their ad there. If the owner gave little, keep it short and let questions do the asking - never pad, never invent.",
     "- demographics: only what the owner said about who sees it and how many. Empty when they said nothing.",
     `- location_area: the city or area from the notes${city ? `, otherwise "${city}"` : ""}. Never a street address.`,
     "- space_size: only when the owner stated it or the photo shows a measurable reference; otherwise empty.",
@@ -70,6 +71,11 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
     "- minimum_booking and availability_notes: from the notes, otherwise empty.",
     "- deliverables: the proof handed back after booking, one or two sentences. For a physical space, a photo of the ad in place. This one may be drafted; it describes the process, not a fact about the space.",
     "- questions: everything you still need, as direct questions the owner can answer in one line each, most important first, at most 5. Always ask about any of these that was not stated: the price and what it is per; where it is (city or area) if the notes and profile city do not say; who sees it and roughly how many (people walking past per day, followers, or attendance); when it is available; and for a physical space, its rough size, what may go up on it, and who puts it up. Empty when nothing is missing. Do not ask about things already answered.",
+    "",
+    "The standard, from one owner's notes: \"dorm door, 4th floor of Blackwell, corner by the emergency stairs, flyers ok, I put them up, $1 a week, available now\".",
+    "Weak: \"This is the door to my dorm room on the fourth floor. It is near the stairs. People walk past it.\"",
+    "Strong: \"My dorm door sits at the corner of Blackwell's fourth floor, right beside the emergency stairwell - so every resident who skips the elevator walks straight past it, on top of everyone who lives on the floor. It takes a standard flyer, I put it up myself, and it's open now at a dollar a week.\"",
+    "Every claim in the strong version comes from the notes. Nothing was added. Write at that standard.",
     "",
     "Reply with the JSON object only.",
   ].join("\n");
@@ -205,7 +211,9 @@ async function anthropicRequest(apiKey: string, body: Body, withFallbacks: boole
       system: systemPrompt(body.kind, body.city),
       messages: [{ role: "user", content }],
       output_config: {
-        effort: "medium",
+        // Writing quality is the product here; a notch more thinking is
+        // worth the few extra cents a draft.
+        effort: "high",
         format: { type: "json_schema", schema: LISTING_DRAFT_SCHEMA },
       },
       ...(withFallbacks ? { fallbacks: "default" } : {}),
