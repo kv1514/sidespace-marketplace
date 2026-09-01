@@ -170,6 +170,20 @@ export function normalizeListingDraft(
   const defaultChannel =
     kind === "physical" ? "Storefront" : kind === "sponsorship" ? "Sponsorship" : "Instagram";
   const price = Number(raw.price_dollars);
+  const statedPrice =
+    raw.price_dollars === null || !Number.isFinite(price) || price <= 0
+      ? null
+      : Math.round(price);
+  const questions = (Array.isArray(raw.questions) ? raw.questions : [])
+    .map((item) => text(item, 200))
+    .filter(Boolean);
+  // The site's floor is $2. A stated $1 must not turn into $2 silently - the
+  // first live draft did exactly that. Keep the floor, and say so.
+  if (statedPrice !== null && statedPrice < PRICE_MIN) {
+    questions.unshift(
+      `You said $${statedPrice}. The lowest price SideSpace accepts is $${PRICE_MIN}, so the draft uses $${PRICE_MIN} - is that OK, or would you rather change it?`,
+    );
+  }
   const surfaces = Array.isArray(raw.surface_types)
     ? raw.surface_types.filter(
         (item): item is (typeof DRAFT_SURFACES)[number] =>
@@ -190,10 +204,7 @@ export function normalizeListingDraft(
     install_by: oneOf(raw.install_by, [...DRAFT_INSTALL, ""] as const, ""),
     // No default price. A number the owner never said is exactly the kind of
     // guess this feature must not make; the form leaves it empty and asks.
-    price_dollars:
-      raw.price_dollars === null || !Number.isFinite(price) || price <= 0
-        ? null
-        : Math.min(PRICE_MAX, Math.max(PRICE_MIN, Math.round(price))),
+    price_dollars: statedPrice === null ? null : Math.min(PRICE_MAX, Math.max(PRICE_MIN, statedPrice)),
     price_unit: oneOf(
       raw.price_unit,
       DRAFT_PRICE_UNITS,
@@ -202,9 +213,6 @@ export function normalizeListingDraft(
     minimum_booking: text(raw.minimum_booking, 120),
     availability_notes: text(raw.availability_notes, 240),
     deliverables: text(raw.deliverables, LONG_MAX),
-    questions: (Array.isArray(raw.questions) ? raw.questions : [])
-      .map((item) => text(item, 200))
-      .filter(Boolean)
-      .slice(0, QUESTIONS_MAX),
+    questions: questions.slice(0, QUESTIONS_MAX),
   };
 }
