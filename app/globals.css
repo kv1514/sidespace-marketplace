@@ -857,26 +857,6 @@ h2 em {
   text-transform: uppercase;
 }
 
-.provenance-badge {
-  border-radius: 999px;
-  display: inline-flex;
-  font-family: var(--mono);
-  font-size: 8px;
-  margin-left: 5px;
-  padding: 4px 6px;
-  text-transform: uppercase;
-}
-
-.provenance-badge.is-requestable {
-  background: #e8f6cf;
-  color: #31520d;
-}
-
-.provenance-badge.is-view-only {
-  background: #fff0bd;
-  color: #664800;
-}
-
 .listing-provenance-notice {
   align-items: flex-start;
   border: 1px solid var(--line);
@@ -888,16 +868,8 @@ h2 em {
   padding: 12px 14px;
 }
 
-.listing-provenance-notice.is-requestable {
-  background: #f3f9e8;
-}
-
 .listing-provenance-notice.is-view-only {
   background: #fff7dc;
-}
-
-.listing-provenance-notice strong {
-  font-size: 12px;
 }
 
 .listing-provenance-notice span {
@@ -5507,6 +5479,47 @@ html.reveal-ready [data-reveal].is-visible {
 .offer-preview b {
   color: var(--ink);
   font-weight: 500;
+}
+
+/* "Fill with AI" sits between the kind chooser and the title: a photo, a
+   line of notes, one button. It borrows the dark subsection look so it reads
+   as a tool rather than another field to fill in by hand. */
+.ai-fill {
+  background: var(--ink);
+  border-radius: 15px;
+  color: var(--paper);
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+}
+
+.ai-fill-copy strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.ai-fill-copy small {
+  color: var(--paper);
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.45;
+  opacity: 0.8;
+}
+
+.ai-fill textarea {
+  background: var(--paper);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--ink);
+  font: inherit;
+  min-height: 0;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.ai-fill .button {
+  justify-self: start;
 }
 
 .offer-examples {

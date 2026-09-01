@@ -37,9 +37,9 @@ import {
 } from "@/lib/payments/fees";
 import {
   isListingRequestable,
-  listingProvenanceLabel,
   type ListingProvenanceStatus,
 } from "@/lib/listings/provenance";
+import type { ListingDraft } from "@/lib/listings/draft";
 import {
   DashboardGate,
   LandingPage,
@@ -717,6 +717,93 @@ const CREATOR_OFFER_TYPES: Array<{
     help: "Teams, events, jerseys, banners, and named tiers",
   },
 ];
+
+type ListingFormKind = "brief" | CreatorOfferType;
+
+/**
+ * Example copy for the listing editor, by the shape of the listing.
+ *
+ * Every placeholder used to show the social example regardless of what was
+ * picked: choose "Physical" and the title field still suggested "Three-story
+ * launch package" and the offer field "three Instagram stories over 48 hours",
+ * directly under a hint that said "like Cafe window, Main Street". Someone
+ * listing a window was being shown how to list a story. The form now reads
+ * one row of this table, chosen by the same flags that already pick its
+ * labels and help text.
+ */
+const LISTING_FORM_HINTS: Record<
+  ListingFormKind,
+  {
+    titleExample: string;
+    titlePlaceholder: string;
+    formatPlaceholder: string;
+    formatExamples: string[];
+    minimumPlaceholder: string;
+    descriptionPlaceholder: string;
+    deliverablesPlaceholder: string;
+  }
+> = {
+  brief: {
+    titleExample: "Window space for our spring opening",
+    titlePlaceholder: "Looking for a storefront window in Brea",
+    formatPlaceholder: "a storefront window on a busy street",
+    formatExamples: [
+      "a storefront window on a busy street",
+      "three Instagram stories from a local creator",
+      "a counter card in a cafe for 30 days",
+    ],
+    minimumPlaceholder: "One week, or one run",
+    descriptionPlaceholder:
+      "What you\u2019re promoting, what the artwork looks like, and the kind of place you want it seen.",
+    deliverablesPlaceholder:
+      "Photos of the placement, or a link to the post, once it\u2019s up.",
+  },
+  physical: {
+    titleExample: "Cafe window, Main Street",
+    titlePlaceholder: "Cafe window, Main Street",
+    formatPlaceholder: "one letter-size poster in my front window for a week",
+    formatExamples: [
+      "one letter-size poster in my front window for a week",
+      "one 18 by 24 inch poster, displayed for a week",
+      "a card on the counter for 30 days",
+    ],
+    minimumPlaceholder: "1 week, or 3 days",
+    descriptionPlaceholder:
+      "A 4 by 6 foot front window facing the sidewalk on Main Street. A few hundred people walk past on a weekday, mostly locals on a lunch break.",
+    deliverablesPlaceholder:
+      "A photo of your poster in the window the day it goes up, and another at the end of the week.",
+  },
+  sponsorship: {
+    titleExample: "Home-game banner, fall season",
+    titlePlaceholder: "Home-game banner, fall season",
+    formatPlaceholder: "your logo on the team banner for the full season",
+    formatExamples: [
+      "your logo on the team banner for the full season",
+      "a named tier on our sponsor page and jerseys",
+      "a shout-out at every home game",
+    ],
+    minimumPlaceholder: "One season, or one event",
+    descriptionPlaceholder:
+      "Who the team or event is, how many people turn up, and what a sponsor\u2019s money pays for.",
+    deliverablesPlaceholder:
+      "Photos of your logo on the banner or jerseys, and the sponsor-page link.",
+  },
+  social: {
+    titleExample: "Three-story launch package",
+    titlePlaceholder: "Three-story launch package",
+    formatPlaceholder: "three Instagram stories over 48 hours",
+    formatExamples: [
+      "three Instagram stories over 48 hours",
+      "one in-feed post",
+      "a 30-second segment in my next video",
+    ],
+    minimumPlaceholder: "1 story, or one post",
+    descriptionPlaceholder:
+      "What a brand gets, your turnaround, who your audience is, and anything you won\u2019t do.",
+    deliverablesPlaceholder:
+      "Screenshots of the story or post with view counts after 24 hours, and a link.",
+  },
+};
 
 /** Suggestion chips for `format`, filtered to the platforms actually picked. */
 const CREATOR_OFFER_EXAMPLES: Record<string, string[]> = {
@@ -2061,6 +2148,37 @@ function isSponsorshipOffer(role: Role, answers: OnboardingAnswers) {
   return creatorOfferForRole(role, answers) === "sponsorship";
 }
 
+/**
+ * Re-encode a photo as a modest JPEG before sending it for an AI draft.
+ *
+ * Phones hand over 4-12 MB HEIC-turned-JPEGs. Vercel caps a function's request
+ * body at 4.5 MB and base64 adds a third on top, so the original cannot be
+ * posted as-is - and the model needs nowhere near that many pixels to see a
+ * window. 1280 px on the long edge at 0.85 lands around 200-400 KB.
+ */
+async function photoToJpegBase64(file: File, maxEdge = 1280): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("That photo could not be read."));
+      element.src = url;
+    });
+    const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("That photo could not be read.");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    return dataUrl.slice(dataUrl.indexOf(",") + 1);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 function defaultCreatorPriceUnit(offer: CreatorOfferType) {
   return offer === "physical" ? "week" : "post";
 }
@@ -2962,14 +3080,12 @@ function creatorPostRecommendations(
         score += Math.min(30, categoryOverlap.length * 15);
         reasons.push("fits " + categoryOverlap.slice(0, 2).join(" and "));
       }
-      const locationText = lower(
-        listing.location_area || listing.owner.city,
-      );
+      const locationText = lower(listingCity(listing));
       if (wantedArea && locationText.includes(wantedArea)) {
         score += 18;
         reasons.push("near " + preferences.wantedArea);
       } else if (
-        lower(listing.owner.city).split(",")[0] ===
+        lower(listingCity(listing)).split(",")[0] ===
         lower(preferences.wantedArea || profile.city).split(",")[0]
       ) {
         score += 12;
@@ -3276,6 +3392,18 @@ function listingIsReady(listing: Listing) {
  * answer, and the role filter exists to find them - it just stops arriving
  * first.
  */
+/**
+ * The city shown with a listing is the listing's own, falling back to the
+ * owner's profile city only when the listing did not say. One member can own a
+ * car in Brea and a dorm door in Berkeley; each card must read as where that
+ * space actually is, not where its owner lives.
+ */
+function listingCity(
+  listing: Pick<Listing, "location_area"> & { owner: Pick<Profile, "city"> },
+) {
+  return listing.location_area || listing.owner.city;
+}
+
 function listingRank(listing: Listing) {
   if (isBrief(listing)) return 3;
   if (listing.owner.is_demo) return 2;
@@ -4011,6 +4139,7 @@ export default function MarketplaceApp({
    */
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [listingFiles, setListingFiles] = useState<File[]>([]);
+  const [aiFilling, setAiFilling] = useState(false);
   /**
    * The photo the onboarding preview shows.
    *
@@ -4053,6 +4182,14 @@ export default function MarketplaceApp({
   const editingListingIsBrief = editingListing
     ? isBrief(editingListing)
     : listingRole === "business";
+  const listingFormKind: ListingFormKind = editingListingIsBrief
+    ? "brief"
+    : editingListingIsPhysical
+      ? "physical"
+      : editingListingIsSponsorship
+        ? "sponsorship"
+        : "social";
+  const listingHints = LISTING_FORM_HINTS[listingFormKind];
 
   /**
    * Take the photos a member just picked, and point the preview at the first.
@@ -4768,7 +4905,7 @@ export default function MarketplaceApp({
         .map((listing) =>
           // Members write their city freehand, so "Fullerton, CA" and
           // "Fullerton" are one place and must not count twice.
-          String(listing.owner.city ?? "")
+          String(listingCity(listing) ?? "")
             .split(",")[0]
             .trim()
             .toLowerCase(),
@@ -6408,6 +6545,107 @@ export default function MarketplaceApp({
       }
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * Pour an AI draft into the uncontrolled listing form.
+   *
+   * The form reads its values from the DOM at submit time, so filling it means
+   * setting element values - the same way the kind chooser already sets the
+   * channel and price unit. Fields the current form does not render (the
+   * physical-only surface and install groups on a social listing) are simply
+   * skipped. Nothing is saved: the member reads it over and presses Publish.
+   */
+  function applyListingDraft(form: HTMLFormElement, draft: ListingDraft) {
+    const setValue = (name: string, value: string) => {
+      const element = form.elements.namedItem(name);
+      if (
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLTextAreaElement
+      ) {
+        element.value = value;
+      } else if (element instanceof HTMLSelectElement) {
+        const match = Array.from(element.options).find(
+          (option) => option.value === value,
+        );
+        if (match) element.value = value;
+      }
+    };
+    setValue("title", draft.title);
+    setValue("channel", draft.channel);
+    setValue("format", draft.format);
+    setValue("description", draft.description);
+    if (draft.demographics) setValue("demographics", draft.demographics);
+    if (draft.location_area) setValue("location_area", draft.location_area);
+    if (draft.space_size) setValue("space_size", draft.space_size);
+    setValue("price", String(draft.price_dollars));
+    setValue("price_unit", draft.price_unit);
+    if (draft.minimum_booking) setValue("minimum_booking", draft.minimum_booking);
+    if (draft.availability_notes) {
+      setValue("availability_notes", draft.availability_notes);
+    }
+    if (draft.deliverables) setValue("deliverables", draft.deliverables);
+    form
+      .querySelectorAll<HTMLInputElement>('input[name="surface_types"]')
+      .forEach((box) => {
+        box.checked = draft.surface_types.includes(
+          box.value as ListingDraft["surface_types"][number],
+        );
+      });
+    if (draft.install_by) {
+      form
+        .querySelectorAll<HTMLInputElement>('input[name="install_by"]')
+        .forEach((radio) => {
+          radio.checked = radio.value === draft.install_by;
+        });
+    }
+    setFormatPreview(draft.format);
+  }
+
+  async function fillListingWithAi(form: HTMLFormElement | null) {
+    if (!form || aiFilling) return;
+    const notesField = form.elements.namedItem("ai_notes");
+    const notes =
+      notesField instanceof HTMLTextAreaElement ? notesField.value.trim() : "";
+    const photos = form.elements.namedItem("listing_photos");
+    const file =
+      photos instanceof HTMLInputElement ? (photos.files?.[0] ?? null) : null;
+    if (!file && !notes) {
+      setToast("Add a photo or a few words first, then press Fill with AI.");
+      return;
+    }
+    setAiFilling(true);
+    try {
+      const image = file ? await photoToJpegBase64(file) : null;
+      const response = await fetch("/api/listings/draft", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          notes,
+          image,
+          kind: listingFormKind === "brief" ? "physical" : listingFormKind,
+          city: profile?.city ?? "",
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { draft?: ListingDraft; error?: string }
+        | null;
+      if (!response.ok || !payload?.draft) {
+        throw new Error(
+          payload?.error || "SideSpace could not draft this listing right now.",
+        );
+      }
+      applyListingDraft(form, payload.draft);
+      setToast("Drafted. Read it over and change anything before you publish.");
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "SideSpace could not draft this listing right now.",
+      );
+    } finally {
+      setAiFilling(false);
     }
   }
 
@@ -8386,7 +8624,7 @@ export default function MarketplaceApp({
                           <span>{recommendation.listing.channel}</span>
                           <small>
                             {recommendation.listing.owner.display_name} ·{" "}
-                            {recommendation.listing.owner.city}
+                            {listingCity(recommendation.listing)}
                           </small>
                         </div>
                         <strong>{recommendation.listing.title}</strong>
@@ -8840,20 +9078,9 @@ export default function MarketplaceApp({
                       {listing.owner.is_demo && (
                         <span className="sample-badge">Demo</span>
                       )}
-                      {!listing.owner.is_demo && (
-                        <span
-                          className={`provenance-badge ${
-                            isListingRequestable(listing)
-                              ? "is-requestable"
-                              : "is-view-only"
-                          }`}
-                        >
-                          {listingProvenanceLabel(listing)}
-                        </span>
-                      )}
                     </strong>
                     <small>
-                      {rolesLabel(listing.owner)} · {listing.owner.city}
+                      {rolesLabel(listing.owner)} · {listingCity(listing)}
                     </small>
                   </div>
                 </div>
@@ -13051,23 +13278,49 @@ export default function MarketplaceApp({
                 </div>
               </div>
             )}
+            {!editingListingIsBrief && (
+              <div className="field-wide ai-fill">
+                <div className="ai-fill-copy">
+                  <strong>Fill with AI</strong>
+                  <small>
+                    Pick a photo of the space below, jot a few words here, and
+                    SideSpace drafts the whole listing. Everything it writes
+                    stays yours to edit before you publish.
+                  </small>
+                </div>
+                <textarea
+                  name="ai_notes"
+                  rows={2}
+                  maxLength={600}
+                  placeholder={
+                    listingFormKind === "physical"
+                      ? "Front window on Main Street, about 4 by 6 ft, busy at lunch, posters welcome"
+                      : listingFormKind === "sponsorship"
+                        ? "High school robotics team, 40 members, competes statewide, banner at every match"
+                        : "Food and coffee account, 12k followers, mostly Bay Area students"
+                  }
+                />
+                <button
+                  type="button"
+                  className="button button-dark"
+                  disabled={busy || aiFilling}
+                  onClick={(event) => fillListingWithAi(event.currentTarget.form)}
+                >
+                  {aiFilling ? "Drafting…" : "Fill with AI"} <span>✦</span>
+                </button>
+              </div>
+            )}
             <label className="field-wide">
               {editingListingIsBrief ? "Name the brief" : "Listing title"}
               <small>
-                {editingListingIsBrief
-                  ? "A short name people will see first, like \u201cWindow space for our spring opening\u201d."
-                  : "A short name people will see first, like \u201cCafe window, Main Street\u201d."}
+                {`A short name people will see first, like \u201c${listingHints.titleExample}\u201d.`}
               </small>
               <input
                 name="title"
                 required
                 maxLength={120}
                 defaultValue={editingListing?.title ?? ""}
-                placeholder={
-                  editingListingIsBrief
-                    ? "Looking for a storefront window in Brea"
-                    : "Three-story launch package"
-                }
+                placeholder={listingHints.titlePlaceholder}
               />
             </label>
             <label>
@@ -13124,11 +13377,7 @@ export default function MarketplaceApp({
                 required
                 maxLength={140}
                 defaultValue={editingListing?.format ?? ""}
-                placeholder={
-                  editingListingIsBrief
-                    ? "a storefront window on a busy street"
-                    : "three Instagram stories over 48 hours"
-                }
+                placeholder={listingHints.formatPlaceholder}
                 onChange={(event) => setFormatPreview(event.target.value)}
               />
               <span className="offer-preview" aria-live="polite">
@@ -13143,18 +13392,7 @@ export default function MarketplaceApp({
                   to the field rather than three things you can tap. */}
               <span className="offer-examples-label">Or start from one of these:</span>
               <span className="offer-examples">
-                {(editingListingIsBrief
-                  ? [
-                      "a storefront window on a busy street",
-                      "three Instagram stories from a local creator",
-                      "a counter card in a cafe for 30 days",
-                    ]
-                  : [
-                      "three Instagram stories over 48 hours",
-                      "one 18 by 24 inch poster, displayed for a week",
-                      "a card on the counter for 30 days",
-                    ]
-                ).map((example) => (
+                {listingHints.formatExamples.map((example) => (
                   <button
                     type="button"
                     key={example}
@@ -13296,7 +13534,7 @@ export default function MarketplaceApp({
               <input
                 name="minimum_booking"
                 defaultValue={editingListing?.minimum_booking ?? ""}
-                placeholder="1 story, 3 days, or one run"
+                placeholder={listingHints.minimumPlaceholder}
               />
             </label>
             <div className="form-subsection field-wide">
@@ -13324,7 +13562,7 @@ export default function MarketplaceApp({
                 name="description"
                 required
                 defaultValue={editingListing?.description ?? ""}
-                placeholder="What’s included, where it appears, and what makes the audience valuable?"
+                placeholder={listingHints.descriptionPlaceholder}
               />
             </label>
             <label className="field-wide">
@@ -13337,7 +13575,7 @@ export default function MarketplaceApp({
               <textarea
                 name="deliverables"
                 defaultValue={editingListing?.deliverables ?? ""}
-                placeholder="Describe the post, placement, proof photos, links, or other finished deliverables."
+                placeholder={listingHints.deliverablesPlaceholder}
               />
             </label>
             <label className="field-wide">
@@ -13638,20 +13876,14 @@ export default function MarketplaceApp({
                       : "Unverified profile"}
                 </span>
               </div>
-              <div
-                className={`listing-provenance-notice ${
-                  isListingRequestable(selectedListing)
-                    ? "is-requestable"
-                    : "is-view-only"
-                }`}
-              >
-                <strong>{listingProvenanceLabel(selectedListing)}</strong>
-                <span>
-                  {isListingRequestable(selectedListing)
-                    ? "The authenticated owner confirmed this listing within the last 90 days."
-                    : "SideSpace has not confirmed that this listing is currently requestable."}
-                </span>
-              </div>
+              {!isListingRequestable(selectedListing) && (
+                <div className="listing-provenance-notice is-view-only">
+                  <span>
+                    This listing is view-only until its owner confirms it is
+                    still available.
+                  </span>
+                </div>
+              )}
               <SocialLinks profile={selectedListing.owner} />
               {(selectedCreatorReviews.length > 0 || selectedCreatorPortfolio.length > 0) && (
                 <div className="detail-terms">
@@ -13710,7 +13942,7 @@ export default function MarketplaceApp({
                 <div>
                   <small>Location / service area</small>
                   <strong>
-                    {selectedListing.location_area || selectedListing.owner.city}
+                    {listingCity(selectedListing)}
                   </strong>
                 </div>
                 <div>

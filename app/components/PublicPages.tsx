@@ -10,9 +10,6 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { formatCents } from "@/lib/payments/fees";
 import {
   isListingRequestable,
-  listingAvailabilityLabel,
-  listingProvenance,
-  listingProvenanceLabel,
   type ListingProvenanceStatus,
 } from "@/lib/listings/provenance";
 import HeroCanvas from "./HeroCanvas";
@@ -36,6 +33,7 @@ export type PublicListing = {
   price_unit: string;
   description: string;
   image_url: string;
+  location_area?: string | null;
   provenance_status?: ListingProvenanceStatus | null;
   availability_confirmed_at?: string | null;
   owner: {
@@ -47,6 +45,11 @@ export type PublicListing = {
     is_demo: boolean;
   };
 };
+
+/** The listing's own city, falling back to the owner's profile city. */
+function listingCity(listing: PublicListing) {
+  return listing.location_area || listing.owner.city;
+}
 
 function price(listing: PublicListing) {
   const low = Number(listing.price_cents || 0);
@@ -390,14 +393,9 @@ function ListingPreviewCard({
         <p>
           {listing.owner.display_name}
           {listing.owner.verified && <b aria-label="Verified">✓</b>}
-          {listing.owner.city && ` · ${listing.owner.city}`}
+          {listingCity(listing) && ` · ${listingCity(listing)}`}
           {listing.owner.is_demo && (
             <span className="ss-demo-label">Demo</span>
-          )}
-          {!listing.owner.is_demo && (
-            <span className="ss-demo-label">
-              {listingProvenanceLabel(listing)}
-            </span>
           )}
         </p>
         <button onClick={() => onOpen(listing.id)}>{listing.title}</button>
@@ -622,11 +620,11 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
       >
         <div className="ss-bookable-top">
           <span>
-            SIDESPACE / {listing
-              ? listingProvenance(listing).replaceAll("_", " ").toUpperCase()
-              : "MARKETPLACE EXAMPLE"} INVENTORY
+            SIDESPACE / {listing ? "MARKETPLACE" : "MARKETPLACE EXAMPLE"} INVENTORY
           </span>
-          <b>● {listing ? listingAvailabilityLabel(listing) : "EXAMPLE"}</b>
+          {(!listing || !isListingRequestable(listing)) && (
+            <b>● {listing ? "VIEW ONLY" : "EXAMPLE"}</b>
+          )}
         </div>
         {listing ? (
           <>
@@ -644,10 +642,10 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
             <div className="ss-bookable-body">
               <span>{listing.channel}</span>
               <strong>{listing.title}</strong>
-              <p>{listing.owner.display_name} · {listing.owner.city}</p>
+              <p>{listing.owner.display_name} · {listingCity(listing)}</p>
               <b>{price(listing)} / {listing.price_unit}</b>
               {!isListingRequestable(listing) && (
-                <small>{listingProvenanceLabel(listing)}</small>
+                <small>View-only until the owner confirms it is still available.</small>
               )}
             </div>
           </>
