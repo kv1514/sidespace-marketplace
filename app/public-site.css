@@ -770,9 +770,11 @@ html.lenis {
   border-bottom: 4px solid transparent;
   border-left: 7px solid var(--ss-ink);
   border-top: 4px solid transparent;
+  color: transparent;
   filter: drop-shadow(0 0 0 transparent);
   font-size: 0;
   height: 0;
+  overflow: hidden;
   position: absolute;
   right: 0;
   top: 50%;
@@ -4157,6 +4159,10 @@ html.lenis {
   to { transform: scaleX(1); }
 }
 
+@keyframes ss-line-run-y {
+  to { transform: scaleY(1); }
+}
+
 @keyframes ss-arrow-progress {
   0%,
   88% {
@@ -4166,6 +4172,19 @@ html.lenis {
 
   100% {
     border-left-color: var(--ss-amber);
+    filter: drop-shadow(0 0 3px rgba(243, 180, 74, 0.45));
+  }
+}
+
+@keyframes ss-arrow-progress-down {
+  0%,
+  88% {
+    border-top-color: var(--ss-ink);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+
+  100% {
+    border-top-color: var(--ss-amber);
     filter: drop-shadow(0 0 3px rgba(243, 180, 74, 0.45));
   }
 }
@@ -4381,61 +4400,6 @@ html.lenis {
 
   .ss-button {
     width: 100%;
-  }
-
-  .ss-inventory-stage {
-    height: 570px;
-    min-height: 570px;
-  }
-
-  .ss-inventory-tabs {
-    display: flex;
-    left: 12px;
-    overflow-x: auto;
-    right: 12px;
-    top: 12px;
-    width: auto;
-  }
-
-  .ss-inventory-tabs button {
-    flex: 0 0 98px;
-  }
-
-  .ss-inventory-tabs button[aria-pressed="true"] {
-    transform: translateY(3px);
-  }
-
-  .ss-transform-line {
-    gap: 0;
-    height: 3px;
-    left: 12px !important;
-    right: 12px;
-    top: 80px !important;
-    transform: none !important;
-    width: auto !important;
-  }
-
-  .ss-transform-line > span,
-  .ss-transform-line > b {
-    display: none;
-  }
-
-  .ss-transform-line i {
-    flex: 1 1 100%;
-    width: 100%;
-  }
-
-  .ss-attention-source {
-    left: 7%;
-    top: 27%;
-    width: 45%;
-  }
-
-  .ss-bookable-card {
-    bottom: 5%;
-    right: 6%;
-    top: auto;
-    width: 57%;
   }
 
   .ss-section-heading.is-horizontal,
@@ -4695,10 +4659,6 @@ html.lenis {
     gap: 8px;
   }
 
-  .ss-header-join {
-    display: none;
-  }
-
   .ss-mobile-menu {
     max-height: calc(100dvh - var(--ss-header-height));
     overflow-y: auto;
@@ -4716,24 +4676,6 @@ html.lenis {
   .ss-proof-row {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .ss-attention-source {
-    padding: 20px 16px;
-    width: 47%;
-  }
-
-  .ss-attention-source strong {
-    font-size: 27px;
-    margin-top: 16px;
-  }
-
-  .ss-bookable-card {
-    width: 61%;
-  }
-
-  .ss-bookable-top span {
-    max-width: 90px;
   }
 
   .ss-audience-section,
@@ -4941,7 +4883,7 @@ html.lenis {
   .ss-inventory-stage {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     height: auto;
     min-height: 0;
     padding: 12px;
@@ -4986,6 +4928,7 @@ html.lenis {
     top: auto;
     transform: none;
     width: 100%;
+    z-index: 4;
   }
 
   .ss-attention-source strong {
@@ -5005,25 +4948,94 @@ html.lenis {
     aspect-ratio: 16 / 10;
   }
 
+  /* Source sits above the listing, so the stem has to run down into it.
+     LIST names the conversion; the head has to point at the card, not east. */
   .ss-transform-line {
-    height: 16px;
+    align-items: center;
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 0;
+    height: 76px;
+    justify-content: flex-start;
     left: auto !important;
+    margin: 8px auto -6px;
     opacity: 1;
+    pointer-events: none;
     position: relative !important;
     right: auto;
     top: auto !important;
     transform: none !important;
-    width: 100% !important;
-  }
-
-  .ss-transform-line > span,
-  .ss-transform-line > b {
-    display: block;
+    transform-origin: center top;
+    width: 72px !important;
+    z-index: 6;
   }
 
   .ss-transform-line > span {
-    left: 0;
-    top: -2px;
+    bottom: auto;
+    display: block;
+    flex: 0 0 auto;
+    left: auto;
+    letter-spacing: 0.16em;
+    line-height: 1;
+    margin: 0 0 6px;
+    position: static;
+    text-align: center;
+    top: auto;
+    transform: none;
+    white-space: nowrap;
+    width: 100%;
+  }
+
+  .ss-transform-line i {
+    background: var(--ss-ink);
+    flex: 1 1 auto;
+    height: auto;
+    left: auto;
+    min-height: 28px;
+    position: relative;
+    right: auto;
+    top: auto;
+    transform: none;
+    width: 1px;
+  }
+
+  .ss-transform-progress {
+    height: 100%;
+    left: -1px;
+    top: 0;
+    transform: scaleY(0);
+    transform-origin: top center;
+    width: 3px;
+  }
+
+  .ss-transform-line.is-running .ss-transform-progress {
+    animation-name: ss-line-run-y;
+  }
+
+  .ss-transform-line > b {
+    border-bottom: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 8px solid var(--ss-ink);
+    bottom: auto;
+    color: transparent;
+    display: block;
+    flex: 0 0 auto;
+    font-size: 0;
+    height: 0;
+    left: auto;
+    margin-top: -1px;
+    overflow: hidden;
+    position: relative;
+    right: auto;
+    top: auto;
+    transform: none;
+    width: 0;
+  }
+
+  .ss-transform-line.is-running > b {
+    animation-name: ss-arrow-progress-down;
   }
 
   .ss-bookable-card {
@@ -5034,6 +5046,7 @@ html.lenis {
     top: auto;
     transform: none;
     width: 100%;
+    z-index: 5;
   }
 
   .ss-bookable-body strong {
@@ -5207,6 +5220,99 @@ html.lenis {
 
   .ss-attention-source strong {
     font-size: 24px;
+  }
+}
+
+@media (max-width: 1180px) {
+  html {
+    font-variant-emoji: text;
+  }
+
+  /* iOS paints ↗ / → / ＋ as emoji. Draw hairline marks instead, and leave
+     the wide desktop layout's original type glyphs alone. */
+  .ss-icon-arrow,
+  .ss-icon-plus {
+    display: inline-block;
+    flex: 0 0 auto;
+    font-size: 0 !important;
+    height: 11px;
+    line-height: 0;
+    overflow: visible;
+    position: relative;
+    speak: never;
+    vertical-align: -1px;
+    width: 11px;
+  }
+
+  .ss-icon-arrow::before {
+    background: currentColor;
+    content: "";
+    height: 1.15px;
+    left: 1px;
+    position: absolute;
+    top: 50%;
+    transform: rotate(-45deg);
+    transform-origin: left center;
+    width: 9px;
+  }
+
+  .ss-icon-arrow::after {
+    border-right: 1.15px solid currentColor;
+    border-top: 1.15px solid currentColor;
+    content: "";
+    height: 5px;
+    position: absolute;
+    right: 1px;
+    top: 1px;
+    width: 5px;
+  }
+
+  .ss-icon-east {
+    transform: rotate(45deg);
+  }
+
+  .listing-more:hover .ss-icon-east {
+    transform: rotate(45deg) translateX(1px);
+  }
+
+  .ss-icon-plus::before,
+  .ss-icon-plus::after {
+    background: currentColor;
+    content: "";
+    position: absolute;
+  }
+
+  .ss-icon-plus::before {
+    height: 1.15px;
+    left: 1px;
+    right: 1px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .ss-icon-plus::after {
+    bottom: 1px;
+    left: 50%;
+    top: 1px;
+    transform: translateX(-50%);
+    width: 1.15px;
+  }
+
+  .ss-button .ss-icon-arrow,
+  .ss-button .ss-icon-plus,
+  .ss-header-join .ss-icon-arrow {
+    opacity: 0.72;
+  }
+
+  .ss-mobile-menu nav a > .ss-icon-arrow,
+  .ss-mobile-menu nav button > .ss-icon-arrow {
+    height: 13px;
+    width: 12px;
+  }
+
+  .ss-listing-preview footer button .ss-icon-arrow {
+    height: 11px;
+    width: 11px;
   }
 }
 

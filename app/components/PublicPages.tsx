@@ -242,7 +242,9 @@ function CategoryReel() {
           >
             <span>{number}</span>
             <strong>{label}</strong>
-            <b aria-hidden="true">↗</b>
+            <b aria-hidden="true" className="ss-icon-arrow">
+              ↗
+            </b>
           </Link>
         ))}
       </div>
@@ -405,7 +407,9 @@ function ListingPreviewCard({
           <strong>{price(listing)}</strong>
           <span>/ {listing.price_unit}</span>
           <button onClick={() => onOpen(listing.id)} aria-label={`Open ${listing.title}`}>
-            ↗
+            <span className="ss-icon-arrow" aria-hidden="true">
+              ↗
+            </span>
           </button>
         </footer>
       </div>
@@ -454,6 +458,17 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
     if (!host || !source || !card) return;
 
     const measureConnector = () => {
+      // On a phone the stage is a vertical stack: source, then a downward
+      // stem, then the listing. A measured diagonal (or a flattened sideways
+      // bar) would point at empty space. CSS owns that stem; skip geometry.
+      if (window.matchMedia("(max-width: 760px)").matches) {
+        setConnectorStyle({
+          "--ss-hero-cycle-duration": `${HERO_ROTATION_MS}ms`,
+        } as CSSProperties);
+        setPositionedFor(active);
+        return;
+      }
+
       const hostRect = host.getBoundingClientRect();
       const sourceRect = source.getBoundingClientRect();
       const cardRect = card.getBoundingClientRect();
@@ -600,7 +615,8 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
             className="ss-transform-progress"
             onAnimationEnd={(event) => {
               if (
-                event.animationName === "ss-line-run" &&
+                (event.animationName === "ss-line-run" ||
+                  event.animationName === "ss-line-run-y") &&
                 !reduceMotion &&
                 onScreen &&
                 tabVisible &&
@@ -613,7 +629,7 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
             }}
           />
         </i>
-        <b>→</b>
+        <b />
       </div>
       <div
         className="ss-bookable-card"
@@ -724,10 +740,10 @@ function FinalCall({ onList }: { onList: () => void }) {
       </h2>
       <div>
         <Link className="ss-button is-dark" href="/marketplace">
-          Browse marketplace <span>↗</span>
+          Browse marketplace <span aria-hidden="true" className="ss-icon-arrow">↗</span>
         </Link>
         <button className="ss-button is-light" onClick={onList}>
-          List what you have <span>＋</span>
+          List what you have <span aria-hidden="true" className="ss-icon-plus">＋</span>
         </button>
       </div>
     </section>
@@ -783,10 +799,10 @@ export function LandingPage({
           </p>
           <div className="ss-hero-actions">
             <Link className="ss-button is-dark" href="/marketplace">
-              Browse the marketplace <span>↗</span>
+              Browse the marketplace <span aria-hidden="true" className="ss-icon-arrow">↗</span>
             </Link>
             <button className="ss-button is-light" onClick={onList}>
-              List what you have to advertise <span>＋</span>
+              List what you have to advertise <span aria-hidden="true" className="ss-icon-plus">＋</span>
             </button>
           </div>
           <ul className="ss-proof-row" aria-label="SideSpace benefits">
@@ -871,9 +887,19 @@ export function LandingPage({
                 ).map((item) => <li key={item}>{item}</li>)}
               </ul>
               {audience === "advertise" ? (
-                <Link href="/marketplace">Find places to advertise ↗</Link>
+                <Link href="/marketplace">
+                  Find places to advertise{" "}
+                  <span aria-hidden="true" className="ss-icon-arrow">
+                    ↗
+                  </span>
+                </Link>
               ) : (
-                <button onClick={onJoin}>List my reach ↗</button>
+                <button onClick={onJoin}>
+                  List my reach{" "}
+                  <span aria-hidden="true" className="ss-icon-arrow">
+                    ↗
+                  </span>
+                </button>
               )}
             </div>
           </div>
@@ -909,7 +935,12 @@ export function LandingPage({
             <p className="ss-kicker">A DIRECT PATH FROM INTEREST TO AGREEMENT</p>
             <h2>Find it. Talk directly.<br /><em>Make it happen.</em></h2>
           </div>
-          <Link href="/how-it-works">See how SideSpace works ↗</Link>
+          <Link href="/how-it-works">
+            See how SideSpace works{" "}
+            <span aria-hidden="true" className="ss-icon-arrow">
+              ↗
+            </span>
+          </Link>
         </header>
         <div className="ss-process-row">
           <article
@@ -1447,7 +1478,20 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
       <section className="ss-page-cta">
         <p className="ss-kicker">START WITH THE SIDE THAT FITS YOU</p>
         <h2>Ready to see what is already here?</h2>
-        <div><Link className="ss-button is-dark" href="/marketplace">Browse marketplace ↗</Link><button className="ss-button is-light" onClick={onJoin}>Create a free profile ＋</button></div>
+        <div>
+          <Link className="ss-button is-dark" href="/marketplace">
+            Browse marketplace{" "}
+            <span aria-hidden="true" className="ss-icon-arrow">
+              ↗
+            </span>
+          </Link>
+          <button className="ss-button is-light" onClick={onJoin}>
+            Create a free profile{" "}
+            <span aria-hidden="true" className="ss-icon-plus">
+              ＋
+            </span>
+          </button>
+        </div>
       </section>
     </>
   );
@@ -1481,7 +1525,7 @@ export function CreatorsPage({
             storefront, around a team, or at a local event. You choose the offer,
             the price, and every campaign.
           </p>
-          <button className="ss-button is-dark" onClick={onList}>List my reach <span>↗</span></button>
+          <button className="ss-button is-dark" onClick={onList}>List my reach <span aria-hidden="true" className="ss-icon-arrow">↗</span></button>
         </div>
         <div className="ss-creator-stack">
           <article className="is-social" data-ss-parallax="0.1" data-ss-parallax-max="44"><span>INSTAGRAM / LOCAL</span><img src="/photos/market-creator.jpg" alt="Local creator at an outdoor market" /><strong>Story + saved highlight</strong><p>Audience, format, rate</p></article>
@@ -1512,7 +1556,22 @@ export function CreatorsPage({
       </section>
 
       <section className="ss-live-preview">
-        <header className="ss-section-heading is-horizontal" data-ss-parallax="0.04" data-ss-parallax-max="26"><div><p className="ss-kicker">CREATOR INVENTORY</p><h2>Creators and local owners<br /><em>already listing.</em></h2></div><Link href="/marketplace?intent=supply">Explore creator listings ↗</Link></header>
+        <header className="ss-section-heading is-horizontal" data-ss-parallax="0.04" data-ss-parallax-max="26">
+          <div>
+            <p className="ss-kicker">CREATOR INVENTORY</p>
+            <h2>
+              Creators and local owners
+              <br />
+              <em>already listing.</em>
+            </h2>
+          </div>
+          <Link href="/marketplace?intent=supply">
+            Explore creator listings{" "}
+            <span aria-hidden="true" className="ss-icon-arrow">
+              ↗
+            </span>
+          </Link>
+        </header>
         <div className="ss-preview-grid">{examples.map((listing) => <ListingPreviewCard listing={listing} onOpen={onOpenListing} key={listing.id} />)}</div>
       </section>
       <FinalCall onList={onList} />
@@ -1531,14 +1590,19 @@ export function PricingPage({ onJoin }: { onJoin: () => void }) {
           campaign requests, and message members without a subscription.
           SideSpace charges each side only when an accepted campaign is paid.
         </p>
-        <button className="ss-button is-dark" onClick={onJoin}>Create a free account <span>↗</span></button>
+        <button className="ss-button is-dark" onClick={onJoin}>Create a free account <span aria-hidden="true" className="ss-icon-arrow">↗</span></button>
       </section>
 
       <section className="ss-current-pricing" aria-labelledby="current-pricing-title">
         <div className="ss-current-flag" data-ss-parallax="0.06" data-ss-parallax-max="28"><span>CURRENT</span><b>LIVE NOW</b></div>
         <div data-ss-parallax="0.11" data-ss-parallax-max="42"><p className="ss-kicker">MARKETPLACE</p><h2 id="current-pricing-title">5% + 5%</h2><p className="ss-price"><strong>$0</strong><span>/ month</span></p></div>
         <ul data-ss-parallax="0.08" data-ss-parallax-max="34"><li>Businesses pay the agreed campaign price plus 5%</li><li>Creators receive the agreed price minus 5%</li><li>Applicable tax is calculated at Stripe Checkout</li><li>Stripe hosts checkout, invoices, and payout onboarding</li><li>No subscription or minimum campaign spend</li></ul>
-        <button onClick={onJoin}>Create a free account ↗</button>
+        <button onClick={onJoin}>
+          Create a free account{" "}
+          <span aria-hidden="true" className="ss-icon-arrow">
+            ↗
+          </span>
+        </button>
       </section>
 
       <section className="ss-future-pricing" aria-labelledby="future-pricing-title">
@@ -1554,7 +1618,24 @@ export function PricingPage({ onJoin }: { onJoin: () => void }) {
         <p>The business sees the campaign, buyer fee, and tax before paying. A verified Stripe webhook—not the browser redirect—confirms the campaign.</p>
       </section>
 
-      <section className="ss-page-cta"><p className="ss-kicker">FREE TO JOIN</p><h2>Start with the marketplace, then pay only for accepted work.</h2><div><Link className="ss-button is-light" href="/marketplace">Browse first ↗</Link><button className="ss-button is-dark" onClick={onJoin}>Join SideSpace ＋</button></div></section>
+      <section className="ss-page-cta">
+        <p className="ss-kicker">FREE TO JOIN</p>
+        <h2>Start with the marketplace, then pay only for accepted work.</h2>
+        <div>
+          <Link className="ss-button is-light" href="/marketplace">
+            Browse first{" "}
+            <span aria-hidden="true" className="ss-icon-arrow">
+              ↗
+            </span>
+          </Link>
+          <button className="ss-button is-dark" onClick={onJoin}>
+            Join SideSpace{" "}
+            <span aria-hidden="true" className="ss-icon-plus">
+              ＋
+            </span>
+          </button>
+        </div>
+      </section>
     </>
   );
 }
@@ -1574,7 +1655,7 @@ export function DashboardGate({
         Sign in to manage your profile, publish inventory, reply to campaign
         requests, and continue private messages.
       </p>
-      <div><button className="ss-button is-dark" onClick={onSignIn}>Sign in <span>↗</span></button><button className="ss-button is-light" onClick={onJoin}>Join SideSpace <span>＋</span></button></div>
+      <div><button className="ss-button is-dark" onClick={onSignIn}>Sign in <span aria-hidden="true" className="ss-icon-arrow">↗</span></button><button className="ss-button is-light" onClick={onJoin}>Join SideSpace <span aria-hidden="true" className="ss-icon-plus">＋</span></button></div>
     </section>
   );
 }
