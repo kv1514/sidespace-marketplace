@@ -64,7 +64,7 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
     "- demographics: only what the owner said about who sees it and how many. Empty when they said nothing.",
     `- location_area: the city or area from the notes${city ? `, otherwise "${city}"` : ""}. Never a street address.`,
     "- space_size: only when the owner stated it or the photo shows a measurable reference; otherwise empty.",
-    "- surface_types: only what would plausibly go on this space. Empty for anything that is not a physical surface.",
+    "- surface_types: what the owner said may go up, and nothing more (\"flyers welcome\" means Flyers, not Flyers and Posters). Only when they said nothing at all, the one or two things that plausibly fit the surface. Empty for anything that is not a physical surface.",
     "- install_by: \"owner\", \"renter\", or \"either\" only if the notes say who puts the ad up; otherwise an empty string.",
     "- price_dollars: only the price the owner stated, in whole US dollars. null when they did not say. Never suggest one.",
     `- price_unit: ${kind === "physical" ? '"week" unless the notes say otherwise' : kind === "sponsorship" ? '"campaign" for a season, event, or match run; "sponsor" only for a per-sponsor tier' : '"post", "story", or "video" to match the format'}.`,
