@@ -4172,6 +4172,7 @@ export default function MarketplaceApp({
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [listingFiles, setListingFiles] = useState<File[]>([]);
   const [aiFilling, setAiFilling] = useState(false);
+  const [aiQuestions, setAiQuestions] = useState<string[]>([]);
   const [listening, setListening] = useState(false);
   const aiNotesRef = useRef<HTMLTextAreaElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -6615,7 +6616,7 @@ export default function MarketplaceApp({
     if (draft.demographics) setValue("demographics", draft.demographics);
     if (draft.location_area) setValue("location_area", draft.location_area);
     if (draft.space_size) setValue("space_size", draft.space_size);
-    setValue("price", String(draft.price_dollars));
+    if (draft.price_dollars !== null) setValue("price", String(draft.price_dollars));
     setValue("price_unit", draft.price_unit);
     if (draft.minimum_booking) setValue("minimum_booking", draft.minimum_booking);
     if (draft.availability_notes) {
@@ -6646,12 +6647,32 @@ export default function MarketplaceApp({
    * Stop, or the browser closed the session - Fill with AI runs on the
    * transcript. Ending with nothing new spends nothing.
    */
-  function startListening() {
+  async function startListening() {
     const Ctor = speechRecognitionCtor();
     const field = aiNotesRef.current;
     if (!Ctor || !field) {
       setToast("Voice input isn't available in this browser. Type a few words instead.");
       return;
+    }
+    // Ask for the microphone explicitly first. This is what makes the
+    // browser's permission prompt appear on the first tap - the recognition
+    // API alone can fail with a silent "not-allowed" in some browsers. The
+    // stream is released at once; recognition opens its own.
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (error) {
+        const name = error instanceof DOMException ? error.name : "";
+        setToast(
+          name === "NotAllowedError" || name === "SecurityError"
+            ? "Microphone is blocked for this site. Click the lock icon in the address bar, allow the microphone, then tap Speak again."
+            : name === "NotFoundError"
+              ? "No microphone was found on this device. Type a few words instead."
+              : "The microphone could not be opened. Type a few words instead.",
+        );
+        return;
+      }
     }
     const recognition = new Ctor();
     recognition.lang = navigator.language || "en-US";
@@ -6674,7 +6695,9 @@ export default function MarketplaceApp({
     };
     recognition.onerror = (event) => {
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        setToast("Microphone access was blocked. Allow it in your browser, or type instead.");
+        setToast(
+          "Microphone is blocked for this site. Click the lock icon in the address bar, allow the microphone, then tap Speak again.",
+        );
       } else if (event.error !== "aborted" && event.error !== "no-speech") {
         setToast("Voice input stopped. Try again, or type a few words instead.");
       }
@@ -6714,6 +6737,7 @@ export default function MarketplaceApp({
       return;
     }
     setAiFilling(true);
+    setAiQuestions([]);
     try {
       const image = file ? await photoToJpegBase64(file) : null;
       const response = await fetch("/api/listings/draft", {
@@ -6735,10 +6759,14 @@ export default function MarketplaceApp({
         );
       }
       applyListingDraft(form, payload.draft);
+      setAiQuestions(payload.draft.questions ?? []);
+      const asked = payload.draft.questions?.length ?? 0;
       setToast(
-        file
-          ? "Drafted. Read it over and change anything before you publish."
-          : "Drafted from your words. Add a photo and fill again for a better draft, or edit this one.",
+        asked
+          ? `Filled what you told me. ${asked} quick question${asked === 1 ? "" : "s"} below - answer them and fill again.`
+          : file
+            ? "Drafted. Read it over and change anything before you publish."
+            : "Drafted from your words. Add a photo and fill again for a better draft, or edit this one.",
       );
     } catch (error) {
       setToast(
@@ -6949,6 +6977,7 @@ export default function MarketplaceApp({
 
       const wasEditing = Boolean(editingListing);
       setListingOpen(false);
+      setAiQuestions([]);
       setEditingListing(null);
       setAccountOpen(true);
       setToast(
@@ -7813,6 +7842,7 @@ export default function MarketplaceApp({
     setSelectedListing(null);
     setEditingListing(null);
     setListingOpen(false);
+    setAiQuestions([]);
     setVerificationOpen(false);
     setDeleteAccountOpen(false);
     resetIgAvatarSync();
@@ -13287,6 +13317,7 @@ export default function MarketplaceApp({
           label={editingListing ? "Edit listing" : "Create a listing"}
           onClose={() => {
             setListingOpen(false);
+            setAiQuestions([]);
             setEditingListing(null);
             setListingFeedback("");
           }}
@@ -13385,10 +13416,21 @@ export default function MarketplaceApp({
                 <div className="ai-fill-copy">
                   <strong>Fill with AI</strong>
                   <small>
-                    Jot a few words here, or tap the mic and just describe the
-                    space out loud. SideSpace drafts the whole listing, and
-                    everything it writes stays yours to edit before you
-                    publish.
+                    Type it or tap the mic and say it. Cover these and the
+                    whole listing gets drafted for you to edit:
+                  </small>
+                  <ul className="ai-fill-checklist">
+                    <li>what it is and where</li>
+                    <li>who sees it, roughly how many</li>
+                    <li>the price, and per what</li>
+                    <li>when it is available</li>
+                    {listingFormKind === "physical" && (
+                      <li>size, what can go up, who puts it up</li>
+                    )}
+                  </ul>
+                  <small>
+                    Anything you leave out, it asks you for. It never guesses
+                    a price or a number.
                   </small>
                   <small className="ai-fill-tip">
                     Tip: add a photo of the space in the photos field below
@@ -13403,10 +13445,10 @@ export default function MarketplaceApp({
                     maxLength={600}
                     placeholder={
                       listingFormKind === "physical"
-                        ? "Front window on Main Street, about 4 by 6 ft, busy at lunch, posters welcome"
+                        ? "Front window on Main Street, about 4 by 6 ft, maybe 300 people walk past on a weekday, $40 a week, posters or decals, I put it up, available now"
                         : listingFormKind === "sponsorship"
-                          ? "High school robotics team, 40 members, competes statewide, banner at every match"
-                          : "Food and coffee account, 12k followers, mostly Bay Area students"
+                          ? "High school robotics team, 40 members, about 200 parents at each of 8 home matches, banner plus a jersey patch, $250 a season, we install"
+                          : "Food and coffee account, 12k followers mostly Bay Area students, one story with a link, $30 per story, two days notice"
                     }
                   />
                   <button
@@ -13419,12 +13461,29 @@ export default function MarketplaceApp({
                         : "Describe the space out loud, then draft it"
                     }
                     disabled={busy || aiFilling}
-                    onClick={() => (listening ? stopListening() : startListening())}
+                    onClick={() => {
+                      if (listening) stopListening();
+                      else void startListening();
+                    }}
                   >
                     {listening ? "Stop & fill" : "Speak & fill"}{" "}
                     <span>{listening ? "■" : "🎤"}</span>
                   </button>
                 </div>
+                {aiQuestions.length > 0 && (
+                  <div className="ai-fill-questions" role="status">
+                    <strong>Still needed - it will not guess these:</strong>
+                    <ol>
+                      {aiQuestions.map((question) => (
+                        <li key={question}>{question}</li>
+                      ))}
+                    </ol>
+                    <small>
+                      Add the answers in the box above, typed or spoken, then
+                      fill again.
+                    </small>
+                  </div>
+                )}
                 <button
                   type="button"
                   className="button button-dark"
@@ -13927,6 +13986,7 @@ export default function MarketplaceApp({
                 type="button"
                 onClick={() => {
                   setListingOpen(false);
+                  setAiQuestions([]);
                   setEditingListing(null);
                   setListingFeedback("");
                 }}
