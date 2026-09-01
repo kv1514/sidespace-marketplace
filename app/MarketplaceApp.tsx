@@ -12241,7 +12241,10 @@ export default function MarketplaceApp({
                     clicked is worse than no control. Restore it alongside a
                     real favorites feature, not before. */}
                 <span className="image-hint" aria-hidden="true">
-                  Click to view <b>→</b>
+                  Click to view{" "}
+                  <b aria-hidden="true" className="ss-icon-arrow ss-icon-east">
+                    →
+                  </b>
                 </span>
               </button>
               <ListingLikeButton
@@ -12301,7 +12304,10 @@ export default function MarketplaceApp({
                   className="listing-more"
                   onClick={() => openListing(listing)}
                 >
-                  Learn more <span>→</span>
+                  Learn more{" "}
+                  <span aria-hidden="true" className="ss-icon-arrow ss-icon-east">
+                    →
+                  </span>
                 </button>
                 <footer>
                   <div>
@@ -12331,7 +12337,9 @@ export default function MarketplaceApp({
                         ? "Offer my space"
                         : listing.instant_booking_enabled ? "Choose dates" : "View booking options"
                       : "View only"}{" "}
-                    <span>↗</span>
+                    <span aria-hidden="true" className="ss-icon-arrow">
+                      ↗
+                    </span>
                   </button>
                 </footer>
               </div>
@@ -16574,7 +16582,9 @@ export default function MarketplaceApp({
                     {isListingRequestable(selectedListing)
                       ? "Offer my space"
                       : "View only"}{" "}
-                    <span>↗</span>
+                    <span aria-hidden="true" className="ss-icon-arrow">
+                      ↗
+                    </span>
                   </button>
                 )}
                 <button
@@ -16585,7 +16595,10 @@ export default function MarketplaceApp({
                     openListingChat(listing);
                   }}
                 >
-                  Message owner
+                  Message owner{" "}
+                  <span aria-hidden="true" className="ss-icon-arrow">
+                    ↗
+                  </span>
                 </button>
               </div>
               )}

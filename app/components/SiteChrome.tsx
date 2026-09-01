@@ -183,7 +183,9 @@ export function SiteHeader({
                 <span>
                   Join<span className="ss-header-join-full"> SideSpace</span>
                 </span>
-                <span aria-hidden="true">↗</span>
+                <span aria-hidden="true" className="ss-icon-arrow">
+                  ↗
+                </span>
               </button>
             </>
           )}
@@ -213,7 +215,9 @@ export function SiteHeader({
             >
               <span>{String(index + 1).padStart(2, "0")}</span>
               {link.label}
-              <b aria-hidden="true">↗</b>
+              <b aria-hidden="true" className="ss-icon-arrow">
+                ↗
+              </b>
             </Link>
           ))}
           {viewer && (
@@ -225,7 +229,9 @@ export function SiteHeader({
               >
                 <span>05</span>
                 Dashboard
-                <b aria-hidden="true">↗</b>
+                <b aria-hidden="true" className="ss-icon-arrow">
+                  ↗
+                </b>
               </Link>
               <button
                 onClick={() => {
@@ -266,7 +272,10 @@ export function SiteHeader({
                 onJoin();
               }}
             >
-              Join SideSpace <span aria-hidden="true">↗</span>
+              Join SideSpace{" "}
+              <span aria-hidden="true" className="ss-icon-arrow">
+                ↗
+              </span>
             </button>
           </div>
         )}
@@ -307,7 +316,12 @@ export function SiteFooter({ onJoin }: { onJoin: () => void }) {
         <Link href="/privacy">Privacy</Link>
       </nav>
       <div className="ss-footer-end">
-        <button onClick={onJoin}>List what you have ↗</button>
+        <button onClick={onJoin}>
+          List what you have{" "}
+          <span aria-hidden="true" className="ss-icon-arrow">
+            ↗
+          </span>
+        </button>
         <small>© {new Date().getFullYear()} SideSpace</small>
       </div>
     </footer>
