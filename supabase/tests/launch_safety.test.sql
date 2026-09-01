@@ -1,6 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(28);
+set search_path = public, extensions;
+select extensions.plan(45);
 
 insert into public.profiles (id, role, display_name, is_demo, onboarding_complete)
 values
@@ -32,15 +33,31 @@ values
   ('20000000-0000-4000-8000-000000000012', '30000000-0000-4000-8000-000000000012', 'creator', 'RLS Creator', false, true),
   ('20000000-0000-4000-8000-000000000013', '30000000-0000-4000-8000-000000000013', 'creator', 'RLS Other', false, true);
 
+insert into public.profiles (
+  id, role, display_name, is_demo, is_internal, onboarding_complete
+)
+values (
+  '20000000-0000-0000-0000-000000000019', 'creator', 'Internal QA', true, true, true
+);
+
 alter table public.listings disable trigger listings_enforce_provenance;
 insert into public.listings (
   id, owner_profile_id, title, channel, format, price_cents, description,
-  provenance_status, availability_confirmed_at
+  street_address, provenance_status, availability_confirmed_at
 ) values (
   '20000000-0000-4000-8000-000000000014',
   '20000000-0000-4000-8000-000000000012',
   'RLS payment fixture', 'Instagram', 'Post', 10000, 'Payment authorization fixture',
+  '123 Private Street',
   'owner_attested', now()
+);
+
+insert into public.listings (
+  id, owner_profile_id, title, channel, format, price_cents, description
+) values (
+  '20000000-0000-0000-0000-000000000020',
+  '20000000-0000-0000-0000-000000000019',
+  'Internal QA inventory', 'Instagram', 'Post', 10000, 'Must stay hidden'
 );
 alter table public.listings enable trigger listings_enforce_provenance;
 
@@ -199,6 +216,15 @@ select ok(
   'anonymous clients cannot link campaign conversations'
 );
 
+select throws_ok(
+  $$update public.listings
+    set channel = 'TikTok'
+    where id = '20000000-0000-4000-8000-000000000014'$$,
+  'P0001',
+  'A listing channel cannot change while a campaign request is pending.',
+  'the payer direction cannot change while a request is pending'
+);
+
 select set_config(
   'request.jwt.claim.sub',
   '30000000-0000-4000-8000-000000000011',
@@ -254,6 +280,39 @@ select set_config(
   '30000000-0000-4000-8000-000000000012',
   true
 );
+select is(
+  (select auth_user_id from public.my_profiles
+   where auth_user_id = '30000000-0000-4000-8000-000000000012'),
+  '30000000-0000-4000-8000-000000000012'::uuid,
+  'the owner profile projection returns the current member private identity'
+);
+select is(
+  (select street_address from public.my_listings
+   where id = '20000000-0000-4000-8000-000000000014'),
+  '123 Private Street',
+  'the owner listing projection returns the current member private address'
+);
+select is(
+  (select count(*)::integer from public.my_profiles
+   where auth_user_id = '30000000-0000-4000-8000-000000000011'),
+  0,
+  'the owner profile projection cannot return another member'
+);
+select is(
+  (select count(*)::integer from public.marketplace_profiles
+   where id = '20000000-0000-0000-0000-000000000019'),
+  0,
+  'the public profile projection excludes internal accounts'
+);
+update public.profiles
+set is_internal = true
+where id = '20000000-0000-4000-8000-000000000012';
+select is(
+  (select is_internal from public.profiles
+   where id = '20000000-0000-4000-8000-000000000012'),
+  false,
+  'authenticated profile writes cannot self-assign internal status'
+);
 select lives_ok(
   $$select public.respond_campaign_request(
     '20000000-0000-4000-8000-000000000018',
@@ -279,7 +338,59 @@ select is(
   '20000000-0000-4000-8000-000000000012'::uuid,
   'the accepted response still assigns the owner as payee'
 );
+
+select ok(
+  not has_table_privilege('authenticated', 'public.profiles', 'SELECT'),
+  'authenticated clients do not have a table-wide profile SELECT grant'
+);
+select ok(
+  has_column_privilege('authenticated', 'public.profiles', 'display_name', 'SELECT'),
+  'authenticated clients can read safe profile columns'
+);
+select ok(
+  not has_column_privilege('authenticated', 'public.profiles', 'auth_user_id', 'SELECT'),
+  'authenticated clients cannot read auth user identifiers from the base table'
+);
+select ok(
+  not has_column_privilege('authenticated', 'public.profiles', 'verification_status', 'SELECT'),
+  'authenticated clients cannot read verification state from the base table'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.listings', 'SELECT'),
+  'authenticated clients do not have a table-wide listing SELECT grant'
+);
+select ok(
+  not has_column_privilege('authenticated', 'public.listings', 'street_address', 'SELECT'),
+  'authenticated clients cannot read addresses from the base table'
+);
+select ok(
+  has_table_privilege('authenticated', 'public.my_profiles', 'SELECT'),
+  'authenticated clients can use the owner-only profile projection'
+);
+select ok(
+  not has_table_privilege('anon', 'public.my_profiles', 'SELECT'),
+  'anonymous clients cannot use the owner-only profile projection'
+);
+select is(
+  (select count(*)::integer from public.profiles where id = '20000000-0000-0000-0000-000000000019'),
+  0,
+  'internal profiles are hidden from authenticated marketplace reads'
+);
+select is(
+  (select count(*)::integer from public.listings where id = '20000000-0000-0000-0000-000000000020'),
+  0,
+  'internal listings are hidden from authenticated marketplace reads'
+);
+select throws_ok(
+  $$insert into public.conversations (participant_a, participant_b)
+    values (
+      '20000000-0000-4000-8000-000000000011',
+      '20000000-0000-0000-0000-000000000019'
+    )$$,
+  'P0001', 'Internal profiles cannot participate in conversations.',
+  'authenticated members cannot start conversations with internal profiles'
+);
 reset role;
 
-select * from finish();
+select * from extensions.finish();
 rollback;

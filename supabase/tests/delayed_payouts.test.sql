@@ -1,6 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(44);
+set search_path = public, extensions;
+select extensions.plan(45);
 
 insert into public.profiles (id, role, display_name, is_demo, onboarding_complete)
 values
@@ -265,6 +266,31 @@ select is(
   'failed transfer claims do not strand the payout'
 );
 
+update public.payment_transactions
+set status = 'partially_refunded',
+    workflow_status = 'awaiting_payer_review',
+    issue_status = 'none',
+    refunded_cents = 1000,
+    payout_amount_cents = 8595,
+    delivered_at = now() - interval '73 hours',
+    review_deadline = now() - interval '1 hour'
+where id = '10000000-0000-4000-8000-000000000204';
+
+select throws_ok(
+  $$select public.claim_campaign_payout_release(
+    '10000000-0000-4000-8000-000000000204', 'automatic'
+  )$$,
+  'P0001', 'A refunded payout requires staff resolution before release.',
+  'automatic release cannot bypass refund reconciliation'
+);
+
+update public.payment_transactions
+set status = 'paid',
+    workflow_status = 'awaiting_payer_review',
+    refunded_cents = 0,
+    payout_amount_cents = 9500
+where id = '10000000-0000-4000-8000-000000000204';
+
 select lives_ok(
   $$select public.claim_campaign_payout_release(
     '10000000-0000-4000-8000-000000000204', 'automatic'
@@ -469,5 +495,5 @@ select is(
   'full refund uses the entire remaining trusted customer charge'
 );
 
-select * from finish();
+select * from extensions.finish();
 rollback;

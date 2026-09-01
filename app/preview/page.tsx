@@ -114,8 +114,8 @@ export default async function PreviewPage() {
     const supabase = await createClient();
     const [profilesResult, listingsResult] = await Promise.all([
       supabase
-        .from("profiles")
-        .select("*")
+        .from("marketplace_profiles")
+        .select(PUBLIC_PROFILE_COLUMNS)
         .eq("onboarding_complete", true)
         .neq("role", "consumer")
         .order("verified", { ascending: false })

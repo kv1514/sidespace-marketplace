@@ -401,6 +401,55 @@ describe("Stripe refund and dispute webhook routes", () => {
     expect(mocks.recoverReleasedPayout).not.toHaveBeenCalled();
   });
 
+  it("keeps a partial-refund payout blocked when a dispute is won", async () => {
+    const stripe = mocks.getStripe();
+    stripe.charges.retrieve.mockResolvedValue({
+      id: "ch_platform",
+      amount: 11_550,
+      amount_refunded: 2_000,
+      currency: "usd",
+      payment_intent: "pi_platform",
+      metadata: { sidespace_transaction_id: transactionId },
+    });
+    stripe.disputes.retrieve.mockResolvedValue({
+      id: "dp_won_partial_refund",
+      amount: 11_550,
+      status: "won",
+      reason: "fraudulent",
+    });
+    setEvent("charge.dispute.closed", {
+      id: "dp_won_partial_refund",
+      charge: "ch_platform",
+      amount: 11_550,
+      status: "won",
+      reason: "fraudulent",
+    });
+    const adminState = makeAdmin(
+      transaction({
+        status: "partially_refunded",
+        workflow_status: "partially_refunded",
+        payout_status: "blocked",
+        refunded_cents: 2_000,
+        payout_amount_cents: 9_500,
+        dispute_status: "needs_response",
+      }),
+    );
+    mocks.createAdminClient.mockReturnValue(adminState.admin);
+
+    const response = await POST(webhookRequest());
+
+    expect(response.status).toBe(200);
+    expect(adminState.transactionUpdate).toMatchObject({
+      status: "partially_refunded",
+      dispute_status: "won",
+      payout_status: "blocked",
+      workflow_status: "partially_refunded",
+      refunded_cents: 2_000,
+      payout_amount_cents: 7_854,
+    });
+    expect(mocks.recoverReleasedPayout).not.toHaveBeenCalled();
+  });
+
   it("keeps a completed campaign completed when a released dispute is won", async () => {
     const stripe = mocks.getStripe();
     stripe.charges.retrieve.mockResolvedValue({

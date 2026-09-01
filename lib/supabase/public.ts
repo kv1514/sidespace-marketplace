@@ -31,7 +31,7 @@ export type Invite = {
 };
 
 export const PUBLIC_PROFILE_COLUMNS =
-  "id,role,display_name,handle,bio,city,categories,followers,avg_views,reach_unit,audience_age,website,avatar_url,verified,is_demo,is_internal,onboarding_complete,extra_roles,social_links,gallery_urls,created_at,updated_at";
+  "id,role,display_name,handle,bio,city,categories,followers,avg_views,reach_unit,audience_age,website,avatar_url,verified,is_demo,onboarding_complete,extra_roles,social_links,gallery_urls,created_at,updated_at";
 
 /**
  * Listing columns safe to serve to anyone, including signed-out visitors.
@@ -42,9 +42,9 @@ export const PUBLIC_PROFILE_COLUMNS =
  * grid was fetched with `select("*")`, so it travelled in the page payload to
  * every anonymous visitor and every crawler.
  *
- * The owner still gets the whole row: `loadOwnListings` is scoped by
- * `owner_profile_id` and keeps `select("*")`, so editing an address still
- * works. Only the public reads are narrowed.
+ * The owner still gets the whole row through the database-owned `my_listings`
+ * projection, so editing an address still works. Only public reads are
+ * narrowed.
  *
  * A column added later is absent here until someone adds it, so it stays out
  * of the public payload by default. That is the safe direction to fail, and it

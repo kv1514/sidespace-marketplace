@@ -4161,7 +4161,7 @@ export default function MarketplaceApp({
 
     const [profilesResult, listingsResult] = await Promise.all([
       supabase
-        .from("profiles")
+        .from("marketplace_profiles")
         .select(PUBLIC_PROFILE_COLUMNS)
         .eq("onboarding_complete", true)
         .neq("role", "consumer")
@@ -4196,7 +4196,7 @@ export default function MarketplaceApp({
       if (!supabase) return;
       setOwnListingsLoading(true);
       const { data, error } = await supabase
-        .from("listings")
+        .from("my_listings")
         .select("*")
         .eq("owner_profile_id", ownProfile.id)
         .order("created_at", { ascending: false });
@@ -4399,7 +4399,7 @@ export default function MarketplaceApp({
     async (currentUser: User) => {
       if (!supabase) return;
       const { data, error } = await supabase
-        .from("profiles")
+        .from("my_profiles")
         .select("*")
         .eq("auth_user_id", currentUser.id)
         .maybeSingle();
@@ -6098,7 +6098,7 @@ export default function MarketplaceApp({
       // as a fallback, and gallery_urls merges out of it - so a stale in-memory
       // copy silently overwrites fresher data from another tab.
       const { data: fresh, error: freshError } = await supabase
-        .from("profiles")
+        .from("my_profiles")
         .select("*")
         .eq("auth_user_id", user.id)
         .maybeSingle();
@@ -6266,16 +6266,20 @@ export default function MarketplaceApp({
             .from("profiles")
             .update(profileWrite)
             .eq("id", existing.id)
-            .select()
+            .select(PUBLIC_PROFILE_COLUMNS)
             .single()
         : await supabase
             .from("profiles")
             .insert(profileWrite)
-            .select()
+            .select(PUBLIC_PROFILE_COLUMNS)
             .single();
       if (result.error) throw result.error;
 
-      const writtenProfile = result.data as Profile;
+      const writtenProfile = {
+        ...(existing ?? { auth_user_id: user.id }),
+        ...(result.data as Partial<Profile>),
+        auth_user_id: existing?.auth_user_id ?? user.id,
+      } as Profile;
       // Deliberately not fatal. The profile row is already committed, and
       // these three fields are recoverable by saving again - contact_email in
       // particular only overrides the account address the payment routes
@@ -6339,7 +6343,7 @@ export default function MarketplaceApp({
               availability_confirmed_at: new Date().toISOString(),
             })),
           )
-          .select("*");
+        .select(PUBLIC_LISTING_COLUMNS);
         if (inserted.error) throw inserted.error;
 
         window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
@@ -6529,7 +6533,7 @@ export default function MarketplaceApp({
             .update(fields)
             .eq("id", editingListing.id)
             .eq("owner_profile_id", profile.id)
-            .select("*")
+            .select(PUBLIC_LISTING_COLUMNS)
             .single()
         : await supabase
             .from("listings")
@@ -6540,12 +6544,14 @@ export default function MarketplaceApp({
               image_urls: [fallbackImage],
               status: "active",
             })
-            .select("*")
+            .select(PUBLIC_LISTING_COLUMNS)
             .single();
       if (saved.error) throw saved.error;
 
       let savedListing = {
-        ...(saved.data as Omit<Listing, "owner">),
+        ...(editingListing ?? {}),
+        ...fields,
+        ...(saved.data as Partial<Omit<Listing, "owner">>),
         owner: profile,
       } as Listing;
       setOwnListings((current) => [
@@ -6576,11 +6582,12 @@ export default function MarketplaceApp({
               .update({ image_url: imageUrls[0], image_urls: imageUrls })
               .eq("id", savedListing.id)
               .eq("owner_profile_id", profile.id)
-              .select("*")
+              .select(PUBLIC_LISTING_COLUMNS)
               .single();
             if (updated.error) throw updated.error;
             savedListing = {
-              ...(updated.data as Omit<Listing, "owner">),
+              ...savedListing,
+              ...(updated.data as Partial<Omit<Listing, "owner">>),
               owner: profile,
             };
             setOwnListings((current) =>
@@ -7530,10 +7537,13 @@ export default function MarketplaceApp({
         .from("profiles")
         .update(patch)
         .eq("id", profile.id)
-        .select()
+        .select(PUBLIC_PROFILE_COLUMNS)
         .single();
       if (error) throw error;
-      const updatedProfile = data as Profile;
+      const updatedProfile = {
+        ...profile,
+        ...(data as Partial<Profile>),
+      } as Profile;
       setProfile(updatedProfile);
 
       // A listing published without photos of its own is seeded with the

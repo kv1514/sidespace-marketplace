@@ -1,6 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(23);
+set search_path = public, extensions;
+select extensions.plan(23);
 
 insert into public.profiles (id, role, display_name, is_demo, onboarding_complete)
 values
@@ -252,5 +253,5 @@ select throws_ok(
   'recovery finalization rejects a transaction missing its transfer identity'
 );
 
-select * from finish();
+select * from extensions.finish();
 rollback;

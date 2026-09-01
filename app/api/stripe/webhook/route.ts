@@ -315,6 +315,14 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
         refundedCents,
       })
     : null;
+  const reconciledPayoutAmount =
+    !payoutReleased && refundSucceeded && refundedCents > 0
+      ? payoutAmountAfterRefund({
+          originalPayoutCents: transaction.creator_payout_cents,
+          chargeAmountCents: fullAmount,
+          refundedCents,
+        })
+      : null;
   const payoutAfterRefundFailure = restorePayoutAfterRefundFailure({
     nextStatus: status,
     refundStatus,
@@ -345,9 +353,12 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
             : status === "partially_refunded"
               ? "blocked"
               : payoutAfterRefundFailure.payoutStatus,
-      ...(restoredPayoutAmount === null
+      ...(restoredPayoutAmount === null && reconciledPayoutAmount === null
         ? {}
-        : { payout_amount_cents: restoredPayoutAmount }),
+        : {
+            payout_amount_cents:
+              restoredPayoutAmount ?? reconciledPayoutAmount,
+          }),
     })
     .eq("id", transaction.id)
     .eq("status", transaction.status)
@@ -535,13 +546,24 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
       : refundedCents > 0
         ? "partially_refunded"
         : "paid";
+  const refundRequiresResolution =
+    transaction.payout_status !== "released" && refundedCents > 0;
+  const reconciledPayoutAmount = refundRequiresResolution
+    ? payoutAmountAfterRefund({
+        originalPayoutCents: transaction.creator_payout_cents,
+        chargeAmountCents: charge.amount,
+        refundedCents,
+      })
+    : null;
   const transactionStatus = won ? resolvedStatus : "disputed";
   const nextPayoutStatus = won
     ? transaction.payout_status === "released"
       ? "released"
       : resolvedStatus === "refunded"
         ? "refunded"
-        : "pending"
+        : refundRequiresResolution
+          ? "blocked"
+          : "pending"
     : transaction.payout_status === "released"
       ? "released"
       : "disputed";
@@ -550,9 +572,11 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
       ? "refunded"
       : transaction.payout_status === "released"
         ? "completed"
-        : transaction.delivered_at
-          ? "awaiting_payer_review"
-          : "paid_payout_pending"
+        : refundRequiresResolution
+          ? "partially_refunded"
+          : transaction.delivered_at
+            ? "awaiting_payer_review"
+            : "paid_payout_pending"
     : "disputed";
   const { data: updatedTransaction, error } = await admin
     .from("payment_transactions")
@@ -562,6 +586,9 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
       dispute_status: currentDispute.status,
       payout_status: nextPayoutStatus,
       workflow_status: nextWorkflowStatus,
+      ...(reconciledPayoutAmount === null
+        ? {}
+        : { payout_amount_cents: reconciledPayoutAmount }),
     })
     .eq("id", transaction.id)
     .eq("status", transaction.status)
