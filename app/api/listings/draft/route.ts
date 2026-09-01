@@ -337,6 +337,7 @@ export async function POST(request: Request) {
     const body = await readBody(request);
     if (!body.city && profile.city) body.city = String(profile.city);
 
+    const startedAt = Date.now();
     const text =
       chosen.provider === "anthropic"
         ? await draftWithAnthropic(chosen.apiKey, body)
@@ -353,6 +354,14 @@ export async function POST(request: Request) {
       console.error("[listing draft] unusable draft", text.slice(0, 400));
       throw new ApiError("The draft came back incomplete. Try again.", 502);
     }
+
+    // One line per successful draft. Until now only failures were logged, so
+    // confirming that a tap worked meant reading status codes; this names the
+    // provider, whether a photo was sent, how many questions came back, and
+    // how long it took. No member data.
+    console.info(
+      `[listing draft] ok provider=${chosen.provider} kind=${body.kind} photo=${body.image ? "yes" : "no"} questions=${draft.questions.length} ms=${Date.now() - startedAt}`,
+    );
 
     return Response.json(
       { draft },
