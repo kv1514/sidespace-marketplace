@@ -3370,19 +3370,29 @@ html.lenis {
     width: calc(100% - 48px);
   }
 
-  /* Keep the journey rail aligned with the principles grid as the outer
-     shell grows beyond the grid's 1536px max width. */
+  /* Give the copy more room instead of carrying the full outer-grid inset. */
   .ss-journey-steps {
-    padding-left: clamp(88px, calc(50vw - 792px), 112px);
+    padding-left: clamp(64px, calc(50vw - 816px), 88px);
   }
 
   .ss-journey-demo {
+    /* The journey shell grows wider than the principles grid, but the tinted
+       demo canvas should still stop on their shared right edge. */
+    --ss-journey-right-overhang: clamp(0px, calc(80% - 768px), 112px);
+    background: linear-gradient(
+      to right,
+      var(--ss-paper-2) 0 calc(100% - var(--ss-journey-right-overhang)),
+      transparent calc(100% - var(--ss-journey-right-overhang))
+    );
+    container-type: inline-size;
     min-height: 820px;
     padding: clamp(52px, 4vw, 96px);
   }
 
   .ss-demo-window {
     max-width: 940px;
+    /* Center the frame and its 18px shadow inside the painted canvas. */
+    transform: translateX(calc(clamp(-56px, calc(384px - 40cqw - clamp(41.6px, 3.2vw, 76.8px)), 0px) - 9px));
   }
 
   .ss-demo-window > header {
@@ -3625,13 +3635,6 @@ html.lenis {
 
   .ss-listing-form h3 {
     font-size: 28px;
-  }
-}
-
-@media (min-width: 1920px) {
-  /* Match the preview frame's right edge to the principles grid below. */
-  .ss-demo-window {
-    transform: translateX(clamp(-32px, calc(4vw - 112px), -16px));
   }
 }
 
