@@ -857,26 +857,6 @@ h2 em {
   text-transform: uppercase;
 }
 
-.provenance-badge {
-  border-radius: 999px;
-  display: inline-flex;
-  font-family: var(--mono);
-  font-size: 8px;
-  margin-left: 5px;
-  padding: 4px 6px;
-  text-transform: uppercase;
-}
-
-.provenance-badge.is-requestable {
-  background: #e8f6cf;
-  color: #31520d;
-}
-
-.provenance-badge.is-view-only {
-  background: #fff0bd;
-  color: #664800;
-}
-
 .listing-provenance-notice {
   align-items: flex-start;
   border: 1px solid var(--line);
@@ -888,16 +868,8 @@ h2 em {
   padding: 12px 14px;
 }
 
-.listing-provenance-notice.is-requestable {
-  background: #f3f9e8;
-}
-
 .listing-provenance-notice.is-view-only {
   background: #fff7dc;
-}
-
-.listing-provenance-notice strong {
-  font-size: 12px;
 }
 
 .listing-provenance-notice span {

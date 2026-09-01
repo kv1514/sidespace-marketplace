@@ -37,7 +37,6 @@ import {
 } from "@/lib/payments/fees";
 import {
   isListingRequestable,
-  listingProvenanceLabel,
   type ListingProvenanceStatus,
 } from "@/lib/listings/provenance";
 import {
@@ -2962,14 +2961,12 @@ function creatorPostRecommendations(
         score += Math.min(30, categoryOverlap.length * 15);
         reasons.push("fits " + categoryOverlap.slice(0, 2).join(" and "));
       }
-      const locationText = lower(
-        listing.location_area || listing.owner.city,
-      );
+      const locationText = lower(listingCity(listing));
       if (wantedArea && locationText.includes(wantedArea)) {
         score += 18;
         reasons.push("near " + preferences.wantedArea);
       } else if (
-        lower(listing.owner.city).split(",")[0] ===
+        lower(listingCity(listing)).split(",")[0] ===
         lower(preferences.wantedArea || profile.city).split(",")[0]
       ) {
         score += 12;
@@ -3276,6 +3273,18 @@ function listingIsReady(listing: Listing) {
  * answer, and the role filter exists to find them - it just stops arriving
  * first.
  */
+/**
+ * The city shown with a listing is the listing's own, falling back to the
+ * owner's profile city only when the listing did not say. One member can own a
+ * car in Brea and a dorm door in Berkeley; each card must read as where that
+ * space actually is, not where its owner lives.
+ */
+function listingCity(
+  listing: Pick<Listing, "location_area"> & { owner: Pick<Profile, "city"> },
+) {
+  return listing.location_area || listing.owner.city;
+}
+
 function listingRank(listing: Listing) {
   if (isBrief(listing)) return 3;
   if (listing.owner.is_demo) return 2;
@@ -4768,7 +4777,7 @@ export default function MarketplaceApp({
         .map((listing) =>
           // Members write their city freehand, so "Fullerton, CA" and
           // "Fullerton" are one place and must not count twice.
-          String(listing.owner.city ?? "")
+          String(listingCity(listing) ?? "")
             .split(",")[0]
             .trim()
             .toLowerCase(),
@@ -8386,7 +8395,7 @@ export default function MarketplaceApp({
                           <span>{recommendation.listing.channel}</span>
                           <small>
                             {recommendation.listing.owner.display_name} ·{" "}
-                            {recommendation.listing.owner.city}
+                            {listingCity(recommendation.listing)}
                           </small>
                         </div>
                         <strong>{recommendation.listing.title}</strong>
@@ -8840,20 +8849,9 @@ export default function MarketplaceApp({
                       {listing.owner.is_demo && (
                         <span className="sample-badge">Demo</span>
                       )}
-                      {!listing.owner.is_demo && (
-                        <span
-                          className={`provenance-badge ${
-                            isListingRequestable(listing)
-                              ? "is-requestable"
-                              : "is-view-only"
-                          }`}
-                        >
-                          {listingProvenanceLabel(listing)}
-                        </span>
-                      )}
                     </strong>
                     <small>
-                      {rolesLabel(listing.owner)} · {listing.owner.city}
+                      {rolesLabel(listing.owner)} · {listingCity(listing)}
                     </small>
                   </div>
                 </div>
@@ -13638,20 +13636,14 @@ export default function MarketplaceApp({
                       : "Unverified profile"}
                 </span>
               </div>
-              <div
-                className={`listing-provenance-notice ${
-                  isListingRequestable(selectedListing)
-                    ? "is-requestable"
-                    : "is-view-only"
-                }`}
-              >
-                <strong>{listingProvenanceLabel(selectedListing)}</strong>
-                <span>
-                  {isListingRequestable(selectedListing)
-                    ? "The authenticated owner confirmed this listing within the last 90 days."
-                    : "SideSpace has not confirmed that this listing is currently requestable."}
-                </span>
-              </div>
+              {!isListingRequestable(selectedListing) && (
+                <div className="listing-provenance-notice is-view-only">
+                  <span>
+                    This listing is view-only until its owner confirms it is
+                    still available.
+                  </span>
+                </div>
+              )}
               <SocialLinks profile={selectedListing.owner} />
               {(selectedCreatorReviews.length > 0 || selectedCreatorPortfolio.length > 0) && (
                 <div className="detail-terms">
@@ -13710,7 +13702,7 @@ export default function MarketplaceApp({
                 <div>
                   <small>Location / service area</small>
                   <strong>
-                    {selectedListing.location_area || selectedListing.owner.city}
+                    {listingCity(selectedListing)}
                   </strong>
                 </div>
                 <div>
