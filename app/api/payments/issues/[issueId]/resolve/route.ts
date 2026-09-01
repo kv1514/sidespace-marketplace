@@ -7,6 +7,8 @@ import {
 } from "@/lib/payments/auth";
 import { releasePendingPayout } from "@/lib/payments/release";
 import { getStripe } from "@/lib/stripe/server";
+import { enforcePaymentRateLimit } from "@/lib/payments/rate-limit";
+import { participantTransactionResponse } from "@/lib/payments/response";
 
 type ResolutionAction = "release_payout" | "full_refund" | "partial_refund";
 
@@ -27,7 +29,13 @@ export async function POST(
     if (!["release_payout", "full_refund", "partial_refund"].includes(action)) {
       throw new ApiError("Choose a valid staff resolution.", 400);
     }
-    const { user, admin } = await requireAuthorizedPaymentsStaff();
+    const { user, profile, admin } = await requireAuthorizedPaymentsStaff();
+    await enforcePaymentRateLimit(admin, {
+      bucket: "stripe_staff_resolution",
+      profileId: profile.id,
+      maxRequests: 10,
+      windowSeconds: 60 * 60,
+    });
     const { data: issue, error: issueError } = await admin
       .from("payment_issues")
       .select("id,transaction_id,status")
@@ -41,7 +49,10 @@ export async function POST(
         mode: "staff",
         staffAuthUserId: user.id,
       });
-      return Response.json(result);
+      return Response.json({
+        alreadyReleased: result.alreadyReleased,
+        transaction: participantTransactionResponse(result.transaction),
+      });
     }
 
     const refundAmountCents =
@@ -98,12 +109,19 @@ export async function POST(
       if (updated.error) throw updated.error;
       return Response.json({ resolution: updated.data });
     } catch (error) {
-      await admin
+      const recorded = await admin
         .from("payment_resolution_actions")
         .update({
           last_error: error instanceof Error ? error.message.slice(0, 1000) : "Refund failed",
         })
         .eq("id", payload.resolution.id);
+      if (recorded.error) {
+        console.error(
+          "Could not record payment resolution failure",
+          payload.resolution.id,
+          recorded.error,
+        );
+      }
       throw error;
     }
   } catch (error) {

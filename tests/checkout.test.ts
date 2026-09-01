@@ -33,13 +33,13 @@ describe("hosted Checkout platform charge with delayed transfer", () => {
     expect(params.payment_intent_data).not.toHaveProperty("transfer_data");
   });
 
-  it("uses platform tax liability, invoice creation, and dynamic payment methods", () => {
+  it("uses platform tax liability, invoice creation, and card-only payments", () => {
     expect(params.automatic_tax).toEqual({
       enabled: true,
       liability: { type: "self" },
     });
     expect(params.invoice_creation?.enabled).toBe(true);
-    expect(params).not.toHaveProperty("payment_method_types");
+    expect(params.payment_method_types).toEqual(["card"]);
     expect(params.payment_intent_data).not.toHaveProperty("on_behalf_of");
   });
 

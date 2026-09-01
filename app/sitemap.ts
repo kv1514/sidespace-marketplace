@@ -1,47 +1,47 @@
 import type { MetadataRoute } from "next";
 
-const SITE = "https://sidespace-marketplace.vercel.app";
+import { SITE_URL } from "@/lib/site-metadata";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
     {
-      url: SITE,
+      url: SITE_URL,
       lastModified: new Date(),
       changeFrequency: "daily",
       priority: 1,
     },
     {
-      url: `${SITE}/marketplace`,
+      url: `${SITE_URL}/marketplace`,
       lastModified: new Date(),
       changeFrequency: "daily",
       priority: 0.9,
     },
     {
-      url: `${SITE}/how-it-works`,
+      url: `${SITE_URL}/how-it-works`,
       lastModified: new Date(),
       changeFrequency: "monthly",
       priority: 0.75,
     },
     {
-      url: `${SITE}/creators`,
+      url: `${SITE_URL}/creators`,
       lastModified: new Date(),
       changeFrequency: "weekly",
       priority: 0.8,
     },
     {
-      url: `${SITE}/pricing`,
+      url: `${SITE_URL}/pricing`,
       lastModified: new Date(),
       changeFrequency: "monthly",
       priority: 0.65,
     },
     {
-      url: `${SITE}/terms`,
+      url: `${SITE_URL}/terms`,
       lastModified: new Date(),
       changeFrequency: "yearly",
       priority: 0.3,
     },
     {
-      url: `${SITE}/privacy`,
+      url: `${SITE_URL}/privacy`,
       lastModified: new Date(),
       changeFrequency: "yearly",
       priority: 0.3,

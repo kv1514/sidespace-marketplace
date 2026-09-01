@@ -1,4 +1,9 @@
-import { errorResponse, requireAuthenticatedProfile } from "@/lib/payments/auth";
+import {
+  ApiError,
+  errorResponse,
+  profileCanReceivePayouts,
+  requireAuthenticatedProfile,
+} from "@/lib/payments/auth";
 import { getStripeAccountReadiness } from "@/lib/payments/connect";
 import { getStripe } from "@/lib/stripe/server";
 
@@ -6,7 +11,14 @@ function safeAccountStatus(account: {
   charges_enabled: boolean;
   payouts_enabled: boolean;
   details_submitted: boolean;
-  requirements?: { currently_due?: string[] | null } | null;
+  country?: string | null;
+  requirements?: {
+    currently_due?: string[] | null;
+    past_due?: string[] | null;
+    disabled_reason?: string | null;
+  } | null;
+  requirements_due?: string[] | null;
+  capabilities?: { transfers?: string | null } | null;
 }) {
   const { requirementsDue, ready } = getStripeAccountReadiness(account);
   return {
@@ -22,6 +34,9 @@ function safeAccountStatus(account: {
 export async function GET() {
   try {
     const { profile, admin } = await requireAuthenticatedProfile();
+    if (!profileCanReceivePayouts(profile)) {
+      throw new ApiError("Stripe payouts are available to creator profiles.", 403);
+    }
     const { data: saved, error: savedError } = await admin
       .from("stripe_accounts")
       .select("stripe_connected_account_id")

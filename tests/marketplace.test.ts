@@ -16,6 +16,8 @@ function campaign(
     accepted_subtotal_cents: 10_000,
     requester_profile_id: "business-1",
     owner_profile_id: "creator-1",
+    payer_profile_id: "business-1",
+    payee_profile_id: "creator-1",
     listing: {
       id: "listing-1",
       owner_profile_id: "creator-1",
@@ -36,15 +38,17 @@ describe("trusted marketplace party derivation", () => {
     });
   });
 
-  it("reverses payer and payee for a business brief", () => {
+  it("uses the accepted payer and payee even if listing channel changes", () => {
     const brief = campaign({
       requester_profile_id: "creator-1",
       owner_profile_id: "business-1",
+      payer_profile_id: "business-1",
+      payee_profile_id: "creator-1",
       listing: {
         id: "listing-1",
         owner_profile_id: "business-1",
         title: "Need a neighborhood window",
-        channel: "Business brief",
+        channel: "Instagram",
       },
       requester: { id: "creator-1", display_name: "Maya" },
       owner: { id: "business-1", display_name: "Brea Bakery" },
@@ -85,5 +89,8 @@ describe("trusted marketplace party derivation", () => {
         }),
       ),
     ).toThrow(/owner no longer matches/);
+    expect(() =>
+      deriveMarketplaceParties(campaign({ payer_profile_id: null, payee_profile_id: null })),
+    ).toThrow(/payment parties are missing/);
   });
 });

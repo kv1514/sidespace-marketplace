@@ -1,5 +1,6 @@
 import "server-only";
 
+import type Stripe from "stripe";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { payoutTransferIdempotencyKey } from "./review";
@@ -28,6 +29,27 @@ type ReleaseClaim = {
   transaction: ClaimedTransaction;
 };
 
+function stripeObjectId(value: string | { id: string } | null | undefined) {
+  return typeof value === "string" ? value : value?.id;
+}
+
+function assertTrustedTransfer(
+  transfer: Stripe.Transfer,
+  transaction: ClaimedTransaction,
+) {
+  const destination = stripeObjectId(transfer.destination);
+  const sourceTransaction = stripeObjectId(transfer.source_transaction);
+  if (
+    transfer.amount !== transaction.payout_amount_cents ||
+    transfer.currency !== transaction.currency ||
+    destination !== transaction.stripe_connected_account_id ||
+    sourceTransaction !== transaction.stripe_charge_id ||
+    transfer.transfer_group !== `sidespace_campaign_${transaction.id}`
+  ) {
+    throw new Error("Stripe transfer does not match the trusted payout ledger.");
+  }
+}
+
 export async function releasePendingPayout(
   admin: SupabaseClient,
   input: {
@@ -51,14 +73,13 @@ export async function releasePendingPayout(
   }
 
   const transaction = claim.transaction;
-  if (!transaction.stripe_charge_id) {
-    throw new Error("The verified platform charge is missing from the payout ledger.");
-  }
-  if (transaction.payout_amount_cents <= 0) {
-    throw new Error("The Creator payout amount must be greater than zero.");
-  }
-
   try {
+    if (!transaction.stripe_charge_id) {
+      throw new Error("The verified platform charge is missing from the payout ledger.");
+    }
+    if (transaction.payout_amount_cents <= 0) {
+      throw new Error("The Creator payout amount must be greater than zero.");
+    }
     const stripe = getStripe();
     const transfer = await stripe.transfers.create(
       {
@@ -75,6 +96,7 @@ export async function releasePendingPayout(
       },
       { idempotencyKey: payoutTransferIdempotencyKey(transaction.id) },
     );
+    assertTrustedTransfer(transfer, transaction);
     const finalized = await admin.rpc("finalize_campaign_payout_release", {
       target_transaction_id: transaction.id,
       transfer_id: transfer.id,

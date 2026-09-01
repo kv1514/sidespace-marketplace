@@ -21,7 +21,7 @@ export async function requireAuthenticatedProfile() {
   const { data: row, error } = await admin
     .from("profiles")
     .select(
-      "id,auth_user_id,display_name,onboarding_complete,profile_contacts(contact_email)",
+      "id,auth_user_id,role,extra_roles,display_name,onboarding_complete,profile_contacts(contact_email)",
     )
     .eq("auth_user_id", user.id)
     .single();
@@ -36,6 +36,8 @@ export async function requireAuthenticatedProfile() {
   const profile = {
     id: row.id,
     auth_user_id: row.auth_user_id,
+    role: row.role,
+    extra_roles: Array.isArray(row.extra_roles) ? row.extra_roles : [],
     display_name: row.display_name,
     onboarding_complete: row.onboarding_complete,
     contact_email: (contacts as { contact_email?: string | null } | null)
@@ -43,6 +45,22 @@ export async function requireAuthenticatedProfile() {
   };
 
   return { user, profile, admin };
+}
+
+/**
+ * A connected account is only useful for a supply-side profile. Keep the
+ * legacy supply role values here while the consolidation migration rolls out;
+ * `extra_roles` is supported because a member can act as both buyer and
+ * creator from one profile.
+ */
+export function profileCanReceivePayouts(profile: {
+  role?: string | null;
+  extra_roles?: string[] | null;
+}) {
+  const supplyRoles = new Set(["creator", "space_owner", "sponsor_host"]);
+  return [profile.role, ...(profile.extra_roles ?? [])].some((role) =>
+    supplyRoles.has(role ?? ""),
+  );
 }
 
 export async function requireAuthorizedPaymentsStaff() {

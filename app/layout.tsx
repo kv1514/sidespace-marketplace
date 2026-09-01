@@ -1,12 +1,19 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import "lenis/dist/lenis.css";
 import "./public-site.css";
-import { OG_IMAGE } from "@/lib/site-metadata";
+import { OG_IMAGE, SITE_URL } from "@/lib/site-metadata";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#fbf7e6",
+};
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://sidespace-marketplace.vercel.app"),
+  metadataBase: new URL(SITE_URL),
   // Without this, no page emits rel=canonical and the legal pages have no
   // identity of their own for crawlers to separate from the homepage.
   alternates: { canonical: "/" },
@@ -22,7 +29,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: "SideSpace",
-    url: "https://sidespace-marketplace.vercel.app",
+    url: SITE_URL,
     title: "SideSpace - Local attention, now bookable",
     description:
       "Book creators offering social, physical, and sponsorship inventory—or list the way you can advertise.",
@@ -34,6 +41,13 @@ export const metadata: Metadata = {
     description:
       "Book creator-led social audiences, physical placements, and sponsorships—or list the way you can advertise.",
     images: OG_IMAGE,
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/logo.png", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-icon.png" }],
   },
 };
 

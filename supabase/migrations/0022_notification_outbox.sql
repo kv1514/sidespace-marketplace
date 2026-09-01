@@ -151,7 +151,7 @@ begin
     new.conversation_id,
     format('%s messaged you on SideSpace', coalesce(sender_name, 'Someone')),
     format(
-      E'%s sent you a message about your space:\n\n  "%s"\n\nReply here: https://sidespace-marketplace.vercel.app/',
+      E'%s sent you a message about your space:\n\n  "%s"\n\nReply here: https://sidespace.ad/',
       coalesce(sender_name, 'Someone'),
       left(new.body, 300)
     )
@@ -194,7 +194,7 @@ begin
            coalesce(requester_name, 'Someone'),
            coalesce(listing_title, 'your listing')),
     format(
-      E'%s has requested "%s".\n\nNothing is agreed until you accept, and you can counter with a different number.\n\nOpen it here: https://sidespace-marketplace.vercel.app/',
+      E'%s has requested "%s".\n\nNothing is agreed until you accept, and you can counter with a different number.\n\nOpen it here: https://sidespace.ad/',
       coalesce(requester_name, 'Someone'),
       coalesce(listing_title, 'your listing')
     )
@@ -242,7 +242,7 @@ begin
     new.id,
     headline,
     format(
-      E'%s — on "%s".\n\nOpen it here: https://sidespace-marketplace.vercel.app/',
+      E'%s — on "%s".\n\nOpen it here: https://sidespace.ad/',
       headline,
       coalesce(listing_title, 'your listing')
     )

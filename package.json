@@ -9,7 +9,10 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "payments:preflight": "node scripts/payment-preflight.mjs sandbox",
+    "payments:preflight:live": "node scripts/payment-preflight.mjs live",
+    "payments:audit:stripe": "node --env-file=.env.local scripts/stripe-account-audit.mjs sandbox"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

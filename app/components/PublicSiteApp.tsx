@@ -111,7 +111,7 @@ export default function PublicSiteApp({
             return;
           }
           const { data } = await supabase
-            .from("profiles")
+            .from("my_profiles")
             .select("display_name, avatar_url")
             .eq("auth_user_id", user.id)
             .maybeSingle();

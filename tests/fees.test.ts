@@ -36,12 +36,28 @@ describe("SideSpace 5% + 5% marketplace economics", () => {
     expect(percentageFeeCents(9_999, 500)).toBe(500);
   });
 
+  it("keeps percentage rounding exact at the safe-integer boundary", () => {
+    const amount = Number.MAX_SAFE_INTEGER;
+    const expected = Number(
+      (BigInt(amount) * BigInt(500) + BigInt(5_000)) / BigInt(10_000),
+    );
+    expect(percentageFeeCents(amount, 500)).toBe(expected);
+  });
+
+  it("rejects an aggregate customer total beyond safe integer cents", () => {
+    expect(() => calculatePaymentBreakdown(Number.MAX_SAFE_INTEGER)).toThrow(
+      /Customer total must be a safe integer/,
+    );
+  });
+
   it("parses dollars without floating-point money math", () => {
     expect(dollarsToCents("0.01")).toBe(1);
     expect(dollarsToCents("99.99")).toBe(9_999);
     expect(dollarsToCents(100)).toBe(10_000);
+    expect(dollarsToCents("90071992547409.91")).toBe(Number.MAX_SAFE_INTEGER);
     expect(() => dollarsToCents("12.345")).toThrow(/two decimals/);
     expect(() => dollarsToCents("-1")).toThrow();
+    expect(() => dollarsToCents("90071992547409.92")).toThrow(/safe integer/);
   });
 
   it("rejects invalid cents", () => {

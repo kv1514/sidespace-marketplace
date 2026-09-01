@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireAuthenticatedProfile: vi.fn(),
   getStripe: vi.fn(),
+  stripeKeyMode: vi.fn(() => "test"),
+  enforcePaymentRateLimit: vi.fn(),
 }));
 
 vi.mock("@/lib/payments/auth", () => {
@@ -24,12 +26,25 @@ vi.mock("@/lib/payments/auth", () => {
       );
     },
     requireAuthenticatedProfile: mocks.requireAuthenticatedProfile,
+    profileCanReceivePayouts: (candidate: {
+      role?: string | null;
+      extra_roles?: string[] | null;
+    }) =>
+      [candidate.role, ...(candidate.extra_roles ?? [])].some((role) =>
+        ["creator", "space_owner", "sponsor_host"].includes(role ?? ""),
+      ),
     requireSameOrigin: vi.fn(),
     requireUuid: (value: unknown) => String(value),
   };
 });
 
-vi.mock("@/lib/stripe/server", () => ({ getStripe: mocks.getStripe }));
+vi.mock("@/lib/stripe/server", () => ({
+  getStripe: mocks.getStripe,
+  stripeKeyMode: mocks.stripeKeyMode,
+}));
+vi.mock("@/lib/payments/rate-limit", () => ({
+  enforcePaymentRateLimit: mocks.enforcePaymentRateLimit,
+}));
 
 import { POST } from "../app/api/stripe/checkout/route";
 
@@ -66,19 +81,49 @@ function acceptedCampaign() {
     accepted_subtotal_cents: 10_000,
     requester_profile_id: "business-1",
     owner_profile_id: "creator-1",
+    payer_profile_id: "business-1",
+    payee_profile_id: "creator-1",
     listing: {
       id: "listing-1",
       owner_profile_id: "creator-1",
       title: "Three local stories",
       channel: "Instagram",
+      provenance_status: "owner_attested",
+      availability_confirmed_at: new Date().toISOString(),
     },
-    requester: { id: "business-1", display_name: "Brea Bakery" },
-    owner: { id: "creator-1", display_name: "Maya" },
+    requester: {
+      id: "business-1",
+      display_name: "Brea Bakery",
+      role: "business",
+      extra_roles: [],
+    },
+    owner: {
+      id: "creator-1",
+      display_name: "Maya",
+      role: "creator",
+      extra_roles: [],
+    },
   };
 }
 
 describe("checkout route authorization", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("fails closed when the production Checkout kill switch is off", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("PAYMENTS_CHECKOUT_ENABLED", "false");
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "Payments are temporarily unavailable.",
+    });
+    expect(mocks.requireAuthenticatedProfile).not.toHaveBeenCalled();
+    expect(mocks.getStripe).not.toHaveBeenCalled();
+  });
 
   it("rejects checkout when there is no authenticated profile", async () => {
     const unauthorized = new Error("Sign in to continue.") as Error & {
@@ -140,13 +185,43 @@ describe("checkout route authorization", () => {
     expect(mocks.getStripe).not.toHaveBeenCalled();
   });
 
+  it("blocks checkout when the trusted payee is not a creator profile", async () => {
+    const campaign = acceptedCampaign();
+    campaign.owner = {
+      id: "creator-1",
+      display_name: "Former Business",
+      role: "business",
+      extra_roles: [],
+    };
+    const campaignQuery = queryResult({ data: campaign, error: null });
+    const admin = { from: vi.fn().mockReturnValue(campaignQuery) };
+    mocks.requireAuthenticatedProfile.mockResolvedValue({
+      user: { id: "user-1" },
+      profile: { id: "business-1" },
+      admin,
+    });
+
+    const response = await POST(checkoutRequest());
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "The campaign payee must have a creator profile before checkout.",
+    });
+    expect(mocks.getStripe).not.toHaveBeenCalled();
+  });
+
   // Every guard above short-circuits before the ledger insert, which is how
   // `payout_amount_cents` came to be missing from it without a test noticing:
   // the column is NOT NULL with no default, so the first real checkout for any
   // campaign died on a Postgres 23502 that surfaced as a generic 500. This
   // drives the route all the way to the insert and asserts the payload carries
   // every column the schema requires, rather than only the one that regressed.
-  it("returns a Stripe checkout URL and writes every column the schema requires", async () => {
+  it.each([
+    { mode: "test" as const, livemode: false },
+    { mode: "live" as const, livemode: true },
+  ])(
+    "returns a Stripe checkout URL and writes every column the schema requires in $mode mode",
+    async ({ mode, livemode }) => {
     // From 20260830060711 and 20260830120000: NOT NULL, no default, and not
     // generated. Kept as a literal so adding such a column to the table
     // without adding it here is a failing test rather than a 500 in production.
@@ -175,6 +250,7 @@ describe("checkout route authorization", () => {
       payouts_enabled: true,
       details_submitted: true,
       requirements_due: [],
+      capabilities: { transfers: "active" },
     };
 
     let insertPayload: Record<string, unknown> | null = null;
@@ -199,7 +275,15 @@ describe("checkout route authorization", () => {
       status: "requires_checkout",
       checkout_attempt: 0,
       stripe_checkout_session_id: null,
+      currency: "usd",
       subtotal_cents: 10_000,
+      buyer_fee_cents: 500,
+      creator_fee_cents: 500,
+      customer_total_cents: 10_500,
+      creator_payout_cents: 9_500,
+      payout_amount_cents: 9_500,
+      platform_gross_revenue_cents: 1_000,
+      stripe_connected_account_id: "acct_ready",
       business_profile_id: "business-1",
       creator_profile_id: "creator-1",
     };
@@ -207,8 +291,12 @@ describe("checkout route authorization", () => {
     const updateChain = {
       eq: vi.fn(),
       in: vi.fn().mockResolvedValue({ error: null }),
+      select: vi.fn(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: insertedRow, error: null }),
     };
     updateChain.eq.mockReturnValue(updateChain);
+    updateChain.in.mockReturnValue(updateChain);
+    updateChain.select.mockReturnValue(updateChain);
 
     const transactionQuery: Record<string, ReturnType<typeof vi.fn>> = {
       select: vi.fn(),
@@ -229,14 +317,13 @@ describe("checkout route authorization", () => {
     const admin = {
       from: vi.fn((table: string) => {
         if (table === "campaign_requests") return campaignQuery;
-        if (table === "stripe_accounts") {
+    if (table === "stripe_accounts") {
           stripeAccountReads += 1;
-          return stripeAccountReads === 1 ? creatorAccountQuery : payerAccountQuery;
-        }
-        return transactionQuery;
-      }),
-    };
-
+        return stripeAccountReads === 1 ? creatorAccountQuery : payerAccountQuery;
+      }
+      return transactionQuery;
+    }),
+  };
     mocks.requireAuthenticatedProfile.mockResolvedValue({
       user: { id: "user-1", email: "buyer@example.com" },
       profile: {
@@ -246,6 +333,7 @@ describe("checkout route authorization", () => {
       },
       admin,
     });
+    mocks.stripeKeyMode.mockReturnValue(mode);
     mocks.getStripe.mockReturnValue({
       accounts: { retrieve: vi.fn().mockResolvedValue(readyAccount) },
       customers: { create: vi.fn().mockResolvedValue({ id: "cus_test" }) },
@@ -254,7 +342,7 @@ describe("checkout route authorization", () => {
           create: vi.fn().mockResolvedValue({
             id: "cs_test",
             url: "https://checkout.stripe.com/c/pay/cs_test",
-            livemode: false,
+            livemode,
             expires_at: 0,
           }),
         },
@@ -279,5 +367,6 @@ describe("checkout route authorization", () => {
     expect(REQUIRED_COLUMNS.filter((c) => !supplied.includes(c))).toEqual([]);
     // The release transfers this amount; creator_payout_cents is its ceiling.
     expect(payload?.payout_amount_cents).toBe(payload?.creator_payout_cents);
-  });
+    },
+  );
 });

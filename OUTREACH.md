@@ -98,7 +98,7 @@ Under 150 words.
 >
 > Kausthubh Veldanda
 > Cofounder, SideSpace — Brea, CA
-> sidespace-marketplace.vercel.app/?p={PROSPECT_ID}
+> sidespace.ad/?p={PROSPECT_ID}
 > Not useful? Reply "no thanks" and I won't write again.
 
 ### The link carries their prospect id
@@ -143,7 +143,7 @@ Leads with honesty about being early there, and turns that into the ask.
 >
 > Kausthubh Veldanda
 > Cofounder, SideSpace — Brea, CA
-> sidespace-marketplace.vercel.app/?p={PROSPECT_ID}
+> sidespace.ad/?p={PROSPECT_ID}
 > Not useful? Reply "no thanks" and I won't write again.
 
 ---
@@ -200,7 +200,7 @@ Cron is UTC and has no DST awareness. Set to `0 16 * * *` = **9:00 AM PDT**.
 
 ## Open risks
 
-1. **No sending domain.** Every email links `sidespace-marketplace.vercel.app`. To a shop owner
+1. **No sending domain.** Every email links `sidespace.ad`. To a shop owner
    deciding whether to hand you their window, that reads as unfinished. A real domain is ~$12/yr
    and is the cheapest credibility gain available.
 2. **Personal Gmail, no SPF/DKIM/DMARC.** There is already a `451 mail received as unauthenticated`

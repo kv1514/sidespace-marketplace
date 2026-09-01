@@ -46,7 +46,7 @@ export async function loadMarketplaceSnapshot({
     const supabase = createPublicClient();
     const [profilesResult, listingsResult] = await Promise.all([
       supabase
-        .from("profiles")
+        .from("marketplace_profiles")
         .select(PUBLIC_PROFILE_COLUMNS)
         .eq("onboarding_complete", true)
         .neq("role", "consumer")

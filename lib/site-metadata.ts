@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 
+/** Canonical public origin. Used for metadata, sitemap, and robots. */
+export const SITE_URL = "https://sidespace.ad";
+
 /**
  * The image every link preview uses.
  *
