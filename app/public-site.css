@@ -228,7 +228,7 @@ html.lenis {
   display: inline-flex;
   font-size: 12px;
   font-weight: 700;
-  gap: 18px;
+  gap: 8px;
   justify-content: center;
   min-height: 44px;
   padding: 0 19px;
@@ -542,10 +542,12 @@ html.lenis {
     var(--ss-paper-2);
   border: 1px solid var(--ss-line);
   border-radius: 26px;
+  container-type: inline-size;
   height: min(660px, 72vh);
   min-height: 570px;
   overflow: hidden;
   position: relative;
+  width: 100%;
 }
 
 .ss-hero-field {
@@ -670,18 +672,34 @@ html.lenis {
   color: var(--ss-amber);
 }
 
+.ss-inventory-scene {
+  align-items: center;
+  display: flex;
+  gap: clamp(44px, 10cqi, 88px);
+  inset: 0;
+  justify-content: center;
+  padding:
+    clamp(64px, 14cqi, 92px)
+    clamp(32px, 7cqi, 72px)
+    clamp(28px, 6cqi, 52px);
+  pointer-events: none;
+  position: absolute;
+  z-index: 4;
+}
+
 .ss-attention-source {
   animation: ss-source-in 560ms var(--ss-ease-out) both;
   background: var(--ss-amber);
   border: 1px solid var(--ss-ink);
   border-radius: 4px 18px 4px 18px;
   box-shadow: 12px 14px 0 rgba(22, 20, 14, 0.1);
-  left: 11%;
+  flex: 0 1 auto;
+  margin-top: 4cqi;
   padding: 26px 22px;
-  position: absolute;
-  top: 37%;
+  pointer-events: auto;
+  position: relative;
   transform: rotate(-4deg);
-  width: min(220px, 29%);
+  width: clamp(156px, 28cqi, 220px);
   z-index: 4;
 }
 
@@ -695,7 +713,7 @@ html.lenis {
 
 .ss-attention-source strong {
   display: block;
-  font-size: clamp(25px, 2.5vw, 37px);
+  font-size: clamp(22px, 4.8cqi, 37px);
   letter-spacing: -0.055em;
   line-height: 1;
   margin: 22px 0 10px;
@@ -770,9 +788,11 @@ html.lenis {
   border-bottom: 4px solid transparent;
   border-left: 7px solid var(--ss-ink);
   border-top: 4px solid transparent;
+  color: transparent;
   filter: drop-shadow(0 0 0 transparent);
   font-size: 0;
   height: 0;
+  overflow: hidden;
   position: absolute;
   right: 0;
   top: 50%;
@@ -790,12 +810,14 @@ html.lenis {
   border: 1px solid var(--ss-line);
   border-radius: 16px;
   box-shadow: 0 26px 58px rgba(46, 36, 15, 0.18);
+  flex: 0 1 auto;
+  margin-top: -3cqi;
+  max-width: 330px;
   overflow: hidden;
-  position: absolute;
-  right: 1%;
-  top: 23%;
+  pointer-events: auto;
+  position: relative;
   transform: rotate(2deg);
-  width: min(330px, 41%);
+  width: clamp(210px, 44cqi, 330px);
   z-index: 5;
 }
 
@@ -838,7 +860,7 @@ html.lenis {
 
 .ss-bookable-body strong {
   display: block;
-  font-size: clamp(17px, 1.6vw, 23px);
+  font-size: clamp(16px, 3.2cqi, 23px);
   letter-spacing: -0.04em;
   line-height: 1.05;
   margin: 8px 0;
@@ -1153,28 +1175,14 @@ html.lenis {
   }
 }
 
-/* A continuously moving marquee is a poor touch target. Touch-first devices
-   get the same visual reel as a native-feeling, user-controlled snap track. */
 @media (hover: none), (pointer: coarse) {
-  .ss-category-reel {
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-inline: contain;
-    overflow-x: auto;
-    scroll-padding-inline: 20px;
-    scroll-snap-type: x proximity;
-    scrollbar-width: none;
-  }
-
-  .ss-category-reel-track {
-    animation: none;
-  }
-
-  .ss-category-reel-set.is-clone {
-    display: none;
+  .ss-category-reel:active .ss-category-reel-track {
+    animation-play-state: paused;
   }
 }
 
-.ss-category-reel:focus-within .ss-category-reel-track {
+.ss-category-reel:focus-within .ss-category-reel-track,
+.ss-category-reel.is-paused .ss-category-reel-track {
   animation-play-state: paused;
 }
 
@@ -4143,6 +4151,11 @@ html.lenis {
   to { opacity: 1; transform: translate3d(0, 0, 0) rotate(-4deg); }
 }
 
+@keyframes ss-stack-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
 @keyframes ss-card-in {
   from { opacity: 0; transform: translate3d(24px, 10px, 0) rotate(5deg) scale(0.97); }
   to { opacity: 1; transform: translate3d(0, 0, 0) rotate(2deg) scale(1); }
@@ -4157,6 +4170,10 @@ html.lenis {
   to { transform: scaleX(1); }
 }
 
+@keyframes ss-line-run-y {
+  to { transform: scaleY(1); }
+}
+
 @keyframes ss-arrow-progress {
   0%,
   88% {
@@ -4166,6 +4183,19 @@ html.lenis {
 
   100% {
     border-left-color: var(--ss-amber);
+    filter: drop-shadow(0 0 3px rgba(243, 180, 74, 0.45));
+  }
+}
+
+@keyframes ss-arrow-progress-down {
+  0%,
+  88% {
+    border-top-color: var(--ss-ink);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+
+  100% {
+    border-top-color: var(--ss-amber);
     filter: drop-shadow(0 0 3px rgba(243, 180, 74, 0.45));
   }
 }
@@ -4238,14 +4268,6 @@ html.lenis {
     top: 15px;
   }
 
-  .ss-attention-source {
-    left: 7%;
-  }
-
-  .ss-bookable-card {
-    right: 1%;
-  }
-
   .ss-control-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4268,6 +4290,20 @@ html.lenis {
 
   .ss-inventory-stage {
     height: 620px;
+  }
+
+  /* Once the hero (and other compositions) stack into a single column,
+     parallax is a layout bug: translated siblings occupy the same pixels.
+     Keep motion only inside clipped frames, where it cannot cover copy. */
+  [data-ss-parallax] {
+    translate: none !important;
+    will-change: auto !important;
+  }
+
+  .ss-hero-field[data-ss-parallax],
+  .ss-plane-fallback[data-ss-parallax],
+  .ss-physical-collage img[data-ss-parallax] {
+    translate: 0 var(--ss-parallax-y) !important;
   }
 
   .ss-audience-split {
@@ -4383,61 +4419,6 @@ html.lenis {
     width: 100%;
   }
 
-  .ss-inventory-stage {
-    height: 570px;
-    min-height: 570px;
-  }
-
-  .ss-inventory-tabs {
-    display: flex;
-    left: 12px;
-    overflow-x: auto;
-    right: 12px;
-    top: 12px;
-    width: auto;
-  }
-
-  .ss-inventory-tabs button {
-    flex: 0 0 98px;
-  }
-
-  .ss-inventory-tabs button[aria-pressed="true"] {
-    transform: translateY(3px);
-  }
-
-  .ss-transform-line {
-    gap: 0;
-    height: 3px;
-    left: 12px !important;
-    right: 12px;
-    top: 80px !important;
-    transform: none !important;
-    width: auto !important;
-  }
-
-  .ss-transform-line > span,
-  .ss-transform-line > b {
-    display: none;
-  }
-
-  .ss-transform-line i {
-    flex: 1 1 100%;
-    width: 100%;
-  }
-
-  .ss-attention-source {
-    left: 7%;
-    top: 27%;
-    width: 45%;
-  }
-
-  .ss-bookable-card {
-    bottom: 5%;
-    right: 6%;
-    top: auto;
-    width: 57%;
-  }
-
   .ss-section-heading.is-horizontal,
   .ss-future-pricing > header {
     align-items: flex-start;
@@ -4479,26 +4460,12 @@ html.lenis {
     right: 18px;
   }
 
-  .ss-category-reel {
-    -webkit-overflow-scrolling: touch;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scroll-padding-inline: 20px;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-
   .ss-category-reel-track {
-    animation: none;
+    animation-duration: 54s;
   }
 
   .ss-category-reel-set {
     gap: 8px;
-    padding-right: 0;
-  }
-
-  .ss-category-reel-set.is-clone {
-    display: none;
   }
 
   .ss-category-reel a {
@@ -4695,10 +4662,6 @@ html.lenis {
     gap: 8px;
   }
 
-  .ss-header-join {
-    display: none;
-  }
-
   .ss-mobile-menu {
     max-height: calc(100dvh - var(--ss-header-height));
     overflow-y: auto;
@@ -4716,24 +4679,6 @@ html.lenis {
   .ss-proof-row {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .ss-attention-source {
-    padding: 20px 16px;
-    width: 47%;
-  }
-
-  .ss-attention-source strong {
-    font-size: 27px;
-    margin-top: 16px;
-  }
-
-  .ss-bookable-card {
-    width: 61%;
-  }
-
-  .ss-bookable-top span {
-    max-width: 90px;
   }
 
   .ss-audience-section,
@@ -4941,10 +4886,14 @@ html.lenis {
   .ss-inventory-stage {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     height: auto;
     min-height: 0;
     padding: 12px;
+  }
+
+  .ss-inventory-scene {
+    display: contents;
   }
 
   .ss-inventory-tabs {
@@ -4979,13 +4928,16 @@ html.lenis {
   }
 
   .ss-attention-source {
-    animation: none;
+    animation: ss-stack-in 420ms var(--ss-ease-out) both;
+    flex: none;
     left: auto;
+    margin-top: 0;
     padding: 14px 16px 12px;
     position: relative;
     top: auto;
     transform: none;
     width: 100%;
+    z-index: 4;
   }
 
   .ss-attention-source strong {
@@ -5005,35 +4957,108 @@ html.lenis {
     aspect-ratio: 16 / 10;
   }
 
+  /* Source sits above the listing, so the stem has to run down into it.
+     LIST names the conversion; the head has to point at the card, not east. */
   .ss-transform-line {
-    height: 16px;
+    align-items: center;
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 0;
+    height: 76px;
+    justify-content: flex-start;
     left: auto !important;
+    margin: 8px auto -6px;
     opacity: 1;
+    pointer-events: none;
     position: relative !important;
     right: auto;
     top: auto !important;
     transform: none !important;
-    width: 100% !important;
-  }
-
-  .ss-transform-line > span,
-  .ss-transform-line > b {
-    display: block;
+    transform-origin: center top;
+    width: 72px !important;
+    z-index: 6;
   }
 
   .ss-transform-line > span {
-    left: 0;
-    top: -2px;
+    bottom: auto;
+    display: block;
+    flex: 0 0 auto;
+    left: auto;
+    letter-spacing: 0.16em;
+    line-height: 1;
+    margin: 0 0 6px;
+    position: static;
+    text-align: center;
+    top: auto;
+    transform: none;
+    white-space: nowrap;
+    width: 100%;
+  }
+
+  .ss-transform-line i {
+    background: var(--ss-ink);
+    flex: 1 1 auto;
+    height: auto;
+    left: auto;
+    min-height: 28px;
+    position: relative;
+    right: auto;
+    top: auto;
+    transform: none;
+    width: 1px;
+  }
+
+  .ss-transform-progress {
+    height: 100%;
+    left: -1px;
+    top: 0;
+    transform: scaleY(0);
+    transform-origin: top center;
+    width: 3px;
+  }
+
+  .ss-transform-line.is-running .ss-transform-progress {
+    animation: ss-line-run-y var(--ss-hero-cycle-duration, 4300ms) linear forwards;
+  }
+
+  .ss-transform-line > b {
+    border-bottom: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 8px solid var(--ss-ink);
+    bottom: auto;
+    color: transparent;
+    display: block;
+    flex: 0 0 auto;
+    font-size: 0;
+    height: 0;
+    left: auto;
+    margin-top: -1px;
+    overflow: hidden;
+    position: relative;
+    right: auto;
+    top: auto;
+    transform: none;
+    width: 0;
+  }
+
+  .ss-transform-line.is-running > b {
+    animation: ss-arrow-progress-down var(--ss-hero-cycle-duration, 4300ms) linear forwards;
   }
 
   .ss-bookable-card {
-    animation: none;
+    animation: ss-stack-in 420ms var(--ss-ease-out) both;
     bottom: auto;
+    flex: none;
+    margin-top: 0;
+    max-width: none;
     position: relative;
     right: auto;
     top: auto;
     transform: none;
     width: 100%;
+    z-index: 5;
   }
 
   .ss-bookable-body strong {
