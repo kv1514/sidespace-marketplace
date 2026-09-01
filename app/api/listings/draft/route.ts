@@ -12,18 +12,36 @@ import {
  * listing draft out. The member edits it in the form and presses Publish -
  * this route never writes a listing.
  *
- * Backed by the Gemini API (Interactions endpoint) over plain fetch. Needs
- * GEMINI_API_KEY; a Google AI Studio key works and has a free tier.
+ * Two providers, chosen by which key the deployment has. ANTHROPIC_API_KEY
+ * wins when both are set; GEMINI_API_KEY is the fallback (Google AI Studio
+ * keys have a free tier). Both are called over plain fetch: neither SDK is a
+ * dependency here and the lockfile could not be regenerated where this was
+ * written. Swapping in an SDK later touches only the provider function.
  */
 
-const MODEL = "gemini-3.7-flash";
-const API_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
+const ANTHROPIC_MODEL = "claude-opus-5";
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const GEMINI_MODEL = "gemini-3.7-flash";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
+
 /** ~2 MB decoded. The form re-encodes photos to ~300 KB JPEG before sending. */
 const MAX_IMAGE_BASE64 = 2_800_000;
 const MAX_NOTES = 600;
 const DRAFTS_PER_HOUR = 20;
 
 const KINDS: ListingDraftKind[] = ["physical", "social", "sponsorship"];
+
+type Provider = "anthropic" | "gemini";
+
+function pickProvider(): { provider: Provider; apiKey: string } | null {
+  if (process.env.ANTHROPIC_API_KEY) {
+    return { provider: "anthropic", apiKey: process.env.ANTHROPIC_API_KEY };
+  }
+  if (process.env.GEMINI_API_KEY) {
+    return { provider: "gemini", apiKey: process.env.GEMINI_API_KEY };
+  }
+  return null;
+}
 
 function systemPrompt(kind: ListingDraftKind, city: string) {
   const what =
@@ -54,6 +72,18 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
     "",
     "Reply with the JSON object only.",
   ].join("\n");
+}
+
+function userText(body: Body) {
+  return [
+    body.image
+      ? "Draft the listing for the space in this photo."
+      : "Draft the listing from these notes.",
+    body.notes ? `Owner's notes: ${body.notes}` : "The owner left no notes.",
+    body.city ? `Owner's profile city: ${body.city}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function sameOrigin(request: Request) {
@@ -117,7 +147,95 @@ async function readBody(request: Request): Promise<Body> {
   return { kind, notes, image, city };
 }
 
-/** The Interactions response, as much of it as this route reads. */
+/** Shared handling of the HTTP layer: both providers use the same codes. */
+function checkHttp(provider: Provider, status: number, error: unknown) {
+  if (status === 401 || status === 403) {
+    console.error(`[listing draft] ${provider} rejected the API key`, error);
+    throw new ApiError("Fill with AI is not set up correctly on this deployment.", 503);
+  }
+  if (status === 429 || status >= 500) {
+    throw new ApiError("The drafting service is busy. Try again in a moment.", 503);
+  }
+  if (status !== 200) {
+    console.error(`[listing draft] ${provider} returned`, status, error);
+    throw new ApiError("SideSpace could not draft this listing right now.", 502);
+  }
+}
+
+/* ------------------------------------------------------------------ Claude */
+
+type AnthropicResponse = {
+  stop_reason?: string;
+  content?: Array<{ type: string; text?: string }>;
+  error?: { type?: string; message?: string };
+};
+
+async function anthropicRequest(apiKey: string, body: Body, withFallbacks: boolean) {
+  const content: Array<Record<string, unknown>> = [];
+  if (body.image) {
+    content.push({
+      type: "image",
+      source: { type: "base64", media_type: "image/jpeg", data: body.image },
+    });
+  }
+  content.push({ type: "text", text: userText(body) });
+
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-api-key": apiKey,
+    "anthropic-version": "2023-06-01",
+  };
+  // Server-side fallback: if a safety classifier declines the request, the
+  // API re-runs it on a suitable model inside the same call.
+  if (withFallbacks) headers["anthropic-beta"] = "server-side-fallback-2026-07-01";
+
+  const response = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 16000,
+      system: systemPrompt(body.kind, body.city),
+      messages: [{ role: "user", content }],
+      output_config: {
+        effort: "medium",
+        format: { type: "json_schema", schema: LISTING_DRAFT_SCHEMA },
+      },
+      ...(withFallbacks ? { fallbacks: "default" } : {}),
+    }),
+  });
+  const json = (await response.json().catch(() => ({}))) as AnthropicResponse;
+  return { ...json, status: response.status };
+}
+
+async function draftWithAnthropic(apiKey: string, body: Body): Promise<string> {
+  let result = await anthropicRequest(apiKey, body, true);
+  // The fallback parameter is gated by a beta header. If this key or org
+  // cannot use it, drop it and try once more rather than fail the draft.
+  if (result.status === 400 && /fallback/i.test(result.error?.message ?? "")) {
+    result = await anthropicRequest(apiKey, body, false);
+  }
+  checkHttp("anthropic", result.status, result.error);
+
+  if (result.stop_reason === "refusal") {
+    throw new ApiError(
+      "SideSpace could not draft from that. Try different notes or another photo.",
+      422,
+    );
+  }
+  if (result.stop_reason === "max_tokens") {
+    throw new ApiError("The draft ran too long. Try shorter notes.", 502);
+  }
+  const text = result.content?.find((block) => block.type === "text")?.text;
+  if (!text) {
+    console.error("[listing draft] anthropic returned no text", result.stop_reason);
+    throw new ApiError("The draft came back empty. Try again.", 502);
+  }
+  return text;
+}
+
+/* ------------------------------------------------------------------ Gemini */
+
 type GeminiResponse = {
   status?: string;
   steps?: Array<{
@@ -127,33 +245,18 @@ type GeminiResponse = {
   error?: { code?: number; message?: string; status?: string };
 };
 
-async function callGemini(apiKey: string, body: Body) {
+async function draftWithGemini(apiKey: string, body: Body): Promise<string> {
   const input: Array<Record<string, string>> = [];
   if (body.image) {
-    // The form always sends a canvas-encoded JPEG.
     input.push({ type: "image", data: body.image, mime_type: "image/jpeg" });
   }
-  input.push({
-    type: "text",
-    text: [
-      body.image
-        ? "Draft the listing for the space in this photo."
-        : "Draft the listing from these notes.",
-      body.notes ? `Owner's notes: ${body.notes}` : "The owner left no notes.",
-      body.city ? `Owner's profile city: ${body.city}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n"),
-  });
+  input.push({ type: "text", text: userText(body) });
 
-  const response = await fetch(API_URL, {
+  const response = await fetch(GEMINI_URL, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
+    headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
-      model: MODEL,
+      model: GEMINI_MODEL,
       system_instruction: systemPrompt(body.kind, body.city),
       input,
       response_format: {
@@ -165,14 +268,29 @@ async function callGemini(apiKey: string, body: Body) {
     }),
   });
   const json = (await response.json().catch(() => ({}))) as GeminiResponse;
-  return { ...json, httpStatus: response.status };
+  checkHttp("gemini", response.status, json.error);
+
+  const text = json.steps
+    ?.filter((step) => step.type === "model_output")
+    .flatMap((step) => step.content ?? [])
+    .find((part) => part.type === "text" && part.text)?.text;
+  if (!text) {
+    console.error("[listing draft] gemini returned no model output", json.status, json.error);
+    throw new ApiError(
+      "SideSpace could not draft from that. Try different notes or another photo.",
+      422,
+    );
+  }
+  return text;
 }
+
+/* ------------------------------------------------------------------- Route */
 
 export async function POST(request: Request) {
   try {
     sameOrigin(request);
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const chosen = pickProvider();
+    if (!chosen) {
       throw new ApiError("Fill with AI is not set up on this deployment yet.", 503);
     }
     const { profile, admin } = await requireMember();
@@ -197,31 +315,10 @@ export async function POST(request: Request) {
     const body = await readBody(request);
     if (!body.city && profile.city) body.city = String(profile.city);
 
-    const result = await callGemini(apiKey, body);
-
-    if (result.httpStatus === 401 || result.httpStatus === 403) {
-      console.error("[listing draft] Gemini rejected the API key", result.error);
-      throw new ApiError("Fill with AI is not set up correctly on this deployment.", 503);
-    }
-    if (result.httpStatus === 429 || result.httpStatus >= 500) {
-      throw new ApiError("The drafting service is busy. Try again in a moment.", 503);
-    }
-    if (result.httpStatus !== 200) {
-      console.error("[listing draft] Gemini returned", result.httpStatus, result.error);
-      throw new ApiError("SideSpace could not draft this listing right now.", 502);
-    }
-
-    const text = result.steps
-      ?.filter((step) => step.type === "model_output")
-      .flatMap((step) => step.content ?? [])
-      .find((part) => part.type === "text" && part.text)?.text;
-    if (!text) {
-      console.error("[listing draft] no model output", result.status, result.error);
-      throw new ApiError(
-        "SideSpace could not draft from that. Try different notes or another photo.",
-        422,
-      );
-    }
+    const text =
+      chosen.provider === "anthropic"
+        ? await draftWithAnthropic(chosen.apiKey, body)
+        : await draftWithGemini(chosen.apiKey, body);
 
     let parsed: unknown = null;
     try {
