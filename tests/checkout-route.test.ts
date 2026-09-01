@@ -317,14 +317,13 @@ describe("checkout route authorization", () => {
     const admin = {
       from: vi.fn((table: string) => {
         if (table === "campaign_requests") return campaignQuery;
-        if (table === "stripe_accounts") {
+    if (table === "stripe_accounts") {
           stripeAccountReads += 1;
-          return stripeAccountReads === 1 ? creatorAccountQuery : payerAccountQuery;
-        }
-        return transactionQuery;
-      }),
-    };
-
+        return stripeAccountReads === 1 ? creatorAccountQuery : payerAccountQuery;
+      }
+      return transactionQuery;
+    }),
+  };
     mocks.requireAuthenticatedProfile.mockResolvedValue({
       user: { id: "user-1", email: "buyer@example.com" },
       profile: {
