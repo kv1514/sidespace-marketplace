@@ -1,11 +1,14 @@
 import {
+  ApiError,
   errorResponse,
+  profileCanReceivePayouts,
   requireAuthenticatedProfile,
   requireSameOrigin,
 } from "@/lib/payments/auth";
 import { getAppOrigin } from "@/lib/payments/checkout";
 import { getStripe } from "@/lib/stripe/server";
 import { requireStripeHostedUrl } from "@/lib/stripe/urls";
+import { enforcePaymentRateLimit } from "@/lib/payments/rate-limit";
 
 function getPublicBusinessUrl() {
   const configuredUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -22,6 +25,16 @@ export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
     const { user, profile, admin } = await requireAuthenticatedProfile();
+    if (!profileCanReceivePayouts(profile)) {
+      throw new ApiError("Stripe payouts are available to creator profiles.", 403);
+    }
+    await enforcePaymentRateLimit(admin, {
+      bucket: "stripe_connect_onboard",
+      profileId: profile.id,
+      maxRequests: 5,
+      windowSeconds: 10 * 60,
+    });
+    const origin = getAppOrigin(request.url);
     const stripe = getStripe();
     const { data: saved, error: savedError } = await admin
       .from("stripe_accounts")
@@ -78,7 +91,6 @@ export async function POST(request: Request) {
       }
     }
 
-    const origin = getAppOrigin(request.url);
     const link = await stripe.accountLinks.create({
       account: accountId,
       type: "account_onboarding",

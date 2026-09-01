@@ -1,9 +1,12 @@
 # SideSpace Stripe marketplace integration
 
-This implementation is intentionally test-mode-first. It uses Stripe Checkout,
+This implementation is test-mode-first with an explicit live-mode gate. It uses Stripe Checkout,
 Connect Express accounts, one-time invoice creation, and Stripe Tax for a
 two-sided advertising marketplace. It does not contain keys, create live-mode
-resources, or treat a browser redirect as proof of payment.
+resources during build or migration, or treat a browser redirect as proof of
+payment. Live keys work only when the legal, tax, operations, and live-runtime
+flags are all explicit; new Checkout Sessions have a separate kill switch so
+webhooks and reversals can keep running during rollback.
 
 ## Money model
 
@@ -77,8 +80,12 @@ Stripe processing costs: paid by SideSpace
 ## Connect onboarding
 
 `POST /api/stripe/connect/onboard` creates at most one Express account for the
-authenticated profile and returns an exact allowlisted Stripe-hosted Account
-Link. Calling it again resumes incomplete onboarding for that same account.
+authenticated Creator-capable profile and returns an exact allowlisted
+Stripe-hosted Account Link. Calling it again resumes incomplete onboarding for
+that same account. Creator capability may be the primary or secondary profile
+role; legacy physical-space and sponsorship-host roles remain accepted during
+the role-consolidation rollout. The checkout route independently verifies that
+the trusted campaign payee is Creator-capable before it creates a charge.
 `GET /api/stripe/connect/status` refreshes capability and requirement state;
 checkout rechecks the account directly with Stripe. Once onboarding is ready,
 `POST /api/stripe/connect/login` opens the account's Stripe-hosted Express
@@ -98,6 +105,8 @@ details to SideSpace.
   `payment_resolution_actions` records idempotent staff refund operations; and
   `staff_members` is the explicit payments-admin allowlist.
 - `payment_refunds` and `payment_disputes` preserve Stripe object-level history.
+- `payment_transfer_reversals` records cumulative, idempotent recovery attempts
+  when a refund or lost dispute follows a released Creator transfer.
 - `stripe_webhook_events` provides retry claims and event-ID idempotency.
 - `creator_portfolio_items` provides public Creator work samples, while
   `creator_reviews` accepts one immutable payer review only after a verified
@@ -127,16 +136,24 @@ SUPABASE_SERVICE_ROLE_KEY=your-local-server-secret
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
+# For hosted Stripe Connect webhooks, use that endpoint's separate secret.
+# The local Stripe CLI listener uses one secret for both forwards.
+# STRIPE_CONNECT_WEBHOOK_SECRET=whsec_...
 STRIPE_CONNECT_COUNTRY=US
 STRIPE_CAMPAIGN_TAX_CODE=txcd_20030000
 STRIPE_SERVICE_FEE_TAX_CODE=txcd_20030000
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 CRON_SECRET=replace-with-a-long-random-server-secret
+PAYMENTS_MONITORING_SECRET=replace-with-a-different-long-random-server-secret
 ```
 
 The publishable key enables Stripe status UI. Hosted Checkout does not expose
 the secret key to the browser. `lib/stripe/server.ts` rejects every key that is
-not prefixed `sk_test_`.
+not a recognized test or live secret, rejects mixed publishable/secret modes,
+rejects live mode until every approval flag is true, and requires distinct
+platform and Connect webhook secrets when the Stripe key is live. Live keys
+are accepted only in Vercel Production, never in local development or a Vercel
+Preview environment.
 
 Do not paste keys into source, tests, chat, or committed env files. Rotate a key
 immediately if it is exposed.
@@ -160,14 +177,14 @@ immediately if it is exposed.
 6. Put the `whsec_...` printed by the listener in
    `STRIPE_WEBHOOK_SECRET`, then run `pnpm dev`.
 
-For a hosted webhook endpoint, subscribe to both platform and connected-account
-events. Keep the signing secret environment-specific.
+For hosted webhooks, configure one platform endpoint and one Connect endpoint at
+the same route, subscribe them to their respective event sets, and store both
+environment-specific signing secrets. The local Stripe CLI listener can use one
+secret for both forwards.
 
 ## Required webhook events
 
 - `checkout.session.completed`
-- `checkout.session.async_payment_succeeded`
-- `checkout.session.async_payment_failed`
 - `checkout.session.expired`
 - `refund.created`
 - `refund.updated`
@@ -181,8 +198,10 @@ The event table provides idempotency. Failed events return HTTP 500 so Stripe
 retries them. Previously failed or stale-processing events can be reclaimed;
 processed event IDs return success without running twice.
 
-The Checkout events authoritatively reconcile successful, asynchronous,
-failed, and expired Sessions. Refund events reconcile Charge refund totals.
+Checkout enables cards only at launch, so the Checkout events authoritatively
+reconcile successful and expired Sessions. The async handlers remain for
+legacy or intentionally enabled future Sessions. Refund events reconcile
+Charge refund totals and, after payout, queue a cumulative transfer reversal.
 Dispute events track the chargeback lifecycle. `account.updated` refreshes only
 the matching connected account's capability state. No browser redirect is
 allowed to advance financial state.
@@ -199,7 +218,7 @@ allowed to advance financial state.
    Escalation is rejected until both parties have messaged after the report.
 5. Payer confirmation claims the payout atomically and creates the separate
    Stripe transfer. If no issue exists and the payer does nothing, Vercel calls
-   `/api/cron/release-payouts` every minute. The endpoint requires
+   `/api/cron/release-payouts` hourly. The endpoint requires
    `CRON_SECRET` and selects only deadlines at or before server time.
 6. Authorized payments staff can resolve an escalated issue by releasing the
    payout, issuing a full refund, or issuing a partial refund. A partial refund
@@ -242,7 +261,7 @@ Also exercise:
 - cancel and resume an open Checkout Session;
 - repeated Checkout button clicks (same open Session is reused);
 - duplicate webhook delivery;
-- expired and asynchronous payment events;
+- expired card payment events;
 - a `Business brief`, where the listing owner must be the payer;
 - connected account requirements becoming incomplete;
 - full and partial refunds; and
@@ -262,11 +281,17 @@ Staff access is database-allowlisted and requires the `payments_admin` or
 `admin` role. The webhook records each refund and updates the campaign and
 ledger. Disputes are ingested
 from Stripe and surface as `disputed`; a won dispute returns the payment to
-`paid`/`confirmed`, while a lost dispute stays disputed for operator review.
+`paid`/`confirmed`, while a lost dispute stays disputed for audit and queues
+Creator-transfer recovery.
 Because SideSpace is liable for disputes and Stripe fees, operators must
 reconcile negative platform balances and any already-released Creator transfer.
-The webhook records the dispute state and blocks an unreleased payout; it does
-not assume that funds already paid to a connected account can be recovered.
+After a succeeded refund or a lost dispute, the webhook and hourly cron attempt
+an idempotent, cumulative transfer reversal. If a partial refund already reduced
+the payout before release, the recovery only reverses the later incremental
+delta. Stripe can reject that reversal
+when the connected account has insufficient available balance; the recovery
+remains failed/retryable and `/api/health/payments` stays unhealthy until it
+succeeds or staff resolves it in Stripe and records the outcome.
 
 ## Stripe Dashboard setup
 
@@ -283,8 +308,9 @@ Perform these actions only in the dedicated SideSpace sandbox:
 5. For local work, use `stripe listen` as described above. For a hosted test
    endpoint, register `/api/stripe/webhook`, select the event list in this
    document, and enable connected-account events for `account.updated`.
-6. Put that endpoint's environment-specific `whsec_...` value in the matching
-   server environment. Never reuse the local listener secret in a deployment.
+6. Put the platform endpoint's `whsec_...` value in `STRIPE_WEBHOOK_SECRET` and
+   the Connect endpoint's separate value in `STRIPE_CONNECT_WEBHOOK_SECRET`.
+   Never reuse the local listener secret in a deployment.
 
 ## Tax gates
 
@@ -309,6 +335,10 @@ amount is not evidence that tax setup is production-ready.
 - `stripe_accounts`, payment ledgers, refund/dispute tables, and webhook events
   have RLS enabled and no `anon` or `authenticated` table grants. Server routes
   use a separate secret-key Supabase client.
+- Authenticated clients cannot update campaign requests directly. The only
+  browser-side pre-payment link is made through the locked
+  `link_campaign_request_conversation` RPC, which verifies the requester and
+  exact two-party conversation while leaving payment terms immutable.
 - Users receive only a filtered transaction response; customer, connected
   account, Checkout, PaymentIntent, charge, transfer, application-fee, invoice,
   and webhook IDs remain server-only.
@@ -326,15 +356,27 @@ amount is not evidence that tax setup is production-ready.
 - The service-role key and Stripe secret key must be configured only in a
   server runtime. Never prefix either with `NEXT_PUBLIC_`.
 - The scheduled release route also requires `CRON_SECRET`. The committed
-  `vercel.json` schedules it every minute, but the deployed scheduler and secret
+  `vercel.json` schedules it hourly, but the deployed scheduler and secret
   must be verified in the target environment before automatic release is
   considered operational.
 
-Before a public launch, add application or edge rate limits to the three Stripe
-mutation routes, stage a Content Security Policy in report-only mode, and only
-enable HSTS after every production subdomain is confirmed HTTPS-only. Verify
-these controls against the deployed response headers rather than assuming the
-framework configuration reached the edge.
+Payment and Connect mutations use a durable database rate limit shared by all
+application instances. Before public launch, stage a Content Security Policy in
+report-only mode, and only enable HSTS after every production subdomain is
+confirmed HTTPS-only. Verify these controls and HTTP `429` behavior against the
+deployed edge rather than assuming the framework configuration reached it.
+
+## Inventory provenance gate
+
+`listings.provenance_status` distinguishes `demo`, unknown legacy rows,
+authenticated owner attestations, and independent staff verification. The
+migration intentionally backfills every existing non-demo listing to
+`unverified`; it never converts an unknown row into live inventory by guessing.
+Those rows remain visible with a **view only** label. A listing becomes
+requestable only after its authenticated owner saves or reactivates it, and
+that attestation expires after 90 days. Demo, unverified, and stale listings
+are blocked in the UI, campaign-request database trigger, RLS insert policy,
+and Checkout route.
 
 ## Validation commands
 
@@ -347,6 +389,7 @@ supabase db reset
 supabase test db
 supabase db lint --local --level warning
 pnpm audit --audit-level moderate
+pnpm payments:preflight
 ```
 
 Passing static and database checks does not prove a real Stripe payment. A complete sandbox
@@ -356,21 +399,29 @@ the resulting Stripe balance transactions.
 
 ## Production launch checklist
 
-- Complete the sandbox walkthrough, including delayed transfer, scheduled
-  release, tax, refund, dispute, duplicate, asynchronous, and incomplete-
+- [ ] Complete the sandbox walkthrough, including delayed transfer, scheduled
+  release, tax, refund, dispute, duplicate, card failure, and incomplete-
   onboarding cases; reconcile Stripe balances to the SideSpace ledger.
-- Obtain legal/accounting approval for merchant-of-record, tax, refund,
+- [ ] Exercise a post-payout full refund, partial refund, and lost dispute;
+  verify the transfer reversal amount, retry behavior, and health alert.
+- [ ] Obtain named legal/accounting approval for merchant-of-record, tax, refund,
   chargeback, KYC, data-retention, and supported-country obligations.
-- Configure production Connect, payment methods, Tax registrations/codes,
+- [ ] Configure production Connect, card payment method, Tax registrations/codes,
   branding, support contact, statement descriptor, and platform bank account.
-- Add edge/application rate limits, stage and enforce CSP, verify HSTS and all
-  security headers, configure log redaction/alerting, and define failed-webhook
-  replay and financial-reconciliation ownership.
-- Apply reviewed migrations and server-only secrets through the normal release
+- [ ] Confirm the production database does not reuse sandbox Stripe object IDs;
+  re-onboard every Creator and create live Customers/Checkout Sessions with the
+  live key.
+- [x] Apply durable application rate limits and fail-closed listing provenance.
+- [ ] Stage and enforce CSP, verify HSTS and all security headers at the deployed
+  edge, and configure the external monitor for `/api/health/payments`.
+- [x] Define failed-webhook replay, payout reconciliation, monitoring ownership,
+  and rollback in `PAYMENTS_RUNBOOK.md`.
+- [ ] Apply reviewed migrations and server-only secrets through the normal release
   process. Rotate any key ever exposed outside its secret manager.
-- Replace the test-mode code guard only in a separately reviewed launch change;
-  deploy to a non-production environment first and run a final test-mode smoke
-  test there.
-- Do not enable live payments until the reviewed commit, deployment, webhook
+- [x] Add a separately reviewed, fail-closed live-mode gate and independent
+  Checkout kill switch; keep all live flags false outside Production.
+- [ ] Run `pnpm payments:preflight:live`, then a final test-mode smoke in the
+  deployment candidate and the low-value live smoke in `PAYMENTS_RUNBOOK.md`.
+- [ ] Do not enable live payments until the reviewed commit, deployment, webhook
   endpoint, database migration parity, rollback plan, and operator runbook are
   all explicitly signed off.

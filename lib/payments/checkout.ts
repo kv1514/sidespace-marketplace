@@ -14,7 +14,9 @@ export function getAppOrigin(requestUrl: string) {
   const configured = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
   if (configured) {
     const url = new URL(configured);
-    if (url.protocol !== "https:" && url.hostname !== "localhost") {
+    const localDevelopmentOrigin =
+      process.env.NODE_ENV !== "production" && url.hostname === "localhost";
+    if (url.protocol !== "https:" && !localDevelopmentOrigin) {
       throw new Error("NEXT_PUBLIC_APP_URL must use HTTPS outside localhost.");
     }
     return url.origin;
@@ -36,6 +38,10 @@ export function buildCheckoutSessionParams(
 
   return {
     mode: "payment",
+    // Launch with cards only. Delayed bank methods can succeed after the
+    // customer leaves Checkout, which is unsafe when a separate Connect
+    // transfer is released as soon as the review window ends.
+    payment_method_types: ["card"],
     customer: snapshot.customerId,
     client_reference_id: snapshot.transactionId,
     billing_address_collection: "required",

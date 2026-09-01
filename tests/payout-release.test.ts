@@ -38,7 +38,14 @@ describe("idempotent delayed payout release", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("creates one trusted separate transfer and finalizes it", async () => {
-    mocks.transferCreate.mockResolvedValue({ id: "tr_creator", amount: 9_500 });
+    mocks.transferCreate.mockResolvedValue({
+      id: "tr_creator",
+      amount: 9_500,
+      currency: "usd",
+      destination: "acct_creator",
+      source_transaction: "ch_platform",
+      transfer_group: "sidespace_campaign_transaction-1",
+    });
     const admin = adminWithClaims({
       already_released: false,
       should_transfer: true,
@@ -65,6 +72,44 @@ describe("idempotent delayed payout release", () => {
       expect.objectContaining({ transfer_id: "tr_creator" }),
     );
     expect(result.alreadyReleased).toBe(false);
+  });
+
+  it.each([
+    ["amount", { amount: 9_499 }],
+    ["currency", { currency: "eur" }],
+    ["destination", { destination: "acct_other_creator" }],
+    ["source charge", { source_transaction: "ch_other" }],
+    ["transfer group", { transfer_group: "sidespace_campaign_other" }],
+  ])("does not finalize a transfer whose Stripe %s drifts from the ledger", async (_field, drift) => {
+    mocks.transferCreate.mockResolvedValue({
+      id: "tr_wrong",
+      amount: 9_500,
+      currency: "usd",
+      destination: "acct_creator",
+      source_transaction: "ch_platform",
+      transfer_group: "sidespace_campaign_transaction-1",
+      ...drift,
+    });
+    const admin = adminWithClaims({
+      already_released: false,
+      should_transfer: true,
+      transaction,
+    });
+
+    await expect(
+      releasePendingPayout(admin as never, {
+        transactionId: transaction.id,
+        mode: "automatic",
+      }),
+    ).rejects.toThrow(/trusted payout ledger/);
+    expect(admin.rpc).toHaveBeenCalledWith(
+      "record_campaign_payout_release_failure",
+      expect.objectContaining({ error_message: expect.stringMatching(/trusted payout ledger/) }),
+    );
+    expect(admin.rpc).not.toHaveBeenCalledWith(
+      "finalize_campaign_payout_release",
+      expect.anything(),
+    );
   });
 
   it("treats duplicate confirmation as success without another transfer", async () => {
@@ -102,5 +147,23 @@ describe("idempotent delayed payout release", () => {
       expect.objectContaining({ error_message: "temporary Stripe failure" }),
     );
   });
-});
 
+  it("records an incomplete ledger claim instead of stranding it as releasing", async () => {
+    const admin = adminWithClaims({
+      already_released: false,
+      should_transfer: true,
+      transaction: { ...transaction, stripe_charge_id: null },
+    });
+
+    await expect(
+      releasePendingPayout(admin as never, {
+        transactionId: transaction.id,
+        mode: "automatic",
+      }),
+    ).rejects.toThrow(/platform charge is missing/);
+    expect(admin.rpc).toHaveBeenCalledWith(
+      "record_campaign_payout_release_failure",
+      expect.objectContaining({ error_message: expect.stringMatching(/platform charge/) }),
+    );
+  });
+});

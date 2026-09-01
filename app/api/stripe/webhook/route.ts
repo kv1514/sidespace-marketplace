@@ -1,12 +1,30 @@
 import type Stripe from "stripe";
 
 import { getStripeAccountReadiness } from "@/lib/payments/connect";
+import {
+  payoutRecoveryTargetCents,
+  recoverReleasedPayout,
+} from "@/lib/payments/recovery";
 import { releasePendingPayout } from "@/lib/payments/release";
-import { checkoutPaymentLifecycle } from "@/lib/payments/workflow";
+import {
+  checkoutPaymentLifecycle,
+  payoutAmountAfterRefund,
+  payoutStatusAfterRefundResolution,
+  restorePayoutAfterRefundFailure,
+} from "@/lib/payments/workflow";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { webhookClaimAction } from "@/lib/stripe/events";
-import { getStripe, getStripeWebhookSecret } from "@/lib/stripe/server";
-import { verifyStripeWebhookEvent } from "@/lib/stripe/webhook";
+import {
+  getStripe,
+  getStripeWebhookSecrets,
+  stripeKeyMode,
+} from "@/lib/stripe/server";
+import {
+  assertStripeCheckoutAmounts,
+  assertStripeMoneyMatchesLedger,
+  isStaleCheckoutSession,
+  verifyStripeWebhookEventWithSecrets,
+} from "@/lib/stripe/webhook";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -19,7 +37,7 @@ async function transactionByCharge(admin: AdminClient, chargeId: string) {
   const { data, error } = await admin
     .from("payment_transactions")
     .select(
-      "id,campaign_request_id,customer_total_cents,tax_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,dispute_status",
+      "id,campaign_request_id,currency,customer_total_cents,tax_cents,refunded_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,stripe_connected_account_id,creator_payout_cents,payout_amount_cents,payout_recovery_status,payout_recovery_target_cents,payout_recovery_reversed_cents,dispute_status",
     )
     .eq("stripe_charge_id", chargeId)
     .maybeSingle();
@@ -36,27 +54,32 @@ async function syncCheckoutSession(
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
     expand: ["payment_intent.latest_charge"],
   });
-  if (session.livemode) throw new Error("Live-mode session received by sandbox webhook.");
+  if (session.livemode !== (stripeKeyMode() === "live")) {
+    throw new Error("Checkout Session mode does not match the configured API keys.");
+  }
 
   const transactionId = session.metadata?.sidespace_transaction_id;
   if (!transactionId) throw new Error("Checkout Session is missing its transaction ID.");
   const { data: storedTransaction, error: storedError } = await admin
     .from("payment_transactions")
     .select(
-      "id,campaign_request_id,customer_total_cents,status,dispute_status,stripe_checkout_session_id,stripe_connected_account_id,stripe_transfer_id,payout_status,workflow_status,issue_status,stripe_tax_transfer_reversal_id,paid_at",
+      "id,campaign_request_id,currency,customer_total_cents,status,dispute_status,stripe_checkout_session_id,stripe_connected_account_id,stripe_transfer_id,payout_status,workflow_status,issue_status,stripe_tax_transfer_reversal_id,paid_at",
     )
     .eq("id", transactionId)
     .single();
   if (storedError) throw storedError;
   if (!storedTransaction) throw new Error("Payment transaction was not found.");
   if (
-    storedTransaction.stripe_checkout_session_id &&
-    storedTransaction.stripe_checkout_session_id !== session.id
+    isStaleCheckoutSession(
+      storedTransaction.stripe_checkout_session_id,
+      session.id,
+    )
   ) {
-    throw new Error("Checkout Session does not match the stored transaction.");
-  }
-  if (session.amount_subtotal !== storedTransaction.customer_total_cents) {
-    throw new Error("Checkout Session amount does not match the stored ledger.");
+    // A prior Checkout attempt can finish expiring after a newer attempt has
+    // already claimed the ledger. It cannot be paid once Stripe marks it
+    // expired, so treat its signed webhook as a successful no-op instead of
+    // retrying it forever and keeping payment health red.
+    return;
   }
   const paymentIntent =
     typeof session.payment_intent === "object" ? session.payment_intent : null;
@@ -68,8 +91,33 @@ async function syncCheckoutSession(
   const paid =
     session.payment_status === "paid" ||
     session.payment_status === "no_payment_required";
-  if (paid && (!paymentIntent || !latestCharge)) {
-    throw new Error("Paid Checkout Session is missing expanded charge data.");
+  const taxCents = session.total_details?.amount_tax ?? 0;
+  assertStripeCheckoutAmounts({
+    amountSubtotal: session.amount_subtotal,
+    amountTotal: session.amount_total,
+    customerTotalCents: storedTransaction.customer_total_cents,
+    taxCents,
+    paymentStatus: session.payment_status,
+  });
+  if (paid) {
+    if (!paymentIntent || !latestCharge) {
+      throw new Error("Paid Checkout Session is missing expanded charge data.");
+    }
+    const expectedAmountCents = storedTransaction.customer_total_cents + taxCents;
+    assertStripeMoneyMatchesLedger({
+      objectName: "PaymentIntent",
+      amount: paymentIntent.amount,
+      currency: paymentIntent.currency,
+      expectedAmountCents,
+      expectedCurrency: storedTransaction.currency,
+    });
+    assertStripeMoneyMatchesLedger({
+      objectName: "Charge",
+      amount: latestCharge.amount,
+      currency: latestCharge.currency,
+      expectedAmountCents,
+      expectedCurrency: storedTransaction.currency,
+    });
   }
 
   if (
@@ -100,7 +148,6 @@ async function syncCheckoutSession(
     status = "expired";
   }
 
-  const taxCents = session.total_details?.amount_tax ?? 0;
   // New Checkouts are platform charges and therefore have no automatic
   // destination transfer. Preserve an existing legacy transfer if this event
   // belongs to a pre-migration destination charge, but never create one here.
@@ -110,6 +157,8 @@ async function syncCheckoutSession(
     legacyTransferId,
     payoutStatus: storedTransaction.payout_status,
     workflowStatus: storedTransaction.workflow_status,
+    terminalWorkflowStatus:
+      forcedStatus ?? (status === "expired" ? "expired" : undefined),
   });
   const update = {
     status,
@@ -195,7 +244,7 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
     let lookup = admin
       .from("payment_transactions")
       .select(
-        "id,campaign_request_id,customer_total_cents,tax_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,dispute_status",
+        "id,campaign_request_id,currency,customer_total_cents,tax_cents,refunded_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,stripe_connected_account_id,creator_payout_cents,payout_amount_cents,payout_recovery_status,payout_recovery_target_cents,payout_recovery_reversed_cents,dispute_status",
       );
     lookup = transactionId
       ? lookup.eq("id", transactionId)
@@ -219,6 +268,14 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
   }
   if (!transaction) return;
 
+  assertStripeMoneyMatchesLedger({
+    objectName: "Charge",
+    amount: charge.amount,
+    currency: charge.currency,
+    expectedAmountCents: transaction.customer_total_cents + transaction.tax_cents,
+    expectedCurrency: transaction.currency,
+  });
+
   if (transaction.payout_status === "releasing") {
     throw new Error("Payout release is in progress; retry this refund event.");
   }
@@ -234,6 +291,10 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
 
   const refundedCents = charge.amount_refunded;
   const fullAmount = charge.amount;
+  const refundStatus = refund.status ?? "pending";
+  const refundPending = ["pending", "requires_action"].includes(refundStatus);
+  const refundSucceeded = refundStatus === "succeeded";
+  const refundFailed = ["failed", "canceled"].includes(refundStatus);
   const status =
     transaction.status === "disputed"
       ? "disputed"
@@ -243,41 +304,92 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
           ? "refunded"
           : "partially_refunded";
   const payoutReleased = transaction.payout_status === "released";
-  const { error } = await admin
+  const refundFailedWithoutAdditionalAmount =
+    !payoutReleased &&
+    refundFailed &&
+    refundedCents === (transaction.refunded_cents ?? 0);
+  const restoredPayoutAmount = refundFailedWithoutAdditionalAmount
+    ? payoutAmountAfterRefund({
+        originalPayoutCents: transaction.creator_payout_cents,
+        chargeAmountCents: fullAmount,
+        refundedCents,
+      })
+    : null;
+  const payoutAfterRefundFailure = restorePayoutAfterRefundFailure({
+    nextStatus: status,
+    refundStatus,
+    refundedCents,
+    currentPayoutStatus: transaction.payout_status,
+    currentWorkflowStatus: transaction.workflow_status,
+    issueStatus: transaction.issue_status,
+    deliveredAt: transaction.delivered_at,
+  });
+  const { data: updatedTransaction, error } = await admin
     .from("payment_transactions")
     .update({
       status,
       refunded_cents: refundedCents,
-      workflow_status:
-        status === "refunded"
-          ? "refunded"
-          : status === "partially_refunded"
-            ? "partially_refunded"
-            : transaction.workflow_status,
-      payout_status: payoutReleased
-        ? "released"
+      workflow_status: refundPending
+        ? "refund_pending"
         : status === "refunded"
           ? "refunded"
           : status === "partially_refunded"
-            ? "blocked"
-            : transaction.payout_status,
+            ? "partially_refunded"
+            : payoutAfterRefundFailure.workflowStatus,
+      payout_status: payoutReleased
+        ? "released"
+        : refundPending
+          ? "blocked"
+          : status === "refunded"
+            ? "refunded"
+            : status === "partially_refunded"
+              ? "blocked"
+              : payoutAfterRefundFailure.payoutStatus,
+      ...(restoredPayoutAmount === null
+        ? {}
+        : { payout_amount_cents: restoredPayoutAmount }),
     })
-    .eq("id", transaction.id);
+    .eq("id", transaction.id)
+    .eq("status", transaction.status)
+    .eq("workflow_status", transaction.workflow_status)
+    .eq("payout_status", transaction.payout_status)
+    .select("id")
+    .maybeSingle();
   if (error) throw error;
+  if (!updatedTransaction) {
+    throw new Error("Payment state changed; retry this refund event.");
+  }
 
-  if (status === "refunded") {
+  if (status === "refunded" && refundSucceeded) {
     const { error: campaignError } = await admin
       .from("campaign_requests")
       .update({ status: "refunded" })
       .eq("id", transaction.campaign_request_id);
     if (campaignError) throw campaignError;
-  } else if (status === "paid") {
+  } else if (status === "paid" && refundFailed && !payoutReleased) {
     const { error: campaignError } = await admin
       .from("campaign_requests")
       .update({ status: "confirmed" })
       .eq("id", transaction.campaign_request_id)
       .in("status", ["accepted", "confirmed", "refunded"]);
     if (campaignError) throw campaignError;
+  }
+
+  if (refundSucceeded && payoutReleased) {
+    if (!transaction.stripe_transfer_id) {
+      throw new Error("Released payout is missing its Stripe transfer for recovery.");
+    }
+    const targetReversalCents = payoutRecoveryTargetCents({
+      originalPayoutCents: transaction.creator_payout_cents,
+      releasedPayoutCents: transaction.payout_amount_cents,
+      chargeAmountCents: fullAmount,
+      refundedCents,
+    });
+    await recoverReleasedPayout(admin, {
+      transactionId: transaction.id,
+      targetReversalCents,
+      reason: "refund",
+    });
   }
 
   const resolutionId = refund.metadata?.sidespace_resolution_id;
@@ -292,49 +404,66 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
       throw resolutionError ?? new Error("Refund resolution record is missing.");
     }
     if (refund.status === "failed" || refund.status === "canceled") {
-      await admin
+      const resolutionUpdate = await admin
         .from("payment_resolution_actions")
         .update({ status: "failed", completed_at: new Date().toISOString() })
         .eq("id", resolution.id);
-      await admin
+      if (resolutionUpdate.error) throw resolutionUpdate.error;
+      const issueUpdate = await admin
         .from("payment_issues")
         .update({ status: "escalated" })
         .eq("id", resolution.issue_id);
-      await admin
+      if (issueUpdate.error) throw issueUpdate.error;
+      const transactionUpdate = await admin
         .from("payment_transactions")
         .update({
           issue_status: "escalated",
           workflow_status: "issue_escalated",
-          payout_status: "blocked",
+          payout_status: payoutReleased ? "released" : "blocked",
         })
         .eq("id", transaction.id);
+      if (transactionUpdate.error) throw transactionUpdate.error;
     } else if (refund.status === "succeeded") {
-      await admin
+      const resolutionUpdate = await admin
         .from("payment_resolution_actions")
         .update({ status: "completed", completed_at: new Date().toISOString() })
         .eq("id", resolution.id);
+      if (resolutionUpdate.error) throw resolutionUpdate.error;
       if (resolution.action === "full_refund") {
-        await admin
+        const issueUpdate = await admin
           .from("payment_issues")
           .update({ status: "resolved", resolved_at: new Date().toISOString() })
           .eq("id", resolution.issue_id);
-        await admin
+        if (issueUpdate.error) throw issueUpdate.error;
+        const transactionUpdate = await admin
           .from("payment_transactions")
           .update({
             issue_status: "resolved",
             workflow_status: "refunded",
-            payout_status: "refunded",
+            payout_status: payoutStatusAfterRefundResolution({
+              payoutWasReleased: payoutReleased,
+              action: "full_refund",
+            }),
           })
           .eq("id", transaction.id);
+        if (transactionUpdate.error) throw transactionUpdate.error;
       } else {
-        await admin
+        const transactionUpdate = await admin
           .from("payment_transactions")
-          .update({ payout_status: "partially_refunded" })
+          .update({
+            payout_status: payoutStatusAfterRefundResolution({
+              payoutWasReleased: payoutReleased,
+              action: "partial_refund",
+            }),
+          })
           .eq("id", transaction.id);
-        await releasePendingPayout(admin, {
-          transactionId: transaction.id,
-          mode: "partial_refund_resolution",
-        });
+        if (transactionUpdate.error) throw transactionUpdate.error;
+        if (!payoutReleased) {
+          await releasePendingPayout(admin, {
+            transactionId: transaction.id,
+            mode: "partial_refund_resolution",
+          });
+        }
       }
     }
   }
@@ -345,6 +474,7 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
   if (!chargeId) return;
   const stripe = getStripe();
   const charge = await stripe.charges.retrieve(chargeId);
+  const currentDispute = await stripe.disputes.retrieve(dispute.id);
   let transaction = await transactionByCharge(admin, chargeId);
   if (!transaction) {
     const paymentIntentId = objectId(charge.payment_intent);
@@ -352,7 +482,7 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
     let lookup = admin
       .from("payment_transactions")
       .select(
-        "id,campaign_request_id,customer_total_cents,tax_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,dispute_status",
+        "id,campaign_request_id,currency,customer_total_cents,tax_cents,refunded_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,stripe_connected_account_id,creator_payout_cents,payout_amount_cents,payout_recovery_status,payout_recovery_target_cents,payout_recovery_reversed_cents,dispute_status",
       );
     lookup = transactionId
       ? lookup.eq("id", transactionId)
@@ -376,6 +506,14 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
   }
   if (!transaction) return;
 
+  assertStripeMoneyMatchesLedger({
+    objectName: "Charge",
+    amount: charge.amount,
+    currency: charge.currency,
+    expectedAmountCents: transaction.customer_total_cents + transaction.tax_cents,
+    expectedCurrency: transaction.currency,
+  });
+
   if (transaction.payout_status === "releasing") {
     throw new Error("Payout release is in progress; retry this dispute event.");
   }
@@ -383,13 +521,13 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
   const { error: disputeError } = await admin.from("payment_disputes").upsert({
     stripe_dispute_id: dispute.id,
     transaction_id: transaction.id,
-    amount_cents: dispute.amount,
-    status: dispute.status,
-    reason: dispute.reason,
+    amount_cents: currentDispute.amount,
+    status: currentDispute.status,
+    reason: currentDispute.reason,
   });
   if (disputeError) throw disputeError;
 
-  const won = dispute.status === "won";
+  const won = currentDispute.status === "won";
   const refundedCents = charge.amount_refunded;
   const resolvedStatus =
     refundedCents >= charge.amount
@@ -416,17 +554,25 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
           ? "awaiting_payer_review"
           : "paid_payout_pending"
     : "disputed";
-  const { error } = await admin
+  const { data: updatedTransaction, error } = await admin
     .from("payment_transactions")
     .update({
       status: transactionStatus,
       refunded_cents: refundedCents,
-      dispute_status: dispute.status,
+      dispute_status: currentDispute.status,
       payout_status: nextPayoutStatus,
       workflow_status: nextWorkflowStatus,
     })
-    .eq("id", transaction.id);
+    .eq("id", transaction.id)
+    .eq("status", transaction.status)
+    .eq("workflow_status", transaction.workflow_status)
+    .eq("payout_status", transaction.payout_status)
+    .select("id")
+    .maybeSingle();
   if (error) throw error;
+  if (!updatedTransaction) {
+    throw new Error("Payment state changed; retry this dispute event.");
+  }
   const { error: campaignError } = await admin
     .from("campaign_requests")
     .update({
@@ -434,11 +580,31 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
         won && resolvedStatus === "refunded"
           ? "refunded"
           : won
-            ? "confirmed"
+            ? transaction.payout_status === "released"
+              ? "completed"
+              : "confirmed"
             : "disputed",
     })
     .eq("id", transaction.campaign_request_id);
   if (campaignError) throw campaignError;
+
+  if (currentDispute.status === "lost" && transaction.payout_status === "released") {
+    if (!transaction.stripe_transfer_id) {
+      throw new Error("Released payout is missing its Stripe transfer for recovery.");
+    }
+    const targetReversalCents = payoutRecoveryTargetCents({
+      originalPayoutCents: transaction.creator_payout_cents,
+      releasedPayoutCents: transaction.payout_amount_cents,
+      chargeAmountCents: charge.amount,
+      refundedCents,
+      disputedCents: currentDispute.amount,
+    });
+    await recoverReleasedPayout(admin, {
+      transactionId: transaction.id,
+      targetReversalCents,
+      reason: "dispute",
+    });
+  }
 }
 
 async function syncConnectedAccount(admin: AdminClient, account: Stripe.Account) {
@@ -495,11 +661,12 @@ export async function POST(request: Request) {
   let event: Stripe.Event;
   try {
     const payload = await request.text();
-    event = verifyStripeWebhookEvent(
+    event = verifyStripeWebhookEventWithSecrets(
       getStripe(),
       payload,
       signature,
-      getStripeWebhookSecret(),
+      getStripeWebhookSecrets(),
+      stripeKeyMode() === "live",
     );
   } catch {
     return Response.json({ error: "Invalid Stripe signature." }, { status: 400 });
@@ -531,7 +698,7 @@ export async function POST(request: Request) {
     if (claimAction === "busy") {
       return Response.json(
         { error: "This event is already being processed." },
-        { status: 409 },
+        { status: 409, headers: { "Retry-After": "15" } },
       );
     }
     const reclaimed = await admin
@@ -551,7 +718,7 @@ export async function POST(request: Request) {
     if (!reclaimed.data) {
       return Response.json(
         { error: "This event was claimed by another request." },
-        { status: 409 },
+        { status: 409, headers: { "Retry-After": "15" } },
       );
     }
   }

@@ -36,6 +36,11 @@ import {
   formatCents,
 } from "@/lib/payments/fees";
 import {
+  isListingRequestable,
+  listingProvenanceLabel,
+  type ListingProvenanceStatus,
+} from "@/lib/listings/provenance";
+import {
   DashboardGate,
   LandingPage,
 } from "@/app/components/PublicPages";
@@ -45,8 +50,9 @@ import {
   type SideSpaceRoute,
 } from "@/app/components/SiteChrome";
 
-const stripeTestModeConfigured =
-  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.startsWith("pk_test_") ?? false;
+const stripeConfigured = /^pk_(?:test|live)_/.test(
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "",
+);
 
 // `consumer` is retired from the product but stays in the union, in roleCopy and
 // in the DB CHECK. Legacy rows still carry it, roleLabel() dereferences
@@ -155,6 +161,8 @@ type Listing = {
   deliverables?: string;
   cancellation_policy?: string;
   status: "active" | "paused" | "booked";
+  provenance_status?: ListingProvenanceStatus | null;
+  availability_confirmed_at?: string | null;
   created_at?: string;
   owner: Profile;
 };
@@ -256,7 +264,7 @@ type PaymentTransaction = {
   issue_status: string;
   escalated_at: string | null;
   payout_released_at: string | null;
-  payout_last_error: string | null;
+  payout_issue: boolean;
   dispute_status: string | null;
   paid_at: string | null;
   created_at: string;
@@ -4236,7 +4244,6 @@ export default function MarketplaceApp({
   const loadAccountMarketplaceState = useCallback(
     async (ownProfile: Profile) => {
       if (!supabase) return;
-      const stripeConfigured = stripeTestModeConfigured;
       const [campaignResult, verificationResult, blocksResult, transactionsResult, stripeStatusResult] =
         await Promise.all([
           supabase
@@ -4262,7 +4269,7 @@ export default function MarketplaceApp({
           stripeConfigured
             ? fetch("/api/stripe/transactions", { cache: "no-store" })
             : Promise.resolve(null),
-          stripeConfigured
+          stripeConfigured && profileHasRole(ownProfile, "creator")
             ? fetch("/api/stripe/connect/status", { cache: "no-store" })
             : Promise.resolve(null),
         ]);
@@ -4287,6 +4294,8 @@ export default function MarketplaceApp({
         setStripeAccountStatus(
           (await stripeStatusResult.json()) as StripeAccountStatus,
         );
+      } else if (!profileHasRole(ownProfile, "creator")) {
+        setStripeAccountStatus(null);
       }
       if (canonicalRole(ownProfile.role) === "creator") {
         const [portfolioResult, reviewsResult] = await Promise.all([
@@ -4948,6 +4957,10 @@ export default function MarketplaceApp({
           shuffleKey(a.id) - shuffleKey(b.id),
       );
   }, [activeChannel, blocksPending, blockedProfileIds, listings, query, roleFilter]);
+  const requestableListingCount = useMemo(
+    () => visibleListings.filter((listing) => isListingRequestable(listing)).length,
+    [visibleListings],
+  );
 
   const creatorRecommendations = useMemo(
     () =>
@@ -6322,6 +6335,8 @@ export default function MarketplaceApp({
               image_url: cover,
               image_urls: listingUploads.length ? listingUploads : [cover],
               status: "active",
+              provenance_status: "owner_attested",
+              availability_confirmed_at: new Date().toISOString(),
             })),
           )
           .select("*");
@@ -6443,6 +6458,8 @@ export default function MarketplaceApp({
         cancellation_policy: String(
           values.get("cancellation_policy") ?? "",
         ).trim(),
+        provenance_status: "owner_attested" as const,
+        availability_confirmed_at: new Date().toISOString(),
         // The role-shaped half, spread in only when that section actually
         // rendered. getAll() is why these are real checkboxes rather than the
         // chip component: an uncontrolled form hands us the array with no
@@ -6774,6 +6791,14 @@ export default function MarketplaceApp({
   }
 
   function openCampaignRequest(listing: Listing) {
+    if (!isListingRequestable(listing)) {
+      setToast(
+        listing.owner.is_demo
+          ? "This is a clearly labeled example, not inventory you can request."
+          : "This listing is view-only until its owner confirms the source and availability.",
+      );
+      return;
+    }
     requireAccount(() => {
       if (listing.owner.id === profile?.id) {
         setToast("This is your listing. Manage incoming requests from your account.");
@@ -6893,18 +6918,15 @@ export default function MarketplaceApp({
       existingConversation ?? (await ensureConversation(campaignListing.owner));
     if (conversation) {
       if (!existingConversation) {
-        // Until 0013 there was no UPDATE policy on campaign_requests, so this
-        // matched zero rows and still reported success - every request opened
-        // alongside a new thread kept conversation_id null forever. Check the
-        // outcome now rather than discarding it, and confirm the write landed:
-        // RLS makes "denied" and "no such row" both look like an empty result.
-        const linked = await supabase
-          .from("campaign_requests")
-          .update({ conversation_id: conversation.id })
-          .eq("id", (inserted.data as { id: string }).id)
-          .is("conversation_id", null)
-          .select("id");
-        if (linked.error || !linked.data?.length) {
+        const insertedRequestId = (inserted.data as { id: string }).id;
+        const linked = await supabase.rpc(
+          "link_campaign_request_conversation",
+          {
+            target_request_id: insertedRequestId,
+            target_conversation_id: conversation.id,
+          },
+        );
+        if (linked.error || linked.data !== insertedRequestId) {
           // Not fatal: the request and the thread both exist, they are just not
           // cross-linked. Say so rather than pretending it all worked.
           setToast(
@@ -8640,7 +8662,11 @@ export default function MarketplaceApp({
               tabIndex={0}
               onClick={() => setActiveStep(index)}
               onFocus={() => setActiveStep(index)}
-              onMouseEnter={() => setActiveStep(index)}
+              onMouseEnter={() => {
+                if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+                  setActiveStep(index);
+                }
+              }}
             >
               <span>{`0${index + 1}`}</span>
               <div className="step-icon">{step.icon}</div>
@@ -8757,7 +8783,7 @@ export default function MarketplaceApp({
           <span className="result-count" role="status" aria-live="polite">
             {blocksPending
               ? "Loading the marketplace"
-              : `${visibleListings.length} open listing${visibleListings.length === 1 ? "" : "s"}`}
+              : `${visibleListings.length} listing${visibleListings.length === 1 ? "" : "s"} · ${requestableListingCount} requestable · ${visibleListings.length - requestableListingCount} view-only`}
           </span>
         </div>
 
@@ -8804,6 +8830,17 @@ export default function MarketplaceApp({
                       {listing.owner.is_demo && (
                         <span className="sample-badge">Demo</span>
                       )}
+                      {!listing.owner.is_demo && (
+                        <span
+                          className={`provenance-badge ${
+                            isListingRequestable(listing)
+                              ? "is-requestable"
+                              : "is-view-only"
+                          }`}
+                        >
+                          {listingProvenanceLabel(listing)}
+                        </span>
+                      )}
                     </strong>
                     <small>
                       {rolesLabel(listing.owner)} · {listing.owner.city}
@@ -8839,8 +8876,20 @@ export default function MarketplaceApp({
                     <strong>{priceLabel(listing)}</strong>
                     <small> / {listing.price_unit}</small>
                   </div>
-                  <button onClick={() => openCampaignRequest(listing)}>
-                    {isBrief(listing) ? "Offer my space" : "Request"}{" "}
+                  <button
+                    disabled={!isListingRequestable(listing)}
+                    onClick={() => openCampaignRequest(listing)}
+                    title={
+                      isListingRequestable(listing)
+                        ? undefined
+                        : "The owner must confirm this listing before requests open."
+                    }
+                  >
+                    {isListingRequestable(listing)
+                      ? isBrief(listing)
+                        ? "Offer my space"
+                        : "Request"
+                      : "View only"}{" "}
                     <span>↗</span>
                   </button>
                 </footer>
@@ -9160,7 +9209,15 @@ export default function MarketplaceApp({
 
       {legacyPublicSections && (<footer className="site-footer">
         <a className="brand footer-brand" href="#top">
-          <span className="brand-mark">S</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt=""
+            aria-hidden="true"
+            className="brand-mark"
+            width={31}
+            height={31}
+          />
           <span>SideSpace</span>
         </a>
         <p>Local reach, made bookable.</p>
@@ -9530,7 +9587,7 @@ export default function MarketplaceApp({
               </section>
             )}
 
-            {stripeTestModeConfigured && (
+            {stripeConfigured && profileHasRole(profile, "creator") && (
               <section className="account-section" id="payouts">
                 <div className="account-section-heading">
                   <div>
@@ -9776,7 +9833,9 @@ export default function MarketplaceApp({
                                     : "Pay securely with Stripe"}
                                 </button>
                               )}
-                              {isPayee && !stripeAccountStatus?.ready && (
+                              {isPayee &&
+                                profileHasRole(profile, "creator") &&
+                                !stripeAccountStatus?.ready && (
                                 <button
                                   className="button button-dark button-small"
                                   disabled={busy}
@@ -9830,19 +9889,21 @@ export default function MarketplaceApp({
                       ? Date.now() >= new Date(transaction.review_deadline).getTime()
                       : false;
                     const statusLabel =
-                      transaction.payout_status === "released"
-                        ? "Payout released"
-                        : transaction.payout_status === "releasing"
-                          ? "Releasing payout"
-                          : transaction.workflow_status === "awaiting_payer_review"
-                            ? "Awaiting payer review"
-                            : transaction.issue_status === "escalated"
-                              ? "Issue escalated"
-                              : transaction.issue_status === "open"
-                                ? "Issue open"
-                                : transaction.payout_status === "pending"
-                                  ? "Payout pending"
-                                  : transaction.workflow_status.replaceAll("_", " ");
+                      transaction.workflow_status === "refund_pending"
+                        ? "Refund processing"
+                        : transaction.payout_status === "released"
+                          ? "Payout released"
+                          : transaction.payout_status === "releasing"
+                            ? "Releasing payout"
+                            : transaction.workflow_status === "awaiting_payer_review"
+                              ? "Awaiting payer review"
+                              : transaction.issue_status === "escalated"
+                                ? "Issue escalated"
+                                : transaction.issue_status === "open"
+                                  ? "Issue open"
+                                  : transaction.payout_status === "pending"
+                                    ? "Payout pending"
+                                    : transaction.workflow_status.replaceAll("_", " ");
                     return (
                       <article className="campaign-request-card" key={transaction.id}>
                         <header>
@@ -9949,7 +10010,7 @@ export default function MarketplaceApp({
                             {transaction.review.review_text}
                           </div>
                         )}
-                        {transaction.payout_last_error && (
+                        {transaction.payout_issue && (
                           <div className="campaign-request-brief">
                             <small>Payout release needs attention</small>
                             SideSpace could not finish the transfer yet. It is safe to retry; no
@@ -13567,6 +13628,20 @@ export default function MarketplaceApp({
                       : "Unverified profile"}
                 </span>
               </div>
+              <div
+                className={`listing-provenance-notice ${
+                  isListingRequestable(selectedListing)
+                    ? "is-requestable"
+                    : "is-view-only"
+                }`}
+              >
+                <strong>{listingProvenanceLabel(selectedListing)}</strong>
+                <span>
+                  {isListingRequestable(selectedListing)
+                    ? "The authenticated owner confirmed this listing within the last 90 days."
+                    : "SideSpace has not confirmed that this listing is currently requestable."}
+                </span>
+              </div>
               <SocialLinks profile={selectedListing.owner} />
               {(selectedCreatorReviews.length > 0 || selectedCreatorPortfolio.length > 0) && (
                 <div className="detail-terms">
@@ -13679,11 +13754,14 @@ export default function MarketplaceApp({
                 <div className="detail-primary-actions">
                   <button
                     className="button button-coral"
+                    disabled={!isListingRequestable(selectedListing)}
                     onClick={() => openCampaignRequest(selectedListing)}
                   >
-                    {isBrief(selectedListing)
-                      ? "Offer my space"
-                      : "Request this placement"}{" "}
+                    {isListingRequestable(selectedListing)
+                      ? isBrief(selectedListing)
+                        ? "Offer my space"
+                        : "Request this placement"
+                      : "View only"}{" "}
                     <span>↗</span>
                   </button>
                   <button

@@ -546,8 +546,12 @@ begin
   select * into transaction from public.payment_transactions
   where id = target_transaction_id for update;
   if transaction.id is null then raise exception 'Payment transaction not found.'; end if;
+  if transfer_id is null or btrim(transfer_id) = '' then
+    raise exception 'A Stripe transfer ID is required to finalize the payout.';
+  end if;
   if transaction.payout_status = 'released' then
-    if transaction.stripe_transfer_id <> transfer_id then
+    if transaction.stripe_transfer_id is null
+       or transaction.stripe_transfer_id <> transfer_id then
       raise exception 'A different transfer already released this payout.';
     end if;
     return transaction;
@@ -594,6 +598,11 @@ as $$
 begin
   update public.payment_transactions
   set payout_status = case when issue_status = 'none' then 'pending' else 'blocked' end,
+      issue_status = case
+        when payout_release_reason = 'staff'
+          and issue_status = 'resolution_pending' then 'escalated'
+        else issue_status
+      end,
       payout_last_error = left(error_message, 1000)
   where id = target_transaction_id and payout_status = 'releasing';
 end;
@@ -628,10 +637,13 @@ begin
   if requested_action not in ('full_refund', 'partial_refund') then
     raise exception 'Choose a supported refund resolution.';
   end if;
-  select * into issue from public.payment_issues where id = target_issue_id for update;
+  select * into issue from public.payment_issues where id = target_issue_id;
   if issue.id is null then raise exception 'Payment issue not found.'; end if;
   select * into transaction from public.payment_transactions
   where id = issue.transaction_id for update;
+  if transaction.id is null then raise exception 'Payment transaction not found.'; end if;
+  select * into issue from public.payment_issues where id = target_issue_id for update;
+  if issue.id is null then raise exception 'Payment issue not found.'; end if;
   select * into resolution from public.payment_resolution_actions
   where issue_id = issue.id;
   if resolution.id is not null then
@@ -651,11 +663,14 @@ begin
   if requested_action = 'partial_refund' and refund_amount >= remaining_charge then
     raise exception 'Use full refund when returning the entire remaining charge.';
   end if;
-  adjusted_payout := greatest(1, floor(
+  adjusted_payout := floor(
     transaction.creator_payout_cents::numeric
     * (total_charge - transaction.refunded_cents - refund_amount)::numeric
     / nullif(total_charge, 0)::numeric
-  )::bigint);
+  )::bigint;
+  if requested_action = 'partial_refund' and adjusted_payout <= 0 then
+    raise exception 'The remaining Creator payout is below one cent; use a full refund.';
+  end if;
 
   insert into public.payment_resolution_actions (
     issue_id, transaction_id, staff_auth_user_id, action, refund_amount_cents,

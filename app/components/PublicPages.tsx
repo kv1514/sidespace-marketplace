@@ -8,6 +8,13 @@ import Link from "next/link";
 import NextImage from "next/image";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { formatCents } from "@/lib/payments/fees";
+import {
+  isListingRequestable,
+  listingAvailabilityLabel,
+  listingProvenance,
+  listingProvenanceLabel,
+  type ListingProvenanceStatus,
+} from "@/lib/listings/provenance";
 import HeroCanvas from "./HeroCanvas";
 import {
   type CSSProperties,
@@ -29,6 +36,8 @@ export type PublicListing = {
   price_unit: string;
   description: string;
   image_url: string;
+  provenance_status?: ListingProvenanceStatus | null;
+  availability_confirmed_at?: string | null;
   owner: {
     id: string;
     display_name: string;
@@ -58,6 +67,13 @@ function price(listing: PublicListing) {
  */
 function isDemandBrief(listing: Pick<PublicListing, "channel">) {
   return listing.channel === "Business brief";
+}
+
+function hoverIsFine() {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(hover: hover) and (pointer: fine)").matches
+  );
 }
 
 /**
@@ -176,7 +192,7 @@ const PLACEMENT_EXAMPLES = [
   {
     number: "01",
     type: "MOVING PLACEMENT",
-    title: "A daily route, now visible.",
+    title: "A daily route, turned into mobile reach.",
     before: "/photos/sidespace-placements/car-before.jpg",
     after: "/photos/sidespace-placements/car-after.jpg",
     beforeAlt: "Plain white car parked on a neighborhood street",
@@ -185,7 +201,7 @@ const PLACEMENT_EXAMPLES = [
   {
     number: "02",
     type: "STREET-FACING GLASS",
-    title: "Dinner traffic, now visible.",
+    title: "Dinner traffic, captured at eye level.",
     before: "/photos/sidespace-placements/restaurant-window-before.jpg",
     after: "/photos/sidespace-placements/restaurant-window-after.jpg",
     beforeAlt: "Restaurant facade with a clear street-facing picture window",
@@ -203,7 +219,7 @@ const PLACEMENT_EXAMPLES = [
   {
     number: "04",
     type: "LARGE FORMAT",
-    title: "A blank wall, made visible.",
+    title: "A blank wall, transformed into a landmark.",
     before: "/photos/sidespace-placements/wall-before.jpg",
     after: "/photos/sidespace-placements/wall-after.jpg",
     beforeAlt: "Blank cream side wall on a neighborhood corner building",
@@ -377,6 +393,11 @@ function ListingPreviewCard({
           {listing.owner.city && ` · ${listing.owner.city}`}
           {listing.owner.is_demo && (
             <span className="ss-demo-label">Demo</span>
+          )}
+          {!listing.owner.is_demo && (
+            <span className="ss-demo-label">
+              {listingProvenanceLabel(listing)}
+            </span>
           )}
         </p>
         <button onClick={() => onOpen(listing.id)}>{listing.title}</button>
@@ -601,9 +622,11 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
       >
         <div className="ss-bookable-top">
           <span>
-            SIDESPACE / {listing?.owner.is_demo ? "DEMO" : "LIVE"} INVENTORY
+            SIDESPACE / {listing
+              ? listingProvenance(listing).replaceAll("_", " ").toUpperCase()
+              : "MARKETPLACE EXAMPLE"} INVENTORY
           </span>
-          <b>● {listing?.owner.is_demo ? "EXAMPLE" : "AVAILABLE"}</b>
+          <b>● {listing ? listingAvailabilityLabel(listing) : "EXAMPLE"}</b>
         </div>
         {listing ? (
           <>
@@ -623,6 +646,9 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
               <strong>{listing.title}</strong>
               <p>{listing.owner.display_name} · {listing.owner.city}</p>
               <b>{price(listing)} / {listing.price_unit}</b>
+              {!isListingRequestable(listing) && (
+                <small>{listingProvenanceLabel(listing)}</small>
+              )}
             </div>
           </>
         ) : (
@@ -791,7 +817,7 @@ export function LandingPage({
               role="tab"
               aria-selected={audience === "advertise"}
               onClick={() => setAudience("advertise")}
-              onMouseEnter={() => setAudience("advertise")}
+              onMouseEnter={() => hoverIsFine() && setAudience("advertise")}
             >
               <span>01 / ADVERTISERS</span>
               <strong>I want to advertise</strong>
@@ -804,7 +830,7 @@ export function LandingPage({
               role="tab"
               aria-selected={audience === "offer"}
               onClick={() => setAudience("offer")}
-              onMouseEnter={() => setAudience("offer")}
+              onMouseEnter={() => hoverIsFine() && setAudience("offer")}
             >
               <span>02 / CREATORS &amp; LOCAL OWNERS</span>
               <strong>I have attention to offer</strong>
@@ -888,7 +914,7 @@ export function LandingPage({
         <div className="ss-process-row">
           <article
             className={activeProcess === 0 ? "is-active" : undefined}
-            onMouseEnter={() => setActiveProcess(0)}
+            onMouseEnter={() => hoverIsFine() && setActiveProcess(0)}
           >
             <span>01 / DISCOVER</span>
             <div className="ss-mini-search" aria-hidden="true">
@@ -900,7 +926,7 @@ export function LandingPage({
           </article>
           <article
             className={activeProcess === 1 ? "is-active" : undefined}
-            onMouseEnter={() => setActiveProcess(1)}
+            onMouseEnter={() => hoverIsFine() && setActiveProcess(1)}
           >
             <span>02 / TALK DIRECTLY</span>
             <div className="ss-mini-chat" aria-hidden="true">
@@ -912,7 +938,7 @@ export function LandingPage({
           </article>
           <article
             className={activeProcess === 2 ? "is-active" : undefined}
-            onMouseEnter={() => setActiveProcess(2)}
+            onMouseEnter={() => hoverIsFine() && setActiveProcess(2)}
           >
             <span>03 / MAKE IT HAPPEN</span>
             <div className="ss-mini-deal" aria-hidden="true">
@@ -1390,11 +1416,7 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
             </motion.div>
           </AnimatePresence>
         </div>
-        <div
-          className="ss-journey-demo"
-          data-ss-parallax="0.13"
-          data-ss-parallax-max="58"
-        >
+        <div className="ss-journey-demo">
           <div className="ss-demo-window">
             <header><i /><i /><i /><span>SIDESPACE / {side === "advertiser" ? "BUSINESS" : "CREATOR"}</span><b>{String(activeStep + 1).padStart(2, "0")} / {String(steps.length).padStart(2, "0")}</b></header>
             <AnimatePresence custom={stepDirection} initial={false} mode="wait">

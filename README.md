@@ -1,12 +1,13 @@
 # SideSpace — Vercel + Supabase
 
-This is the Next.js version of SideSpace. It is intentionally
-kept in `vercel-app/` so the existing Sites deployment can remain online during
-the migration.
+This is the canonical Next.js application repository for SideSpace. The
+repository root is the deployable app, so the existing Sites deployment can
+remain online independently during the migration.
 
 ## Current deployment
 
-- Public app: https://sidespace-marketplace.vercel.app
+- Public app: https://sidespace.ad
+- Vercel deployment: https://sidespace-marketplace.vercel.app
 - Supabase project: `jlomjbixyemqsruycycz`
 - Database migration and auth redirect configuration are applied
 - Email/password signup is live
@@ -40,9 +41,9 @@ and live-launch gates.
    repository's normal Supabase migration deployment workflow. Do not run only
    the initial migration.
 3. In Supabase Authentication:
-   - set the Site URL to the final Vercel domain;
-   - add `http://localhost:3000/auth/callback` and the Vercel callback URL to
-     Redirect URLs;
+   - set the Site URL to `https://sidespace.ad`;
+   - add `http://localhost:3000/auth/callback`, `https://sidespace.ad/auth/callback`,
+     and the `*.vercel.app` callback URL to Redirect URLs;
    - enable Google and add its client ID and secret if Google sign-in is wanted.
 4. Copy `.env.example` to `.env.local` and add the Supabase values. Add only
    Stripe sandbox/test keys for the marketplace integration; never commit them.
@@ -55,9 +56,9 @@ and live-launch gates.
 
 ## Deploy to Vercel
 
-Import the existing Git repository in Vercel and set **Root Directory** to
-`vercel-app`. Add these environment variables for Production, Preview, and
-Development:
+Import the existing Git repository in Vercel and leave **Root Directory** at
+the repository root (`.`). Add these environment variables for Production,
+Preview, and Development:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
@@ -68,8 +69,12 @@ Deploy, then add the production callback URL to Supabase:
 
 `https://YOUR-DOMAIN/auth/callback`
 
-The generated `*.vercel.app` address is a normal public website. A custom domain
-can be connected later in Vercel without changing the application.
+Production traffic should use `https://sidespace.ad`. Connect that domain in
+Vercel (Domains → Add) and point DNS as Vercel instructs. Keep
+`NEXT_PUBLIC_APP_URL=https://sidespace.ad` on the Production environment so
+Stripe Checkout, Connect return URLs, and same-origin payment checks match
+the public hostname. The generated `*.vercel.app` address can stay as a
+fallback.
 
 ## Security model
 

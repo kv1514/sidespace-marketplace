@@ -6,6 +6,8 @@ import {
   requireUuid,
 } from "@/lib/payments/auth";
 import { releasePendingPayout } from "@/lib/payments/release";
+import { enforcePaymentRateLimit } from "@/lib/payments/rate-limit";
+import { participantTransactionResponse } from "@/lib/payments/response";
 
 type PaymentAction = "deliver" | "confirm" | "report_issue" | "escalate";
 
@@ -32,6 +34,12 @@ export async function POST(
       throw new ApiError("Choose a valid campaign action.", 400);
     }
     const { profile, admin } = await requireAuthenticatedProfile();
+    await enforcePaymentRateLimit(admin, {
+      bucket: "payment_fulfillment_action",
+      profileId: profile.id,
+      maxRequests: 30,
+      windowSeconds: 10 * 60,
+    });
 
     if (action === "deliver") {
       const result = await admin.rpc("mark_campaign_delivered", {
@@ -39,7 +47,7 @@ export async function POST(
         actor_profile_id: profile.id,
       });
       if (result.error) actionError(result.error);
-      return Response.json({ transaction: result.data });
+      return Response.json({ transaction: participantTransactionResponse(result.data) });
     }
     if (action === "confirm") {
       try {
@@ -48,7 +56,10 @@ export async function POST(
           mode: "payer_confirmation",
           actorProfileId: profile.id,
         });
-        return Response.json(result);
+        return Response.json({
+          alreadyReleased: result.alreadyReleased,
+          transaction: participantTransactionResponse(result.transaction),
+        });
       } catch (error) {
         actionError(error as { message?: string });
       }

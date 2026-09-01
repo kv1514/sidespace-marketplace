@@ -1,6 +1,7 @@
 import {
   ApiError,
   errorResponse,
+  profileCanReceivePayouts,
   requireAuthenticatedProfile,
   requireSameOrigin,
   requireUuid,
@@ -16,18 +17,27 @@ import {
   createTrustedPaymentSnapshot,
   type CampaignPaymentSource,
 } from "@/lib/payments/marketplace";
-import { getStripe } from "@/lib/stripe/server";
+import { getStripe, stripeKeyMode } from "@/lib/stripe/server";
 import { requireStripeHostedUrl } from "@/lib/stripe/urls";
+import { enforcePaymentRateLimit } from "@/lib/payments/rate-limit";
 
 const transactionColumns =
-  "id,status,checkout_attempt,stripe_checkout_session_id,subtotal_cents,business_profile_id,creator_profile_id";
+  "id,status,checkout_attempt,stripe_checkout_session_id,currency,subtotal_cents,buyer_fee_cents,creator_fee_cents,customer_total_cents,creator_payout_cents,payout_amount_cents,platform_gross_revenue_cents,stripe_connected_account_id,business_profile_id,creator_profile_id";
 
 type TransactionRow = {
   id: string;
   status: string;
   checkout_attempt: number;
   stripe_checkout_session_id: string | null;
+  currency: string;
   subtotal_cents: number;
+  buyer_fee_cents: number;
+  creator_fee_cents: number;
+  customer_total_cents: number;
+  creator_payout_cents: number;
+  payout_amount_cents: number;
+  platform_gross_revenue_cents: number;
+  stripe_connected_account_id: string;
   business_profile_id: string;
   creator_profile_id: string;
 };
@@ -39,6 +49,13 @@ function one<T>(value: T | T[]) {
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
+    if (
+      process.env.NODE_ENV === "production" &&
+      process.env.PAYMENTS_CHECKOUT_ENABLED !== "true"
+    ) {
+      throw new ApiError("Payments are temporarily unavailable.", 503);
+    }
+    const origin = getAppOrigin(request.url);
     const body = (await request.json().catch(() => null)) as {
       campaignRequestId?: unknown;
     } | null;
@@ -48,10 +65,16 @@ export async function POST(request: Request) {
     );
 
     const { user, profile, admin } = await requireAuthenticatedProfile();
+    await enforcePaymentRateLimit(admin, {
+      bucket: "stripe_checkout",
+      profileId: profile.id,
+      maxRequests: 8,
+      windowSeconds: 10 * 60,
+    });
     const { data: rawCampaign, error: campaignError } = await admin
       .from("campaign_requests")
       .select(
-        "id,campaign_name,status,accepted_subtotal_cents,requester_profile_id,owner_profile_id,listing:listings!campaign_requests_listing_id_fkey(id,owner_profile_id,title,channel),requester:profiles!campaign_requests_requester_profile_id_fkey(id,display_name),owner:profiles!campaign_requests_owner_profile_id_fkey(id,display_name)",
+        "id,campaign_name,status,accepted_subtotal_cents,requester_profile_id,owner_profile_id,payer_profile_id,payee_profile_id,listing:listings!campaign_requests_listing_id_fkey(id,owner_profile_id,title,channel,provenance_status,availability_confirmed_at),requester:profiles!campaign_requests_requester_profile_id_fkey(id,display_name,role,extra_roles),owner:profiles!campaign_requests_owner_profile_id_fkey(id,display_name,role,extra_roles)",
       )
       .eq("id", campaignRequestId)
       .single();
@@ -65,9 +88,39 @@ export async function POST(request: Request) {
       requester: one(rawCampaign.requester),
       owner: one(rawCampaign.owner),
     } as unknown as CampaignPaymentSource;
+    const listing = campaign.listing as CampaignPaymentSource["listing"] & {
+      provenance_status?: string | null;
+      availability_confirmed_at?: string | null;
+    };
+    const confirmedAt = Date.parse(listing.availability_confirmed_at ?? "");
+    if (
+      !["owner_attested", "staff_verified"].includes(
+        listing.provenance_status ?? "unverified",
+      ) ||
+      !Number.isFinite(confirmedAt) ||
+      Date.now() - confirmedAt > 90 * 24 * 60 * 60 * 1000
+    ) {
+      throw new ApiError(
+        "The listing owner must confirm this inventory before it can be paid.",
+        409,
+      );
+    }
     const snapshot = createTrustedPaymentSnapshot(campaign);
     if (snapshot.businessProfileId !== profile.id) {
       throw new ApiError("Only the business paying for this campaign can check out.", 403);
+    }
+
+    const creatorProfile =
+      campaign.requester.id === snapshot.creatorProfileId
+        ? campaign.requester
+        : campaign.owner.id === snapshot.creatorProfileId
+          ? campaign.owner
+          : null;
+    if (!creatorProfile || !profileCanReceivePayouts(creatorProfile)) {
+      throw new ApiError(
+        "The campaign payee must have a creator profile before checkout.",
+        409,
+      );
     }
 
     const { data: creatorAccount, error: accountError } = await admin
@@ -190,6 +243,16 @@ export async function POST(request: Request) {
     if (!transaction) throw new Error("Payment transaction was not created.");
     if (
       transaction.subtotal_cents !== snapshot.subtotalCents ||
+      transaction.currency !== "usd" ||
+      transaction.buyer_fee_cents !== snapshot.buyerFeeCents ||
+      transaction.creator_fee_cents !== snapshot.creatorFeeCents ||
+      transaction.customer_total_cents !== snapshot.customerTotalCents ||
+      transaction.creator_payout_cents !== snapshot.creatorPayoutCents ||
+      transaction.payout_amount_cents !== snapshot.creatorPayoutCents ||
+      transaction.platform_gross_revenue_cents !==
+        snapshot.platformGrossRevenueCents ||
+      transaction.stripe_connected_account_id !==
+        creatorAccount.stripe_connected_account_id ||
       transaction.business_profile_id !== snapshot.businessProfileId ||
       transaction.creator_profile_id !== snapshot.creatorProfileId
     ) {
@@ -280,7 +343,7 @@ export async function POST(request: Request) {
     };
     const params = buildCheckoutSessionParams(
       checkoutSnapshot,
-      getAppOrigin(request.url),
+      origin,
     );
     let session;
     try {
@@ -302,14 +365,14 @@ export async function POST(request: Request) {
       }
       throw error;
     }
-    if (session.livemode) {
-      throw new Error("A live-mode Checkout Session was blocked.");
+    if (session.livemode !== (stripeKeyMode() === "live")) {
+      throw new Error("Checkout Session mode does not match the configured API keys.");
     }
     const checkoutUrl = requireStripeHostedUrl(session.url, [
       "checkout.stripe.com",
     ]);
 
-    const { error: updateError } = await admin
+    const { data: updatedTransaction, error: updateError } = await admin
       .from("payment_transactions")
       .update({
         status: "checkout_open",
@@ -321,8 +384,13 @@ export async function POST(request: Request) {
       })
       .eq("id", transaction.id)
       .eq("checkout_attempt", transaction.checkout_attempt)
-      .in("status", ["requires_checkout", "checkout_open"]);
+      .in("status", ["requires_checkout", "checkout_open"])
+      .select(transactionColumns)
+      .maybeSingle<TransactionRow>();
     if (updateError) throw updateError;
+    if (!updatedTransaction) {
+      throw new ApiError("Checkout state changed. Refresh before trying again.", 409);
+    }
 
     return Response.json({ url: checkoutUrl, reused: false });
   } catch (error) {

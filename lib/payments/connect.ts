@@ -6,13 +6,32 @@ export type StripeAccountState = {
   charges_enabled: boolean;
   payouts_enabled: boolean;
   details_submitted: boolean;
-  requirements?: { currently_due?: string[] | null } | null;
+  country?: string | null;
+  requirements?: {
+    currently_due?: string[] | null;
+    past_due?: string[] | null;
+    disabled_reason?: string | null;
+  } | null;
   requirements_due?: string[] | null;
+  capabilities?: { transfers?: string | null } | null;
 };
 
 export function getStripeAccountReadiness(account: StripeAccountState) {
-  const requirementsDue =
-    account.requirements?.currently_due ?? account.requirements_due ?? [];
+  const requirementsDue = Array.from(
+    new Set([
+      ...(account.requirements?.currently_due ?? []),
+      ...(account.requirements_due ?? []),
+      ...(account.requirements?.past_due ?? []),
+    ]),
+  );
+  // The database snapshot predates capability storage, so an absent field is
+  // allowed there. A live Stripe Account includes capabilities; when present,
+  // transfers must be active because Creators only receive later transfers.
+  const transfersReady =
+    account.capabilities === undefined || account.capabilities?.transfers === "active";
+  const countryReady =
+    account.country === undefined ||
+    account.country === (process.env.STRIPE_CONNECT_COUNTRY ?? "US");
   return {
     requirementsDue,
     // Deliberately does NOT require charges_enabled. The customer is charged on
@@ -30,6 +49,9 @@ export function getStripeAccountReadiness(account: StripeAccountState) {
     ready:
       account.payouts_enabled &&
       account.details_submitted &&
+      countryReady &&
+      !account.requirements?.disabled_reason &&
+      transfersReady &&
       requirementsDue.length === 0,
   };
 }

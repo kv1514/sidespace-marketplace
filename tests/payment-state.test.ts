@@ -6,6 +6,7 @@ import {
   shouldAdvanceCheckoutAttempt,
 } from "../lib/payments/checkout-state";
 import { getStripeAccountReadiness } from "../lib/payments/connect";
+import { participantTransactionResponse } from "../lib/payments/response";
 import { webhookClaimAction } from "../lib/stripe/events";
 
 describe("creator payout eligibility", () => {
@@ -57,8 +58,58 @@ describe("creator payout eligibility", () => {
         payouts_enabled: true,
         details_submitted: true,
         requirements_due: [],
+        capabilities: { transfers: "active" },
       }).ready,
     ).toBe(true);
+  });
+
+  it("rejects an account whose transfers capability is not active", () => {
+    expect(
+      getStripeAccountReadiness({
+        charges_enabled: false,
+        payouts_enabled: true,
+        details_submitted: true,
+        requirements_due: [],
+        capabilities: { transfers: "pending" },
+      }).ready,
+    ).toBe(false);
+  });
+
+  it("rejects an otherwise ready account outside the supported country", () => {
+    expect(
+      getStripeAccountReadiness({
+        charges_enabled: false,
+        payouts_enabled: true,
+        details_submitted: true,
+        country: "CA",
+        requirements_due: [],
+        capabilities: { transfers: "active" },
+      }).ready,
+    ).toBe(false);
+  });
+
+  it("rejects an account with past-due verification requirements", () => {
+    expect(
+      getStripeAccountReadiness({
+        charges_enabled: false,
+        payouts_enabled: true,
+        details_submitted: true,
+        requirements: { currently_due: [], past_due: ["individual.verification.document"] },
+        capabilities: { transfers: "active" },
+      }).ready,
+    ).toBe(false);
+  });
+
+  it("rejects an account disabled by Stripe requirements", () => {
+    expect(
+      getStripeAccountReadiness({
+        charges_enabled: false,
+        payouts_enabled: true,
+        details_submitted: true,
+        requirements: { currently_due: [], disabled_reason: "requirements.past_due" },
+        capabilities: { transfers: "active" },
+      }).ready,
+    ).toBe(false);
   });
 });
 
@@ -124,5 +175,30 @@ describe("webhook replay claims", () => {
         now,
       ),
     ).toBe("reclaim");
+  });
+});
+
+describe("participant payment responses", () => {
+  it("keeps Stripe object identifiers out of authenticated action responses", () => {
+    const response = participantTransactionResponse({
+      id: "transaction-1",
+      status: "paid",
+      workflow_status: "awaiting_payer_review",
+      payout_status: "pending",
+      delivered_at: null,
+      review_deadline: "2026-09-02T12:00:00.000Z",
+      confirmed_at: null,
+      issue_status: "none",
+      payout_released_at: null,
+      stripe_charge_id: "ch_secret_to_redact",
+      stripe_transfer_id: "tr_secret_to_redact",
+    });
+
+    expect(response).toMatchObject({
+      id: "transaction-1",
+      payout_status: "pending",
+    });
+    expect(response).not.toHaveProperty("stripe_charge_id");
+    expect(response).not.toHaveProperty("stripe_transfer_id");
   });
 });

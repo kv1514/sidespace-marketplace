@@ -30,9 +30,15 @@ const PUBLIC_LINKS: Array<{
 export function SideSpaceMark() {
   return (
     <>
-      <span className="ss-brand-mark" aria-hidden="true">
-        S
-      </span>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/logo.png"
+        alt=""
+        aria-hidden="true"
+        className="ss-brand-mark"
+        width={31}
+        height={31}
+      />
       <span>SideSpace</span>
     </>
   );
@@ -84,11 +90,26 @@ export function SiteHeader({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [menuOpen]);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle("ss-nav-lock", menuOpen);
+    return () => document.documentElement.classList.remove("ss-nav-lock");
+  }, [menuOpen]);
+
+  useEffect(() => {
+    const desktopNav = window.matchMedia("(min-width: 1181px)");
+    const closeOnDesktop = () => {
+      if (desktopNav.matches) setMenuOpen(false);
+    };
+    desktopNav.addEventListener("change", closeOnDesktop);
+    return () => desktopNav.removeEventListener("change", closeOnDesktop);
+  }, []);
+
   return (
-    <header
-      className={`ss-header${scrolled ? " is-scrolled" : ""}${menuOpen ? " menu-open" : ""}`}
-    >
-      <div className="ss-header-inner">
+    <>
+      <header
+        className={`ss-header${scrolled ? " is-scrolled" : ""}${menuOpen ? " menu-open" : ""}`}
+      >
+        <div className="ss-header-inner">
         <Link className="ss-brand" href="/" aria-label="SideSpace home">
           <SideSpaceMark />
         </Link>
@@ -144,7 +165,8 @@ export function SiteHeader({
                 Sign in
               </button>
               <button className="ss-header-join" onClick={onJoin}>
-                Join SideSpace <span aria-hidden="true">↗</span>
+                Join<span className="ss-header-join-full"> SideSpace</span>{" "}
+                <span aria-hidden="true">↗</span>
               </button>
             </>
           )}
@@ -223,6 +245,15 @@ export function SiteHeader({
         )}
       </div>
     </header>
+      {menuOpen && (
+        <button
+          aria-label="Close navigation"
+          className="ss-menu-backdrop"
+          type="button"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
+    </>
   );
 }
 

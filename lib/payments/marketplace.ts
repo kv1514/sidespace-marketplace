@@ -7,14 +7,26 @@ export type CampaignPaymentSource = {
   accepted_subtotal_cents: number | null;
   requester_profile_id: string;
   owner_profile_id: string;
+  payer_profile_id: string | null;
+  payee_profile_id: string | null;
   listing: {
     id: string;
     owner_profile_id: string;
     title: string;
     channel: string;
   };
-  requester: { id: string; display_name: string };
-  owner: { id: string; display_name: string };
+  requester: {
+    id: string;
+    display_name: string;
+    role?: string | null;
+    extra_roles?: string[] | null;
+  };
+  owner: {
+    id: string;
+    display_name: string;
+    role?: string | null;
+    extra_roles?: string[] | null;
+  };
 };
 
 export function isBusinessBrief(channel: string) {
@@ -26,17 +38,33 @@ export function deriveMarketplaceParties(campaign: CampaignPaymentSource) {
     throw new Error("The campaign listing owner no longer matches the request.");
   }
 
-  if (isBusinessBrief(campaign.listing.channel)) {
-    return {
-      business: campaign.owner,
-      creator: campaign.requester,
-    };
+  if (!campaign.payer_profile_id || !campaign.payee_profile_id) {
+    throw new Error("Accepted campaign payment parties are missing.");
   }
 
-  return {
-    business: campaign.requester,
-    creator: campaign.owner,
-  };
+  const participantIds = new Set([
+    campaign.requester_profile_id,
+    campaign.owner_profile_id,
+  ]);
+  if (
+    !participantIds.has(campaign.payer_profile_id) ||
+    !participantIds.has(campaign.payee_profile_id) ||
+    campaign.payer_profile_id === campaign.payee_profile_id
+  ) {
+    throw new Error("Accepted campaign payment parties are invalid.");
+  }
+
+  const participants = new Map<string, { id: string; display_name: string }>([
+    [campaign.requester.id, campaign.requester],
+    [campaign.owner.id, campaign.owner],
+  ]);
+  const business = participants.get(campaign.payer_profile_id);
+  const creator = participants.get(campaign.payee_profile_id);
+  if (!business || !creator) {
+    throw new Error("Accepted campaign payment parties no longer match the request.");
+  }
+
+  return { business, creator };
 }
 
 export function createTrustedPaymentSnapshot(campaign: CampaignPaymentSource) {

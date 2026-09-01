@@ -76,7 +76,8 @@ html.lenis {
   background: color-mix(in srgb, var(--ss-paper) 84%, transparent);
   border-bottom: 1px solid transparent;
   font-family: var(--ss-display);
-  height: var(--ss-header-height);
+  height: calc(var(--ss-header-height) + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
   position: sticky;
   top: 0;
   transition:
@@ -102,7 +103,7 @@ html.lenis {
   backdrop-filter: blur(18px);
   background: color-mix(in srgb, var(--ss-paper) 96%, transparent);
   border-color: var(--ss-line-soft);
-  height: 66px;
+  height: calc(66px + env(safe-area-inset-top, 0px));
 }
 
 .ss-header-inner {
@@ -128,18 +129,11 @@ html.lenis {
 }
 
 .ss-brand-mark {
-  align-items: center;
-  background: var(--ss-ink);
-  border-radius: 6px 12px 6px 12px;
-  color: var(--ss-amber);
-  display: inline-flex;
-  font-family: var(--ss-display);
-  font-size: 18px;
-  font-style: italic;
-  font-weight: 750;
+  border-radius: 8px;
+  display: block;
+  flex-shrink: 0;
   height: 31px;
-  justify-content: center;
-  transform: rotate(-4deg);
+  object-fit: cover;
   width: 31px;
 }
 
@@ -314,6 +308,18 @@ html.lenis {
 
 .ss-menu-toggle[aria-expanded="true"] span:last-child {
   transform: translateY(-3px) rotate(-45deg);
+}
+
+.ss-menu-backdrop {
+  background: rgba(22, 20, 14, 0.28);
+  border: 0;
+  bottom: 0;
+  left: 0;
+  padding: 0;
+  position: fixed;
+  right: 0;
+  top: calc(var(--ss-header-height) + env(safe-area-inset-top, 0px));
+  z-index: 70;
 }
 
 .ss-mobile-menu {
@@ -2041,6 +2047,7 @@ html.lenis {
   box-shadow: 18px 22px 0 rgba(22, 20, 14, 0.08);
   max-width: 670px;
   overflow: hidden;
+  text-rendering: optimizeLegibility;
   width: 100%;
 }
 
@@ -3353,6 +3360,281 @@ html.lenis {
   to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
 
+/* Give the interactive preview enough physical size on wide displays. The
+   original 670px cap left a large desktop column presenting a small mockup;
+   scaling the actual CSS geometry keeps type and controls sharp instead of
+   enlarging a transformed layer. */
+@media (min-width: 1440px) {
+  .ss-journey {
+    max-width: 1760px;
+    width: calc(100% - 48px);
+  }
+
+  /* Keep the journey rail aligned with the principles grid as the outer
+     shell grows beyond the grid's 1536px max width. */
+  .ss-journey-steps {
+    padding-left: clamp(88px, calc(50vw - 792px), 112px);
+  }
+
+  .ss-journey-demo {
+    min-height: 820px;
+    padding: clamp(52px, 4vw, 96px);
+  }
+
+  .ss-demo-window {
+    max-width: 940px;
+  }
+
+  .ss-demo-window > header {
+    min-height: 48px;
+    padding: 0 18px;
+  }
+
+  .ss-demo-window > header i {
+    height: 9px;
+    width: 9px;
+  }
+
+  .ss-demo-window > header span,
+  .ss-demo-window > header b {
+    font-size: 9px;
+  }
+
+  .ss-demo-window > footer {
+    font-size: 9px;
+    min-height: 50px;
+    padding: 0 20px;
+  }
+
+  .ss-demo-window > footer i {
+    width: 30px;
+  }
+
+  .ss-demo-stage {
+    min-height: clamp(520px, 30vw, 660px);
+  }
+
+  .ss-demo-scene {
+    padding: clamp(28px, 2.2vw, 46px);
+  }
+
+  .ss-scene-title {
+    margin-bottom: 26px;
+    padding-bottom: 20px;
+  }
+
+  .ss-scene-title small,
+  .ss-scene-title > span {
+    font-size: 9px;
+  }
+
+  .ss-scene-title strong {
+    font-size: clamp(28px, 2.15vw, 34px);
+  }
+
+  .ss-scene-title > span {
+    padding: 8px 11px;
+  }
+
+  .ss-scene-search {
+    gap: 16px;
+    margin-bottom: 24px;
+    padding: 18px;
+  }
+
+  .ss-scene-search strong,
+  .ss-scene-search kbd {
+    font-size: 14px;
+  }
+
+  .ss-scene-results {
+    gap: 12px;
+  }
+
+  .ss-scene-results button {
+    gap: 18px;
+    grid-template-columns: 148px 1fr auto;
+    padding: 12px;
+  }
+
+  .ss-scene-results img {
+    height: 100px;
+    width: 148px;
+  }
+
+  .ss-scene-results small,
+  .ss-scene-results em,
+  .ss-demo-hint {
+    font-size: 8px;
+  }
+
+  .ss-scene-results strong {
+    font-size: 17px;
+    margin: 8px 0 13px;
+  }
+
+  .ss-compare-head,
+  .ss-compare-row {
+    gap: 16px;
+    grid-template-columns: 1fr 92px 92px;
+  }
+
+  .ss-compare-head {
+    font-size: 8px;
+    padding: 0 16px 10px;
+  }
+
+  .ss-compare-row {
+    font-size: 14px;
+    min-height: 68px;
+    padding: 0 16px;
+  }
+
+  .ss-compare-row i {
+    font-size: 9px;
+  }
+
+  .ss-scene-note {
+    gap: 14px;
+    margin-top: 26px;
+    padding: 15px;
+  }
+
+  .ss-scene-note > i {
+    height: 34px;
+    width: 34px;
+  }
+
+  .ss-scene-note span,
+  .ss-scene-note strong {
+    font-size: 11px;
+  }
+
+  .ss-request-grid,
+  .ss-terms-grid,
+  .ss-agreed-details {
+    gap: 12px;
+  }
+
+  .ss-request-grid label,
+  .ss-terms-grid label,
+  .ss-agreed-details > span {
+    padding: 18px;
+  }
+
+  .ss-request-grid span,
+  .ss-request-brief > span,
+  .ss-terms-grid span,
+  .ss-agreed-details small,
+  .ss-terms-rate > span,
+  .ss-terms-rate > small {
+    font-size: 8px;
+  }
+
+  .ss-request-grid strong,
+  .ss-terms-grid strong {
+    font-size: 14px;
+  }
+
+  .ss-request-brief {
+    margin-top: 12px;
+    padding: 18px;
+  }
+
+  .ss-request-brief p,
+  .ss-scene-thread p {
+    font-size: 13px;
+  }
+
+  .ss-scene-action {
+    font-size: 8px;
+    margin-top: 22px;
+  }
+
+  .ss-scene-action button {
+    padding: 15px 18px;
+  }
+
+  .ss-thread-person {
+    gap: 14px;
+    padding-bottom: 18px;
+  }
+
+  .ss-thread-person > span {
+    height: 38px;
+    width: 38px;
+  }
+
+  .ss-thread-person small,
+  .ss-counter-card > span,
+  .ss-counter-compose > span {
+    font-size: 8px;
+  }
+
+  .ss-scene-thread {
+    padding: 38px 0 24px;
+  }
+
+  .ss-scene-thread p {
+    padding: 15px;
+  }
+
+  .ss-counter-card,
+  .ss-counter-compose {
+    padding: 18px;
+  }
+
+  .ss-counter-card > strong,
+  .ss-counter-compose > strong {
+    font-size: 28px;
+  }
+
+  .ss-counter-card > small,
+  .ss-counter-compose p {
+    font-size: 10px;
+  }
+
+  .ss-terms-rate {
+    margin-bottom: 12px;
+    padding: 18px;
+  }
+
+  .ss-terms-rate > strong {
+    font-size: 40px;
+  }
+
+  .ss-terms-rule {
+    font-size: 11px;
+    min-height: 45px;
+  }
+
+  .ss-demo-scene.is-offers > button {
+    min-height: 78px;
+    padding: 12px 16px;
+  }
+
+  .ss-demo-scene.is-agreed h3,
+  .ss-demo-scene.is-payout h3,
+  .ss-demo-scene.is-accepting h3 {
+    font-size: clamp(32px, 3vw, 46px);
+  }
+
+  .ss-listing-photo {
+    min-height: 420px;
+  }
+
+  .ss-listing-form h3 {
+    font-size: 28px;
+  }
+}
+
+@media (min-width: 1920px) {
+  /* Match the preview frame's right edge to the principles grid below. */
+  .ss-demo-window {
+    transform: translateX(clamp(-32px, calc(4vw - 112px), -16px));
+  }
+}
+
 .ss-principles-band {
   border-left: 1px solid var(--ss-line);
   display: grid;
@@ -4041,7 +4323,7 @@ html.lenis {
   .ss-header,
   .ss-header.is-scrolled,
   .ss-header.menu-open {
-    height: var(--ss-header-height);
+    height: calc(var(--ss-header-height) + env(safe-area-inset-top, 0px));
   }
 
   .ss-brand {
@@ -4572,6 +4854,356 @@ html.lenis {
   .ss-creator-stack .is-event {
     left: 12%;
     width: 72%;
+  }
+}
+
+/* ==========================================================================
+   Compact viewports: restack desktop compositions instead of shrinking them.
+   Rules above 760px are untouched. These overrides only fire when overlapping
+   absolute layouts, 4-column grids, and hover-driven chrome no longer fit.
+   ========================================================================== */
+
+@media (max-width: 760px) {
+  html {
+    overflow-x: clip;
+  }
+
+  button,
+  a,
+  [role="button"],
+  [role="tab"],
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  :focus-visible {
+    scroll-margin-top: calc(var(--ss-header-height) + env(safe-area-inset-top, 0px) + 12px);
+  }
+
+  .ss-header,
+  .ss-header.is-scrolled,
+  .ss-header.menu-open {
+    height: calc(var(--ss-header-height) + env(safe-area-inset-top, 0px));
+  }
+
+  .ss-mobile-menu {
+    max-height: calc(100dvh - var(--ss-header-height) - env(safe-area-inset-top, 0px));
+    overflow-y: auto;
+    padding-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+    z-index: 81;
+  }
+
+  .ss-header-join {
+    display: inline-flex;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 14px;
+  }
+
+  .ss-account-skeleton {
+    height: 42px;
+    width: 42px;
+  }
+
+  .ss-home-hero {
+    gap: 28px;
+    min-height: auto;
+    padding: 36px max(20px, env(safe-area-inset-right, 0px)) 48px max(20px, env(safe-area-inset-left, 0px));
+  }
+
+  .ss-home-hero h1,
+  .ss-page-hero h1,
+  .ss-dashboard-gate h1 {
+    font-size: clamp(40px, 11.5vw, 56px);
+    letter-spacing: -0.06em;
+    line-height: 0.94;
+  }
+
+  .ss-hero-deck {
+    font-size: 16px;
+    margin: 22px 0 26px;
+  }
+
+  /* The inventory stage is a two-card overlap on desktop. On a phone that
+     composition collides, so the same pieces become a readable stack: tabs,
+     source, connector, then the live listing. Ambient planes stay behind. */
+  .ss-inventory-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: auto;
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .ss-inventory-tabs {
+    display: grid;
+    gap: 6px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    left: auto;
+    overflow: visible;
+    position: relative;
+    right: auto;
+    top: auto;
+    width: 100%;
+  }
+
+  .ss-inventory-tabs button {
+    flex: none;
+    min-height: 48px;
+    padding: 8px 6px;
+    width: 100%;
+  }
+
+  .ss-inventory-tabs button span {
+    font-size: 8px;
+  }
+
+  .ss-inventory-tabs button b {
+    font-size: 11px;
+  }
+
+  .ss-inventory-tabs button[aria-pressed="true"] {
+    transform: none;
+  }
+
+  .ss-attention-source {
+    animation: none;
+    left: auto;
+    padding: 14px 16px 12px;
+    position: relative;
+    top: auto;
+    transform: none;
+    width: 100%;
+  }
+
+  .ss-attention-source strong {
+    font-size: 24px;
+    margin: 6px 0 6px;
+  }
+
+  .ss-attention-source p {
+    margin: 0 0 10px;
+  }
+
+  .ss-attention-source > i {
+    padding-top: 8px;
+  }
+
+  .ss-bookable-card > img {
+    aspect-ratio: 16 / 10;
+  }
+
+  .ss-transform-line {
+    height: 16px;
+    left: auto !important;
+    opacity: 1;
+    position: relative !important;
+    right: auto;
+    top: auto !important;
+    transform: none !important;
+    width: 100% !important;
+  }
+
+  .ss-transform-line > span,
+  .ss-transform-line > b {
+    display: block;
+  }
+
+  .ss-transform-line > span {
+    left: 0;
+    top: -2px;
+  }
+
+  .ss-bookable-card {
+    animation: none;
+    bottom: auto;
+    position: relative;
+    right: auto;
+    top: auto;
+    transform: none;
+    width: 100%;
+  }
+
+  .ss-bookable-body strong {
+    font-size: 20px;
+  }
+
+  .ss-bookable-body p {
+    white-space: normal;
+  }
+
+  .ss-audience-section,
+  .ss-category-section,
+  .ss-how-preview,
+  .ss-live-preview,
+  .ss-control-section,
+  .ss-creator-offer,
+  .ss-future-pricing {
+    padding-left: max(20px, env(safe-area-inset-left, 0px));
+    padding-right: max(20px, env(safe-area-inset-right, 0px));
+    padding-top: 64px;
+    padding-bottom: 64px;
+  }
+
+  .ss-section-heading h2,
+  .ss-final-call h2,
+  .ss-creator-offer h2 {
+    font-size: clamp(34px, 10.5vw, 48px);
+    line-height: 0.98;
+  }
+
+  .ss-audience-visual {
+    display: grid;
+    grid-template-rows: minmax(220px, 34vw) auto;
+    min-height: 0;
+  }
+
+  .ss-audience-map {
+    height: min(220px, 58vw);
+    left: auto;
+    margin: 28px auto 0;
+    position: relative;
+    top: auto;
+    transform: none;
+    width: min(220px, 58vw);
+  }
+
+  .is-offer .ss-audience-map {
+    transform: rotate(20deg);
+  }
+
+  .ss-audience-copy {
+    bottom: auto;
+    left: auto;
+    margin: 0 16px 16px;
+    position: relative;
+    right: auto;
+  }
+
+  .ss-placement-example h3 {
+    white-space: normal;
+  }
+
+  .ss-process-row article {
+    min-height: 0;
+  }
+
+  .ss-final-call,
+  .ss-page-cta {
+    margin-left: 12px;
+    margin-right: 12px;
+    max-width: none;
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .ss-footer {
+    padding-bottom: max(36px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(20px, env(safe-area-inset-left, 0px));
+    padding-right: max(20px, env(safe-area-inset-right, 0px));
+  }
+
+  .ss-page-hero,
+  .ss-dashboard-gate {
+    min-height: 0;
+    padding: 48px max(20px, env(safe-area-inset-right, 0px)) 56px max(20px, env(safe-area-inset-left, 0px));
+  }
+
+  .ss-journey-demo {
+    padding: 24px 16px 36px;
+  }
+
+  .ss-demo-window {
+    box-shadow: 8px 10px 0 rgba(22, 20, 14, 0.08);
+  }
+
+  .ss-demo-stage {
+    min-height: 320px;
+  }
+
+  .ss-physical-collage {
+    min-height: 0;
+  }
+
+  .ss-creator-stack {
+    display: grid;
+    gap: 14px;
+    height: auto;
+    padding: 8px 4px 24px;
+  }
+
+  .ss-creator-stack article {
+    left: auto !important;
+    position: relative;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
+  }
+
+  .ss-creator-stack .is-social {
+    transform: rotate(-1.4deg);
+  }
+
+  .ss-creator-stack .is-newsletter {
+    transform: rotate(1.6deg);
+  }
+
+  .ss-creator-stack .is-event {
+    transform: rotate(-0.6deg);
+  }
+
+  .ss-current-pricing {
+    margin-left: 12px;
+    margin-right: 12px;
+    max-width: none;
+  }
+
+  .ss-marketplace-page .market-controls {
+    top: calc(var(--ss-header-height) + env(safe-area-inset-top, 0px));
+  }
+}
+
+@media (max-width: 430px) {
+  .ss-header-join {
+    display: inline-flex;
+    font-size: 12px;
+    gap: 6px;
+    min-height: 42px;
+    padding: 0 12px;
+  }
+
+  .ss-header-join-full {
+    display: none;
+  }
+
+  .ss-inventory-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ss-inventory-tabs button span {
+    letter-spacing: 0.04em;
+  }
+
+  .ss-inventory-tabs button b {
+    font-size: 12px;
+  }
+
+  .ss-attention-source {
+    padding: 14px 16px;
+  }
+
+  .ss-attention-source strong {
+    font-size: 24px;
   }
 }
 

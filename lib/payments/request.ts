@@ -9,9 +9,11 @@ export class ApiError extends Error {
 
 export function requireSameOrigin(request: Request) {
   const origin = request.headers.get("origin");
-  const expected = new URL(
-    process.env.NEXT_PUBLIC_APP_URL ?? request.url,
-  ).origin;
+  const expectedUrl = new URL(process.env.NEXT_PUBLIC_APP_URL ?? request.url);
+  if (process.env.NODE_ENV === "production" && expectedUrl.protocol !== "https:") {
+    throw new ApiError("SideSpace payment actions require HTTPS.", 403);
+  }
+  const expected = expectedUrl.origin;
   if (!origin || origin !== expected) {
     throw new ApiError("This request did not come from SideSpace.", 403);
   }

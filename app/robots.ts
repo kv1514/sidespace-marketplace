@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const SITE = "https://sidespace-marketplace.vercel.app";
+import { SITE_URL } from "@/lib/site-metadata";
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -12,6 +12,6 @@ export default function robots(): MetadataRoute.Robots {
       // search so a proposal never outranks the real homepage.
       disallow: ["/auth/", "/dashboard", "/preview"],
     },
-    sitemap: `${SITE}/sitemap.xml`,
+    sitemap: `${SITE_URL}/sitemap.xml`,
   };
 }
