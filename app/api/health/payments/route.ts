@@ -7,10 +7,16 @@ function authorized(request: Request) {
 }
 
 async function count(
+  label: string,
   query: PromiseLike<{ count: number | null; error: { message?: string } | null }>,
 ) {
   const result = await query;
-  if (result.error) throw new Error(result.error.message || "Payment health query failed.");
+  if (result.error) {
+    const details = JSON.stringify(result.error);
+    throw new Error(
+      `Payment health query failed (${label}): ${result.error.message || details || "unknown error"}`,
+    );
+  }
   return result.count ?? 0;
 }
 
@@ -37,6 +43,7 @@ export async function GET(request: Request) {
       unexpectedPartialRefunds,
     ] = await Promise.all([
         count(
+          "failedWebhooksLastHour",
           admin
             .from("stripe_webhook_events")
             .select("stripe_event_id", { count: "exact", head: true })
@@ -44,6 +51,7 @@ export async function GET(request: Request) {
             .gte("received_at", oneHourAgo),
         ),
         count(
+          "staleWebhookClaims",
           admin
             .from("stripe_webhook_events")
             .select("stripe_event_id", { count: "exact", head: true })
@@ -51,6 +59,7 @@ export async function GET(request: Request) {
             .lte("received_at", fiveMinutesAgo),
         ),
         count(
+          "stuckPayoutReleases",
           admin
             .from("payment_transactions")
             .select("id", { count: "exact", head: true })
@@ -58,6 +67,7 @@ export async function GET(request: Request) {
             .lte("payout_release_claimed_at", fifteenMinutesAgo),
         ),
         count(
+          "overduePayouts",
           admin
             .from("payment_transactions")
             .select("id", { count: "exact", head: true })
@@ -67,6 +77,7 @@ export async function GET(request: Request) {
             .lte("review_deadline", now),
         ),
         count(
+          "activeDisputes",
           admin
             .from("payment_transactions")
             .select("id", { count: "exact", head: true })
@@ -77,6 +88,7 @@ export async function GET(request: Request) {
             .or("dispute_status.is.null,dispute_status.not.in.(won,lost)"),
         ),
         count(
+          "postPayoutRecoveries",
           admin
             .from("payment_transactions")
             .select("id", { count: "exact", head: true })
@@ -85,6 +97,7 @@ export async function GET(request: Request) {
             .neq("payout_recovery_status", "recovered"),
         ),
         count(
+          "pendingRefundResolutions",
           admin
             .from("payment_transactions")
             .select("id", { count: "exact", head: true })
@@ -92,6 +105,7 @@ export async function GET(request: Request) {
             .lte("updated_at", fifteenMinutesAgo),
         ),
         count(
+          "stuckPartialRefundPayouts",
           admin
             .from("payment_transactions")
             .select("id", { count: "exact", head: true })
@@ -102,6 +116,7 @@ export async function GET(request: Request) {
             .lte("updated_at", fifteenMinutesAgo),
         ),
         count(
+          "unexpectedPartialRefunds",
           admin
             .from("payment_transactions")
             .select("id", { count: "exact", head: true })
