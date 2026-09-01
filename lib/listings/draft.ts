@@ -1,7 +1,7 @@
 /**
  * The shape "Fill with AI" hands back to the listing editor.
  *
- * Shared by the route that asks Claude for it and the form that pours it into
+ * Shared by the route that asks the model for it and the form that pours it into
  * the inputs, so the two cannot drift. Everything here is a suggestion the
  * member edits before publishing - nothing is written to the database from
  * this module.
@@ -75,10 +75,11 @@ export type ListingDraft = {
 };
 
 /**
- * What Claude is asked to return. Kept to the JSON Schema subset structured
- * outputs guarantee (types, enums, required, no extra keys). Length and range
- * limits are enforced in normalizeListingDraft instead of the schema, so an
- * unsupported keyword can never turn into a rejected request.
+ * What the model is asked to return. Kept to the JSON Schema subset that
+ * structured-output APIs guarantee (types, enums, required, no extra keys).
+ * Length and range limits are enforced in normalizeListingDraft instead of
+ * the schema, so an unsupported keyword can never turn into a rejected
+ * request.
  */
 export const LISTING_DRAFT_SCHEMA = {
   type: "object",
@@ -108,7 +109,10 @@ export const LISTING_DRAFT_SCHEMA = {
     location_area: { type: "string" },
     space_size: { type: "string" },
     surface_types: { type: "array", items: { type: "string", enum: [...DRAFT_SURFACES] } },
-    install_by: { type: "string", enum: [...DRAFT_INSTALL, ""] },
+    install_by: {
+      type: "string",
+      description: "owner, renter, either, or an empty string when unknown",
+    },
     price_dollars: { type: "integer" },
     price_unit: { type: "string", enum: [...DRAFT_PRICE_UNITS] },
     minimum_booking: { type: "string" },
