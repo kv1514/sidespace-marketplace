@@ -6647,12 +6647,32 @@ export default function MarketplaceApp({
    * Stop, or the browser closed the session - Fill with AI runs on the
    * transcript. Ending with nothing new spends nothing.
    */
-  function startListening() {
+  async function startListening() {
     const Ctor = speechRecognitionCtor();
     const field = aiNotesRef.current;
     if (!Ctor || !field) {
       setToast("Voice input isn't available in this browser. Type a few words instead.");
       return;
+    }
+    // Ask for the microphone explicitly first. This is what makes the
+    // browser's permission prompt appear on the first tap - the recognition
+    // API alone can fail with a silent "not-allowed" in some browsers. The
+    // stream is released at once; recognition opens its own.
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (error) {
+        const name = error instanceof DOMException ? error.name : "";
+        setToast(
+          name === "NotAllowedError" || name === "SecurityError"
+            ? "Microphone is blocked for this site. Click the lock icon in the address bar, allow the microphone, then tap Speak again."
+            : name === "NotFoundError"
+              ? "No microphone was found on this device. Type a few words instead."
+              : "The microphone could not be opened. Type a few words instead.",
+        );
+        return;
+      }
     }
     const recognition = new Ctor();
     recognition.lang = navigator.language || "en-US";
@@ -6675,7 +6695,9 @@ export default function MarketplaceApp({
     };
     recognition.onerror = (event) => {
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        setToast("Microphone access was blocked. Allow it in your browser, or type instead.");
+        setToast(
+          "Microphone is blocked for this site. Click the lock icon in the address bar, allow the microphone, then tap Speak again.",
+        );
       } else if (event.error !== "aborted" && event.error !== "no-speech") {
         setToast("Voice input stopped. Try again, or type a few words instead.");
       }
@@ -13439,7 +13461,10 @@ export default function MarketplaceApp({
                         : "Describe the space out loud, then draft it"
                     }
                     disabled={busy || aiFilling}
-                    onClick={() => (listening ? stopListening() : startListening())}
+                    onClick={() => {
+                      if (listening) stopListening();
+                      else void startListening();
+                    }}
                   >
                     {listening ? "Stop & fill" : "Speak & fill"}{" "}
                     <span>{listening ? "■" : "🎤"}</span>
