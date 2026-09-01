@@ -2149,6 +2149,38 @@ function isSponsorshipOffer(role: Role, answers: OnboardingAnswers) {
 }
 
 /**
+ * The slice of the Web Speech API the notes box uses. Chrome, Safari and Edge
+ * ship it (Chrome under the webkit prefix); Firefox does not, so the mic is
+ * hidden there. Typed by hand because lib.dom only declares it in some TS
+ * versions. Recognition runs in the browser - no key, no request from us.
+ */
+type SpeechRecognitionLike = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult:
+    | ((event: {
+        resultIndex: number;
+        results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>;
+      }) => void)
+    | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+};
+
+function speechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as {
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+/**
  * Re-encode a photo as a modest JPEG before sending it for an AI draft.
  *
  * Phones hand over 4-12 MB HEIC-turned-JPEGs. Vercel caps a function's request
@@ -4140,6 +4172,10 @@ export default function MarketplaceApp({
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [listingFiles, setListingFiles] = useState<File[]>([]);
   const [aiFilling, setAiFilling] = useState(false);
+  const [listening, setListening] = useState(false);
+  const aiNotesRef = useRef<HTMLTextAreaElement | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  useEffect(() => () => recognitionRef.current?.abort(), []);
   /**
    * The photo the onboarding preview shows.
    *
@@ -6603,6 +6639,68 @@ export default function MarketplaceApp({
     setFormatPreview(draft.format);
   }
 
+  /**
+   * Dictate into the notes box, then draft. Interim words show as they are
+   * recognised; finished phrases stick; whatever was already typed stays in
+   * front. When listening ends with new words captured - the member pressed
+   * Stop, or the browser closed the session - Fill with AI runs on the
+   * transcript. Ending with nothing new spends nothing.
+   */
+  function startListening() {
+    const Ctor = speechRecognitionCtor();
+    const field = aiNotesRef.current;
+    if (!Ctor || !field) {
+      setToast("Voice input isn't available in this browser. Type a few words instead.");
+      return;
+    }
+    const recognition = new Ctor();
+    recognition.lang = navigator.language || "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    const before = field.value.trim();
+    let settled = "";
+    recognition.onresult = (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        const chunk = result[0]?.transcript ?? "";
+        if (result.isFinal) settled += `${chunk} `;
+        else interim += chunk;
+      }
+      field.value = [before, `${settled}${interim}`.trim()]
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 600);
+    };
+    recognition.onerror = (event) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        setToast("Microphone access was blocked. Allow it in your browser, or type instead.");
+      } else if (event.error !== "aborted" && event.error !== "no-speech") {
+        setToast("Voice input stopped. Try again, or type a few words instead.");
+      }
+    };
+    recognition.onend = () => {
+      setListening(false);
+      recognitionRef.current = null;
+      if (field.value.trim() && field.value.trim() !== before) {
+        void fillListingWithAi(field.form);
+      }
+    };
+    recognitionRef.current = recognition;
+    setListening(true);
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setListening(false);
+      setToast("Voice input could not start. Type a few words instead.");
+    }
+  }
+
+  function stopListening() {
+    recognitionRef.current?.stop();
+  }
+
   async function fillListingWithAi(form: HTMLFormElement | null) {
     if (!form || aiFilling) return;
     const notesField = form.elements.namedItem("ai_notes");
@@ -6637,7 +6735,11 @@ export default function MarketplaceApp({
         );
       }
       applyListingDraft(form, payload.draft);
-      setToast("Drafted. Read it over and change anything before you publish.");
+      setToast(
+        file
+          ? "Drafted. Read it over and change anything before you publish."
+          : "Drafted from your words. Add a photo and fill again for a better draft, or edit this one.",
+      );
     } catch (error) {
       setToast(
         error instanceof Error
@@ -13283,23 +13385,46 @@ export default function MarketplaceApp({
                 <div className="ai-fill-copy">
                   <strong>Fill with AI</strong>
                   <small>
-                    Pick a photo of the space below, jot a few words here, and
-                    SideSpace drafts the whole listing. Everything it writes
-                    stays yours to edit before you publish.
+                    Jot a few words here, or tap the mic and just describe the
+                    space out loud. SideSpace drafts the whole listing, and
+                    everything it writes stays yours to edit before you
+                    publish.
+                  </small>
+                  <small className="ai-fill-tip">
+                    Tip: add a photo of the space in the photos field below
+                    first. Drafts are a lot better when the AI can see it.
                   </small>
                 </div>
-                <textarea
-                  name="ai_notes"
-                  rows={2}
-                  maxLength={600}
-                  placeholder={
-                    listingFormKind === "physical"
-                      ? "Front window on Main Street, about 4 by 6 ft, busy at lunch, posters welcome"
-                      : listingFormKind === "sponsorship"
-                        ? "High school robotics team, 40 members, competes statewide, banner at every match"
-                        : "Food and coffee account, 12k followers, mostly Bay Area students"
-                  }
-                />
+                <div className="ai-fill-row">
+                  <textarea
+                    ref={aiNotesRef}
+                    name="ai_notes"
+                    rows={2}
+                    maxLength={600}
+                    placeholder={
+                      listingFormKind === "physical"
+                        ? "Front window on Main Street, about 4 by 6 ft, busy at lunch, posters welcome"
+                        : listingFormKind === "sponsorship"
+                          ? "High school robotics team, 40 members, competes statewide, banner at every match"
+                          : "Food and coffee account, 12k followers, mostly Bay Area students"
+                    }
+                  />
+                  <button
+                    type="button"
+                    className={`ai-fill-mic${listening ? " is-listening" : ""}`}
+                    aria-pressed={listening}
+                    aria-label={
+                      listening
+                        ? "Stop listening and draft the listing"
+                        : "Describe the space out loud, then draft it"
+                    }
+                    disabled={busy || aiFilling}
+                    onClick={() => (listening ? stopListening() : startListening())}
+                  >
+                    {listening ? "Stop & fill" : "Speak & fill"}{" "}
+                    <span>{listening ? "■" : "🎤"}</span>
+                  </button>
+                </div>
                 <button
                   type="button"
                   className="button button-dark"

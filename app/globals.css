@@ -5522,6 +5522,70 @@ html.reveal-ready [data-reveal].is-visible {
   justify-self: start;
 }
 
+/* Outranks `.ai-fill-copy small` so the tip reads at full strength. */
+.ai-fill-copy .ai-fill-tip {
+  border-left: 2px solid var(--coral);
+  margin-top: 8px;
+  opacity: 1;
+  padding-left: 10px;
+}
+
+.ai-fill-row {
+  align-items: stretch;
+  display: flex;
+  gap: 8px;
+}
+
+.ai-fill-row textarea {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-fill-mic {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 10px;
+  color: var(--paper);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.ai-fill-mic:hover {
+  border-color: var(--paper);
+}
+
+.ai-fill-mic:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Listening reads as a live state, not a pressed button. */
+.ai-fill-mic.is-listening {
+  animation: ai-fill-pulse 1.2s ease-in-out infinite;
+  background: var(--coral);
+  border-color: var(--coral);
+  color: var(--ink);
+}
+
+@keyframes ai-fill-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-fill-mic.is-listening {
+    animation: none;
+  }
+}
+
 .offer-examples {
   display: flex;
   flex-wrap: wrap;
