@@ -67,11 +67,14 @@ export type ListingDraft = {
   space_size: string;
   surface_types: Array<(typeof DRAFT_SURFACES)[number]>;
   install_by: (typeof DRAFT_INSTALL)[number] | "";
-  price_dollars: number;
+  /** null when the owner never said - the form leaves the field empty. */
+  price_dollars: number | null;
   price_unit: (typeof DRAFT_PRICE_UNITS)[number];
   minimum_booking: string;
   availability_notes: string;
   deliverables: string;
+  /** What the model still needs before it can fill the blanks. Empty when nothing is missing. */
+  questions: string[];
 };
 
 /**
@@ -99,6 +102,7 @@ export const LISTING_DRAFT_SCHEMA = {
     "minimum_booking",
     "availability_notes",
     "deliverables",
+    "questions",
   ],
   properties: {
     title: { type: "string" },
@@ -113,11 +117,12 @@ export const LISTING_DRAFT_SCHEMA = {
       type: "string",
       description: "owner, renter, either, or an empty string when unknown",
     },
-    price_dollars: { type: "integer" },
+    price_dollars: { anyOf: [{ type: "integer" }, { type: "null" }] },
     price_unit: { type: "string", enum: [...DRAFT_PRICE_UNITS] },
     minimum_booking: { type: "string" },
     availability_notes: { type: "string" },
     deliverables: { type: "string" },
+    questions: { type: "array", items: { type: "string" } },
   },
 } as const;
 
@@ -127,6 +132,7 @@ const SPACE_SIZE_MAX = 80;
 const LONG_MAX = 2000;
 const PRICE_MIN = 2;
 const PRICE_MAX = 100_000;
+const QUESTIONS_MAX = 5;
 
 function text(value: unknown, max: number) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -178,11 +184,12 @@ export function normalizeListingDraft(
     space_size: text(raw.space_size, SPACE_SIZE_MAX),
     surface_types: Array.from(new Set(surfaces)),
     install_by: oneOf(raw.install_by, [...DRAFT_INSTALL, ""] as const, ""),
-    price_dollars: Number.isFinite(price)
-      ? Math.min(PRICE_MAX, Math.max(PRICE_MIN, Math.round(price)))
-      : kind === "physical"
-        ? 25
-        : 50,
+    // No default price. A number the owner never said is exactly the kind of
+    // guess this feature must not make; the form leaves it empty and asks.
+    price_dollars:
+      raw.price_dollars === null || !Number.isFinite(price) || price <= 0
+        ? null
+        : Math.min(PRICE_MAX, Math.max(PRICE_MIN, Math.round(price))),
     price_unit: oneOf(
       raw.price_unit,
       DRAFT_PRICE_UNITS,
@@ -191,5 +198,9 @@ export function normalizeListingDraft(
     minimum_booking: text(raw.minimum_booking, 120),
     availability_notes: text(raw.availability_notes, 240),
     deliverables: text(raw.deliverables, LONG_MAX),
+    questions: (Array.isArray(raw.questions) ? raw.questions : [])
+      .map((item) => text(item, 200))
+      .filter(Boolean)
+      .slice(0, QUESTIONS_MAX),
   };
 }

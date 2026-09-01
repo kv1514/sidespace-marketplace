@@ -5530,6 +5530,53 @@ html.reveal-ready [data-reveal].is-visible {
   padding-left: 10px;
 }
 
+/* What to say, as a compact inline list inside the dark block. */
+.ai-fill-checklist {
+  color: var(--paper);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  gap: 4px 14px;
+  list-style: none;
+  margin: 6px 0 8px;
+  opacity: 0.9;
+  padding: 0;
+}
+
+.ai-fill-checklist li::before {
+  color: var(--coral);
+  content: "\2713\00a0";
+}
+
+/* The model's follow-up questions. Reads as a short to-do, not an error. */
+.ai-fill-questions {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  color: var(--paper);
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+}
+
+.ai-fill-questions strong {
+  font-size: 13px;
+}
+
+.ai-fill-questions ol {
+  display: grid;
+  font-size: 13px;
+  gap: 4px;
+  line-height: 1.4;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.ai-fill-questions small {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
 .ai-fill-row {
   align-items: stretch;
   display: flex;

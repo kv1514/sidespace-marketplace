@@ -54,21 +54,22 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
     "You draft listings for SideSpace, a marketplace where local businesses rent everyday advertising space from the people who own it.",
     `This listing is ${what}. Write it in the owner's voice, first person, plain and specific. No marketing fluff, no exclamation marks, no emoji, and never mention AI.`,
     "",
-    "Use only what the photo shows and the notes say. Never invent a street address, a foot-traffic count, a follower count, or an audience percentage. When something is unknown, describe it in words or leave that field as an empty string - a blank the owner fills is better than a number you made up.",
+    "Use only what the photo shows and the notes say. NEVER infer, estimate, round up, or invent: not a price, not a size, not a foot-traffic, follower, or attendance number, not an address, not an availability window, not who installs. If the owner did not state it and the photo does not show it, leave that field empty (null for price) and ask for it in questions. A blank the owner fills is right; a number you made up is a failure.",
     "",
     "Field rules:",
     "- title: at most 8 words. Name the space and, if known, the street or area. Example: \"Cafe window, Main Street\".",
     "- format: finishes the sentence \"You get ...\" exactly as it should read on the card. Example: \"one letter-size poster in my front window for a week\".",
     "- description: two to four sentences. What it is, where exactly it sits, who walks or scrolls past.",
-    "- demographics: who actually sees it, in words. No percentages unless the notes give them.",
+    "- demographics: only what the owner said about who sees it and how many. Empty when they said nothing.",
     `- location_area: the city or area from the notes${city ? `, otherwise "${city}"` : ""}. Never a street address.`,
-    "- space_size: rough width by height when the photo or notes make it clear, otherwise empty.",
+    "- space_size: only when the owner stated it or the photo shows a measurable reference; otherwise empty.",
     "- surface_types: only what would plausibly go on this space. Empty for anything that is not a physical surface.",
     "- install_by: \"owner\", \"renter\", or \"either\" only if the notes say who puts the ad up; otherwise an empty string.",
-    "- price_dollars: a modest, realistic asking price in whole US dollars for a small local placement. Use the notes' price if given.",
+    "- price_dollars: only the price the owner stated, in whole US dollars. null when they did not say. Never suggest one.",
     `- price_unit: ${kind === "physical" ? '"week" unless the notes say otherwise' : kind === "sponsorship" ? '"campaign" or "sponsor"' : '"post", "story", or "video" to match the format'}.`,
     "- minimum_booking and availability_notes: from the notes, otherwise empty.",
-    "- deliverables: the proof handed back after booking, one or two sentences. For a physical space, a photo of the ad in place.",
+    "- deliverables: the proof handed back after booking, one or two sentences. For a physical space, a photo of the ad in place. This one may be drafted; it describes the process, not a fact about the space.",
+    "- questions: everything you still need, as direct questions the owner can answer in one line each, most important first, at most 5. Always ask about any of these that was not stated: the price and what it is per; where it is (city or area) if the notes and profile city do not say; who sees it and roughly how many (people walking past per day, followers, or attendance); when it is available; and for a physical space, its rough size, what may go up on it, and who puts it up. Empty when nothing is missing. Do not ask about things already answered.",
     "",
     "Reply with the JSON object only.",
   ].join("\n");
@@ -185,6 +186,12 @@ async function anthropicRequest(apiKey: string, body: Body, withFallbacks: boole
     "x-api-key": apiKey,
     "anthropic-version": "2023-06-01",
   };
+  // Identity-linked keys (the console's newer default) are rejected with
+  // "anthropic-workspace-id is required" unless the request names the
+  // workspace it acts in. Workspace-scoped keys do not need it.
+  if (process.env.ANTHROPIC_WORKSPACE_ID) {
+    headers["anthropic-workspace-id"] = process.env.ANTHROPIC_WORKSPACE_ID;
+  }
   // Server-side fallback: if a safety classifier declines the request, the
   // API re-runs it on a suitable model inside the same call.
   if (withFallbacks) headers["anthropic-beta"] = "server-side-fallback-2026-07-01";
@@ -214,6 +221,13 @@ async function draftWithAnthropic(apiKey: string, body: Body): Promise<string> {
   // cannot use it, drop it and try once more rather than fail the draft.
   if (result.status === 400 && /fallback/i.test(result.error?.message ?? "")) {
     result = await anthropicRequest(apiKey, body, false);
+  }
+  if (result.status === 400 && /workspace|api key|api-key/i.test(result.error?.message ?? "")) {
+    console.error("[listing draft] anthropic configuration error", result.error);
+    throw new ApiError(
+      "Fill with AI is not set up correctly on this deployment (Anthropic key needs a workspace id).",
+      503,
+    );
   }
   checkHttp("anthropic", result.status, result.error);
 

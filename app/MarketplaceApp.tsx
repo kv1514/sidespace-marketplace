@@ -4172,6 +4172,7 @@ export default function MarketplaceApp({
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [listingFiles, setListingFiles] = useState<File[]>([]);
   const [aiFilling, setAiFilling] = useState(false);
+  const [aiQuestions, setAiQuestions] = useState<string[]>([]);
   const [listening, setListening] = useState(false);
   const aiNotesRef = useRef<HTMLTextAreaElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -6615,7 +6616,7 @@ export default function MarketplaceApp({
     if (draft.demographics) setValue("demographics", draft.demographics);
     if (draft.location_area) setValue("location_area", draft.location_area);
     if (draft.space_size) setValue("space_size", draft.space_size);
-    setValue("price", String(draft.price_dollars));
+    if (draft.price_dollars !== null) setValue("price", String(draft.price_dollars));
     setValue("price_unit", draft.price_unit);
     if (draft.minimum_booking) setValue("minimum_booking", draft.minimum_booking);
     if (draft.availability_notes) {
@@ -6714,6 +6715,7 @@ export default function MarketplaceApp({
       return;
     }
     setAiFilling(true);
+    setAiQuestions([]);
     try {
       const image = file ? await photoToJpegBase64(file) : null;
       const response = await fetch("/api/listings/draft", {
@@ -6735,10 +6737,14 @@ export default function MarketplaceApp({
         );
       }
       applyListingDraft(form, payload.draft);
+      setAiQuestions(payload.draft.questions ?? []);
+      const asked = payload.draft.questions?.length ?? 0;
       setToast(
-        file
-          ? "Drafted. Read it over and change anything before you publish."
-          : "Drafted from your words. Add a photo and fill again for a better draft, or edit this one.",
+        asked
+          ? `Filled what you told me. ${asked} quick question${asked === 1 ? "" : "s"} below - answer them and fill again.`
+          : file
+            ? "Drafted. Read it over and change anything before you publish."
+            : "Drafted from your words. Add a photo and fill again for a better draft, or edit this one.",
       );
     } catch (error) {
       setToast(
@@ -6949,6 +6955,7 @@ export default function MarketplaceApp({
 
       const wasEditing = Boolean(editingListing);
       setListingOpen(false);
+      setAiQuestions([]);
       setEditingListing(null);
       setAccountOpen(true);
       setToast(
@@ -7813,6 +7820,7 @@ export default function MarketplaceApp({
     setSelectedListing(null);
     setEditingListing(null);
     setListingOpen(false);
+    setAiQuestions([]);
     setVerificationOpen(false);
     setDeleteAccountOpen(false);
     resetIgAvatarSync();
@@ -13287,6 +13295,7 @@ export default function MarketplaceApp({
           label={editingListing ? "Edit listing" : "Create a listing"}
           onClose={() => {
             setListingOpen(false);
+            setAiQuestions([]);
             setEditingListing(null);
             setListingFeedback("");
           }}
@@ -13385,10 +13394,21 @@ export default function MarketplaceApp({
                 <div className="ai-fill-copy">
                   <strong>Fill with AI</strong>
                   <small>
-                    Jot a few words here, or tap the mic and just describe the
-                    space out loud. SideSpace drafts the whole listing, and
-                    everything it writes stays yours to edit before you
-                    publish.
+                    Type it or tap the mic and say it. Cover these and the
+                    whole listing gets drafted for you to edit:
+                  </small>
+                  <ul className="ai-fill-checklist">
+                    <li>what it is and where</li>
+                    <li>who sees it, roughly how many</li>
+                    <li>the price, and per what</li>
+                    <li>when it is available</li>
+                    {listingFormKind === "physical" && (
+                      <li>size, what can go up, who puts it up</li>
+                    )}
+                  </ul>
+                  <small>
+                    Anything you leave out, it asks you for. It never guesses
+                    a price or a number.
                   </small>
                   <small className="ai-fill-tip">
                     Tip: add a photo of the space in the photos field below
@@ -13403,10 +13423,10 @@ export default function MarketplaceApp({
                     maxLength={600}
                     placeholder={
                       listingFormKind === "physical"
-                        ? "Front window on Main Street, about 4 by 6 ft, busy at lunch, posters welcome"
+                        ? "Front window on Main Street, about 4 by 6 ft, maybe 300 people walk past on a weekday, $40 a week, posters or decals, I put it up, available now"
                         : listingFormKind === "sponsorship"
-                          ? "High school robotics team, 40 members, competes statewide, banner at every match"
-                          : "Food and coffee account, 12k followers, mostly Bay Area students"
+                          ? "High school robotics team, 40 members, about 200 parents at each of 8 home matches, banner plus a jersey patch, $250 a season, we install"
+                          : "Food and coffee account, 12k followers mostly Bay Area students, one story with a link, $30 per story, two days notice"
                     }
                   />
                   <button
@@ -13425,6 +13445,20 @@ export default function MarketplaceApp({
                     <span>{listening ? "■" : "🎤"}</span>
                   </button>
                 </div>
+                {aiQuestions.length > 0 && (
+                  <div className="ai-fill-questions" role="status">
+                    <strong>Still needed - it will not guess these:</strong>
+                    <ol>
+                      {aiQuestions.map((question) => (
+                        <li key={question}>{question}</li>
+                      ))}
+                    </ol>
+                    <small>
+                      Add the answers in the box above, typed or spoken, then
+                      fill again.
+                    </small>
+                  </div>
+                )}
                 <button
                   type="button"
                   className="button button-dark"
@@ -13927,6 +13961,7 @@ export default function MarketplaceApp({
                 type="button"
                 onClick={() => {
                   setListingOpen(false);
+                  setAiQuestions([]);
                   setEditingListing(null);
                   setListingFeedback("");
                 }}
