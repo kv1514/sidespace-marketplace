@@ -31,42 +31,34 @@ export async function GET(request: Request) {
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString();
     const fifteenMinutesAgo = new Date(Date.now() - 15 * 60_000).toISOString();
     const now = new Date().toISOString();
-    const [
-      failedWebhooks,
-      staleWebhooks,
-      stuckPayouts,
-      overduePayouts,
-      activeDisputes,
-      postPayoutRecoveries,
-      pendingRefundResolutions,
-      stuckPartialRefundPayouts,
-      unexpectedPartialRefunds,
-    ] = await Promise.all([
-        count(
+    // Keep monitoring pressure low on Supabase's transaction pool. These
+    // queries are tiny, but firing all of them at once can make PostgREST
+    // abort an otherwise valid count request under production load.
+    const failedWebhooks = await count(
           "failedWebhooksLastHour",
           admin
             .from("stripe_webhook_events")
             .select("stripe_event_id", { count: "exact", head: true })
             .eq("status", "failed")
             .gte("received_at", oneHourAgo),
-        ),
-        count(
+        );
+    const staleWebhooks = await count(
           "staleWebhookClaims",
           admin
             .from("stripe_webhook_events")
             .select("stripe_event_id", { count: "exact", head: true })
             .eq("status", "processing")
             .lte("received_at", fiveMinutesAgo),
-        ),
-        count(
+        );
+    const stuckPayouts = await count(
           "stuckPayoutReleases",
           admin
             .from("payment_transactions")
             .select("id", { count: "exact", head: true })
             .eq("payout_status", "releasing")
             .lte("payout_release_claimed_at", fifteenMinutesAgo),
-        ),
-        count(
+        );
+    const overduePayouts = await count(
           "overduePayouts",
           admin
             .from("payment_transactions")
@@ -75,8 +67,8 @@ export async function GET(request: Request) {
             .eq("issue_status", "none")
             .eq("workflow_status", "awaiting_payer_review")
             .lte("review_deadline", now),
-        ),
-        count(
+        );
+    const activeDisputes = await count(
           "activeDisputes",
           admin
             .from("payment_transactions")
@@ -86,8 +78,8 @@ export async function GET(request: Request) {
             // remain visible to monitoring instead of being excluded by SQL
             // three-valued NOT IN semantics.
             .or("dispute_status.is.null,dispute_status.not.in.(won,lost)"),
-        ),
-        count(
+        );
+    const postPayoutRecoveries = await count(
           "postPayoutRecoveries",
           admin
             .from("payment_transactions")
@@ -95,16 +87,16 @@ export async function GET(request: Request) {
             .eq("payout_status", "released")
             .in("status", ["refunded", "partially_refunded", "disputed"])
             .neq("payout_recovery_status", "recovered"),
-        ),
-        count(
+        );
+    const pendingRefundResolutions = await count(
           "pendingRefundResolutions",
           admin
             .from("payment_transactions")
             .select("id", { count: "exact", head: true })
             .eq("workflow_status", "refund_pending")
             .lte("updated_at", fifteenMinutesAgo),
-        ),
-        count(
+        );
+    const stuckPartialRefundPayouts = await count(
           "stuckPartialRefundPayouts",
           admin
             .from("payment_transactions")
@@ -114,8 +106,8 @@ export async function GET(request: Request) {
             .eq("issue_status", "resolution_pending")
             .eq("workflow_status", "partially_refunded")
             .lte("updated_at", fifteenMinutesAgo),
-        ),
-        count(
+        );
+    const unexpectedPartialRefunds = await count(
           "unexpectedPartialRefunds",
           admin
             .from("payment_transactions")
@@ -127,8 +119,7 @@ export async function GET(request: Request) {
             // needs explicit inclusion because SQL != does not match NULL.
             .or("payout_release_reason.is.null,payout_release_reason.neq.partial_refund_resolution")
             .lte("updated_at", fifteenMinutesAgo),
-        ),
-      ]);
+        );
 
     await getStripe().balance.retrieve();
     const checks = {
