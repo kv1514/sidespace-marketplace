@@ -142,6 +142,9 @@ function webhookRequest() {
 }
 
 function setEvent(type: string, object: Record<string, unknown>) {
+  if (type.startsWith("refund.")) {
+    mocks.getStripe().refunds.retrieve.mockResolvedValue(object);
+  }
   mocks.verifyStripeWebhookEvent.mockReturnValue({
     id: `evt_${type.replaceAll(".", "_")}`,
     type,
@@ -155,6 +158,7 @@ describe("Stripe refund and dispute webhook routes", () => {
     vi.clearAllMocks();
     mocks.getStripe.mockReturnValue({
       charges: { retrieve: vi.fn() },
+      refunds: { retrieve: vi.fn() },
       disputes: { retrieve: vi.fn() },
     });
     mocks.recoverReleasedPayout.mockResolvedValue({
@@ -255,6 +259,52 @@ describe("Stripe refund and dispute webhook routes", () => {
     });
     expect(adminState.campaignTable.update).not.toHaveBeenCalled();
     expect(mocks.recoverReleasedPayout).not.toHaveBeenCalled();
+  });
+
+  it("uses Stripe's current refund state instead of a stale webhook snapshot", async () => {
+    const stripe = mocks.getStripe();
+    stripe.charges.retrieve.mockResolvedValue({
+      id: "ch_platform",
+      amount: 11_550,
+      amount_refunded: 11_550,
+      currency: "usd",
+      payment_intent: "pi_platform",
+      metadata: { sidespace_transaction_id: transactionId },
+    });
+    setEvent("refund.updated", {
+      id: "re_out_of_order",
+      charge: "ch_platform",
+      amount: 11_550,
+      status: "pending",
+      reason: "requested_by_customer",
+      metadata: {},
+    });
+    stripe.refunds.retrieve.mockResolvedValue({
+      id: "re_out_of_order",
+      charge: "ch_platform",
+      amount: 11_550,
+      status: "succeeded",
+      reason: "requested_by_customer",
+      metadata: {},
+    });
+    const adminState = makeAdmin(transaction());
+    mocks.createAdminClient.mockReturnValue(adminState.admin);
+
+    const response = await POST(webhookRequest());
+
+    expect(response.status).toBe(200);
+    expect(stripe.refunds.retrieve).toHaveBeenCalledWith("re_out_of_order");
+    expect(adminState.refundsTable.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stripe_refund_id: "re_out_of_order",
+        status: "succeeded",
+      }),
+    );
+    expect(adminState.transactionUpdate).toMatchObject({
+      status: "refunded",
+      workflow_status: "refunded",
+    });
+    expect(mocks.recoverReleasedPayout).toHaveBeenCalled();
   });
 
   it("restores a released payout workflow when a pending refund later fails", async () => {

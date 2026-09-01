@@ -233,9 +233,10 @@ async function syncCheckoutSession(
 }
 
 async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
-  const chargeId = objectId(refund.charge);
-  if (!chargeId) return;
   const stripe = getStripe();
+  const currentRefund = await stripe.refunds.retrieve(refund.id);
+  const chargeId = objectId(currentRefund.charge);
+  if (!chargeId) return;
   const charge = await stripe.charges.retrieve(chargeId);
   let transaction = await transactionByCharge(admin, chargeId);
   if (!transaction) {
@@ -281,17 +282,17 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
   }
 
   const { error: refundError } = await admin.from("payment_refunds").upsert({
-    stripe_refund_id: refund.id,
+    stripe_refund_id: currentRefund.id,
     transaction_id: transaction.id,
-    amount_cents: refund.amount,
-    status: refund.status ?? "pending",
-    reason: refund.reason,
+    amount_cents: currentRefund.amount,
+    status: currentRefund.status ?? "pending",
+    reason: currentRefund.reason,
   });
   if (refundError) throw refundError;
 
   const refundedCents = charge.amount_refunded;
   const fullAmount = charge.amount;
-  const refundStatus = refund.status ?? "pending";
+  const refundStatus = currentRefund.status ?? "pending";
   const refundPending = ["pending", "requires_action"].includes(refundStatus);
   const refundSucceeded = refundStatus === "succeeded";
   const refundFailed = ["failed", "canceled"].includes(refundStatus);
@@ -403,7 +404,7 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
     });
   }
 
-  const resolutionId = refund.metadata?.sidespace_resolution_id;
+  const resolutionId = currentRefund.metadata?.sidespace_resolution_id;
   if (resolutionId) {
     const { data: resolution, error: resolutionError } = await admin
       .from("payment_resolution_actions")
@@ -414,7 +415,7 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
     if (resolutionError || !resolution) {
       throw resolutionError ?? new Error("Refund resolution record is missing.");
     }
-    if (refund.status === "failed" || refund.status === "canceled") {
+    if (currentRefund.status === "failed" || currentRefund.status === "canceled") {
       const resolutionUpdate = await admin
         .from("payment_resolution_actions")
         .update({ status: "failed", completed_at: new Date().toISOString() })
@@ -434,7 +435,7 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
         })
         .eq("id", transaction.id);
       if (transactionUpdate.error) throw transactionUpdate.error;
-    } else if (refund.status === "succeeded") {
+    } else if (currentRefund.status === "succeeded") {
       const resolutionUpdate = await admin
         .from("payment_resolution_actions")
         .update({ status: "completed", completed_at: new Date().toISOString() })
