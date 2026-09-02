@@ -3,16 +3,16 @@ import type Stripe from "stripe";
 export function assertStripeCheckoutAmounts(input: {
   amountSubtotal: number | null;
   amountTotal: number | null;
-  customerTotalCents: number;
+  chargedTotalCents: number;
   taxCents: number;
   paymentStatus: string | null;
 }) {
-  if (input.amountSubtotal !== input.customerTotalCents) {
+  if (input.amountSubtotal !== input.chargedTotalCents) {
     throw new Error("Checkout Session amount does not match the stored ledger.");
   }
   const paid =
     input.paymentStatus === "paid" || input.paymentStatus === "no_payment_required";
-  if (paid && input.amountTotal !== input.customerTotalCents + input.taxCents) {
+  if (paid && input.amountTotal !== input.chargedTotalCents + input.taxCents) {
     throw new Error("Checkout Session total does not match the stored ledger.");
   }
 }

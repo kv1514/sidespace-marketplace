@@ -6,6 +6,11 @@ import {
   requireSameOrigin,
   requireUuid,
 } from "@/lib/payments/auth";
+import {
+  applyAdCreditToCheckout,
+  maximumAdCreditCents,
+  MINIMUM_STRIPE_CHARGE_CENTS,
+} from "@/lib/payments/ad-credits";
 import { buildCheckoutSessionParams, getAppOrigin } from "@/lib/payments/checkout";
 import {
   checkoutIdempotencyKey,
@@ -22,7 +27,7 @@ import { requireStripeHostedUrl } from "@/lib/stripe/urls";
 import { enforcePaymentRateLimit } from "@/lib/payments/rate-limit";
 
 const transactionColumns =
-  "id,status,checkout_attempt,stripe_checkout_session_id,currency,subtotal_cents,buyer_fee_cents,creator_fee_cents,customer_total_cents,creator_payout_cents,payout_amount_cents,platform_gross_revenue_cents,stripe_connected_account_id,business_profile_id,creator_profile_id";
+  "id,status,checkout_attempt,stripe_checkout_session_id,currency,subtotal_cents,buyer_fee_cents,creator_fee_cents,customer_total_cents,ad_credit_cents,charged_total_cents,creator_payout_cents,payout_amount_cents,platform_gross_revenue_cents,stripe_connected_account_id,business_profile_id,creator_profile_id";
 
 type TransactionRow = {
   id: string;
@@ -34,6 +39,8 @@ type TransactionRow = {
   buyer_fee_cents: number;
   creator_fee_cents: number;
   customer_total_cents: number;
+  ad_credit_cents?: number;
+  charged_total_cents?: number;
   creator_payout_cents: number;
   payout_amount_cents: number;
   platform_gross_revenue_cents: number;
@@ -44,6 +51,14 @@ type TransactionRow = {
 
 function one<T>(value: T | T[]) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function safeCreditCents(value: unknown) {
+  const cents = Number(value ?? 0);
+  if (!Number.isSafeInteger(cents) || cents < 0) {
+    throw new Error("The advertising credit reservation is invalid.");
+  }
+  return cents;
 }
 
 export async function POST(request: Request) {
@@ -221,6 +236,7 @@ export async function POST(request: Request) {
           buyer_fee_cents: snapshot.buyerFeeCents,
           creator_fee_cents: snapshot.creatorFeeCents,
           customer_total_cents: snapshot.customerTotalCents,
+          ad_credit_cents: 0,
           creator_payout_cents: snapshot.creatorPayoutCents,
           // NOT NULL with no default, and the amount actually transferred on
           // release - creator_payout_cents is the ceiling a refund adjusts
@@ -291,6 +307,11 @@ export async function POST(request: Request) {
       }
 
       const nextAttempt = transaction.checkout_attempt + 1;
+      const { error: releaseError } = await admin.rpc(
+        "release_business_ad_credit",
+        { target_transaction_id: transaction.id },
+      );
+      if (releaseError) throw releaseError;
       const advanced = await admin
         .from("payment_transactions")
         .update({
@@ -299,6 +320,7 @@ export async function POST(request: Request) {
           checkout_expires_at: null,
           status: "requires_checkout",
           workflow_status: "requires_checkout",
+          ad_credit_cents: 0,
         })
         .eq("id", transaction.id)
         .eq("checkout_attempt", transaction.checkout_attempt)
@@ -333,6 +355,42 @@ export async function POST(request: Request) {
       }
     }
 
+    const minimumChargedCents = Math.max(
+      MINIMUM_STRIPE_CHARGE_CENTS,
+      snapshot.creatorPayoutCents,
+    );
+    const maximumCreditCents = maximumAdCreditCents(
+      snapshot.customerTotalCents,
+      minimumChargedCents,
+    );
+    const reserved = await admin.rpc("reserve_business_ad_credit", {
+      target_business_profile_id: profile.id,
+      target_transaction_id: transaction.id,
+      maximum_cents: maximumCreditCents,
+    });
+    if (reserved.error) throw reserved.error;
+    const reservation = one(
+      reserved.data as
+        | { reserved_cents?: unknown; charged_total_cents?: unknown }
+        | Array<{ reserved_cents?: unknown; charged_total_cents?: unknown }>
+        | null,
+    );
+    const adCreditCents = safeCreditCents(reservation?.reserved_cents);
+    if (adCreditCents > maximumCreditCents) {
+      throw new Error("The advertising credit reservation exceeds the checkout amount.");
+    }
+    const charged = applyAdCreditToCheckout({
+      subtotalCents: snapshot.subtotalCents,
+      buyerFeeCents: snapshot.buyerFeeCents,
+      availableCents: adCreditCents,
+      minimumChargedCents,
+    });
+    transaction = {
+      ...transaction,
+      ad_credit_cents: adCreditCents,
+      charged_total_cents: charged.chargedTotalCents,
+    };
+
     const checkoutSnapshot = {
       transactionId: transaction.id,
       campaignRequestId: snapshot.campaignRequestId,
@@ -346,6 +404,11 @@ export async function POST(request: Request) {
       customerTotalCents: snapshot.customerTotalCents,
       creatorPayoutCents: snapshot.creatorPayoutCents,
       platformGrossRevenueCents: snapshot.platformGrossRevenueCents,
+      adCreditCents,
+      chargedCampaignCents: charged.chargedCampaignCents,
+      chargedBuyerFeeCents: charged.chargedBuyerFeeCents,
+      chargedTotalCents: charged.chargedTotalCents,
+      minimumChargedCents,
     };
     const params = buildCheckoutSessionParams(
       checkoutSnapshot,
@@ -361,9 +424,17 @@ export async function POST(request: Request) {
       });
     } catch (error) {
       if (shouldAdvanceCheckoutAttempt(error)) {
+        const { error: releaseError } = await admin.rpc(
+          "release_business_ad_credit",
+          { target_transaction_id: transaction.id },
+        );
+        if (releaseError) throw releaseError;
         const { error: advanceError } = await admin
           .from("payment_transactions")
-          .update({ checkout_attempt: transaction.checkout_attempt + 1 })
+          .update({
+            checkout_attempt: transaction.checkout_attempt + 1,
+            ad_credit_cents: 0,
+          })
           .eq("id", transaction.id)
           .eq("checkout_attempt", transaction.checkout_attempt)
           .eq("status", "requires_checkout");

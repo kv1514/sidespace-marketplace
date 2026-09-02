@@ -37,7 +37,7 @@ async function transactionByCharge(admin: AdminClient, chargeId: string) {
   const { data, error } = await admin
     .from("payment_transactions")
     .select(
-      "id,campaign_request_id,currency,customer_total_cents,tax_cents,refunded_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,stripe_connected_account_id,creator_payout_cents,payout_amount_cents,payout_recovery_status,payout_recovery_target_cents,payout_recovery_reversed_cents,dispute_status",
+      "id,campaign_request_id,currency,customer_total_cents,ad_credit_cents,charged_total_cents,tax_cents,refunded_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,stripe_connected_account_id,creator_payout_cents,payout_amount_cents,payout_recovery_status,payout_recovery_target_cents,payout_recovery_reversed_cents,dispute_status",
     )
     .eq("stripe_charge_id", chargeId)
     .maybeSingle();
@@ -63,7 +63,7 @@ async function syncCheckoutSession(
   const { data: storedTransaction, error: storedError } = await admin
     .from("payment_transactions")
     .select(
-      "id,campaign_request_id,currency,customer_total_cents,status,dispute_status,stripe_checkout_session_id,stripe_connected_account_id,stripe_transfer_id,payout_status,workflow_status,issue_status,stripe_tax_transfer_reversal_id,paid_at",
+      "id,campaign_request_id,currency,customer_total_cents,ad_credit_cents,charged_total_cents,status,dispute_status,stripe_checkout_session_id,stripe_connected_account_id,stripe_transfer_id,payout_status,workflow_status,issue_status,stripe_tax_transfer_reversal_id,paid_at",
     )
     .eq("id", transactionId)
     .single();
@@ -92,10 +92,12 @@ async function syncCheckoutSession(
     session.payment_status === "paid" ||
     session.payment_status === "no_payment_required";
   const taxCents = session.total_details?.amount_tax ?? 0;
+  const chargedTotalCents =
+    storedTransaction.charged_total_cents ?? storedTransaction.customer_total_cents;
   assertStripeCheckoutAmounts({
     amountSubtotal: session.amount_subtotal,
     amountTotal: session.amount_total,
-    customerTotalCents: storedTransaction.customer_total_cents,
+    chargedTotalCents,
     taxCents,
     paymentStatus: session.payment_status,
   });
@@ -103,7 +105,7 @@ async function syncCheckoutSession(
     if (!paymentIntent || !latestCharge) {
       throw new Error("Paid Checkout Session is missing expanded charge data.");
     }
-    const expectedAmountCents = storedTransaction.customer_total_cents + taxCents;
+    const expectedAmountCents = chargedTotalCents + taxCents;
     assertStripeMoneyMatchesLedger({
       objectName: "PaymentIntent",
       amount: paymentIntent.amount,
@@ -196,6 +198,14 @@ async function syncCheckoutSession(
     .single();
   if (error) throw error;
 
+  if (!paid && ["payment_failed", "expired"].includes(status)) {
+    const { error: releaseError } = await admin.rpc(
+      "release_business_ad_credit",
+      { target_transaction_id: transactionId },
+    );
+    if (releaseError) throw releaseError;
+  }
+
   if (lifecycle.movesToPaidWorkflow) {
     const { error: eventError } = await admin
       .from("payment_fulfillment_events")
@@ -245,7 +255,7 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
     let lookup = admin
       .from("payment_transactions")
       .select(
-        "id,campaign_request_id,currency,customer_total_cents,tax_cents,refunded_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,stripe_connected_account_id,creator_payout_cents,payout_amount_cents,payout_recovery_status,payout_recovery_target_cents,payout_recovery_reversed_cents,dispute_status",
+        "id,campaign_request_id,currency,customer_total_cents,ad_credit_cents,charged_total_cents,tax_cents,refunded_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,stripe_connected_account_id,creator_payout_cents,payout_amount_cents,payout_recovery_status,payout_recovery_target_cents,payout_recovery_reversed_cents,dispute_status",
       );
     lookup = transactionId
       ? lookup.eq("id", transactionId)
@@ -273,7 +283,9 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
     objectName: "Charge",
     amount: charge.amount,
     currency: charge.currency,
-    expectedAmountCents: transaction.customer_total_cents + transaction.tax_cents,
+    expectedAmountCents:
+      (transaction.charged_total_cents ?? transaction.customer_total_cents) +
+      transaction.tax_cents,
     expectedCurrency: transaction.currency,
   });
 
@@ -370,6 +382,19 @@ async function syncRefund(admin: AdminClient, refund: Stripe.Refund) {
   if (error) throw error;
   if (!updatedTransaction) {
     throw new Error("Payment state changed; retry this refund event.");
+  }
+
+  if (refundSucceeded && refundedCents > 0) {
+    const { error: creditError } = await admin.rpc(
+      "restore_business_ad_credit_for_refund",
+      {
+        target_transaction_id: transaction.id,
+        refund_reference: currentRefund.id,
+        refunded_cents: refundedCents,
+        charge_amount_cents: fullAmount,
+      },
+    );
+    if (creditError) throw creditError;
   }
 
   if (status === "refunded" && refundSucceeded) {
@@ -494,7 +519,7 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
     let lookup = admin
       .from("payment_transactions")
       .select(
-        "id,campaign_request_id,currency,customer_total_cents,tax_cents,refunded_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,stripe_connected_account_id,creator_payout_cents,payout_amount_cents,payout_recovery_status,payout_recovery_target_cents,payout_recovery_reversed_cents,dispute_status",
+        "id,campaign_request_id,currency,customer_total_cents,ad_credit_cents,charged_total_cents,tax_cents,refunded_cents,status,workflow_status,payout_status,issue_status,delivered_at,review_deadline,stripe_transfer_id,stripe_connected_account_id,creator_payout_cents,payout_amount_cents,payout_recovery_status,payout_recovery_target_cents,payout_recovery_reversed_cents,dispute_status",
       );
     lookup = transactionId
       ? lookup.eq("id", transactionId)
@@ -522,7 +547,9 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
     objectName: "Charge",
     amount: charge.amount,
     currency: charge.currency,
-    expectedAmountCents: transaction.customer_total_cents + transaction.tax_cents,
+    expectedAmountCents:
+      (transaction.charged_total_cents ?? transaction.customer_total_cents) +
+      transaction.tax_cents,
     expectedCurrency: transaction.currency,
   });
 
@@ -601,6 +628,20 @@ async function syncDispute(admin: AdminClient, dispute: Stripe.Dispute) {
   if (!updatedTransaction) {
     throw new Error("Payment state changed; retry this dispute event.");
   }
+
+  if (won && refundedCents > 0) {
+    const { error: creditError } = await admin.rpc(
+      "restore_business_ad_credit_for_refund",
+      {
+        target_transaction_id: transaction.id,
+        refund_reference: currentDispute.id,
+        refunded_cents: refundedCents,
+        charge_amount_cents: charge.amount,
+      },
+    );
+    if (creditError) throw creditError;
+  }
+
   const { error: campaignError } = await admin
     .from("campaign_requests")
     .update({

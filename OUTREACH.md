@@ -94,14 +94,25 @@ Under 150 words.
 > board. The owner sets the price and approves you before anything goes up. 26 spaces are live
 > around Southern California, and it's free during early access.
 >
+> Your invite also includes $5 in SideSpace ad credit for your first campaign after Business
+> setup. It is spend-only, not cash.
+>
 > Worth ten minutes to see if any of them are near {their pickup spot / storefront / market}?
 >
 > Kausthubh Veldanda
 > Cofounder, SideSpace — Brea, CA
-> sidespace.ad/?p={PROSPECT_ID}
+> https://sidespace.ad/?ref=SIDESPACE5
 > Not useful? Reply "no thanks" and I won't write again.
 
-### The link carries their prospect id
+### One shared Business referral link
+
+Use `https://sidespace.ad/?ref=SIDESPACE5` in every DEMAND email. It is the same
+link for the whole outreach batch. The recipient chooses Business during setup;
+after signup, SideSpace uses the email on their authenticated account to enforce
+one $5 redemption per email. The credit is advertising-only and cannot be
+withdrawn or transferred.
+
+### Personalized prospect links (optional)
 
 `?p={PROSPECT_ID}` is the `outreach.prospects.id` uuid for the row you are
 sending to. It is not tracking — it is what makes the site know who arrived.
@@ -112,13 +123,19 @@ salon owner who got a personal email is not then asked to type her own salon's
 name into a blank form. Everything is editable and the pane says where it came
 from.
 
+When the recipient completes the Business path from either the shared referral
+link or a valid DEMAND invite, SideSpace awards a one-time $5 advertising
+credit. The redemption is keyed by normalized authenticated email, applied
+automatically to a campaign at Stripe checkout, and cannot be withdrawn or
+transferred. SUPPLY/Creator onboarding does not receive this credit.
+
 Resolved server-side by `public.invite_prospect(uuid)`, which returns only the
 six fields already public on their website. Their email address, the hook we
 wrote, and the URLs we researched are NOT returned — the link gets forwarded,
 and none of our notes should travel with it.
 
-Send without the `?p=` and nothing breaks; they just get the ordinary blank
-flow, which is what every email before today did.
+Send without either `?ref=` or `?p=` and nothing breaks; they just get the
+ordinary blank flow, which is what every email before today did.
 
 ### SUPPLY template (Bay Area)
 

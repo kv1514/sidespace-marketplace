@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
 import MarketplaceApp from "../MarketplaceApp";
+import {
+  isBusinessReferralCode,
+  normalizeBusinessReferralCode,
+} from "@/lib/payments/ad-credits";
 import { loadInvite } from "@/lib/public-marketplace";
 
 export const dynamic = "force-dynamic";
@@ -18,5 +22,15 @@ export default async function Dashboard({
 }) {
   const params = await searchParams;
   const invite = await loadInvite(params.p);
-  return <MarketplaceApp route="dashboard" invite={invite} />;
+  const referralParam = typeof params.ref === "string" ? params.ref : "";
+  const referralCode = isBusinessReferralCode(referralParam)
+    ? normalizeBusinessReferralCode(referralParam)
+    : "";
+  return (
+    <MarketplaceApp
+      route="dashboard"
+      invite={invite}
+      referralCode={referralCode}
+    />
+  );
 }

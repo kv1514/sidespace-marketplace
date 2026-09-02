@@ -9355,6 +9355,33 @@ html.reveal-ready [data-reveal].is-visible {
   flex: none;
 }
 
+.ad-credit-panel {
+  align-items: center;
+  background: color-mix(in srgb, #d9f99d 28%, var(--white));
+  border-color: color-mix(in srgb, #86a943 42%, var(--line));
+  display: flex;
+  gap: 22px;
+  justify-content: space-between;
+}
+
+.ad-credit-panel > div {
+  min-width: 0;
+}
+
+.ad-credit-panel h2 {
+  font-size: clamp(22px, 2.4vw, 30px);
+  letter-spacing: -0.045em;
+  margin: 4px 0;
+}
+
+.ad-credit-panel p:not(.eyebrow) {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin: 0;
+  max-width: 52ch;
+}
+
 .dashboard-listing-list,
 .dashboard-request-list {
   display: grid;
@@ -9788,6 +9815,11 @@ html.reveal-ready [data-reveal].is-visible {
   .dashboard-request-row {
     align-items: start;
     grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .ad-credit-panel {
+    align-items: start;
+    flex-direction: column;
   }
 }
 

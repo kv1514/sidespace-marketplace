@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { isBusinessReferralCode, normalizeBusinessReferralCode } from "@/lib/payments/ad-credits";
 import PublicSiteApp from "./components/PublicSiteApp";
 import InviteMarketplaceBridge from "./components/InviteMarketplaceBridge";
 import { OG_IMAGE } from "@/lib/site-metadata";
@@ -31,6 +32,10 @@ export default async function Home({
 }) {
   const params = await searchParams;
   const inviteToken = typeof params.p === "string" ? params.p : "";
+  const referralParam = typeof params.ref === "string" ? params.ref : "";
+  const referralCode = isBusinessReferralCode(referralParam)
+    ? normalizeBusinessReferralCode(referralParam)
+    : "";
   const [invite, snapshot] = await Promise.all([
     loadInvite(inviteToken),
     // The homepage proves the marketplace is real with a small preview. It no
@@ -46,10 +51,10 @@ export default async function Home({
     }),
   ]);
 
-  // Prospect links keep the full onboarding engine mounted even when the
-  // lookup is temporarily unavailable. Normal homepage visits use the much
-  // smaller public shell and load listing details on /marketplace.
-  if (!isInviteToken(inviteToken)) {
+  // Referral and prospect links keep the full onboarding engine mounted even
+  // when the lookup is temporarily unavailable. Normal homepage visits use
+  // the much smaller public shell and load listing details on /marketplace.
+  if (!isInviteToken(inviteToken) && !referralCode) {
     return (
       <PublicSiteApp route="home" initialListings={snapshot.listings} />
     );
@@ -62,6 +67,7 @@ export default async function Home({
       initialListings={snapshot.listings}
       invite={invite}
       inviteToken={inviteToken}
+      referralCode={referralCode}
     />
   );
 }

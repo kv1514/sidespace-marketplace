@@ -238,6 +238,7 @@ describe("checkout route authorization", () => {
       "buyer_fee_cents",
       "creator_fee_cents",
       "customer_total_cents",
+      "ad_credit_cents",
       "creator_payout_cents",
       "payout_amount_cents",
       "platform_gross_revenue_cents",
@@ -280,6 +281,8 @@ describe("checkout route authorization", () => {
       buyer_fee_cents: 500,
       creator_fee_cents: 500,
       customer_total_cents: 10_500,
+      ad_credit_cents: 0,
+      charged_total_cents: 10_500,
       creator_payout_cents: 9_500,
       payout_amount_cents: 9_500,
       platform_gross_revenue_cents: 1_000,
@@ -315,13 +318,17 @@ describe("checkout route authorization", () => {
     transactionQuery.eq.mockReturnValue(transactionQuery);
 
     const admin = {
-      from: vi.fn((table: string) => {
+    from: vi.fn((table: string) => {
         if (table === "campaign_requests") return campaignQuery;
     if (table === "stripe_accounts") {
           stripeAccountReads += 1;
         return stripeAccountReads === 1 ? creatorAccountQuery : payerAccountQuery;
       }
       return transactionQuery;
+    }),
+    rpc: vi.fn().mockResolvedValue({
+      data: { reserved_cents: 0, charged_total_cents: 10_500 },
+      error: null,
     }),
   };
     mocks.requireAuthenticatedProfile.mockResolvedValue({

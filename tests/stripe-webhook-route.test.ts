@@ -21,18 +21,18 @@ vi.mock("@/lib/stripe/webhook", () => ({
     input: {
       amountSubtotal: number | null;
       amountTotal: number | null;
-      customerTotalCents: number;
+      chargedTotalCents: number;
       taxCents: number;
       paymentStatus: string | null;
     },
   ) => {
-    if (input.amountSubtotal !== input.customerTotalCents) {
+    if (input.amountSubtotal !== input.chargedTotalCents) {
       throw new Error("Checkout Session amount does not match the stored ledger.");
     }
     if (
       (input.paymentStatus === "paid" ||
         input.paymentStatus === "no_payment_required") &&
-      input.amountTotal !== input.customerTotalCents + input.taxCents
+      input.amountTotal !== input.chargedTotalCents + input.taxCents
     ) {
       throw new Error("Checkout Session total does not match the stored ledger.");
     }
@@ -115,6 +115,8 @@ function storedTransaction(overrides: Record<string, unknown> = {}) {
     campaign_request_id: campaignRequestId,
     currency: "usd",
     customer_total_cents: 10_500,
+    ad_credit_cents: 0,
+    charged_total_cents: 10_500,
     tax_cents: 0,
     status: "requires_checkout",
     dispute_status: null,
@@ -169,6 +171,7 @@ function makeAdmin(input: {
       if (table === "campaign_requests") return campaignTable;
       throw new Error(`Unexpected table ${table}`);
     }),
+    rpc: vi.fn().mockResolvedValue({ data: 0, error: null }),
   };
   return {
     admin,

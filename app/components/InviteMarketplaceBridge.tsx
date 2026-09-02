@@ -9,14 +9,15 @@ type InviteEngineProps = {
   initialProfiles: unknown;
   initialListings: unknown;
   invite: Invite | null;
+  referralCode?: string;
 };
 
 type InviteBridgeProps = InviteEngineProps & { inviteToken: string };
 
 // Outreach traffic is a tiny fraction of homepage traffic, but it needs the
 // complete onboarding engine. A raw import inside the mounted bridge keeps
-// that engine out of every ordinary `/` response while retaining `/?p=<uuid>`
-// as the public URL prospects already receive.
+// that engine out of every ordinary `/` response while retaining the public
+// `?p=` prospect URL and shared `?ref=` referral URL.
 export default function InviteMarketplaceBridge(
   props: InviteBridgeProps,
 ) {
@@ -40,6 +41,7 @@ export default function InviteMarketplaceBridge(
         route="home"
         initialListings={props.initialListings}
         inviteToken={props.inviteToken}
+        referralCode={props.referralCode}
       />
     );
   }
@@ -50,6 +52,7 @@ export default function InviteMarketplaceBridge(
       initialProfiles={props.initialProfiles}
       initialListings={props.initialListings}
       invite={props.invite}
+      referralCode={props.referralCode}
     />
   );
 }

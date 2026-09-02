@@ -26,6 +26,13 @@ Each 5% fee is rounded independently to the nearest cent. Stripe processing
 fees are paid by the platform and are not deducted from the displayed creator
 earnings.
 
+An invited Business can receive one $5 onboarding ad credit from the shared
+`?ref=SIDESPACE5` referral link. On a $100 campaign, the original Business total
+remains $105, the credit reduces the actual pre-tax Stripe charge to $100, and
+the Creator still earns $95. The credit is a promotional ledger entry keyed by
+normalized authenticated email: it cannot be withdrawn, transferred, or used to
+reduce Creator payout.
+
 ## Architecture
 
 - The browser sends only a `campaignRequestId` to
@@ -38,6 +45,14 @@ earnings.
   listing owner pays and the requester earns.
 - Accepted terms snapshot `accepted_subtotal_cents`, `payer_profile_id`, and
   `payee_profile_id`. A unique ledger row then snapshots every fee and party.
+- The shared `?ref=SIDESPACE5` referral link can mint one $5 Business ad-credit
+  grant per normalized authenticated email after completed Business onboarding.
+  Legacy `?p=<PROSPECT_ID>` DEMAND links delegate to the same email-keyed claim.
+  Checkout reserves the balance in the server-only ledger, and expiry or a
+  failed Checkout releases it.
+- `payment_transactions.customer_total_cents` preserves the original pricing
+  snapshot; generated `charged_total_cents` is the pre-tax amount Stripe must
+  collect after reserved ad credit. The Creator payout is unchanged.
 - Checkout creates a platform charge. It does not set `transfer_data` or create
   an application fee, so the Creator's 95% share remains pending on the
   SideSpace platform after customer payment.
@@ -98,8 +113,14 @@ details to SideSpace.
   and capability state for each profile.
 - `payment_transactions` is one immutable-money ledger snapshot per campaign.
   It stores every fee, party, Stripe lifecycle identifier, tax withholding,
-  checkout attempt, refund total, delivery/review timestamps, payout lifecycle,
-  and status needed for reconciliation.
+  original and post-credit checkout totals, checkout attempt, refund total,
+  delivery/review timestamps, payout lifecycle, and status needed for
+  reconciliation.
+- `business_ad_credit_referral_codes` and
+  `business_ad_credit_referral_redemptions` hold the shared code and one-time
+  email-keyed Business claim. `business_ad_credit_ledger` holds append-only
+  grant reservations/releases or refund restorations. They are not readable or
+  writable from the browser and expose no withdrawal path.
 - `payment_issues` stores one payer-reported issue per transaction;
   `payment_fulfillment_events` is an append-only transition history;
   `payment_resolution_actions` records idempotent staff refund operations; and
@@ -266,6 +287,13 @@ Also exercise:
 - connected account requirements becoming incomplete;
 - full and partial refunds; and
 - dispute creation, update, win, and loss.
+
+For the outreach-credit path, use the shared `?ref=SIDESPACE5` link, complete
+Business onboarding, confirm the dashboard shows $5 available, and verify the
+Checkout charge is reduced while the Creator earnings remain unchanged. Repeat
+with the same email and confirm no second grant is created. Expire or cancel
+before payment and confirm the reserved balance returns; complete a refund and
+confirm the proportional promotional amount is restored.
 
 ## Refund and dispute operations
 

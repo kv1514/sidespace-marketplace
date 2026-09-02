@@ -49,10 +49,12 @@ export default function PublicSiteApp({
   route,
   initialListings = null,
   inviteToken = "",
+  referralCode = "",
 }: {
   route: PublicRoute;
   initialListings?: unknown;
   inviteToken?: string;
+  referralCode?: string;
 }) {
   const router = useRouter();
   const configured = Boolean(
@@ -152,10 +154,11 @@ export default function PublicSiteApp({
   }, [configured]);
 
   function openAuth(mode: "signin" | "signup") {
-    const prospect = inviteToken
-      ? `&p=${encodeURIComponent(inviteToken)}`
-      : "";
-    router.push(`/dashboard?auth=${mode}${prospect}`);
+    const query = new URLSearchParams();
+    if (inviteToken) query.set("p", inviteToken);
+    if (referralCode) query.set("ref", referralCode);
+    const preserved = query.toString();
+    router.push(`/dashboard?auth=${mode}${preserved ? `&${preserved}` : ""}`);
   }
 
   function openListing(listingId: string) {

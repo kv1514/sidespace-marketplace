@@ -38,6 +38,11 @@ import {
   formatCents,
 } from "@/lib/payments/fees";
 import {
+  BUSINESS_SIGNUP_CREDIT_CENTS,
+  isBusinessReferralCode,
+  normalizeBusinessReferralCode,
+} from "@/lib/payments/ad-credits";
+import {
   isListingRequestable,
   type ListingProvenanceStatus,
 } from "@/lib/listings/provenance";
@@ -258,6 +263,8 @@ type PaymentTransaction = {
   buyer_fee_cents: number;
   creator_fee_cents: number;
   customer_total_cents: number;
+  ad_credit_cents?: number;
+  charged_total_cents?: number;
   creator_payout_cents: number;
   payout_amount_cents: number;
   platform_gross_revenue_cents: number;
@@ -2528,6 +2535,28 @@ const MAX_TIERS = 5;
 const UUID_PARAM =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function activeBusinessReferralCode(propValue = "") {
+  const urlValue =
+    typeof window === "undefined"
+      ? ""
+      : new URLSearchParams(window.location.search).get("ref") ?? "";
+  const candidate = propValue || urlValue;
+  return isBusinessReferralCode(candidate)
+    ? normalizeBusinessReferralCode(candidate)
+    : "";
+}
+
+function authNextPath(referralCode = "") {
+  const query = new URLSearchParams();
+  const params = new URLSearchParams(window.location.search);
+  const inviteToken = params.get("p") ?? "";
+  if (UUID_PARAM.test(inviteToken)) query.set("p", inviteToken);
+  const activeReferral = activeBusinessReferralCode(referralCode);
+  if (activeReferral) query.set("ref", activeReferral);
+  const preserved = query.toString();
+  return preserved ? `/?${preserved}` : "/dashboard";
+}
+
 function inviteRole(invite: Invite): Role {
   return invite.intent === "SUPPLY" ? "creator" : "business";
 }
@@ -4560,6 +4589,7 @@ export default function MarketplaceApp({
   initialQuery = "",
   initialRoleFilter = "all",
   initialChannel = "All",
+  referralCode = "",
 }: {
   /** Server-rendered marketplace, so crawlers and link previews see real
    *  members instead of the seeded demo set. Null when Supabase was
@@ -4568,6 +4598,8 @@ export default function MarketplaceApp({
   initialListings?: unknown;
   /** Resolved from ?p= on the invite link in a cold email. See prefillFromInvite. */
   invite?: Invite | null;
+  /** The shared Business referral code, preserved through auth redirects. */
+  referralCode?: string;
   /** Public information architecture route. The marketplace/auth engine stays
    * mounted so every route keeps the same dialogs, sessions, and handlers. */
   route?: SideSpaceRoute;
@@ -4855,6 +4887,7 @@ export default function MarketplaceApp({
   const [messages, setMessages] = useState<Message[]>([]);
   const [campaignRequests, setCampaignRequests] = useState<CampaignRequest[]>([]);
   const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransaction[]>([]);
+  const [adCreditBalanceCents, setAdCreditBalanceCents] = useState(0);
   const [creatorPortfolio, setCreatorPortfolio] = useState<CreatorPortfolioItem[]>([]);
   const [creatorReviews, setCreatorReviews] = useState<CreatorReview[]>([]);
   const [selectedCreatorPortfolio, setSelectedCreatorPortfolio] =
@@ -4995,7 +5028,7 @@ export default function MarketplaceApp({
   const loadAccountMarketplaceState = useCallback(
     async (ownProfile: Profile) => {
       if (!supabase) return;
-      const [campaignResult, verificationResult, blocksResult, transactionsResult, stripeStatusResult] =
+      const [campaignResult, verificationResult, blocksResult, transactionsResult, stripeStatusResult, creditResult] =
         await Promise.all([
           supabase
             .from("campaign_requests")
@@ -5023,6 +5056,9 @@ export default function MarketplaceApp({
           stripeConfigured && profileHasRole(ownProfile, "creator")
             ? fetch("/api/stripe/connect/status", { cache: "no-store" })
             : Promise.resolve(null),
+          ownProfile.role === "business"
+            ? fetch("/api/payments/credits", { cache: "no-store" })
+            : Promise.resolve(null),
         ]);
 
       if (!campaignResult.error) {
@@ -5047,6 +5083,15 @@ export default function MarketplaceApp({
         );
       } else if (!profileHasRole(ownProfile, "creator")) {
         setStripeAccountStatus(null);
+      }
+      if (creditResult?.ok) {
+        const payload = (await creditResult.json()) as { balanceCents?: unknown };
+        const balanceCents = Number(payload.balanceCents ?? 0);
+        if (Number.isSafeInteger(balanceCents) && balanceCents >= 0) {
+          setAdCreditBalanceCents(balanceCents);
+        }
+      } else if (ownProfile.role !== "business") {
+        setAdCreditBalanceCents(0);
       }
       if (canonicalRole(ownProfile.role) === "creator") {
         const [portfolioResult, reviewsResult] = await Promise.all([
@@ -6348,10 +6393,7 @@ export default function MarketplaceApp({
     setBusy(true);
 
     if (authMode === "signup") {
-      const token = new URLSearchParams(window.location.search).get("p") ?? "";
-      const nextPath = UUID_PARAM.test(token)
-        ? `/?p=${token}`
-        : "/dashboard";
+      const nextPath = authNextPath(referralCode);
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -6833,12 +6875,10 @@ export default function MarketplaceApp({
 
   async function signInWithGoogle() {
     if (!supabase) return;
-    // Carry an invite token through the OAuth round trip. Without this an
-    // invited business signs in with Google and comes back to a blank form -
-    // the prefill is resolved from ?p= on the server, and Google sends them to
-    // /auth/callback, which drops the query we arrived with.
-    const token = new URLSearchParams(window.location.search).get("p") ?? "";
-    const nextPath = UUID_PARAM.test(token) ? `/?p=${token}` : "/dashboard";
+    // Carry invite and referral parameters through the OAuth round trip.
+    // Without this, an outreach recipient returns from /auth/callback without
+    // the context that makes the $5 Business promotion eligible.
+    const nextPath = authNextPath(referralCode);
     const next = `?next=${encodeURIComponent(nextPath)}`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -6900,6 +6940,8 @@ export default function MarketplaceApp({
 
     setBusy(true);
     let savedProfile: Profile | null = null;
+    let adCreditAwarded = false;
+    let adCreditSyncFailed = false;
     try {
       // Re-read the stored row before building the payload, every time. It
       // decides insert-vs-update, whether the Google identity photo may be used
@@ -7111,6 +7153,56 @@ export default function MarketplaceApp({
       savedProfile = withProfileContacts(writtenProfile, contacts) as Profile;
       setProfile(savedProfile);
 
+      // The database function is the authority for the promotion: it checks
+      // the shared referral code, the authenticated email, the completed
+      // Business profile, and the one-time redemption constraint. A transient
+      // failure does not undo a saved profile; saving again safely retries the
+      // same idempotent grant.
+      const inviteToken = new URLSearchParams(window.location.search).get("p") ?? "";
+      const activeReferral = activeBusinessReferralCode(referralCode);
+      if (role === "business" && activeReferral) {
+        try {
+          const redemption = await supabase.rpc(
+            "redeem_business_referral_credit",
+            { referral_code: activeReferral },
+          );
+          if (redemption.error) {
+            adCreditSyncFailed = true;
+            console.error("Could not redeem Business onboarding ad credit", redemption.error);
+          } else {
+            const result = Array.isArray(redemption.data)
+              ? redemption.data[0]
+              : redemption.data;
+            adCreditAwarded = Number(result?.awarded_cents ?? 0) > 0;
+          }
+        } catch (error) {
+          adCreditSyncFailed = true;
+          console.error("Could not redeem Business onboarding ad credit", error);
+        }
+      } else if (role === "business" && UUID_PARAM.test(inviteToken)) {
+        // Keep already-sent personalized DEMAND links useful. The database
+        // wrapper now records the redemption by authenticated email too, so
+        // forwarding an old link cannot mint a second credit for that email.
+        try {
+          const redemption = await supabase.rpc(
+            "redeem_business_signup_ad_credit",
+            { invite_token: inviteToken },
+          );
+          if (redemption.error) {
+            adCreditSyncFailed = true;
+            console.error("Could not redeem Business onboarding ad credit", redemption.error);
+          } else {
+            const result = Array.isArray(redemption.data)
+              ? redemption.data[0]
+              : redemption.data;
+            adCreditAwarded = Number(result?.awarded_cents ?? 0) > 0;
+          }
+        } catch (error) {
+          adCreditSyncFailed = true;
+          console.error("Could not redeem Business onboarding ad credit", error);
+        }
+      }
+
       if (onboardingMode === "setup") {
         // Uploaded only after the profile write succeeds. Uploading first meant
         // a failed profile save left the photos sitting in a public bucket with
@@ -7163,10 +7255,18 @@ export default function MarketplaceApp({
         setOnboardingOpen(false);
         setOnboardingStep(1);
         resetIgAvatarSync();
-        await Promise.all([loadMarketplace(), loadOwnListings(savedProfile)]);
+        await Promise.all([
+          loadMarketplace(),
+          loadOwnListings(savedProfile),
+          loadAccountMarketplaceState(savedProfile),
+        ]);
         setToast(
           role === "business"
-            ? "Your brief is live. We’ll tell you the moment someone answers."
+            ? adCreditAwarded
+              ? `Your brief is live. ${formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in ad credit is ready for your first campaign.`
+              : adCreditSyncFailed
+                ? "Your brief is live. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
+                : "Your brief is live. We’ll tell you the moment someone answers."
               : canonicalRole(role) === "creator" && drafts.length > 1
                 ? "You’re live. " + drafts.length + " listings are on the marketplace."
               : `You’re live. “${drafts[0].title}” is on the marketplace.`,
@@ -7177,8 +7277,18 @@ export default function MarketplaceApp({
       setOnboardingOpen(false);
       setOnboardingStep(1);
       resetIgAvatarSync();
-      await Promise.all([loadMarketplace(), loadOwnListings(savedProfile)]);
-      setToast("Saved. Your profile is up to date.");
+      await Promise.all([
+        loadMarketplace(),
+        loadOwnListings(savedProfile),
+        loadAccountMarketplaceState(savedProfile),
+      ]);
+      setToast(
+        adCreditAwarded
+          ? `${formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in ad credit is ready for your first campaign.`
+          : adCreditSyncFailed
+            ? "Saved. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
+            : "Saved. Your profile is up to date.",
+      );
     } catch (error) {
       // The profile write succeeding and the listing write failing is a real
       // state, and it is recoverable: they are on the marketplace, and the
@@ -7196,7 +7306,11 @@ export default function MarketplaceApp({
         }
         setOnboardingOpen(false);
         setOnboardingStep(1);
-        await Promise.all([loadMarketplace(), loadOwnListings(savedProfile)]);
+        await Promise.all([
+          loadMarketplace(),
+          loadOwnListings(savedProfile),
+          loadAccountMarketplaceState(savedProfile),
+        ]);
         // Include the actual reason. This branch swallowed it, so a listing
         // rejected for a fixable reason (a number too large, a title too long)
         // read as an unexplained failure and Publish looped on the same value.
@@ -8628,6 +8742,7 @@ export default function MarketplaceApp({
     setOwnListings([]);
     setCampaignRequests([]);
     setPaymentTransactions([]);
+    setAdCreditBalanceCents(0);
     setCreatorPortfolio([]);
     setCreatorReviews([]);
     setSelectedCreatorPortfolio([]);
@@ -9322,6 +9437,26 @@ export default function MarketplaceApp({
               ));
             })()}
           </div>
+
+          {profile.role === "business" && (
+            <section className="dashboard-panel ad-credit-panel" id="ad-credit" data-reveal>
+              <div>
+                <p className="eyebrow">Advertising credit</p>
+                <h2>
+                  {adCreditBalanceCents > 0
+                    ? `${formatCents(adCreditBalanceCents)} ready for your next campaign.`
+                    : "Your advertising credit balance is $0."}
+                </h2>
+                <p>
+                  Applied automatically at secure checkout. Promotional credit cannot be
+                  withdrawn or transferred.
+                </p>
+              </div>
+              <a className="button button-ghost button-small" href="/marketplace?role=supply">
+                Find creators and spaces <span>↗</span>
+              </a>
+            </section>
+          )}
 
           <div className="dashboard-workspace">
             <section
@@ -10462,6 +10597,19 @@ export default function MarketplaceApp({
               </p>
             </div>
           )}
+          {authMode === "signup" &&
+            (activeBusinessReferralCode(referralCode) ||
+              (invite && inviteRole(invite) === "business")) && (
+            <div className="setup-notice ad-credit-signup-notice">
+              <strong>
+                Your {activeBusinessReferralCode(referralCode) ? "referral" : "invite"} includes {formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in ad credit
+              </strong>
+              <p>
+                Complete the Business setup and it will be applied automatically to advertising
+                checkout. It cannot be withdrawn or transferred.
+              </p>
+            </div>
+          )}
           {localPreviewAvailable ? (
             <button
               type="button"
@@ -10619,6 +10767,22 @@ export default function MarketplaceApp({
                 <b>Review requests, dates, and offers</b>
               </button>
             </div>
+
+            {profile.role === "business" && (
+              <section className="account-section ad-credit-account-section" id="account-ad-credit">
+                <div className="account-section-heading">
+                  <div>
+                    <p className="eyebrow">Advertising credit</p>
+                    <h3>{formatCents(adCreditBalanceCents)} available for advertising.</h3>
+                    <p className="account-section-lede">
+                      It is applied automatically to eligible campaign checkout and cannot be
+                      withdrawn or transferred.
+                    </p>
+                  </div>
+                  <span className="section-count">Spend-only</span>
+                </div>
+              </section>
+            )}
 
             {profile.role === "business" && (
               <section
@@ -10916,10 +11080,31 @@ export default function MarketplaceApp({
                             </span>
                             <span>
                               <small>Total before tax</small>
-                              <b>{formatCents(acceptedMoney.customerTotalCents)}</b>
+                              <b>
+                                {formatCents(
+                                  payment?.charged_total_cents ??
+                                    acceptedMoney.customerTotalCents,
+                                )}
+                              </b>
                             </span>
+                            {(payment?.ad_credit_cents ?? 0) > 0 && (
+                              <span>
+                                <small>Ad credit</small>
+                                <b>−{formatCents(payment?.ad_credit_cents ?? 0)}</b>
+                              </span>
+                            )}
                           </div>
                         )}
+                        {acceptedMoney &&
+                          isPayer &&
+                          !payment &&
+                          adCreditBalanceCents > 0 && (
+                            <p className="campaign-request-brief">
+                              <small>Available ad credit</small>
+                              {formatCents(adCreditBalanceCents)} will be applied automatically at
+                              secure checkout. It cannot be withdrawn or transferred.
+                            </p>
+                          )}
                         {acceptedMoney && isPayee && (
                           <div className="campaign-request-facts">
                             <span>
@@ -11119,12 +11304,20 @@ export default function MarketplaceApp({
                             <b>
                               {formatCents(
                                 buyer
-                                  ? transaction.customer_total_cents
+                                  ? transaction.charged_total_cents ??
+                                    transaction.customer_total_cents
                                   : transaction.creator_payout_cents,
                               )}
                             </b>
                           </span>
                         </div>
+                        {buyer && (transaction.ad_credit_cents ?? 0) > 0 && (
+                          <p className="campaign-request-brief">
+                            <small>Ad credit applied</small>
+                            −{formatCents(transaction.ad_credit_cents ?? 0)} promotional credit.
+                            It cannot be withdrawn or transferred.
+                          </p>
+                        )}
                         {transaction.refunded_cents > 0 && (
                           <p className="campaign-request-brief">
                             <small>Refunded</small>

@@ -21,15 +21,19 @@ turn a local build or a Stripe sandbox test into legal or production approval.
    Every live Creator must complete live-mode Connect onboarding, and live
    customers/checkouts must be created with the live key; Stripe test and live
    objects are separate.
-6. Set `PAYMENTS_CHECKOUT_ENABLED=true` only for the controlled smoke, redeploy
+6. Confirm the Business referral-code migration is applied before inviting any
+   outreach lead. The shared `?ref=SIDESPACE5` link can award one $5 grant per
+   authenticated email after Business onboarding; the ledger is spend-only and
+   the credit is never a cash balance.
+7. Set `PAYMENTS_CHECKOUT_ENABLED=true` only for the controlled smoke, redeploy
    the exact reviewed candidate, and rerun the preflight. Every check must now
    pass. Run one low-value live transaction between a real business and a fully
    onboarded Express account. Verify Checkout, invoice, ledger, delayed payout,
    transfer, balance transaction, refund, and webhook delivery in both Stripe
    and SideSpace.
-7. Confirm `GET /api/health/payments` returns `200` with the monitoring bearer
+8. Confirm `GET /api/health/payments` returns `200` with the monitoring bearer
    secret and the payout cron returns `200` with `CRON_SECRET`.
-8. Keep Checkout enabled only if the smoke and health checks pass; otherwise
+9. Keep Checkout enabled only if the smoke and health checks pass; otherwise
    disable it and follow the rollback steps below.
 
 ## Alerts and ownership
@@ -78,6 +82,13 @@ idempotent cumulative transfer reversal and retries it from the hourly cron.
 Stripe may reject the reversal when the connected account lacks available
 balance; keep the health alert open and have payments staff resolve the balance
 or reversal in Stripe before treating the recovery as complete.
+
+For a payment using onboarding credit, `customer_total_cents` remains the
+original campaign-plus-buyer-fee economics, while `charged_total_cents` is the
+actual pre-tax Stripe subtotal after the promotion. A successful refund
+restores the proportional promotional amount through the ad-credit ledger; a
+failed or canceled refund restores nothing. Never edit either balance or
+credit column by hand.
 
 ## Evidence to retain
 

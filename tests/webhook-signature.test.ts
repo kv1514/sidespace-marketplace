@@ -81,7 +81,7 @@ describe("Stripe Checkout ledger amount gate", () => {
   const base = {
     amountSubtotal: 10_500,
     amountTotal: 11_550,
-    customerTotalCents: 10_500,
+    chargedTotalCents: 10_500,
     taxCents: 1_050,
     paymentStatus: "paid",
   } as const;

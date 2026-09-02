@@ -120,6 +120,7 @@ function makeAdmin(currentTransaction: Record<string, unknown>) {
       if (table === "stripe_webhook_events") return webhookTable;
       throw new Error(`Unexpected table ${table}`);
     }),
+    rpc: vi.fn().mockResolvedValue({ data: 0, error: null }),
   };
   return {
     admin,

@@ -118,6 +118,16 @@ check(
   "post-payout refund/dispute recovery migration present",
 );
 check(
+  "Business ad-credit migration",
+  existsSync("supabase/migrations/20260902043000_business_signup_ad_credits.sql"),
+  "spend-only Business onboarding credit ledger and checkout reservation present",
+);
+check(
+  "Shared Business referral migration",
+  existsSync("supabase/migrations/20260902050000_shared_business_referral_code.sql"),
+  "shared referral code and once-per-email redemption constraint present",
+);
+check(
   "Payments runbook",
   existsSync("docs/PAYMENTS_RUNBOOK.md"),
   "operator and rollback instructions present",
