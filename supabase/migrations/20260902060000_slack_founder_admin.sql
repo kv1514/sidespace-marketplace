@@ -58,6 +58,8 @@ create table if not exists private.slack_admin_actions (
   )
 );
 
+alter table private.slack_admin_actions enable row level security;
+
 revoke all on table private.slack_admin_actions from public, anon, authenticated;
 grant select on table private.slack_admin_actions to service_role;
 

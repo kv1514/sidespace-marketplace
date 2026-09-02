@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set search_path = public, extensions;
-select extensions.plan(22);
+select extensions.plan(23);
 
 insert into auth.users (
   id, aud, role, email, email_confirmed_at, raw_app_meta_data,
@@ -83,6 +83,11 @@ select ok(
     'authenticated', 'private.slack_admin_actions', 'select'
   ),
   'members cannot read the founder audit log'
+);
+select ok(
+  (select relrowsecurity from pg_class
+    where oid = 'private.slack_admin_actions'::regclass),
+  'the founder audit log has row-level security enabled'
 );
 
 select is(
