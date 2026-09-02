@@ -9728,3 +9728,24 @@ html.reveal-ready [data-reveal].is-visible {
   }
 }
 
+
+/* Fill with AI: live state under the mic while words come in. */
+.ai-fill-status {
+  color: var(--paper);
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.45;
+  opacity: 0.85;
+}
+
+/* Delete on your own listing card: quiet until hovered, then unmistakable. */
+.my-listing-actions button.is-danger {
+  border-color: rgba(212, 61, 0, 0.45);
+  color: #d43d00;
+}
+
+.my-listing-actions button.is-danger:hover {
+  background: #d43d00;
+  border-color: #d43d00;
+  color: var(--white);
+}

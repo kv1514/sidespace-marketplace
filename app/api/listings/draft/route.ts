@@ -17,6 +17,12 @@ import {
  * keys have a free tier). Both are called over plain fetch: neither SDK is a
  * dependency here and the lockfile could not be regenerated where this was
  * written. Swapping in an SDK later touches only the provider function.
+ *
+ * Voice: browsers with built-in speech recognition send words. The rest
+ * (Firefox, Brave, in-app browsers, or a recogniser that failed) send a short
+ * recording, which Gemini transcribes before the draft - Claude does not take
+ * audio - so a recording needs GEMINI_API_KEY even when Claude writes the
+ * draft.
  */
 
 const ANTHROPIC_MODEL = "claude-opus-5";
@@ -26,7 +32,26 @@ const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interaction
 
 /** ~2 MB decoded. The form re-encodes photos to ~300 KB JPEG before sending. */
 const MAX_IMAGE_BASE64 = 2_800_000;
-const MAX_NOTES = 600;
+/** Typed notes plus a transcript; a minute of talking is ~150 words. */
+const MAX_NOTES = 1200;
+/** ~2.2 MB decoded: a minute of speech is a few hundred KB as Opus, ~1 MB as AAC. */
+const MAX_AUDIO_BASE64 = 3_000_000;
+/**
+ * What browsers record, mapped to what Gemini lists as readable. Safari's
+ * MediaRecorder labels its AAC-in-MP4 output audio/mp4; m4a is that container.
+ */
+const AUDIO_TYPES: Record<string, string> = {
+  "audio/webm": "audio/webm",
+  "audio/ogg": "audio/ogg",
+  "audio/opus": "audio/opus",
+  "audio/mp4": "audio/m4a",
+  "audio/m4a": "audio/m4a",
+  "audio/x-m4a": "audio/m4a",
+  "audio/aac": "audio/aac",
+  "audio/mpeg": "audio/mpeg",
+  "audio/mp3": "audio/mp3",
+  "audio/wav": "audio/wav",
+};
 const DRAFTS_PER_HOUR = 20;
 
 const KINDS: ListingDraftKind[] = ["physical", "social", "sponsorship"];
@@ -124,6 +149,7 @@ type Body = {
   kind: ListingDraftKind;
   notes: string;
   image: string | null;
+  audio: { data: string; mimeType: string } | null;
   city: string;
 };
 
@@ -147,11 +173,36 @@ async function readBody(request: Request): Promise<Body> {
       throw new ApiError("That photo could not be read.");
     }
   }
-  if (!image && !notes) {
+  let audio: Body["audio"] = null;
+  if (raw.audio && typeof raw.audio === "object") {
+    const clip = raw.audio as Record<string, unknown>;
+    const data = typeof clip.data === "string" ? clip.data.trim() : "";
+    const label =
+      typeof clip.mime_type === "string"
+        ? clip.mime_type.split(";")[0].trim().toLowerCase()
+        : "";
+    if (data) {
+      if (data.length > MAX_AUDIO_BASE64) {
+        throw new ApiError("That recording is too long to draft from. Keep it under a minute.", 413);
+      }
+      if (!/^[A-Za-z0-9+/]+=*$/.test(data)) {
+        throw new ApiError("That recording could not be read.");
+      }
+      const mimeType = AUDIO_TYPES[label];
+      if (!mimeType) {
+        throw new ApiError(
+          "That recording is in a format SideSpace cannot read. Type a few words instead.",
+          415,
+        );
+      }
+      audio = { data, mimeType };
+    }
+  }
+  if (!image && !notes && !audio) {
     throw new ApiError("Add a photo or a few words first, then press Fill with AI.");
   }
   const city = typeof raw.city === "string" ? raw.city.trim().slice(0, 80) : "";
-  return { kind, notes, image, city };
+  return { kind, notes, image, audio, city };
 }
 
 /** Shared handling of the HTTP layer: both providers use the same codes. */
@@ -292,10 +343,7 @@ async function draftWithGemini(apiKey: string, body: Body): Promise<string> {
   const json = (await response.json().catch(() => ({}))) as GeminiResponse;
   checkHttp("gemini", response.status, json.error);
 
-  const text = json.steps
-    ?.filter((step) => step.type === "model_output")
-    .flatMap((step) => step.content ?? [])
-    .find((part) => part.type === "text" && part.text)?.text;
+  const text = geminiText(json);
   if (!text) {
     console.error("[listing draft] gemini returned no model output", json.status, json.error);
     throw new ApiError(
@@ -304,6 +352,44 @@ async function draftWithGemini(apiKey: string, body: Body): Promise<string> {
     );
   }
   return text;
+}
+
+function geminiText(json: GeminiResponse) {
+  return json.steps
+    ?.filter((step) => step.type === "model_output")
+    .flatMap((step) => step.content ?? [])
+    .find((part) => part.type === "text" && part.text)?.text;
+}
+
+/**
+ * Turn a recording into words. Runs before the draft whichever provider
+ * writes it, so the member sees what was heard in the notes box and can fix
+ * it before filling again.
+ */
+async function transcribeWithGemini(
+  apiKey: string,
+  audio: NonNullable<Body["audio"]>,
+): Promise<string> {
+  const response = await fetch(GEMINI_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify({
+      model: GEMINI_MODEL,
+      system_instruction: [
+        "You transcribe a voice note in which someone describes an advertising space they want to rent out: what and where it is, who sees it, the price, when it is available.",
+        "Write down what is said, in the speaker's language, as plain text. Drop filler (um, uh, like, you know) and false starts; keep every fact and number. Numbers as digits, prices with a dollar sign.",
+        "Do not summarise, answer, comment, or add anything. If there is no speech, reply with an empty string.",
+      ].join(" "),
+      input: [
+        { type: "audio", data: audio.data, mime_type: audio.mimeType },
+        { type: "text", text: "Transcribe this recording." },
+      ],
+      generation_config: { thinking_level: "low" },
+    }),
+  });
+  const json = (await response.json().catch(() => ({}))) as GeminiResponse;
+  checkHttp("gemini", response.status, json.error);
+  return (geminiText(json) ?? "").trim().slice(0, MAX_NOTES);
 }
 
 /* ------------------------------------------------------------------- Route */
@@ -338,6 +424,27 @@ export async function POST(request: Request) {
     if (!body.city && profile.city) body.city = String(profile.city);
 
     const startedAt = Date.now();
+    let transcript = "";
+    if (body.audio) {
+      const geminiKey = process.env.GEMINI_API_KEY;
+      if (!geminiKey) {
+        console.error(
+          "[listing draft] a recording arrived but GEMINI_API_KEY is not set; voice recordings need it",
+        );
+        throw new ApiError(
+          "Voice recordings are not switched on here yet. Type a few words instead, or use Chrome or Safari, which understand speech on their own.",
+          503,
+        );
+      }
+      transcript = await transcribeWithGemini(geminiKey, body.audio);
+      if (!transcript) {
+        throw new ApiError(
+          "Nothing was heard in that recording. Check the microphone and try again, or type a few words.",
+          422,
+        );
+      }
+      body.notes = [body.notes, transcript].filter(Boolean).join(" ").slice(0, MAX_NOTES);
+    }
     const text =
       chosen.provider === "anthropic"
         ? await draftWithAnthropic(chosen.apiKey, body)
@@ -360,11 +467,11 @@ export async function POST(request: Request) {
     // provider, whether a photo was sent, how many questions came back, and
     // how long it took. No member data.
     console.info(
-      `[listing draft] ok provider=${chosen.provider} kind=${body.kind} photo=${body.image ? "yes" : "no"} questions=${draft.questions.length} ms=${Date.now() - startedAt}`,
+      `[listing draft] ok provider=${chosen.provider} kind=${body.kind} photo=${body.image ? "yes" : "no"} audio=${body.audio ? "yes" : "no"} questions=${draft.questions.length} ms=${Date.now() - startedAt}`,
     );
 
     return Response.json(
-      { draft },
+      { draft, transcript },
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (error) {
