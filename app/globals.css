@@ -7208,6 +7208,47 @@ html.reveal-ready [data-reveal].is-visible {
   margin-left: 0;
 }
 
+/* A city string is still the public label, but the member can also opt into a
+   rounded coordinate pin for location-aware matching. Keep the action beside
+   the field so it reads as one location question. */
+.location-field-label {
+  display: block;
+}
+
+.location-input-row {
+  align-items: stretch;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.location-input-row input {
+  min-width: 0;
+}
+
+.location-button {
+  background: var(--paper);
+  border-color: var(--line);
+  font-family: var(--display);
+  font-size: 12px;
+  min-height: 44px;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.location-data-status {
+  color: var(--ink-soft);
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-transform: none;
+}
+
+.location-data-status.is-error {
+  color: #774239;
+}
+
 /* A caption for a chip row that is not the only question under its heading.
    "What works here, and who puts it up?" is two asks; without this the eight
    surface chips and the three install chips wrap into what reads as one long
@@ -7254,6 +7295,14 @@ html.reveal-ready [data-reveal].is-visible {
      first thing to go - the label and eyebrow carry the meaning. */
   .onboarding-form .role-choice-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .location-input-row {
+    grid-template-columns: 1fr;
+  }
+
+  .location-button {
+    width: 100%;
   }
 
   .onboarding-form .role-choice-grid > button {
@@ -7360,6 +7409,159 @@ html.reveal-ready [data-reveal].is-visible {
 
 .onboarding-form .media-upload-field:hover {
   border-color: var(--coral);
+}
+
+.onboarding-form .media-upload-field > small {
+  color: var(--ink-soft);
+  display: block;
+  font-family: var(--display);
+  font-size: 12.5px;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+/* Profile photos get a real framing step instead of silently using the
+   browser's center crop. The same surface works with mouse, touch, and arrow
+   keys; the avatar preview below is the exact square that will be uploaded. */
+.onboarding-form .profile-photo-picker {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.onboarding-form .profile-photo-picker > input[type="file"] {
+  width: 100%;
+}
+
+.profile-photo-crop-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.profile-photo-crop-surface {
+  aspect-ratio: 1;
+  background: var(--ink);
+  border-radius: 16px;
+  cursor: grab;
+  max-width: 320px;
+  overflow: hidden;
+  position: relative;
+  touch-action: none;
+  width: min(100%, 320px);
+}
+
+.profile-photo-crop-surface:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 3px;
+}
+
+.profile-photo-crop-surface.is-dragging {
+  cursor: grabbing;
+}
+
+.profile-photo-crop-surface > img {
+  max-width: none;
+  pointer-events: none;
+  position: absolute;
+  user-select: none;
+}
+
+.profile-photo-crop-outline {
+  border: 2px solid color-mix(in srgb, var(--white) 92%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 999px color-mix(in srgb, var(--ink) 44%, transparent);
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.profile-photo-crop-loading {
+  align-items: center;
+  color: var(--paper);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+}
+
+.profile-photo-crop-controls {
+  display: grid;
+  gap: 6px;
+  max-width: 320px;
+}
+
+.profile-photo-zoom {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.profile-photo-zoom > span,
+.profile-photo-zoom > output {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.profile-photo-zoom > output {
+  min-width: 36px;
+  text-align: right;
+}
+
+.profile-photo-zoom input[type="range"] {
+  accent-color: var(--coral);
+  min-width: 0;
+  width: 100%;
+}
+
+.profile-photo-crop-controls > small,
+.profile-photo-preview-row > small,
+.profile-photo-crop-error {
+  color: var(--ink-soft);
+  font-family: var(--display);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.profile-photo-crop-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: 320px;
+}
+
+.profile-photo-crop-actions > button:first-child {
+  background: none;
+  border: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  padding: 8px 0;
+  text-decoration: underline;
+}
+
+.profile-photo-preview-row {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  min-height: 64px;
+}
+
+.profile-photo-preview {
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  flex: 0 0 64px;
+  object-fit: cover;
+  width: 64px;
+}
+
+.profile-photo-crop-error {
+  color: var(--ink);
+  display: block;
 }
 
 /* Section headers carry the rhythm of the pane, so they need air above them

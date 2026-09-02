@@ -4,7 +4,9 @@ import dynamic from "next/dynamic";
 import {
   type Dispatch,
   FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
+  type PointerEvent as ReactPointerEvent,
   type SetStateAction,
   useCallback,
   useEffect,
@@ -67,6 +69,10 @@ type Role =
   | "sponsor_host";
 type RoleFilter = "all" | "supply" | "business" | "creator";
 type CreatorOfferType = "social" | "physical" | "sponsorship";
+type LocationPoint = {
+  latitude: number;
+  longitude: number;
+};
 
 type Profile = {
   id: string;
@@ -83,6 +89,9 @@ type Profile = {
   handle: string | null;
   bio: string;
   city: string;
+  /** Optional city-level pin captured with the member's permission. */
+  location_latitude?: number | string | null;
+  location_longitude?: number | string | null;
   categories: string[];
   followers: number;
   avg_views: number;
@@ -1311,6 +1320,8 @@ type OnboardingAnswers = {
   // Step 1 - identity, asked of every role exactly once.
   display_name: string;
   city: string;
+  /** Rounded to two decimals before it leaves the browser. */
+  location: LocationPoint | null;
   bio: string;
   handle: string;
   /** Business only: the owner behind the business name. */
@@ -1409,6 +1420,461 @@ function OptionalFieldLabel({ children }: { children: ReactNode }) {
       {" "}
       <span className="optional">optional</span>
     </span>
+  );
+}
+
+const PROFILE_CROP_SIZE = 280;
+const PROFILE_CROP_OUTPUT_SIZE = 1024;
+
+type CropPosition = { x: number; y: number };
+type ImageDimensions = { width: number; height: number };
+
+function clampCropPosition(
+  position: CropPosition,
+  image: ImageDimensions,
+  cropSize: number,
+  zoom: number,
+): CropPosition {
+  const baseScale = Math.max(
+    cropSize / image.width,
+    cropSize / image.height,
+  );
+  const displayedWidth = image.width * baseScale * zoom;
+  const displayedHeight = image.height * baseScale * zoom;
+  const maxX = Math.max(0, (displayedWidth - cropSize) / 2);
+  const maxY = Math.max(0, (displayedHeight - cropSize) / 2);
+
+  return {
+    x: Math.min(maxX, Math.max(-maxX, position.x)),
+    y: Math.min(maxY, Math.max(-maxY, position.y)),
+  };
+}
+
+/**
+ * Pick, frame, and export the profile image before the onboarding form saves.
+ * The crop is done in the browser so the stored avatar matches the preview,
+ * even after the temporary object URL used by the editor disappears.
+ */
+function ProfilePhotoField({
+  currentUrl,
+  inputRef,
+  value,
+  onFileChange,
+  onCropStateChange,
+}: {
+  currentUrl?: string;
+  inputRef: { current: HTMLInputElement | null };
+  value: File | null;
+  onFileChange: (file: File | null) => void;
+  onCropStateChange: (pending: boolean) => void;
+}) {
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceReadyFile, setSourceReadyFile] = useState<File | null>(null);
+  const [imageDimensions, setImageDimensions] =
+    useState<ImageDimensions | null>(null);
+  const [cropSize, setCropSize] = useState(PROFILE_CROP_SIZE);
+  const [zoom, setZoom] = useState(1);
+  const [position, setPosition] = useState<CropPosition>({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [cropError, setCropError] = useState("");
+  const [cropping, setCropping] = useState(false);
+  const [valuePreviewUrl, setValuePreviewUrl] = useState("");
+  const [valuePreviewFile, setValuePreviewFile] = useState<File | null>(null);
+  const cropSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!sourceFile) return;
+
+    let cancelled = false;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (cancelled || typeof reader.result !== "string") return;
+      const dataUrl = reader.result;
+      const image = new Image();
+      image.onload = () => {
+        if (cancelled) return;
+        setSourceUrl(dataUrl);
+        setSourceReadyFile(sourceFile);
+        setImageDimensions({
+          width: image.naturalWidth || image.width,
+          height: image.naturalHeight || image.height,
+        });
+      };
+      image.onerror = () => {
+        if (!cancelled) setCropError("That photo could not be read.");
+      };
+      image.src = dataUrl;
+    };
+    reader.onerror = () => {
+      if (!cancelled) setCropError("That photo could not be read.");
+    };
+    reader.readAsDataURL(sourceFile);
+
+    return () => {
+      cancelled = true;
+      reader.abort();
+    };
+  }, [sourceFile]);
+
+  useEffect(() => {
+    if (!value) return;
+
+    let cancelled = false;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (cancelled || typeof reader.result !== "string") return;
+      setValuePreviewUrl(reader.result);
+      setValuePreviewFile(value);
+    };
+    reader.onerror = () => undefined;
+    reader.readAsDataURL(value);
+    return () => {
+      cancelled = true;
+      reader.abort();
+    };
+  }, [value]);
+
+  useEffect(() => {
+    const surface = cropSurfaceRef.current;
+    if (!surface) return;
+
+    const measure = () => {
+      const nextSize = surface.getBoundingClientRect().width;
+      if (nextSize > 0) setCropSize(nextSize);
+    };
+    measure();
+
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, [sourceUrl]);
+
+  useEffect(
+    () => () => {
+      if (dragRef.current) dragRef.current = null;
+      onCropStateChange(false);
+    },
+    [onCropStateChange],
+  );
+
+  const imageLayout = useMemo(() => {
+    if (!imageDimensions) return null;
+    const baseScale = Math.max(
+      cropSize / imageDimensions.width,
+      cropSize / imageDimensions.height,
+    );
+    return {
+      scale: baseScale * zoom,
+      width: imageDimensions.width * baseScale * zoom,
+      height: imageDimensions.height * baseScale * zoom,
+    };
+  }, [cropSize, imageDimensions, zoom]);
+
+  const boundedPosition = imageDimensions
+    ? clampCropPosition(position, imageDimensions, cropSize, zoom)
+    : position;
+
+  function handleFilePick(file: File | null) {
+    if (!file) return;
+    if (
+      !file.type ||
+      !["image/jpeg", "image/png", "image/webp"].includes(file.type)
+    ) {
+      setCropError("Choose a JPG, PNG, or WebP image.");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+    setCropError("");
+    setSourceReadyFile(null);
+    setImageDimensions(null);
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
+    onCropStateChange(true);
+    setSourceFile(file);
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!imageLayout || !imageDimensions) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    setDragging(true);
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !imageDimensions) {
+      return;
+    }
+    const deltaX = event.clientX - drag.x;
+    const deltaY = event.clientY - drag.y;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    setPosition((current) =>
+      clampCropPosition(
+        { x: current.x + deltaX, y: current.y + deltaY },
+        imageDimensions,
+        cropSize,
+        zoom,
+      ),
+    );
+  }
+
+  function handlePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function moveWithKeyboard(deltaX: number, deltaY: number) {
+    if (!imageDimensions) return;
+    setPosition((current) =>
+      clampCropPosition(
+        { x: current.x + deltaX, y: current.y + deltaY },
+        imageDimensions,
+        cropSize,
+        zoom,
+      ),
+    );
+  }
+
+  function handleCropKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const step = event.shiftKey ? 24 : 8;
+    const deltas: Record<string, CropPosition> = {
+      ArrowUp: { x: 0, y: -step },
+      ArrowDown: { x: 0, y: step },
+      ArrowLeft: { x: -step, y: 0 },
+      ArrowRight: { x: step, y: 0 },
+    };
+    const delta = deltas[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    moveWithKeyboard(delta.x, delta.y);
+  }
+
+  function handleZoomChange(nextZoom: number) {
+    setZoom(nextZoom);
+    if (imageDimensions) {
+      setPosition((current) =>
+        clampCropPosition(current, imageDimensions, cropSize, nextZoom),
+      );
+    }
+  }
+
+  async function applyCrop() {
+    if (
+      cropping ||
+      !sourceFile ||
+      sourceReadyFile !== sourceFile ||
+      !sourceUrl ||
+      !imageDimensions ||
+      !imageLayout
+    ) {
+      return;
+    }
+
+    setCropError("");
+    setCropping(true);
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error("That photo could not be read."));
+        element.src = sourceUrl;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = PROFILE_CROP_OUTPUT_SIZE;
+      canvas.height = PROFILE_CROP_OUTPUT_SIZE;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("That photo could not be cropped.");
+
+      const sourceCropSize = cropSize / imageLayout.scale;
+      const sourceX = Math.min(
+        imageDimensions.width - sourceCropSize,
+        Math.max(
+          0,
+          imageDimensions.width / 2 -
+            boundedPosition.x / imageLayout.scale -
+            sourceCropSize / 2,
+        ),
+      );
+      const sourceY = Math.min(
+        imageDimensions.height - sourceCropSize,
+        Math.max(
+          0,
+          imageDimensions.height / 2 -
+            boundedPosition.y / imageLayout.scale -
+            sourceCropSize / 2,
+        ),
+      );
+
+      context.drawImage(
+        image,
+        sourceX,
+        sourceY,
+        sourceCropSize,
+        sourceCropSize,
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      );
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/webp", 0.9),
+      );
+      if (!blob) throw new Error("That photo could not be cropped.");
+
+      const baseName = sourceFile.name.replace(/\.[^/.]+$/, "") || "profile-photo";
+      const extension =
+        blob.type === "image/webp"
+          ? "webp"
+          : blob.type === "image/png"
+            ? "png"
+            : "jpg";
+      const croppedFile = new File([blob], `${baseName}-cropped.${extension}`, {
+        type: blob.type || "image/webp",
+        lastModified: Date.now(),
+      });
+      onFileChange(croppedFile);
+      onCropStateChange(false);
+      setSourceFile(null);
+      if (inputRef.current) inputRef.current.value = "";
+    } catch (error) {
+      setCropError(
+        error instanceof Error ? error.message : "That photo could not be cropped.",
+      );
+    } finally {
+      setCropping(false);
+    }
+  }
+
+  function cancelCrop() {
+    onCropStateChange(false);
+    setSourceFile(null);
+    setCropError("");
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  return (
+    <div className="profile-photo-picker">
+      <input
+        ref={inputRef}
+        name="avatar_file"
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={(event) => handleFilePick(event.target.files?.[0] ?? null)}
+      />
+
+      {sourceFile ? (
+        <div className="profile-photo-crop-editor">
+          <div
+            ref={cropSurfaceRef}
+            className={`profile-photo-crop-surface${dragging ? " is-dragging" : ""}`}
+            role="region"
+            aria-label="Crop profile photo. Drag the image to reposition it."
+            tabIndex={0}
+            onKeyDown={handleCropKeyDown}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+          >
+            {sourceUrl && sourceReadyFile === sourceFile && imageLayout ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={sourceUrl}
+                alt="Profile photo crop preview"
+                draggable={false}
+                onLoad={(event) =>
+                  setImageDimensions({
+                    width: event.currentTarget.naturalWidth,
+                    height: event.currentTarget.naturalHeight,
+                  })
+                }
+                style={{
+                  height: imageLayout.height,
+                  left: "50%",
+                  top: "50%",
+                  transform: `translate(calc(-50% + ${boundedPosition.x}px), calc(-50% + ${boundedPosition.y}px))`,
+                  width: imageLayout.width,
+                }}
+              />
+            ) : (
+              <span className="profile-photo-crop-loading">Loading photo…</span>
+            )}
+            <span className="profile-photo-crop-outline" aria-hidden="true" />
+          </div>
+          <div className="profile-photo-crop-controls">
+            <label className="profile-photo-zoom">
+              <span>Zoom</span>
+              <input
+                type="range"
+                min="1"
+                max="3"
+                step="0.01"
+                value={zoom}
+                aria-label="Zoom profile photo"
+                onChange={(event) => handleZoomChange(Number(event.target.value))}
+              />
+              <output>{Math.round(zoom * 100)}%</output>
+            </label>
+            <small>Drag the photo to choose what appears in the circle.</small>
+          </div>
+          <div className="profile-photo-crop-actions">
+            <button type="button" onClick={cancelCrop}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button button-dark"
+              disabled={!imageLayout || cropping}
+              onClick={() => void applyCrop()}
+            >
+              {cropping ? "Preparing…" : "Use this crop"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="profile-photo-preview-row">
+          {((value && valuePreviewFile === value && valuePreviewUrl) ||
+            (!value && currentUrl)) && (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              className="profile-photo-preview"
+              src={value ? valuePreviewUrl : currentUrl}
+              alt={value ? "Selected profile photo" : "Current profile photo"}
+            />
+          )}
+          <small>
+            {value
+              ? "Your cropped photo is ready. Choose another photo to adjust it."
+              : currentUrl
+                ? "Your current photo is shown here. Choose another photo to replace it."
+                : "Choose a photo, then drag it into place."}
+          </small>
+        </div>
+      )}
+
+      {cropError && (
+        <small className="profile-photo-crop-error" role="alert">
+          {cropError}
+        </small>
+      )}
+    </div>
   );
 }
 
@@ -1702,6 +2168,7 @@ function CreatorAudienceFields({
 const ROLE_SWITCH_KEEPS = [
   "display_name",
   "city",
+  "location",
   "bio",
   "handle",
   "contact_name",
@@ -1852,6 +2319,42 @@ function creatorOfferView(
   };
 }
 
+/**
+ * Keep a location useful for proximity without keeping an exact device pin.
+ * Two decimal places gives a city-level approximation; the public profile
+ * still only exposes the member's typed city string.
+ */
+function normalizeLocationPoint(value: unknown): LocationPoint | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as { latitude?: unknown; longitude?: unknown };
+  if (raw.latitude == null || raw.longitude == null) return null;
+  const latitude = Number(raw.latitude);
+  const longitude = Number(raw.longitude);
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    return null;
+  }
+  return {
+    latitude: Number(latitude.toFixed(2)),
+    longitude: Number(longitude.toFixed(2)),
+  };
+}
+
+function locationPointFromProfile(
+  source: Pick<Profile, "location_latitude" | "location_longitude">,
+) {
+  return normalizeLocationPoint({
+    latitude: source.location_latitude,
+    longitude: source.location_longitude,
+  });
+}
+
 function normalizeOnboardingAnswers(
   raw: Partial<OnboardingAnswers> | undefined,
 ): OnboardingAnswers {
@@ -1891,8 +2394,10 @@ function normalizeOnboardingAnswers(
       ...(raw?.creatorOfferTouched?.[offer] ?? {}),
     };
   }
+  const location = normalizeLocationPoint(raw?.location);
   return {
     ...merged,
+    location,
     creatorOffers: selectedCreatorOffers(merged),
     creatorOfferDetails: details,
     creatorOfferTouched: touched,
@@ -1931,6 +2436,7 @@ function emptyAnswers(): OnboardingAnswers {
   return {
     display_name: "",
     city: "",
+    location: null,
     bio: "",
     handle: "",
     contact_name: "",
@@ -2087,6 +2593,7 @@ function answersFromProfile(
     creatorOffers,
     display_name: source.display_name ?? "",
     city: source.city ?? "",
+    location: locationPointFromProfile(source),
     bio: source.bio ?? "",
     handle: source.handle ?? "",
     contact_name: source.contact_name ?? "",
@@ -4182,6 +4689,8 @@ export default function MarketplaceApp({
     "setup",
   );
   const [onboardingError, setOnboardingError] = useState("");
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationError, setLocationError] = useState("");
   const [answers, setAnswers] = useState<OnboardingAnswers>(() =>
     answersFromProfile(null, invite),
   );
@@ -4214,6 +4723,7 @@ export default function MarketplaceApp({
    * a typo unmounted them and threw the selection away without saying so.
    */
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarCropPending, setAvatarCropPending] = useState(false);
   const [listingFiles, setListingFiles] = useState<File[]>([]);
   const [aiFilling, setAiFilling] = useState(false);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
@@ -5470,6 +5980,49 @@ export default function MarketplaceApp({
     user,
   ]);
 
+  function captureCurrentLocation() {
+    if (!navigator.geolocation) {
+      setLocationError(
+        "This browser cannot share a location. Type your city and state instead.",
+      );
+      return;
+    }
+
+    setLocationError("");
+    setLocationBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const location = normalizeLocationPoint({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
+        setLocationBusy(false);
+        if (!location) {
+          setLocationError(
+            "We could not read a usable location. Type your city and state instead.",
+          );
+          return;
+        }
+        setAnswers((current) => ({ ...current, location }));
+      },
+      (error) => {
+        setLocationBusy(false);
+        setLocationError(
+          error.code === 1
+            ? "Location permission was not granted. Type your city and state instead."
+            : error.code === 2
+              ? "We could not find your location. Type your city and state instead."
+              : "Finding your location took too long. Type your city and state instead.",
+        );
+      },
+      {
+        enableHighAccuracy: false,
+        maximumAge: 5 * 60 * 1000,
+        timeout: 10 * 1000,
+      },
+    );
+  }
+
   /**
    * Seed BOTH role pickers from the stored profile. Openers used to seed only
    * the primary role, so extra roles toggled during an edit the member then
@@ -5500,11 +6053,13 @@ export default function MarketplaceApp({
     );
     setAnswers(answersFromProfile(source, invite));
     setOnboardingError("");
+    setLocationError("");
     // Otherwise a second open keeps treating the generated title and
     // description as hand-written, and stops regenerating them.
     setTitleTouched(false);
     setDescriptionTouched(false);
     setAvatarFile(null);
+    setAvatarCropPending(false);
     chooseListingFiles([]);
     setGalleryFiles([]);
   }
@@ -6174,7 +6729,10 @@ export default function MarketplaceApp({
   }
 
   function isCurrentOnboardingStepComplete() {
-    return missingAnswers().length === 0;
+    const identityStepVisible =
+      onboardingMode === "edit" || onboardingStep === 2;
+    return missingAnswers().length === 0 &&
+      (!identityStepVisible || !avatarCropPending);
   }
 
   /** What the current slide blocks on: the first thing missing, or nothing. */
@@ -6261,6 +6819,10 @@ export default function MarketplaceApp({
   }
 
   function advanceOnboarding() {
+    if (avatarCropPending) {
+      setOnboardingError("Finish positioning your photo, or cancel the crop, before continuing.");
+      return;
+    }
     const problem = firstMissingAnswer();
     if (problem) {
       reportMissing(problem);
@@ -6307,6 +6869,11 @@ export default function MarketplaceApp({
    */
   async function publishOnboarding(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (avatarCropPending) {
+      setOnboardingError("Finish positioning your photo, or cancel the crop, before saving.");
+      return;
+    }
 
     const problem = allMissingAnswers()[0] ?? null;
     if (problem) {
@@ -6446,6 +7013,8 @@ export default function MarketplaceApp({
         contact_name: answers.contact_name.trim(),
         contact_email: answers.contact_email.trim(),
         city: answers.city.trim(),
+        location_latitude: answers.location?.latitude ?? null,
+        location_longitude: answers.location?.longitude ?? null,
         bio: answers.bio.trim(),
         // A sponsorship offer is never shown the category chips - what they
         // are is already answered, in their own words, by the organisation
@@ -6519,6 +7088,8 @@ export default function MarketplaceApp({
       const writtenProfile = {
         ...(existing ?? { auth_user_id: user.id }),
         ...(result.data as Partial<Profile>),
+        location_latitude: payload.location_latitude,
+        location_longitude: payload.location_longitude,
         auth_user_id: existing?.auth_user_id ?? user.id,
       } as Profile;
       // Deliberately not fatal. The profile row is already committed, and
@@ -11292,6 +11863,7 @@ export default function MarketplaceApp({
             setOnboardingPreview(false);
             setOnboardingStep(1);
             setOnboardingError("");
+            setAvatarCropPending(false);
             resetIgAvatarSync();
           }}
           wide
@@ -11465,22 +12037,52 @@ export default function MarketplaceApp({
                   {(onboardingMode === "edit" ||
                     Boolean(answers.display_name.trim())) && (
                   <label className="progressive-field">
-                    Where are you based?
+                    <span className="location-field-label">Where are you based?</span>
                     <small>City and state. This is how buyers filter.</small>
-                    <input
-                      name="city"
-                      data-field="city"
-                      maxLength={80}
-                      list="onboarding-market-list"
-                      value={answers.city}
-                      onChange={(event) =>
-                        setAnswers((current) => ({
-                          ...current,
-                          city: event.target.value,
-                        }))
-                      }
-                      placeholder="Brea, CA"
-                    />
+                    <div className="location-input-row">
+                      <input
+                        name="city"
+                        data-field="city"
+                        maxLength={80}
+                        list="onboarding-market-list"
+                        value={answers.city}
+                        onChange={(event) => {
+                          setLocationError("");
+                          setAnswers((current) => ({
+                            ...current,
+                            city: event.target.value,
+                            // A changed city makes an older device pin stale.
+                            location: null,
+                          }));
+                        }}
+                        placeholder="Brea, CA"
+                      />
+                      <button
+                        type="button"
+                        className="button button-small location-button"
+                        disabled={busy || locationBusy}
+                        onClick={captureCurrentLocation}
+                      >
+                        {locationBusy
+                          ? "Finding…"
+                          : answers.location
+                            ? "Update pin"
+                            : "Use my location"}
+                      </button>
+                    </div>
+                    {locationError ? (
+                      <small className="location-data-status is-error" role="alert">
+                        {locationError}
+                      </small>
+                    ) : answers.location ? (
+                      <small className="location-data-status" role="status">
+                        ✓ City-level location saved. Your exact device location is never published.
+                      </small>
+                    ) : (
+                      <small className="location-data-status">
+                        Optional: save a rounded location pin for future nearby matching.
+                      </small>
+                    )}
                   </label>
                   )}
                   <datalist id="onboarding-market-list">
@@ -11530,18 +12132,16 @@ export default function MarketplaceApp({
                   {(onboardingMode === "edit" ||
                     answers.bio.trim().length > 0) && (
                   <>
-                  <label className="field-wide media-upload-field progressive-field">
+                  <div className="field-wide media-upload-field progressive-field">
                     <OptionalFieldLabel>
                       {selectedRole === "business" ? "Add your logo" : "Add a profile photo"}
                     </OptionalFieldLabel>
-                    <input
-                      ref={avatarInputRef}
-                      name="avatar_file"
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={(event) =>
-                        setAvatarFile(event.target.files?.[0] ?? null)
-                      }
+                    <ProfilePhotoField
+                      currentUrl={profile?.avatar_url}
+                      inputRef={avatarInputRef}
+                      value={avatarFile}
+                      onFileChange={setAvatarFile}
+                      onCropStateChange={setAvatarCropPending}
                     />
                     <small>
                       Profiles with a face or a logo get far more replies.
@@ -11549,7 +12149,7 @@ export default function MarketplaceApp({
                         ? " Leave empty to keep your current photo."
                         : ""}
                     </small>
-                  </label>
+                  </div>
                   {/* A business gives the person behind the name; everyone
                       else gives an email. Nobody is asked for an @handle any
                       more - it was a unique-indexed field that meant nothing
