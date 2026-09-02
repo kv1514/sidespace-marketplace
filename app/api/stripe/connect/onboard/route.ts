@@ -34,6 +34,11 @@ function getPublicBusinessUrl() {
   }
 }
 
+// Stripe replays the response for an idempotency key, including a previous
+// provider-side 4xx. Bump this version when a blocked account-creation
+// attempt needs to be retried after the platform configuration is fixed.
+const CONNECT_ACCOUNT_IDEMPOTENCY_KEY_VERSION = "v2";
+
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
@@ -72,7 +77,9 @@ export async function POST(request: Request) {
           },
           metadata: { sidespace_profile_id: profile.id },
         },
-        { idempotencyKey: `sidespace-connect-account-${profile.id}` },
+        {
+          idempotencyKey: `sidespace-connect-account-${profile.id}-${CONNECT_ACCOUNT_IDEMPOTENCY_KEY_VERSION}`,
+        },
       );
       accountId = account.id;
       const accountState = {

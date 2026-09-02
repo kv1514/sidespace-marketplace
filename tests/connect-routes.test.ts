@@ -160,7 +160,7 @@ describe("Stripe Connect lifecycle routes", () => {
         capabilities: { transfers: { requested: true } },
         metadata: { sidespace_profile_id: profile.id },
       }),
-      { idempotencyKey: `sidespace-connect-account-${profile.id}` },
+      { idempotencyKey: `sidespace-connect-account-${profile.id}-v2` },
     );
     expect(inserted).toHaveLength(1);
     expect(inserted[0]).toMatchObject({
