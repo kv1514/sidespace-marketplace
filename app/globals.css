@@ -7208,9 +7208,6 @@ html.reveal-ready [data-reveal].is-visible {
   margin-left: 0;
 }
 
-/* A city string is still the public label, but the member can also opt into a
-   rounded coordinate pin for location-aware matching. Keep the action beside
-   the field so it reads as one location question. */
 .location-field-label {
   display: block;
 }
@@ -7224,6 +7221,47 @@ html.reveal-ready [data-reveal].is-visible {
 
 .location-input-row input {
   min-width: 0;
+  width: 100%;
+}
+
+.city-autocomplete {
+  min-width: 0;
+  position: relative;
+}
+
+.city-autocomplete-list {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(22, 20, 14, 0.12);
+  left: 0;
+  list-style: none;
+  margin: 6px 0 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 6px;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 20;
+}
+
+.city-autocomplete-list li {
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: var(--display);
+  font-size: 14px;
+  padding: 10px 12px;
+}
+
+.city-autocomplete-list li.is-active {
+  background: color-mix(in srgb, var(--lime) 28%, var(--white));
+}
+
+.city-autocomplete-status {
+  color: var(--ink-soft);
+  cursor: default;
+  font-size: 13px;
 }
 
 .location-button {
@@ -9025,7 +9063,8 @@ html.reveal-ready [data-reveal].is-visible {
 }
 
 .onboarding-form .role-choice-grid > button:active,
-.onboarding-form .onboarding-actions .button:active {
+.onboarding-form .onboarding-actions .button:active,
+.onboarding-form .onboarding-path-grid .button:active {
   transform: scale(0.98);
 }
 
@@ -9042,6 +9081,29 @@ html.reveal-ready [data-reveal].is-visible {
     cubic-bezier(0.25, 0.8, 0.25, 1) 20ms both;
   display: inline-flex;
   transform-origin: 100% 50%;
+}
+
+.onboarding-form .onboarding-path-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 6px;
+}
+
+.onboarding-form .onboarding-path-grid .button {
+  width: 100%;
+}
+
+.onboarding-form .onboarding-path-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.onboarding-form .onboarding-path-actions .button,
+.onboarding-form .onboarding-path-grid .button {
+  white-space: nowrap;
 }
 
 @keyframes onboarding-primary-action-in {
@@ -9069,6 +9131,13 @@ html.reveal-ready [data-reveal].is-visible {
     gap: 10px;
   }
 
+  .onboarding-form .onboarding-path-actions,
+  .onboarding-form .onboarding-path-grid {
+    flex-direction: column;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
   .onboarding-form .onboarding-actions .button,
   .onboarding-form .onboarding-actions > button:not(.button) {
     padding-inline: 17px;
@@ -9087,7 +9156,8 @@ html.reveal-ready [data-reveal].is-visible {
   }
 
   .onboarding-form .role-choice-grid > button:active,
-  .onboarding-form .onboarding-actions .button:active {
+  .onboarding-form .onboarding-actions .button:active,
+  .onboarding-form .onboarding-path-grid .button:active {
     transform: none;
   }
 

@@ -56,6 +56,7 @@ import {
   SiteHeader,
   type SideSpaceRoute,
 } from "@/app/components/SiteChrome";
+import CityAutocomplete from "@/app/components/CityAutocomplete";
 
 const stripeConfigured = /^pk_(?:test|live)_/.test(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "",
@@ -1327,7 +1328,7 @@ type OnboardingAnswers = {
   // Step 1 - identity, asked of every role exactly once.
   display_name: string;
   city: string;
-  /** Rounded to two decimals before it leaves the browser. */
+  /** City centroid or a rounded GPS point, used only for nearby matching. */
   location: LocationPoint | null;
   bio: string;
   handle: string;
@@ -1390,6 +1391,8 @@ type OnboardingAnswers = {
   targetPlatforms: string[];
   /** Where the business wants physical space, which is not where THEY are. */
   wantedArea: string;
+  /** Business setup only: campaign onboarding, or skip straight to browsing. */
+  businessSetupPath: "" | "campaign" | "browse";
   // Sponsorship host.
   orgKind: string;
   /** What they typed after picking "Something else". */
@@ -2480,6 +2483,7 @@ function emptyAnswers(): OnboardingAnswers {
     priceMax: null,
     targetPlatforms: [],
     wantedArea: "",
+    businessSetupPath: "",
     orgKind: "",
     orgOther: "",
     surfaceOther: "",
@@ -4590,6 +4594,7 @@ export default function MarketplaceApp({
   initialRoleFilter = "all",
   initialChannel = "All",
   referralCode = "",
+  referralCreditCents = null,
 }: {
   /** Server-rendered marketplace, so crawlers and link previews see real
    *  members instead of the seeded demo set. Null when Supabase was
@@ -4600,6 +4605,8 @@ export default function MarketplaceApp({
   invite?: Invite | null;
   /** The shared Business referral code, preserved through auth redirects. */
   referralCode?: string;
+  /** Server-validated value for a dynamic founder-created referral. */
+  referralCreditCents?: number | null;
   /** Public information architecture route. The marketplace/auth engine stays
    * mounted so every route keeps the same dialogs, sessions, and handlers. */
   route?: SideSpaceRoute;
@@ -5630,22 +5637,6 @@ export default function MarketplaceApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profiles, blockedProfileIds, ownerIdsWithListings]);
 
-  /**
-   * Markets that already exist, for the onboarding city field.
-   *
-   * Built from profiles already in memory - no API key, no geocoder, no
-   * per-load cost - and it converges members on the exact strings the
-   * marketplace filters already match, instead of a free-text field producing
-   * "Brea", "Brea CA" and "brea, california" for one town.
-   */
-  const knownMarkets = useMemo(
-    () =>
-      Array.from(
-        new Set(profiles.map((person) => person.city.trim()).filter(Boolean)),
-      ).sort(),
-    [profiles],
-  );
-
   const channels = useMemo(
     () => [
       "All",
@@ -6041,14 +6032,38 @@ export default function MarketplaceApp({
           latitude: coords.latitude,
           longitude: coords.longitude,
         });
-        setLocationBusy(false);
         if (!location) {
+          setLocationBusy(false);
           setLocationError(
             "We could not read a usable location. Type your city and state instead.",
           );
           return;
         }
-        setAnswers((current) => ({ ...current, location }));
+        void fetch(
+          `/api/geo?lat=${encodeURIComponent(String(coords.latitude))}&lon=${encodeURIComponent(String(coords.longitude))}`,
+        )
+          .then(async (response) => {
+            const body = (await response.json()) as {
+              place?: { label?: string };
+              error?: string;
+            };
+            if (!response.ok || !body.place?.label) {
+              throw new Error(body.error || "lookup failed");
+            }
+            setAnswers((current) => ({
+              ...current,
+              city: body.place!.label!,
+              location,
+            }));
+          })
+          .catch(() => {
+            setLocationError(
+              "We could not find your city from that location. Type it instead.",
+            );
+          })
+          .finally(() => {
+            setLocationBusy(false);
+          });
       },
       (error) => {
         setLocationBusy(false);
@@ -6624,6 +6639,17 @@ export default function MarketplaceApp({
       }
     }
     if (role === "business") {
+      // Browse skips the brief entirely. Campaign fields stay required only
+      // when they chose to post one.
+      if (answers.businessSetupPath === "browse") {
+        return out;
+      }
+      need(
+        answers.businessSetupPath !== "campaign",
+        "Choose whether to start a campaign or browse listings.",
+        "businessSetupPath",
+      );
+      if (answers.businessSetupPath !== "campaign") return out;
       // Same order the questions are rendered in, so the error scrolls forward
       // through the pane rather than jumping back past something answered.
       need(
@@ -6719,6 +6745,7 @@ export default function MarketplaceApp({
       ],
       space_owner: ["spaceKind", "streetAddress", "location_area", "spaceSize"],
       business: [
+        "businessSetupPath",
         "promoting",
         "categories",
         "goal",
@@ -6873,6 +6900,22 @@ export default function MarketplaceApp({
     goToOnboardingStep(onboardingStep + 1);
   }
 
+  function startBusinessCampaign() {
+    setAnswers((current) => ({
+      ...current,
+      businessSetupPath: "campaign",
+    }));
+    setOnboardingError("");
+  }
+
+  function browseBusinessListings() {
+    setAnswers((current) => ({
+      ...current,
+      businessSetupPath: "browse",
+    }));
+    void publishOnboarding(null, { skipListing: true });
+  }
+
   async function signInWithGoogle() {
     if (!supabase) return;
     // Carry invite and referral parameters through the OAuth round trip.
@@ -6891,7 +6934,7 @@ export default function MarketplaceApp({
 
   /**
    * Finish onboarding: write the profile, and in setup mode publish the first
-   * listing too.
+   * listing too — unless a business chose to browse listings instead.
    *
    * WRITE ORDER IS LOAD-BEARING. The profile must exist with
    * onboarding_complete = true before the listing insert, because
@@ -6907,15 +6950,31 @@ export default function MarketplaceApp({
    * that guard for atomicity is a bad deal when the non-atomic failure mode is
    * recoverable, which it is: see the catch below.
    */
-  async function publishOnboarding(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function publishOnboarding(
+    event?: FormEvent<HTMLFormElement> | null,
+    options?: { skipListing?: boolean },
+  ) {
+    event?.preventDefault();
+    const skipListing =
+      Boolean(options?.skipListing) ||
+      (selectedRole === "business" && answers.businessSetupPath === "browse");
 
     if (avatarCropPending) {
       setOnboardingError("Finish positioning your photo, or cancel the crop, before saving.");
       return;
     }
 
-    const problem = allMissingAnswers()[0] ?? null;
+    const identityFields = new Set([
+      "role",
+      "display_name",
+      "city",
+      "bio",
+      "contact_email",
+    ]);
+    const problem = skipListing
+      ? (allMissingAnswers().find(([, field]) => identityFields.has(field)) ??
+        null)
+      : (allMissingAnswers()[0] ?? null);
     if (problem) {
       reportMissing(problem);
       return;
@@ -7204,73 +7263,98 @@ export default function MarketplaceApp({
       }
 
       if (onboardingMode === "setup") {
-        // Uploaded only after the profile write succeeds. Uploading first meant
-        // a failed profile save left the photos sitting in a public bucket with
-        // nothing referencing them and no way to reach them again.
-        //
-        // Not sliced to 6: uploadImages enforces its own cap and reports it,
-        // where slicing here would silently publish 6 of the 8 someone picked.
-        const listingUploads = await uploadImages(
-          chosenListingFiles,
-          "listings",
-        );
-        // Plural. A sponsorship offer publishes one row per tier; everyone
-        // else publishes exactly one, which is the same code path with a
-        // one-element array.
-        const drafts = buildListingDrafts(role, answers, {
-          title: titleTouched,
-          description: descriptionTouched,
-        });
-        // Listing photos are written to the listing ONLY, never mirrored into
-        // profiles.gallery_urls. removeProfilePhoto already exists to repair
-        // listings that share a URL with a deleted gallery photo, re-pointing
-        // them at the default cover; double-writing would make that the
-        // guaranteed fate of every listing this flow creates.
-        const cover =
-          listingUploads[0] ||
-          payload.avatar_url ||
-          payload.gallery_urls[0] ||
-          DEFAULT_LISTING_IMAGE;
-        // Captured before the map: narrowing on the outer binding does not
-        // survive into a closure, and this is the only reference inside one.
-        const ownerId = savedProfile.id;
-        const inserted = await supabase
-          .from("listings")
-          .insert(
-            drafts.map((draft) => ({
-              ...draft,
-              owner_profile_id: ownerId,
-              image_url: cover,
-              image_urls: listingUploads.length ? listingUploads : [cover],
-              status: "active",
-              provenance_status: "owner_attested",
-              availability_confirmed_at: new Date().toISOString(),
-            })),
-          )
-        .select(PUBLIC_LISTING_COLUMNS);
-        if (inserted.error) throw inserted.error;
+        if (!skipListing) {
+          // Uploaded only after the profile write succeeds. Uploading first meant
+          // a failed profile save left the photos sitting in a public bucket with
+          // nothing referencing them and no way to reach them again.
+          //
+          // Not sliced to 6: uploadImages enforces its own cap and reports it,
+          // where slicing here would silently publish 6 of the 8 someone picked.
+          const listingUploads = await uploadImages(
+            chosenListingFiles,
+            "listings",
+          );
+          // Plural. A sponsorship offer publishes one row per tier; everyone
+          // else publishes exactly one, which is the same code path with a
+          // one-element array.
+          const drafts = buildListingDrafts(role, answers, {
+            title: titleTouched,
+            description: descriptionTouched,
+          });
+          // Listing photos are written to the listing ONLY, never mirrored into
+          // profiles.gallery_urls. removeProfilePhoto already exists to repair
+          // listings that share a URL with a deleted gallery photo, re-pointing
+          // them at the default cover; double-writing would make that the
+          // guaranteed fate of every listing this flow creates.
+          const cover =
+            listingUploads[0] ||
+            payload.avatar_url ||
+            payload.gallery_urls[0] ||
+            DEFAULT_LISTING_IMAGE;
+          // Captured before the map: narrowing on the outer binding does not
+          // survive into a closure, and this is the only reference inside one.
+          const ownerId = savedProfile.id;
+          const inserted = await supabase
+            .from("listings")
+            .insert(
+              drafts.map((draft) => ({
+                ...draft,
+                owner_profile_id: ownerId,
+                image_url: cover,
+                image_urls: listingUploads.length ? listingUploads : [cover],
+                status: "active",
+                provenance_status: "owner_attested",
+                availability_confirmed_at: new Date().toISOString(),
+              })),
+            )
+          .select(PUBLIC_LISTING_COLUMNS);
+          if (inserted.error) throw inserted.error;
+
+          window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
+          setOnboardingDraft(null);
+          setOnboardingOpen(false);
+          setOnboardingStep(1);
+          resetIgAvatarSync();
+          await Promise.all([
+            loadMarketplace(),
+            loadOwnListings(savedProfile),
+            loadAccountMarketplaceState(savedProfile),
+          ]);
+          setToast(
+            role === "business"
+              ? adCreditAwarded
+                ? `Your brief is live. ${formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in ad credit is ready for your first campaign.`
+                : adCreditSyncFailed
+                  ? "Your brief is live. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
+                  : "Your brief is live. We’ll tell you the moment someone answers."
+                : canonicalRole(role) === "creator" && drafts.length > 1
+                  ? "You’re live. " + drafts.length + " listings are on the marketplace."
+                : `You’re live. “${drafts[0].title}” is on the marketplace.`,
+          );
+          return;
+        }
 
         window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
         setOnboardingDraft(null);
         setOnboardingOpen(false);
         setOnboardingStep(1);
         resetIgAvatarSync();
+        setRoleFilter("supply");
         await Promise.all([
           loadMarketplace(),
           loadOwnListings(savedProfile),
           loadAccountMarketplaceState(savedProfile),
         ]);
         setToast(
-          role === "business"
-            ? adCreditAwarded
-              ? `Your brief is live. ${formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in ad credit is ready for your first campaign.`
-              : adCreditSyncFailed
-                ? "Your brief is live. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
-                : "Your brief is live. We’ll tell you the moment someone answers."
-              : canonicalRole(role) === "creator" && drafts.length > 1
-                ? "You’re live. " + drafts.length + " listings are on the marketplace."
-              : `You’re live. “${drafts[0].title}” is on the marketplace.`,
+          adCreditAwarded
+            ? `You’re in. ${formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in ad credit is ready when you start a campaign.`
+            : adCreditSyncFailed
+              ? "You’re in. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
+              : "You’re in. Browse listings, or start a campaign whenever you’re ready.",
         );
+        if (route !== "marketplace") {
+          window.location.assign("/marketplace?role=supply");
+        }
         return;
       }
 
@@ -10602,7 +10686,13 @@ export default function MarketplaceApp({
               (invite && inviteRole(invite) === "business")) && (
             <div className="setup-notice ad-credit-signup-notice">
               <strong>
-                Your {activeBusinessReferralCode(referralCode) ? "referral" : "invite"} includes {formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in ad credit
+                Your {activeBusinessReferralCode(referralCode) ? "referral" : "invite"} includes{" "}
+                {activeBusinessReferralCode(referralCode)
+                  ? referralCreditCents
+                    ? `${formatCents(referralCreditCents)} in `
+                    : ""
+                  : `${formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in `}
+                ad credit
               </strong>
               <p>
                 Complete the Business setup and it will be applied automatically to advertising
@@ -12233,22 +12323,29 @@ export default function MarketplaceApp({
                     <span className="location-field-label">Where are you based?</span>
                     <small>City and state. This is how buyers filter.</small>
                     <div className="location-input-row">
-                      <input
-                        name="city"
-                        data-field="city"
-                        maxLength={80}
-                        list="onboarding-market-list"
+                      <CityAutocomplete
                         value={answers.city}
-                        onChange={(event) => {
+                        disabled={busy || locationBusy}
+                        placeholder="Brea, CA"
+                        onChange={(city) => {
                           setLocationError("");
                           setAnswers((current) => ({
                             ...current,
-                            city: event.target.value,
-                            // A changed city makes an older device pin stale.
+                            city,
                             location: null,
                           }));
                         }}
-                        placeholder="Brea, CA"
+                        onSelect={(place) => {
+                          setLocationError("");
+                          setAnswers((current) => ({
+                            ...current,
+                            city: place.label,
+                            location: normalizeLocationPoint({
+                              latitude: place.latitude,
+                              longitude: place.longitude,
+                            }),
+                          }));
+                        }}
                       />
                       <button
                         type="button"
@@ -12256,33 +12353,16 @@ export default function MarketplaceApp({
                         disabled={busy || locationBusy}
                         onClick={captureCurrentLocation}
                       >
-                        {locationBusy
-                          ? "Finding…"
-                          : answers.location
-                            ? "Update pin"
-                            : "Use my location"}
+                        {locationBusy ? "Finding…" : "Use my location"}
                       </button>
                     </div>
                     {locationError ? (
                       <small className="location-data-status is-error" role="alert">
                         {locationError}
                       </small>
-                    ) : answers.location ? (
-                      <small className="location-data-status" role="status">
-                        ✓ City-level location saved. Your exact device location is never published.
-                      </small>
-                    ) : (
-                      <small className="location-data-status">
-                        Optional: save a rounded location pin for future nearby matching.
-                      </small>
-                    )}
+                    ) : null}
                   </label>
                   )}
-                  <datalist id="onboarding-market-list">
-                    {knownMarkets.map((market) => (
-                      <option key={market} value={market} />
-                    ))}
-                  </datalist>
                   {(onboardingMode === "edit" || Boolean(answers.city.trim())) && (
                   <label className="field-wide progressive-field">
                     {selectedRole === "business"
@@ -12423,7 +12503,7 @@ export default function MarketplaceApp({
                             ? "Next: your details"
                             : "Continue"
                           : selectedRole === "business"
-                            ? "Next: your campaign"
+                            ? "Continue"
                             : selectedRole === "creator"
                               ? "Next: what you have to advertise"
                               : "Next"}{" "}
@@ -12545,7 +12625,10 @@ export default function MarketplaceApp({
                                 : answers.creatorOffer === "social"
                                   ? "Tell us about your audience."
                                   : "Choose your way to advertise."
-                            : "Shape the campaign."}
+                            : selectedRole === "business" &&
+                                answers.businessSetupPath !== "campaign"
+                              ? "How do you want to start?"
+                              : "Shape the campaign."}
                     </h3>
                     <p>
                       {onboardingStep === 5
@@ -12553,7 +12636,9 @@ export default function MarketplaceApp({
                         : onboardingStep === 4
                           ? "Clear expectations make the first conversation much easier."
                           : selectedRole === "business"
-                            ? "A focused brief gets better replies from creators and local spaces."
+                            ? answers.businessSetupPath === "campaign"
+                              ? "A focused brief gets better replies from creators and local spaces."
+                              : "Post a campaign now, or browse listings and come back later."
                             : answers.creatorOffer
                               ? "A few specific answers make your listing easier to trust."
                               : "Start by choosing the kind of advertising you have."}
@@ -13050,8 +13135,33 @@ export default function MarketplaceApp({
                     {/* ---------------- BUSINESS ---------------- */}
                     {selectedRole === "business" && (
                       <>
-                        {onboardingStep === 3 && (
-                        <>
+                        {onboardingStep === 3 &&
+                          answers.businessSetupPath !== "campaign" && (
+                        <div
+                          className="onboarding-path-grid onboarding-primary-action-enter"
+                          data-field="businessSetupPath"
+                        >
+                          <button
+                            type="button"
+                            className="button button-dark"
+                            onClick={startBusinessCampaign}
+                          >
+                            Start a campaign <span>→</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="button button-dark"
+                            disabled={busy}
+                            onClick={browseBusinessListings}
+                          >
+                            {busy ? "Opening…" : "Browse available listings"}{" "}
+                            <span>→</span>
+                          </button>
+                        </div>
+                        )}
+                        {onboardingStep === 3 &&
+                          answers.businessSetupPath === "campaign" && (
+                        <div className="progressive-field field-wide">
                         <div className="form-subsection field-wide">
                           <span>What you’re promoting</span>
                           <h4>What are you actually running this for?</h4>
@@ -13290,7 +13400,7 @@ export default function MarketplaceApp({
                             </>
                           )}
 
-                        </>
+                        </div>
                         )}
 
                         {onboardingStep === 4 && (
@@ -14331,15 +14441,43 @@ export default function MarketplaceApp({
 
                 <div
                   className="onboarding-actions"
-                  data-ready={isCurrentOnboardingStepComplete() ? "true" : "false"}
+                  data-ready={
+                    selectedRole === "business" &&
+                    onboardingMode === "setup" &&
+                    onboardingStep === 3 &&
+                    answers.businessSetupPath !== "campaign"
+                      ? "false"
+                      : isCurrentOnboardingStepComplete()
+                        ? "true"
+                        : "false"
+                  }
                 >
                   <button
                     type="button"
-                    onClick={() => goToOnboardingStep(onboardingStep - 1)}
+                    onClick={() => {
+                      if (
+                        selectedRole === "business" &&
+                        onboardingStep === 3 &&
+                        answers.businessSetupPath === "campaign"
+                      ) {
+                        setAnswers((current) => ({
+                          ...current,
+                          businessSetupPath: "",
+                        }));
+                        return;
+                      }
+                      goToOnboardingStep(onboardingStep - 1);
+                    }}
                   >
                     ← Back
                   </button>
-                  {isCurrentOnboardingStepComplete() && (
+                  {!(
+                    selectedRole === "business" &&
+                    onboardingMode === "setup" &&
+                    onboardingStep === 3 &&
+                    answers.businessSetupPath !== "campaign"
+                  ) &&
+                    isCurrentOnboardingStepComplete() && (
                     <span className="onboarding-primary-action-enter">
                       {onboardingMode === "setup" && onboardingStep < 5 ? (
                         <button
