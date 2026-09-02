@@ -11,12 +11,14 @@ import {
 } from "../lib/payments/ad-credits";
 
 describe("business ad credits", () => {
-  it("accepts the shared referral code case-insensitively", () => {
+  it("accepts safe shared and founder-created referral codes case-insensitively", () => {
     expect(normalizeBusinessReferralCode(" sidespace5 ")).toBe(
       BUSINESS_REFERRAL_CODE,
     );
     expect(isBusinessReferralCode("sidespace5")).toBe(true);
-    expect(isBusinessReferralCode("other-code")).toBe(false);
+    expect(isBusinessReferralCode("ss-2abcde9xyz")).toBe(true);
+    expect(isBusinessReferralCode("tiny")).toBe(false);
+    expect(isBusinessReferralCode("bad code<script>")).toBe(false);
   });
 
   it("applies the $5 promotion to the campaign before the buyer fee", () => {

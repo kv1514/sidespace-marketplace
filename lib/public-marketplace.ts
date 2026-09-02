@@ -30,6 +30,26 @@ export async function loadInvite(token: unknown): Promise<Invite | null> {
   }
 }
 
+export async function loadReferralCredit(code: string): Promise<number | null> {
+  if (!code) return null;
+  try {
+    const supabase = createPublicClient();
+    const { data, error } = await supabase.rpc(
+      "lookup_business_referral_offer",
+      { referral_code: code },
+    );
+    if (error) {
+      console.error("[public] referral lookup failed:", error);
+      return null;
+    }
+    const amount = Number(data);
+    return Number.isSafeInteger(amount) && amount > 0 ? amount : null;
+  } catch (error) {
+    console.error("[public] referral lookup threw:", error);
+    return null;
+  }
+}
+
 export async function loadMarketplaceSnapshot({
   profileLimit,
   listingLimit,

@@ -10,6 +10,7 @@ type InviteEngineProps = {
   initialListings: unknown;
   invite: Invite | null;
   referralCode?: string;
+  referralCreditCents?: number | null;
 };
 
 type InviteBridgeProps = InviteEngineProps & { inviteToken: string };

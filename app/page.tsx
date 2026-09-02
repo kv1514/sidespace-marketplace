@@ -7,6 +7,7 @@ import {
   isInviteToken,
   loadInvite,
   loadMarketplaceSnapshot,
+  loadReferralCredit,
 } from "@/lib/public-marketplace";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ export default async function Home({
   const referralCode = isBusinessReferralCode(referralParam)
     ? normalizeBusinessReferralCode(referralParam)
     : "";
-  const [invite, snapshot] = await Promise.all([
+  const [invite, snapshot, referralCreditCents] = await Promise.all([
     loadInvite(inviteToken),
     // The homepage proves the marketplace is real with a small preview. It no
     // longer pays for the complete browser it does not render.
@@ -49,6 +50,7 @@ export default async function Home({
       listingLimit: 24,
       label: "home",
     }),
+    loadReferralCredit(referralCode),
   ]);
 
   // Referral and prospect links keep the full onboarding engine mounted even
@@ -68,6 +70,7 @@ export default async function Home({
       invite={invite}
       inviteToken={inviteToken}
       referralCode={referralCode}
+      referralCreditCents={referralCreditCents}
     />
   );
 }

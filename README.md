@@ -63,6 +63,9 @@ Preview, and Development:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (server-only)
+- `SLACK_SIGNING_SECRET`, `SLACK_TEAM_ID`, and `SLACK_ALLOWED_USER_IDS`
+  (server-only; only when enabling the founder slash command documented in
+  `docs/SLACK_ADMIN_BOT.md`)
 - Stripe variables documented in `docs/STRIPE_MARKETPLACE.md`
 
 Deploy, then add the production callback URL to Supabase:

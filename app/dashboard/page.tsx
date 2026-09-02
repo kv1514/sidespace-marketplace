@@ -4,7 +4,7 @@ import {
   isBusinessReferralCode,
   normalizeBusinessReferralCode,
 } from "@/lib/payments/ad-credits";
-import { loadInvite } from "@/lib/public-marketplace";
+import { loadInvite, loadReferralCredit } from "@/lib/public-marketplace";
 
 export const dynamic = "force-dynamic";
 
@@ -21,16 +21,20 @@ export default async function Dashboard({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const invite = await loadInvite(params.p);
   const referralParam = typeof params.ref === "string" ? params.ref : "";
   const referralCode = isBusinessReferralCode(referralParam)
     ? normalizeBusinessReferralCode(referralParam)
     : "";
+  const [invite, referralCreditCents] = await Promise.all([
+    loadInvite(params.p),
+    loadReferralCredit(referralCode),
+  ]);
   return (
     <MarketplaceApp
       route="dashboard"
       invite={invite}
       referralCode={referralCode}
+      referralCreditCents={referralCreditCents}
     />
   );
 }

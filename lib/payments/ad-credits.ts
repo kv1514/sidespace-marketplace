@@ -5,13 +5,16 @@
  */
 export const BUSINESS_SIGNUP_CREDIT_CENTS = 500;
 export const BUSINESS_REFERRAL_CODE = "SIDESPACE5";
+export const BUSINESS_REFERRAL_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]{5,31}$/;
 
 export function normalizeBusinessReferralCode(value: unknown) {
   return typeof value === "string" ? value.trim().toUpperCase() : "";
 }
 
 export function isBusinessReferralCode(value: unknown): value is string {
-  return normalizeBusinessReferralCode(value) === BUSINESS_REFERRAL_CODE;
+  return BUSINESS_REFERRAL_CODE_PATTERN.test(
+    normalizeBusinessReferralCode(value),
+  );
 }
 
 // Stripe payout reconciliation requires a real platform charge because the
