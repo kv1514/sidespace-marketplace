@@ -2180,6 +2180,50 @@ function speechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+/** Notes box cap, matching the server: typed words plus a transcript. */
+const AI_NOTES_MAX = 1200;
+/** Longest voice note the recorder path takes; the server caps the bytes too. */
+const RECORDING_MAX_MS = 60_000;
+
+/**
+ * Whether the built-in recogniser is worth trying. Brave ships Chromium's
+ * API surface with Google's speech service switched off: start() succeeds,
+ * then a "network" error ends the session with no words. Record there.
+ */
+function speechRecognitionUsable() {
+  if (typeof navigator === "undefined") return false;
+  if ((navigator as { brave?: unknown }).brave) return false;
+  return Boolean(speechRecognitionCtor());
+}
+
+/**
+ * A container this browser can record and the server can read. Null when
+ * the browser cannot record at all; empty when it can but names no type it
+ * supports, in which case the recorder picks its own.
+ */
+function recordingMimeType() {
+  if (typeof MediaRecorder === "undefined") return null;
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
+}
+
+function blobToBase64(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
 /**
  * Re-encode a photo as a modest JPEG before sending it for an AI draft.
  *
@@ -4174,9 +4218,30 @@ export default function MarketplaceApp({
   const [aiFilling, setAiFilling] = useState(false);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
   const [listening, setListening] = useState(false);
+  /** How words are coming in while listening: the browser's own recogniser, or a recording the server transcribes. */
+  const [voiceMode, setVoiceMode] = useState<"speech" | "recording">("speech");
   const aiNotesRef = useRef<HTMLTextAreaElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  useEffect(() => () => recognitionRef.current?.abort(), []);
+  /** Set once the built-in recogniser has failed this session; later taps record instead. */
+  const speechFailedRef = useRef(false);
+  const recorderRef = useRef<{
+    recorder: MediaRecorder;
+    stream: MediaStream;
+    timer: number;
+    discard: boolean;
+  } | null>(null);
+  useEffect(
+    () => () => {
+      recognitionRef.current?.abort();
+      const active = recorderRef.current;
+      if (active) {
+        active.discard = true;
+        window.clearTimeout(active.timer);
+        active.stream.getTracks().forEach((track) => track.stop());
+      }
+    },
+    [],
+  );
   /**
    * The photo the onboarding preview shows.
    *
@@ -4244,6 +4309,8 @@ export default function MarketplaceApp({
   }
 
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  /** The listing whose "delete?" confirmation is open. */
+  const [deleteListingTarget, setDeleteListingTarget] = useState<Listing | null>(null);
   const [deleteAccountError, setDeleteAccountError] = useState("");
   const [igAvatar, setIgAvatar] = useState("");
   const [igStats, setIgStats] = useState<IgStats | null>(null);
@@ -6643,38 +6710,34 @@ export default function MarketplaceApp({
   }
 
   /**
-   * Dictate into the notes box, then draft. Interim words show as they are
-   * recognised; finished phrases stick; whatever was already typed stays in
-   * front. When listening ends with new words captured - the member pressed
-   * Stop, or the browser closed the session - Fill with AI runs on the
-   * transcript. Ending with nothing new spends nothing.
+   * Dictate into the notes box, then draft.
+   *
+   * Two ways in. Chrome, Safari and Edge recognise speech themselves, so
+   * words appear as they are said and nothing but text leaves the device.
+   * Everything else - Firefox, Brave, in-app browsers, or a recogniser that
+   * fails part-way - records the voice note and the server transcribes it.
+   * Either way, when listening ends with something new, Fill with AI runs on
+   * it; ending with nothing new spends nothing.
+   *
+   * recognition.start() is called synchronously inside the tap. An await in
+   * front of it (the old microphone pre-flight) put the call outside the
+   * user gesture, which some browsers answer with a silent "not-allowed".
    */
-  async function startListening() {
-    const Ctor = speechRecognitionCtor();
+  function startListening() {
     const field = aiNotesRef.current;
-    if (!Ctor || !field) {
-      setToast("Voice input isn't available in this browser. Type a few words instead.");
-      return;
+    if (!field) return;
+    if (!speechFailedRef.current && speechRecognitionUsable()) {
+      startRecognition(field);
+    } else {
+      void startRecording(field, false);
     }
-    // Ask for the microphone explicitly first. This is what makes the
-    // browser's permission prompt appear on the first tap - the recognition
-    // API alone can fail with a silent "not-allowed" in some browsers. The
-    // stream is released at once; recognition opens its own.
-    if (navigator.mediaDevices?.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((track) => track.stop());
-      } catch (error) {
-        const name = error instanceof DOMException ? error.name : "";
-        setToast(
-          name === "NotAllowedError" || name === "SecurityError"
-            ? "Microphone is blocked for this site. Click the lock icon in the address bar, allow the microphone, then tap Speak again."
-            : name === "NotFoundError"
-              ? "No microphone was found on this device. Type a few words instead."
-              : "The microphone could not be opened. Type a few words instead.",
-        );
-        return;
-      }
+  }
+
+  function startRecognition(field: HTMLTextAreaElement) {
+    const Ctor = speechRecognitionCtor();
+    if (!Ctor) {
+      void startRecording(field, false);
+      return;
     }
     const recognition = new Ctor();
     recognition.lang = navigator.language || "en-US";
@@ -6682,6 +6745,8 @@ export default function MarketplaceApp({
     recognition.interimResults = true;
     const before = field.value.trim();
     let settled = "";
+    let heard = false;
+    let recordInstead = false;
     recognition.onresult = (event) => {
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
@@ -6690,43 +6755,154 @@ export default function MarketplaceApp({
         if (result.isFinal) settled += `${chunk} `;
         else interim += chunk;
       }
+      heard = true;
       field.value = [before, `${settled}${interim}`.trim()]
         .filter(Boolean)
         .join(" ")
-        .slice(0, 600);
+        .slice(0, AI_NOTES_MAX);
     };
     recognition.onerror = (event) => {
-      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      const code = event.error ?? "";
+      if (code === "not-allowed") {
         setToast(
-          "Microphone is blocked for this site. Click the lock icon in the address bar, allow the microphone, then tap Speak again.",
+          "The microphone (or speech recognition) is blocked for this site. Allow it - the lock or mic icon in the address bar, or Settings > Safari > Microphone on an iPhone - then tap Speak again.",
         );
-      } else if (event.error !== "aborted" && event.error !== "no-speech") {
-        setToast("Voice input stopped. Try again, or type a few words instead.");
+      } else if (code === "no-speech") {
+        setToast(
+          "Didn't hear anything. Check that the mic isn't muted, tap Speak, and start talking straight away.",
+        );
+      } else if (code === "audio-capture") {
+        setToast("No microphone was found on this device. Type a few words instead.");
+      } else if (code !== "aborted") {
+        // network, service-not-allowed, language-not-supported: the
+        // recogniser is the problem, not the mic. Record instead, now and
+        // for the rest of this session.
+        speechFailedRef.current = true;
+        recordInstead = true;
       }
     };
     recognition.onend = () => {
       setListening(false);
       recognitionRef.current = null;
-      if (field.value.trim() && field.value.trim() !== before) {
+      if (recordInstead) {
+        void startRecording(field, true);
+        return;
+      }
+      if (heard && field.value.trim() && field.value.trim() !== before) {
         void fillListingWithAi(field.form);
       }
     };
     recognitionRef.current = recognition;
+    setVoiceMode("speech");
     setListening(true);
     try {
       recognition.start();
     } catch {
       recognitionRef.current = null;
       setListening(false);
-      setToast("Voice input could not start. Type a few words instead.");
+      speechFailedRef.current = true;
+      void startRecording(field, true);
     }
+  }
+
+  /**
+   * Record a voice note and hand it to the server to transcribe. Used where
+   * the browser cannot recognise speech itself, or right after its
+   * recogniser failed (`afterSpeechFailed`, which changes what the messages
+   * say - and that call comes from a callback, not a tap, so a browser that
+   * wants a gesture for the mic gets told to tap again).
+   */
+  async function startRecording(field: HTMLTextAreaElement, afterSpeechFailed: boolean) {
+    const type = recordingMimeType();
+    if (type === null || !navigator.mediaDevices?.getUserMedia) {
+      setToast("Voice input isn't available in this browser. Type a few words instead.");
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      const name = error instanceof DOMException ? error.name : "";
+      setToast(
+        name === "NotAllowedError" || name === "SecurityError"
+          ? afterSpeechFailed
+            ? "Speech recognition didn't work in this browser. Tap Speak again and SideSpace will record you instead."
+            : "The microphone is blocked for this site. Allow it - the lock or mic icon in the address bar - then tap Speak again."
+          : name === "NotFoundError"
+            ? "No microphone was found on this device. Type a few words instead."
+            : "The microphone could not be opened. Type a few words instead.",
+      );
+      return;
+    }
+    let recorder: MediaRecorder;
+    try {
+      recorder = type ? new MediaRecorder(stream, { mimeType: type }) : new MediaRecorder(stream);
+    } catch {
+      stream.getTracks().forEach((track) => track.stop());
+      setToast("Recording isn't available in this browser. Type a few words instead.");
+      return;
+    }
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size) chunks.push(event.data);
+    };
+    recorder.onstop = () => {
+      const active = recorderRef.current;
+      recorderRef.current = null;
+      if (active) window.clearTimeout(active.timer);
+      stream.getTracks().forEach((track) => track.stop());
+      if (active?.discard) return;
+      setListening(false);
+      const blob = new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" });
+      // A tap-and-release leaves a few hundred bytes of container and no voice.
+      if (blob.size < 2_000) {
+        setToast("Didn't hear anything. Check the mic and try again, or type a few words.");
+        return;
+      }
+      if (blob.size > 2_200_000) {
+        setToast("That recording is too long. Keep it under a minute.");
+        return;
+      }
+      void blobToBase64(blob)
+        .then((data) => fillListingWithAi(field.form, { data, mimeType: blob.type }))
+        .catch(() =>
+          setToast("That recording could not be read. Try again, or type a few words."),
+        );
+    };
+    const timer = window.setTimeout(() => {
+      if (recorderRef.current?.recorder === recorder && recorder.state === "recording") {
+        recorder.stop();
+      }
+    }, RECORDING_MAX_MS);
+    recorderRef.current = { recorder, stream, timer, discard: false };
+    try {
+      recorder.start();
+    } catch {
+      recorderRef.current = null;
+      window.clearTimeout(timer);
+      stream.getTracks().forEach((track) => track.stop());
+      setToast("Recording could not start. Type a few words instead.");
+      return;
+    }
+    setVoiceMode("recording");
+    setListening(true);
+    setToast(
+      afterSpeechFailed
+        ? "Speech recognition didn't work here, so SideSpace is recording instead. Talk now, then tap Stop & fill."
+        : "Recording. Say what it is, where, the price, and who sees it, then tap Stop & fill.",
+    );
   }
 
   function stopListening() {
     recognitionRef.current?.stop();
+    const active = recorderRef.current;
+    if (active && active.recorder.state !== "inactive") active.recorder.stop();
   }
 
-  async function fillListingWithAi(form: HTMLFormElement | null) {
+  async function fillListingWithAi(
+    form: HTMLFormElement | null,
+    audio?: { data: string; mimeType: string },
+  ) {
     if (!form || aiFilling) return;
     const notesField = form.elements.namedItem("ai_notes");
     const notes =
@@ -6734,7 +6910,7 @@ export default function MarketplaceApp({
     const photos = form.elements.namedItem("listing_photos");
     const file =
       photos instanceof HTMLInputElement ? (photos.files?.[0] ?? null) : null;
-    if (!file && !notes) {
+    if (!file && !notes && !audio) {
       setToast("Add a photo or a few words first, then press Fill with AI.");
       return;
     }
@@ -6748,12 +6924,13 @@ export default function MarketplaceApp({
         body: JSON.stringify({
           notes,
           image,
+          audio: audio ? { data: audio.data, mime_type: audio.mimeType } : null,
           kind: listingFormKind === "brief" ? "physical" : listingFormKind,
           city: profile?.city ?? "",
         }),
       });
       const payload = (await response.json().catch(() => null)) as
-        | { draft?: ListingDraft; error?: string }
+        | { draft?: ListingDraft; transcript?: string; error?: string }
         | null;
       if (!response.ok || !payload?.draft) {
         throw new Error(
@@ -6761,6 +6938,14 @@ export default function MarketplaceApp({
         );
       }
       applyListingDraft(form, payload.draft);
+      if (payload.transcript && notesField instanceof HTMLTextAreaElement) {
+        // Show what was heard, after whatever was typed, so a misheard word
+        // can be fixed and the draft run again.
+        notesField.value = [notes, payload.transcript]
+          .filter(Boolean)
+          .join(" ")
+          .slice(0, AI_NOTES_MAX);
+      }
       setAiQuestions(payload.draft.questions ?? []);
       const asked = payload.draft.questions?.length ?? 0;
       setToast(
@@ -7809,6 +7994,61 @@ export default function MarketplaceApp({
     }
     setToast(nextStatus === "active" ? "Listing is live again." : "Listing paused.");
     await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
+  }
+
+  /**
+   * Delete one of your own listings. The database function refuses when
+   * money has moved on it (the payment record must keep pointing at a
+   * listing), declines any open request first so the business hears, then
+   * removes the row; requests go with it. Photos come out of storage
+   * afterwards - only the ones nothing else of yours still shows, because a
+   * listing published without photos is seeded with the profile picture.
+   */
+  async function deleteListing(listing: Listing) {
+    if (!supabase || !profile) return;
+    setBusy(true);
+    const { data, error } = await supabase.rpc("delete_own_listing", {
+      target_listing_id: listing.id,
+    });
+    if (error) {
+      setBusy(false);
+      setToast(friendlyDbError(error));
+      return;
+    }
+    const declined = typeof data === "number" ? data : 0;
+    setDeleteListingTarget(null);
+    if (selectedListing?.id === listing.id) setSelectedListing(null);
+
+    const stillShown = new Set<string>([
+      profile.avatar_url ?? "",
+      ...(profile.gallery_urls ?? []),
+      ...ownListings
+        .filter((item) => item.id !== listing.id)
+        .flatMap((item) => listingImages(item)),
+    ]);
+    const paths = listingImages(listing)
+      .filter((url) => url && !stillShown.has(url))
+      .map((url) => storagePathFromUrl(url))
+      .filter((path): path is string => Boolean(path));
+    if (paths.length) {
+      // Best effort: a stray file in the bucket is recoverable, and a
+      // cleanup failure reported on top of a successful delete only confuses.
+      await supabase.storage
+        .from("marketplace-media")
+        .remove(paths)
+        .catch(() => undefined);
+    }
+    setBusy(false);
+    setToast(
+      declined
+        ? `Listing deleted. ${declined} open request${declined === 1 ? " was" : "s were"} declined and the sender${declined === 1 ? "" : "s"} told.`
+        : "Listing deleted.",
+    );
+    await Promise.all([
+      loadMarketplace(),
+      loadOwnListings(profile),
+      loadAccountMarketplaceState(profile),
+    ]);
   }
 
   function clearSessionState() {
@@ -10635,6 +10875,13 @@ export default function MarketplaceApp({
                           >
                             {listing.status === "active" ? "Pause" : "Make active"}
                           </button>
+                          <button
+                            className="is-danger"
+                            disabled={busy}
+                            onClick={() => setDeleteListingTarget(listing)}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
                     </article>
@@ -10919,6 +11166,43 @@ export default function MarketplaceApp({
                 </button>
               </div>
             </section>
+          </div>
+        </Modal>
+      )}
+
+      {deleteListingTarget && (
+        <Modal
+          label="Delete listing"
+          onClose={() => {
+            if (!busy) setDeleteListingTarget(null);
+          }}
+        >
+          <div className="modal-heading">
+            <p className="eyebrow">Delete listing</p>
+            <h2>{`Take \u201c${deleteListingTarget.title}\u201d down for good?`}</h2>
+            <p>
+              It leaves the marketplace right away and its photos are removed.
+              Any open request on it is declined and the business that sent it
+              is told. A listing that has been paid for cannot be deleted -
+              pause it instead. There is no undo.
+            </p>
+          </div>
+          <div className="form-submit">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setDeleteListingTarget(null)}
+            >
+              Keep it
+            </button>
+            <button
+              type="button"
+              className="button button-danger"
+              disabled={busy}
+              onClick={() => void deleteListing(deleteListingTarget)}
+            >
+              {busy ? "Deleting..." : "Delete listing"}
+            </button>
           </div>
         </Modal>
       )}
@@ -13444,7 +13728,7 @@ export default function MarketplaceApp({
                     ref={aiNotesRef}
                     name="ai_notes"
                     rows={2}
-                    maxLength={600}
+                    maxLength={AI_NOTES_MAX}
                     placeholder={
                       listingFormKind === "physical"
                         ? "Front window on Main Street, about 4 by 6 ft, maybe 300 people walk past on a weekday, $40 a week, posters or decals, I put it up, available now"
@@ -13472,6 +13756,13 @@ export default function MarketplaceApp({
                     <span>{listening ? "■" : "🎤"}</span>
                   </button>
                 </div>
+                {listening && (
+                  <small className="ai-fill-status" role="status">
+                    {voiceMode === "recording"
+                      ? "Recording, up to a minute. Say what it is, where, the price, and who sees it, then tap Stop & fill."
+                      : "Listening. Say what it is, where, the price, and who sees it, then tap Stop & fill."}
+                  </small>
+                )}
                 {aiQuestions.length > 0 && (
                   <div className="ai-fill-questions" role="status">
                     <strong>Still needed - it will not guess these:</strong>
