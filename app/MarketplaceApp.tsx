@@ -2722,6 +2722,28 @@ function speechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
 
 /** Notes box cap, matching the server: typed words plus a transcript. */
 const AI_NOTES_MAX = 1200;
+/**
+ * Form fields sent back with a second Fill so the model improves what is
+ * there instead of starting over - including anything the owner edited.
+ */
+const CURRENT_DRAFT_FIELDS = [
+  "title",
+  "format",
+  "description",
+  "demographics",
+  "space_size",
+  "availability_notes",
+  "minimum_booking",
+  "deliverables",
+] as const;
+
+/** Same file, whichever FileList it came out of. */
+function sameFile(a: File, b: File) {
+  return (
+    a === b ||
+    (a.name === b.name && a.size === b.size && a.lastModified === b.lastModified)
+  );
+}
 /** Longest voice note the recorder path takes; the server caps the bytes too. */
 const RECORDING_MAX_MS = 60_000;
 
@@ -4766,6 +4788,11 @@ export default function MarketplaceApp({
   const [listingFiles, setListingFiles] = useState<File[]>([]);
   const [aiFilling, setAiFilling] = useState(false);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
+  /** What the model says it can see in the owner's photo, shown so a wrong "fact" is caught before it is published. */
+  const [aiObservations, setAiObservations] = useState<string[]>([]);
+  /** A Google Street View frame of the exact address: the file (also in the photo picker), its preview URL, and the capture date. */
+  const [streetView, setStreetView] = useState<{ file: File; url: string; date: string } | null>(null);
+  const [streetViewLoading, setStreetViewLoading] = useState(false);
   const [listening, setListening] = useState(false);
   /** How words are coming in while listening: the browser's own recogniser, or a recording the server transcribes. */
   const [voiceMode, setVoiceMode] = useState<"speech" | "recording">("speech");
@@ -7668,6 +7695,97 @@ export default function MarketplaceApp({
     if (active && active.recorder.state !== "inactive") active.recorder.stop();
   }
 
+  /** Forget the helper state that belongs to one editing session. */
+  function resetAiHelpers() {
+    setAiQuestions([]);
+    setAiObservations([]);
+    if (streetView) URL.revokeObjectURL(streetView.url);
+    setStreetView(null);
+  }
+
+  /**
+   * Put a file into the photo picker without losing what is already there.
+   * A file input's list is read-only, but a DataTransfer builds a new one.
+   */
+  function addFileToPicker(form: HTMLFormElement, file: File) {
+    const input = form.elements.namedItem("listing_photos");
+    if (!(input instanceof HTMLInputElement)) return;
+    const transfer = new DataTransfer();
+    Array.from(input.files ?? []).forEach((item) => {
+      if (!sameFile(item, file)) transfer.items.add(item);
+    });
+    transfer.items.add(file);
+    input.files = transfer.files;
+  }
+
+  function removeFileFromPicker(form: HTMLFormElement, file: File) {
+    const input = form.elements.namedItem("listing_photos");
+    if (!(input instanceof HTMLInputElement)) return;
+    const transfer = new DataTransfer();
+    Array.from(input.files ?? []).forEach((item) => {
+      if (!sameFile(item, file)) transfer.items.add(item);
+    });
+    input.files = transfer.files;
+  }
+
+  function clearStreetView(form: HTMLFormElement | null) {
+    if (streetView) {
+      URL.revokeObjectURL(streetView.url);
+      if (form) removeFileFromPicker(form, streetView.file);
+    }
+    setStreetView(null);
+  }
+
+  /**
+   * Fetch a Google Street View frame of the exact address and add it to the
+   * photos. Outdoor imagery only, so a storefront or a wall on a street
+   * usually works and a dorm corridor gets a polite no. The owner can drop
+   * it again; Street View can be years old.
+   */
+  async function importStreetView(form: HTMLFormElement | null) {
+    if (!form || streetViewLoading) return;
+    const addressField = form.elements.namedItem("street_address");
+    const address =
+      addressField instanceof HTMLInputElement ? addressField.value.trim() : "";
+    if (address.length < 5) {
+      setToast("Type the exact street address first, then try Street View again.");
+      return;
+    }
+    setStreetViewLoading(true);
+    try {
+      const response = await fetch("/api/listings/streetview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ address, city: profile?.city ?? "" }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error || "Street View is not available right now.");
+      }
+      const blob = await response.blob();
+      const date = response.headers.get("x-street-view-date") ?? "";
+      const file = new File([blob], "street-view.jpg", {
+        type: "image/jpeg",
+        lastModified: Date.now(),
+      });
+      if (streetView) {
+        URL.revokeObjectURL(streetView.url);
+        removeFileFromPicker(form, streetView.file);
+      }
+      addFileToPicker(form, file);
+      setStreetView({ file, url: URL.createObjectURL(file), date });
+      setToast("Street View added to your photos. Remove it if it does not show your spot.");
+    } catch (error) {
+      setToast(
+        error instanceof Error ? error.message : "Street View is not available right now.",
+      );
+    } finally {
+      setStreetViewLoading(false);
+    }
+  }
+
   async function fillListingWithAi(
     form: HTMLFormElement | null,
     audio?: { data: string; mimeType: string },
@@ -7677,22 +7795,42 @@ export default function MarketplaceApp({
     const notes =
       notesField instanceof HTMLTextAreaElement ? notesField.value.trim() : "";
     const photos = form.elements.namedItem("listing_photos");
+    // The owner's own photo leads. The Street View frame travels separately,
+    // labelled for what it is, so the model never mistakes it for the space.
+    const picked = photos instanceof HTMLInputElement ? Array.from(photos.files ?? []) : [];
     const file =
-      photos instanceof HTMLInputElement ? (photos.files?.[0] ?? null) : null;
-    if (!file && !notes && !audio) {
+      picked.find((item) => item.size > 0 && !(streetView && sameFile(item, streetView.file))) ??
+      null;
+    if (!file && !notes && !audio && !streetView) {
       setToast("Add a photo or a few words first, then press Fill with AI.");
       return;
     }
+    // Whatever is in the form now - a first draft the owner edited, or
+    // answers typed straight into the fields - goes back so the second Fill
+    // improves it instead of overwriting it.
+    const current: Record<string, string> = {};
+    CURRENT_DRAFT_FIELDS.forEach((name) => {
+      const element = form.elements.namedItem(name);
+      const value =
+        element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+          ? element.value.trim()
+          : "";
+      if (value) current[name] = value;
+    });
     setAiFilling(true);
     setAiQuestions([]);
+    setAiObservations([]);
     try {
       const image = file ? await photoToJpegBase64(file) : null;
+      const streetImage = streetView ? await blobToBase64(streetView.file) : null;
       const response = await fetch("/api/listings/draft", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           notes,
           image,
+          street_image: streetImage,
+          current: Object.keys(current).length ? current : null,
           audio: audio ? { data: audio.data, mime_type: audio.mimeType } : null,
           kind: listingFormKind === "brief" ? "physical" : listingFormKind,
           city: profile?.city ?? "",
@@ -7716,6 +7854,7 @@ export default function MarketplaceApp({
           .slice(0, AI_NOTES_MAX);
       }
       setAiQuestions(payload.draft.questions ?? []);
+      setAiObservations(payload.draft.photo_observations ?? []);
       const asked = payload.draft.questions?.length ?? 0;
       setToast(
         asked
@@ -7933,7 +8072,7 @@ export default function MarketplaceApp({
 
       const wasEditing = Boolean(editingListing);
       setListingOpen(false);
-      setAiQuestions([]);
+      resetAiHelpers();
       setEditingListing(null);
       setAccountOpen(true);
       setToast(
@@ -8854,7 +8993,7 @@ export default function MarketplaceApp({
     setSelectedListing(null);
     setEditingListing(null);
     setListingOpen(false);
-    setAiQuestions([]);
+    resetAiHelpers();
     setVerificationOpen(false);
     setDeleteAccountOpen(false);
     resetIgAvatarSync();
@@ -14534,7 +14673,7 @@ export default function MarketplaceApp({
           label={editingListing ? "Edit listing" : "Create a listing"}
           onClose={() => {
             setListingOpen(false);
-            setAiQuestions([]);
+            resetAiHelpers();
             setEditingListing(null);
             setListingFeedback("");
           }}
@@ -14693,6 +14832,20 @@ export default function MarketplaceApp({
                       ? "Recording, up to a minute. Say what it is, where, the price, and who sees it, then tap Stop & fill."
                       : "Listening. Say what it is, where, the price, and who sees it, then tap Stop & fill."}
                   </small>
+                )}
+                {aiObservations.length > 0 && (
+                  <div className="ai-fill-questions is-observations" role="status">
+                    <strong>From your photo - check these are right:</strong>
+                    <ul>
+                      {aiObservations.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                    <small>
+                      Anything wrong here is wrong in the draft too. Say so in
+                      the box above and fill again.
+                    </small>
+                  </div>
                 )}
                 {aiQuestions.length > 0 && (
                   <div className="ai-fill-questions" role="status">
@@ -15084,6 +15237,38 @@ export default function MarketplaceApp({
                     placeholder="1398 Solano Ave, Albany, CA 94706"
                   />
                 </label>
+                {/* A Google Street View frame of that address, added as one
+                    more photo. Outdoor frames only: a storefront or a wall
+                    on a street usually works, a dorm corridor gets a no. */}
+                <div className="street-view">
+                  <button
+                    type="button"
+                    disabled={busy || streetViewLoading}
+                    onClick={(event) => void importStreetView(event.currentTarget.form)}
+                  >
+                    {streetViewLoading
+                      ? "Looking up Street View…"
+                      : streetView
+                        ? "Refresh the Street View photo"
+                        : "Add a Google Street View photo of this address"}
+                  </button>
+                  {streetView && (
+                    <figure className="street-view-card">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={streetView.url} alt="Google Street View of the address" />
+                      <figcaption>
+                        Google Street View{streetView.date ? `, ${streetView.date}` : ""}.
+                        Added to your photos; it may be out of date.
+                        <button
+                          type="button"
+                          onClick={(event) => clearStreetView(event.currentTarget.form)}
+                        >
+                          Remove
+                        </button>
+                      </figcaption>
+                    </figure>
+                  )}
+                </div>
               </>
             )}
 
@@ -15198,6 +15383,12 @@ export default function MarketplaceApp({
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 multiple
+                onChange={(event) => {
+                  // Picking again replaces the whole list; keep the Street
+                  // View frame in it.
+                  const form = event.currentTarget.form;
+                  if (streetView && form) addFileToPicker(form, streetView.file);
+                }}
               />
               <small>
                 {editingListing
@@ -15210,7 +15401,7 @@ export default function MarketplaceApp({
                 type="button"
                 onClick={() => {
                   setListingOpen(false);
-                  setAiQuestions([]);
+                  resetAiHelpers();
                   setEditingListing(null);
                   setListingFeedback("");
                 }}
