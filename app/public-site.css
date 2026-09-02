@@ -1017,13 +1017,13 @@ html.lenis {
   left: 50%;
   position: absolute;
   top: 50%;
-  transform: translate(-50%, -56%);
+  transform: translate(-50%, -72%);
   transition: transform 600ms var(--ss-ease-in-out);
   width: 310px;
 }
 
 .is-offer .ss-audience-map {
-  transform: translate(-46%, -56%) rotate(28deg);
+  transform: translate(-46%, -72%) rotate(28deg);
 }
 
 .ss-audience-map::before,
