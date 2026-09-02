@@ -199,6 +199,29 @@ describe("Stripe Connect lifecycle routes", () => {
     expect(stripe.accounts.create).toHaveBeenCalledTimes(1);
   });
 
+  it("returns an actionable response when Stripe has not approved the live platform", async () => {
+    mocks.stripeKeyMode.mockReturnValue("live");
+    const { admin } = authenticatedAdmin(null);
+    const { stripe } = stripeMock();
+    admin.from.mockReturnValue(accountLookup(null));
+    stripe.accounts.create.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "You must complete your platform profile to use Connect and create live connected accounts.",
+        ),
+        { type: "invalid_request_error" },
+      ),
+    );
+
+    const response = await onboardPOST(request("/api/stripe/connect/onboard"));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error:
+        "Stripe Connect setup is incomplete. The SideSpace platform owner must finish the live platform profile before payout accounts can be created.",
+    });
+  });
+
   it("reuses a saved Connect account instead of creating a second one", async () => {
     const account = { profile_id: profile.id, stripe_connected_account_id: "acct_existing" };
     const { admin } = authenticatedAdmin(account);

@@ -10,6 +10,19 @@ import { getStripe, stripeKeyMode } from "@/lib/stripe/server";
 import { requireStripeHostedUrl } from "@/lib/stripe/urls";
 import { enforcePaymentRateLimit } from "@/lib/payments/rate-limit";
 
+function mapConnectSetupError(error: unknown) {
+  if (
+    error instanceof Error &&
+    /complete your platform profile/i.test(error.message)
+  ) {
+    return new ApiError(
+      "Stripe Connect setup is incomplete. The SideSpace platform owner must finish the live platform profile before payout accounts can be created.",
+      503,
+    );
+  }
+  return error;
+}
+
 function getPublicBusinessUrl() {
   const configuredUrl = process.env.NEXT_PUBLIC_APP_URL;
   if (!configuredUrl) return undefined;
@@ -106,6 +119,6 @@ export async function POST(request: Request) {
       url: requireStripeHostedUrl(link.url, ["connect.stripe.com"]),
     });
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(mapConnectSetupError(error));
   }
 }
