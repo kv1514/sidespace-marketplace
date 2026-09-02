@@ -9749,3 +9749,51 @@ html.reveal-ready [data-reveal].is-visible {
   border-color: #d43d00;
   color: var(--white);
 }
+
+/* Fill with AI: what the model says it saw, listed so it can be checked. */
+.ai-fill-questions.is-observations ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+/* Street View under the exact address: the button, then the frame it found. */
+.street-view {
+  display: grid;
+  gap: 8px;
+}
+
+.street-view > button {
+  justify-self: start;
+}
+
+.street-view-card {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.street-view-card img {
+  border-radius: 10px;
+  display: block;
+  max-width: 320px;
+  width: 100%;
+}
+
+.street-view-card figcaption {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  gap: 10px;
+  opacity: 0.8;
+}
+
+.street-view-card figcaption button {
+  background: none;
+  border: 0;
+  color: #d43d00;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}

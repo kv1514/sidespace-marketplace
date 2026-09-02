@@ -75,6 +75,11 @@ export type ListingDraft = {
   deliverables: string;
   /** What the model still needs before it can fill the blanks. Empty when nothing is missing. */
   questions: string[];
+  /**
+   * Plain facts the model says it can see in the owner's photo. Shown back
+   * so a wrong "fact" is caught before it reaches the description.
+   */
+  photo_observations: string[];
 };
 
 /**
@@ -103,6 +108,7 @@ export const LISTING_DRAFT_SCHEMA = {
     "availability_notes",
     "deliverables",
     "questions",
+    "photo_observations",
   ],
   properties: {
     title: { type: "string" },
@@ -123,6 +129,7 @@ export const LISTING_DRAFT_SCHEMA = {
     availability_notes: { type: "string" },
     deliverables: { type: "string" },
     questions: { type: "array", items: { type: "string" } },
+    photo_observations: { type: "array", items: { type: "string" } },
   },
 } as const;
 
@@ -133,6 +140,7 @@ const LONG_MAX = 2000;
 const PRICE_MIN = 2;
 const PRICE_MAX = 100_000;
 const QUESTIONS_MAX = 5;
+const OBSERVATIONS_MAX = 6;
 
 function text(value: unknown, max: number) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -214,5 +222,9 @@ export function normalizeListingDraft(
     availability_notes: text(raw.availability_notes, 240),
     deliverables: text(raw.deliverables, LONG_MAX),
     questions: questions.slice(0, QUESTIONS_MAX),
+    photo_observations: (Array.isArray(raw.photo_observations) ? raw.photo_observations : [])
+      .map((item) => text(item, 140))
+      .filter(Boolean)
+      .slice(0, OBSERVATIONS_MAX),
   };
 }
