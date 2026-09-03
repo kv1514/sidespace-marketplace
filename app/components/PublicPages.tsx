@@ -126,18 +126,33 @@ const INVENTORY_TYPES = [
  * The rule below picks the newest listing of the right kind, which is the
  * right default and keeps working as listings come and go. This is the
  * exception for when a particular listing is simply the better shop window -
- * here, a car with a real listing photo and a title that says what it is,
- * rather than a newer one called "My car" illustrated with its owner's profile
+ * a car with a real listing photo and a title that says what it is, rather
+ * than a newer one called "My car" illustrated with its owner's profile
  * picture.
  *
+ * Each tab holds an ORDERED list, not a single id: the front page should show
+ * the best example of a kind, and the best example has a runner-up. The first
+ * pin that is actually available wins, so a listing going paused or deleted
+ * quietly promotes the next one instead of dropping the tab back to whatever
+ * happens to be newest.
+ *
  * Keyed by tab label so it reads as an editorial choice rather than a rule.
- * A pin is resolved inside the same filtered set as everything else, so it can
- * never reintroduce a brief, and it falls back to the rule the moment the
- * listing stops being available - deleted, deactivated, or simply pushed out
- * of the rows the page fetches. Removing an entry restores the default.
+ * Pins are resolved inside the same filtered set as everything else, so one
+ * can never reintroduce a brief or a listing of the wrong kind, and the list
+ * falls back to the rule the moment none of its entries are available -
+ * deleted, deactivated, or simply pushed out of the rows the page fetches.
+ * Emptying an entry restores the default.
  */
-const HERO_PINS: Record<string, string> = {
-  Vehicle: "3aeba0db-3bf1-4acc-a51a-eba0f1417f64",
+const HERO_PINS: Record<string, string[]> = {
+  // Creators with a real audience, a real listing photo, and an offer a
+  // business can picture. These two are how we want the marketplace
+  // introduced, so the tab shows them rather than the newest creator to
+  // have published.
+  Creator: [
+    "265650f5-0f1e-4ee6-966c-aa5df6e22edd", // Dylan Nguyen - 30-second YouTube segment
+    "86b8e144-4952-45d8-8b5d-807932a4810c", // Aidan Chen - Instagram story for local businesses
+  ],
+  Vehicle: ["3aeba0db-3bf1-4acc-a51a-eba0f1417f64"],
 };
 
 /**
@@ -160,9 +175,11 @@ function pickInventory(listings: PublicListing[]) {
     const matches = bookable.filter((listing) =>
       type.match.test(listing.channel),
     );
-    const pinned = HERO_PINS[type.label];
+    const pinned = (HERO_PINS[type.label] ?? [])
+      .map((id) => matches.find((listing) => listing.id === id))
+      .find(Boolean);
     return (
-      (pinned && matches.find((listing) => listing.id === pinned)) ||
+      pinned ||
       matches.find((listing) => !listing.owner.is_demo) ||
       matches[0]
     );
