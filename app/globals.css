@@ -10533,3 +10533,12 @@ html.reveal-ready [data-reveal].is-visible {
   color: #26381e;
 }
 .listing-availability .calendar-legend i { background: #c9d4b7; }
+
+/* Street View on a listing page: under the photos, always labelled. */
+.detail-street-view {
+  margin-top: 12px;
+}
+
+.detail-street-view img {
+  max-width: 100%;
+}
