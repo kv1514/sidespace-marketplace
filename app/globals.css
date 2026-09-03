@@ -741,7 +741,8 @@ h2 em {
   width: 100%;
 }
 
-.listing-image img {
+.listing-image img,
+.listing-image .listing-cover-blank {
   height: 100%;
   object-fit: cover;
   transition: transform 500ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -2182,7 +2183,8 @@ h2 em {
   padding: 10px;
 }
 
-.my-listing-card > img {
+.my-listing-card > img,
+.my-listing-card > .listing-cover-blank {
   border-radius: 11px;
   height: 100%;
   min-height: 128px;
@@ -2586,6 +2588,12 @@ h2 em {
 
 .detail-media {
   min-width: 0;
+}
+
+/* A brief with no photo, no Street View and no walkthrough has nothing in the
+   media column, so the column goes rather than sitting there empty at 0.85fr. */
+.detail-layout.has-no-media {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .detail-layout figure {
@@ -4779,7 +4787,8 @@ html {
   aspect-ratio: auto;
 }
 
-.my-listing-card > img {
+.my-listing-card > img,
+.my-listing-card > .listing-cover-blank {
   aspect-ratio: 4 / 3;
   height: auto;
   min-height: 0;
@@ -9754,6 +9763,13 @@ html.reveal-ready [data-reveal].is-visible {
 
   to {
     opacity: 1;
+    /* `transform: none` here would read as the fix for the city autocomplete
+       being painted over, and it is not: with animation-fill-mode: both the
+       filled value resolves to the interpolated matrix either way, so the
+       field stays a stacking context and the open list stays trapped in it.
+       Hit-testing an open list against the field below it confirms the two
+       are indistinguishable. The lift on the field itself is the fix - see
+       the rule on .progressive-field:has(.city-autocomplete-list). */
     transform: translateY(0) scale(1);
   }
 }
@@ -10183,7 +10199,8 @@ html.reveal-ready [data-reveal].is-visible {
   padding: 9px;
 }
 
-.dashboard-listing-row > img {
+.dashboard-listing-row > img,
+.dashboard-listing-row > .listing-cover-blank {
   aspect-ratio: 1;
   border-radius: 9px;
   object-fit: cover;
@@ -10338,7 +10355,8 @@ html.reveal-ready [data-reveal].is-visible {
   overflow: hidden;
 }
 
-.dashboard-recommendation-card > img {
+.dashboard-recommendation-card > img,
+.dashboard-recommendation-card > .listing-cover-blank {
   aspect-ratio: 1.45 / 1;
   object-fit: cover;
   width: 100%;
@@ -10585,7 +10603,8 @@ html.reveal-ready [data-reveal].is-visible {
     grid-template-columns: 44px minmax(0, 1fr);
   }
 
-  .dashboard-listing-row > img {
+  .dashboard-listing-row > img,
+  .dashboard-listing-row > .listing-cover-blank {
     width: 44px;
   }
 
@@ -10755,16 +10774,41 @@ html.reveal-ready [data-reveal].is-visible {
   opacity: 0.85;
 }
 
-/* Delete on your own listing card: quiet until hovered, then unmistakable. */
-.my-listing-actions button.is-danger {
+/* Delete, wherever you meet your own listing: quiet until hovered, then
+   unmistakable. The same treatment on the account card, the dashboard row and
+   the listing page, so it reads as one control in three places. */
+.my-listing-actions button.is-danger,
+.dashboard-row-actions button.is-danger,
+.detail-owner-actions .button.is-danger {
   border-color: rgba(212, 61, 0, 0.45);
   color: #d43d00;
 }
 
-.my-listing-actions button.is-danger:hover {
+.my-listing-actions button.is-danger:hover,
+.dashboard-row-actions button.is-danger:hover,
+.detail-owner-actions .button.is-danger:hover {
   background: #d43d00;
   border-color: #d43d00;
   color: var(--white);
+}
+
+/* Your own listing, seen from the marketplace. The buyer's controls are gone -
+   they only ever dead-ended on your own row - and these took their place. */
+.detail-owner-actions {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 18px;
+  padding-top: 16px;
+}
+
+.detail-owner-actions > p {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 0;
+}
+
+.detail-owner-actions .detail-primary-actions {
+  justify-content: flex-start;
+  margin-top: 12px;
 }
 
 /* Fill with AI: what the model says it saw, listed so it can be checked. */
@@ -11180,4 +11224,232 @@ html.reveal-ready [data-reveal].is-visible {
 .saved-media-cover:disabled {
   cursor: not-allowed;
   opacity: 0.4;
+}
+
+/* The seller's profile, opened from the listing you are reading: who they are,
+   then everything else they have live. */
+.owner-line-link {
+  align-items: center;
+  background: none;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  font: inherit;
+  gap: 12px;
+  margin: -6px;
+  padding: 6px;
+  text-align: left;
+  transition: background 150ms ease-out;
+}
+
+.owner-line-link:hover {
+  background: var(--paper);
+}
+
+.owner-line-link strong {
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+
+.owner-line-link:hover strong {
+  text-decoration-color: currentColor;
+}
+
+.seller-profile {
+  display: grid;
+  gap: 18px;
+}
+
+.seller-profile-head {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+}
+
+.seller-profile-head h2 {
+  font-size: clamp(24px, 4vw, 34px);
+  letter-spacing: -0.04em;
+  margin: 0 0 4px;
+}
+
+.seller-profile-meta {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+
+.seller-profile-bio {
+  font-size: 14px;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.seller-profile-stats {
+  margin: 0;
+}
+
+.seller-profile-listings-head {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.seller-profile-listings-head strong {
+  font-size: 14px;
+}
+
+.seller-profile-empty {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+.seller-listing-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  margin-top: 14px;
+}
+
+.seller-listing {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  transition:
+    border-color 150ms ease-out,
+    transform 150ms var(--ease-out, ease-out);
+}
+
+.seller-listing:hover {
+  border-color: var(--ink);
+  transform: translateY(-2px);
+}
+
+/* The listing you came in from, so the set reads as "and these others". */
+.seller-listing[aria-current="true"] {
+  border-color: var(--ink);
+}
+
+.seller-listing > img,
+.seller-listing > .listing-cover-blank {
+  aspect-ratio: 16 / 10;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.seller-listing-body {
+  display: grid;
+  gap: 4px;
+  padding: 12px 13px 14px;
+}
+
+.seller-listing-channel {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.seller-listing-body strong {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.seller-listing-price {
+  font-size: 13px;
+}
+
+.seller-listing-current {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+}
+
+/* A field whose city list is open has to outrank whatever follows it.
+
+   The list is absolutely positioned with a z-index, which is enough only when
+   nothing between it and the form makes its own stacking context. Onboarding
+   fields animate in, and an animating (or transformed) element is exactly
+   that, so the list's z-index counts only inside its own field and the next
+   field paints straight over the suggestions. Raising the field itself puts
+   the whole thing, list included, above its siblings. */
+label:has(.city-autocomplete-list),
+.progressive-field:has(.city-autocomplete-list),
+.location-input-row:has(.city-autocomplete-list) {
+  position: relative;
+  z-index: 30;
+}
+
+/* Every row inside the preview card has to be able to shrink.
+
+   The card clips its overflow, its body is a grid whose auto track cannot go
+   below its items' min-content, and the budget line is a non-wrapping flex row
+   ("Budget", the price, "/ campaign"). In a narrow column that row decided the
+   body's width, pushed it past the card, and overflow: hidden then sliced
+   every line at the same edge - the title lost its last word, the price lost
+   its unit, the description lost the end of each line. */
+.preview-card-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.preview-card-body > *,
+.preview-card-top > * {
+  min-width: 0;
+}
+
+.preview-card-top,
+.preview-card-foot {
+  flex-wrap: wrap;
+}
+
+/* A long unbroken run - a URL, a run-together name - breaks instead of
+   widening the card past its column. */
+.preview-card-body strong,
+.preview-card-blurb,
+.preview-card-top .preview-offer {
+  overflow-wrap: anywhere;
+}
+
+/* One draft does not need a three-column grid. A business brief previews a
+   single card, and at a third of a wide panel it was cramped enough that
+   every line wrapped two or three words in. */
+.onboarding-preview:not(.has-multiple) .preview-card-grid {
+  grid-template-columns: minmax(0, 340px);
+}
+
+
+/* ------------------------------------------------------------------ */
+/* A listing with no photo                                             */
+/* ------------------------------------------------------------------ */
+
+/* A business brief is a wanted ad, and most are written before there is
+   anything to photograph. Publishing used to seed those with a stock cover, so
+   every campaign arrived carrying a picture of somebody else's market stall.
+   This is what stands in its place: a quiet hatched panel, deliberately
+   wordless, because the same element is 44px on a dashboard row and full width
+   on a card, and any label would be clipped at one of those sizes. */
+.listing-cover-blank {
+  background-color: var(--paper-2);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 9px,
+    color-mix(in srgb, var(--line) 45%, transparent) 9px 10px
+  );
+  display: block;
+}
+
+/* On a marketplace card the photo is 250px tall. Standing an empty panel that
+   high leaves a hole in the grid, so a photo-less card keeps just enough room
+   for the "Wanted" chip sitting on it. */
+.listing-image.is-blank {
+  height: 132px;
 }

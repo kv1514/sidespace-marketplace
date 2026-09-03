@@ -600,6 +600,27 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
   const listing = picks[active];
   const inventory = INVENTORY_TYPES[active];
   const fallbackImage = HERO_FALLBACK_IMAGES[active];
+  /**
+   * What the card calls this listing's kind.
+   *
+   * Normally the listing's own channel, which is what the marketplace shows
+   * everywhere else. But a pinned listing can be one this tab's matcher would
+   * never have found - Aiden's campus run is channel "Other" - and "OTHER"
+   * reads as a hole in the set next to STOREFRONT, YOUTUBE and VEHICLE. The
+   * hero is a showcase of four kinds, so when a listing's channel does not
+   * belong to the tab it is being shown under, the card is labelled with that
+   * kind instead of its own.
+   *
+   * This can only ever affect an editorial override: every unpinned listing
+   * comes out of the matched set, so its channel passes this test by
+   * construction and it keeps its own label. Nothing outside the hero is
+   * touched - the listing is still "Other" on its own page and in the grid,
+   * because that is what its owner chose.
+   */
+  const kindLabel =
+    listing && !inventory.match.test(listing.channel)
+      ? inventory.label
+      : listing?.channel;
 
   return (
     <div
@@ -723,7 +744,7 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
               src={listing.image_url || fallbackImage}
             />
             <div className="ss-bookable-body">
-              <span>{listing.channel}</span>
+              <span>{kindLabel}</span>
               <strong>{listing.title}</strong>
               <p>{listing.owner.display_name} · {listingCity(listing)}</p>
               <b>{price(listing)} / {listing.price_unit}</b>

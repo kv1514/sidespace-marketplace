@@ -56,6 +56,18 @@ function truncateMetadata(value: string, maxLength: number) {
   return `${value.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
+/**
+ * The stock cover business briefs used to be seeded with.
+ *
+ * A brief is a wanted ad, usually written before there is anything to
+ * photograph. Seeding it with this made every campaign share as a picture of
+ * somebody else's market stall, so briefs no longer get it - and the ones
+ * published before that stopped are read here as having no photo, rather than
+ * having every old row rewritten. The generic SideSpace card takes over, which
+ * is what a brief with no photo should share as.
+ */
+const SEEDED_BRIEF_COVER = "/photos/market-creator.jpg";
+
 function metadataImageUrl(value: unknown) {
   const candidate = metadataText(value);
   if (!candidate) return null;
@@ -98,10 +110,9 @@ export function createListingSocialMetadata(
     `/marketplace?listing=${encodeURIComponent(listing.id)}`,
     SITE_URL,
   ).toString();
-  const imageUrl = [
-    listing.imageUrl,
-    ...(listing.imageUrls ?? []),
-  ]
+  const isBrief = metadataText(listing.channel) === "Business brief";
+  const imageUrl = [listing.imageUrl, ...(listing.imageUrls ?? [])]
+    .filter((value) => !(isBrief && metadataText(value) === SEEDED_BRIEF_COVER))
     .map(metadataImageUrl)
     .find((value): value is string => Boolean(value));
   const images = imageUrl
