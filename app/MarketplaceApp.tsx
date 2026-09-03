@@ -174,6 +174,8 @@ type Listing = BookingSchedule & {
   target_platforms?: string[];
   /** Exact address of a physical space, so a booker can find it. */
   street_address?: string;
+  /** Month of the Google Street View frame attached to the address ("March 2025"); empty when none. */
+  street_view_captured?: string;
   availability_notes?: string;
   available_from?: string | null;
   available_to?: string | null;
@@ -2748,13 +2750,6 @@ const CURRENT_DRAFT_FIELDS = [
   "deliverables",
 ] as const;
 
-/** Same file, whichever FileList it came out of. */
-function sameFile(a: File, b: File) {
-  return (
-    a === b ||
-    (a.name === b.name && a.size === b.size && a.lastModified === b.lastModified)
-  );
-}
 /** Longest voice note the recorder path takes; the server caps the bytes too. */
 const RECORDING_MAX_MS = 60_000;
 
@@ -4831,8 +4826,13 @@ export default function MarketplaceApp({
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
   /** What the model says it can see in the owner's photo, shown so a wrong "fact" is caught before it is published. */
   const [aiObservations, setAiObservations] = useState<string[]>([]);
-  /** A Google Street View frame of the exact address: the file (also in the photo picker), its preview URL, and the capture date. */
-  const [streetView, setStreetView] = useState<{ file: File; url: string; date: string } | null>(null);
+  /**
+   * Street View attached to the address while editing: the capture month the
+   * listing will store, plus a transient preview URL when the frame was just
+   * fetched (null for a saved one, which the card shows live instead).
+   * Google's terms allow keeping nothing of the imagery itself.
+   */
+  const [streetView, setStreetView] = useState<{ captured: string; url: string | null } | null>(null);
   const [streetViewLoading, setStreetViewLoading] = useState(false);
   const [listening, setListening] = useState(false);
   /** How words are coming in while listening: the browser's own recogniser, or a recording the server transcribes. */
@@ -7877,48 +7877,22 @@ export default function MarketplaceApp({
   function resetAiHelpers() {
     setAiQuestions([]);
     setAiObservations([]);
-    if (streetView) URL.revokeObjectURL(streetView.url);
+    if (streetView?.url) URL.revokeObjectURL(streetView.url);
+    setStreetView(null);
+  }
+
+  function clearStreetView() {
+    if (streetView?.url) URL.revokeObjectURL(streetView.url);
     setStreetView(null);
   }
 
   /**
-   * Put a file into the photo picker without losing what is already there.
-   * A file input's list is read-only, but a DataTransfer builds a new one.
-   */
-  function addFileToPicker(form: HTMLFormElement, file: File) {
-    const input = form.elements.namedItem("listing_photos");
-    if (!(input instanceof HTMLInputElement)) return;
-    const transfer = new DataTransfer();
-    Array.from(input.files ?? []).forEach((item) => {
-      if (!sameFile(item, file)) transfer.items.add(item);
-    });
-    transfer.items.add(file);
-    input.files = transfer.files;
-  }
-
-  function removeFileFromPicker(form: HTMLFormElement, file: File) {
-    const input = form.elements.namedItem("listing_photos");
-    if (!(input instanceof HTMLInputElement)) return;
-    const transfer = new DataTransfer();
-    Array.from(input.files ?? []).forEach((item) => {
-      if (!sameFile(item, file)) transfer.items.add(item);
-    });
-    input.files = transfer.files;
-  }
-
-  function clearStreetView(form: HTMLFormElement | null) {
-    if (streetView) {
-      URL.revokeObjectURL(streetView.url);
-      if (form) removeFileFromPicker(form, streetView.file);
-    }
-    setStreetView(null);
-  }
-
-  /**
-   * Fetch a Google Street View frame of the exact address and add it to the
-   * photos. Outdoor imagery only, so a storefront or a wall on a street
-   * usually works and a dorm corridor gets a polite no. The owner can drop
-   * it again; Street View can be years old.
+   * Look up Google Street View for the exact address. Outdoor imagery only,
+   * so a storefront or a wall on a street usually works and a dorm corridor
+   * gets a polite no. The frame is a preview; the listing keeps only the
+   * capture month, and buyers see the frame fetched live from Google under
+   * the photos, labelled. The owner can drop it again; Street View can be
+   * years old.
    */
   async function importStreetView(form: HTMLFormElement | null) {
     if (!form || streetViewLoading) return;
@@ -7943,18 +7917,12 @@ export default function MarketplaceApp({
         throw new Error(payload?.error || "Street View is not available right now.");
       }
       const blob = await response.blob();
-      const date = response.headers.get("x-street-view-date") ?? "";
-      const file = new File([blob], "street-view.jpg", {
-        type: "image/jpeg",
-        lastModified: Date.now(),
-      });
-      if (streetView) {
-        URL.revokeObjectURL(streetView.url);
-        removeFileFromPicker(form, streetView.file);
-      }
-      addFileToPicker(form, file);
-      setStreetView({ file, url: URL.createObjectURL(file), date });
-      setToast("Street View added to your photos. Remove it if it does not show your spot.");
+      const captured = response.headers.get("x-street-view-date") ?? "";
+      if (streetView?.url) URL.revokeObjectURL(streetView.url);
+      setStreetView({ captured, url: URL.createObjectURL(blob) });
+      setToast(
+        "Street View attached. Buyers see it under your photos, labelled and fetched live from Google. Remove it if it does not show your spot.",
+      );
     } catch (error) {
       setToast(
         error instanceof Error ? error.message : "Street View is not available right now.",
@@ -7973,13 +7941,11 @@ export default function MarketplaceApp({
     const notes =
       notesField instanceof HTMLTextAreaElement ? notesField.value.trim() : "";
     const photos = form.elements.namedItem("listing_photos");
-    // The owner's own photo leads. The Street View frame travels separately,
-    // labelled for what it is, so the model never mistakes it for the space.
     const picked = photos instanceof HTMLInputElement ? Array.from(photos.files ?? []) : [];
     const file =
-      picked.find((item) => item.size > 0 && !(streetView && sameFile(item, streetView.file))) ??
+      picked.find((item) => item.size > 0) ??
       null;
-    if (!file && !notes && !audio && !streetView) {
+    if (!file && !notes && !audio) {
       setToast("Add a photo or a few words first, then press Fill with AI.");
       return;
     }
@@ -8000,14 +7966,12 @@ export default function MarketplaceApp({
     setAiObservations([]);
     try {
       const image = file ? await photoToJpegBase64(file) : null;
-      const streetImage = streetView ? await blobToBase64(streetView.file) : null;
       const response = await fetch("/api/listings/draft", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           notes,
           image,
-          street_image: streetImage,
           current: Object.keys(current).length ? current : null,
           audio: audio ? { data: audio.data, mime_type: audio.mimeType } : null,
           kind: listingFormKind === "brief" ? "physical" : listingFormKind,
@@ -8122,6 +8086,9 @@ export default function MarketplaceApp({
               install_by: String(values.get("install_by") ?? "") || null,
               space_size: String(values.get("space_size") ?? "").trim(),
               street_address: String(values.get("street_address") ?? "").trim(),
+              // Street View: the listing keeps only the capture month, which
+              // is the card's caption and its on/off switch.
+              street_view_captured: streetView?.captured ?? "",
             }
           : {}),
         ...(values.get("has_sponsor_section")
@@ -9700,6 +9667,7 @@ export default function MarketplaceApp({
       setListingFeedback("");
       setFormatPreview("");
       setEditingListing(null);
+      setStreetView(null);
       setListingInstantEnabled(false);
       setNewListingOffer("social");
       setListingOpen(true);
@@ -9710,6 +9678,11 @@ export default function MarketplaceApp({
     setListingFeedback("");
     setFormatPreview(listing.format ?? "");
     setEditingListing(listing);
+    setStreetView(
+      listing.street_view_captured
+        ? { captured: listing.street_view_captured, url: null }
+        : null,
+    );
     setListingInstantEnabled(listing.instant_booking_enabled ?? false);
     setNewListingOffer(
       isSponsorshipListing(listing)
@@ -15556,9 +15529,10 @@ export default function MarketplaceApp({
                     placeholder="1398 Solano Ave, Albany, CA 94706"
                   />
                 </label>
-                {/* A Google Street View frame of that address, added as one
-                    more photo. Outdoor frames only: a storefront or a wall
-                    on a street usually works, a dorm corridor gets a no. */}
+                {/* Google Street View of that address, shown on the listing
+                    as a labelled card fetched live from Google. Outdoor frames
+                    only: a storefront or a wall on a street usually works, a
+                    dorm corridor gets a no. */}
                 <div className="street-view">
                   <button
                     type="button"
@@ -15568,20 +15542,24 @@ export default function MarketplaceApp({
                     {streetViewLoading
                       ? "Looking up Street View…"
                       : streetView
-                        ? "Refresh the Street View photo"
-                        : "Add a Google Street View photo of this address"}
+                        ? "Refresh the Street View"
+                        : "Add a Google Street View of this address"}
                   </button>
                   {streetView && (
                     <figure className="street-view-card">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={streetView.url} alt="Google Street View of the address" />
+                      <img
+                        src={
+                          streetView.url ??
+                          (editingListing ? `/api/listings/${editingListing.id}/street-view` : "")
+                        }
+                        alt="Google Street View of the address"
+                      />
                       <figcaption>
-                        Google Street View{streetView.date ? `, ${streetView.date}` : ""}.
-                        Added to your photos; it may be out of date.
-                        <button
-                          type="button"
-                          onClick={(event) => clearStreetView(event.currentTarget.form)}
-                        >
+                        Google Street View{streetView.captured ? `, ${streetView.captured}` : ""}.
+                        Shown under your photos, labelled, fetched live from Google
+                        and never stored. It may be out of date.
+                        <button type="button" onClick={clearStreetView}>
                           Remove
                         </button>
                       </figcaption>
@@ -15702,12 +15680,6 @@ export default function MarketplaceApp({
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 multiple
-                onChange={(event) => {
-                  // Picking again replaces the whole list; keep the Street
-                  // View frame in it.
-                  const form = event.currentTarget.form;
-                  if (streetView && form) addFileToPicker(form, streetView.file);
-                }}
               />
               <small>
                 {editingListing
@@ -15766,6 +15738,21 @@ export default function MarketplaceApp({
                     </button>
                   ))}
                 </div>
+              )}
+              {selectedListing.street_view_captured && (
+                <figure className="street-view-card detail-street-view">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/listings/${selectedListing.id}/street-view`}
+                    alt="Google Street View of the address"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <figcaption>
+                    Google Street View, {selectedListing.street_view_captured}. The
+                    street outside, as Google last photographed it.
+                  </figcaption>
+                </figure>
               )}
             </div>
             <div className="detail-copy">

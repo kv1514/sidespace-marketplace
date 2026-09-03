@@ -17,9 +17,10 @@ import {
  * dependency here and the lockfile could not be regenerated where this was
  * written. Swapping in an SDK later touches only the provider function.
  *
- * Evidence: the owner's notes, the owner's photo, and (physical spaces with an
- * exact address) a Google Street View frame for the surroundings. The prompt
- * holds the model to those three; the form shows back what it says it saw.
+ * Evidence: the owner's notes and the owner's photo, nothing else. The prompt
+ * holds the model to those two; the form shows back what it says it saw. A
+ * Google Street View frame is never sent: Google's terms forbid creating
+ * content from its imagery, so the listing page shows it live, labelled.
  *
  * Voice: browsers with built-in speech recognition send words. The rest
  * (Firefox, Brave, in-app browsers, or a recogniser that failed) send a short
@@ -93,7 +94,7 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
     "You draft listings for SideSpace, a marketplace where local businesses rent everyday advertising space from the people who own it.",
     `This listing is ${what}. Write it in the owner's voice, first person, like a sharp copywriter for a local marketplace: confident, concrete, benefit-led. Lead with the strongest fact. Turn every fact the owner gave into a reason a buyer would want the spot - where it sits becomes who passes it, a number becomes reach, timing becomes when the ad works. Specific beats general; short sentences beat long ones. No exclamation marks, no emoji, no clichés ("perfect opportunity", "don't miss out", "great exposure"), and never mention AI.`,
     "",
-    "EVIDENCE. You have up to three sources: the owner's notes, the owner's photo of the space, and sometimes a Google Street View frame of the address. Every claim must come from one of them. From the owner's photo you may state what is plainly visible: the surface and what it is made of, its setting (a glass door, a brick wall, a corridor, a counter, a window onto a street), what stands right beside it, its rough size only against a visible reference such as a door or a person, and activity actually in frame. The Street View frame shows the street outside as it was when the camera car passed, possibly years ago: use it for surroundings only (a corner, a bus stop, a crossing, the shops either side), never for the current state of the space, and never let it override the owner's photo or notes. NEVER infer, estimate, round up, or invent: not a price, not a size, not a foot-traffic, follower, or attendance number, not an address, not an availability window, not who installs, not what is nearby unless a photo or the notes show it. If a fact is not stated or shown, leave the field empty (null for price) and ask for it in questions. A blank the owner fills is right; a number you made up is a failure.",
+    "EVIDENCE. You have two sources: the owner's notes and the owner's photo of the space. Every claim must come from one of them. From the owner's photo you may state what is plainly visible: the surface and what it is made of, its setting (a glass door, a brick wall, a corridor, a counter, a window onto a street), what stands right beside it, its rough size only against a visible reference such as a door or a person, and activity actually in frame. NEVER infer, estimate, round up, or invent: not a price, not a size, not a foot-traffic, follower, or attendance number, not an address, not an availability window, not who installs, not what is nearby unless a photo or the notes show it. If a fact is not stated or shown, leave the field empty (null for price) and ask for it in questions. A blank the owner fills is right; a number you made up is a failure.",
     "",
     "SECOND PASS. When the message includes the current draft, the owner has already seen a version and may have edited it or typed answers straight into the fields. Keep every fact and every specific phrase they kept, fold in the new answers, tighten weak sentences, and fill only what is still blank. Never drop information that was there, and never re-ask what the current draft or the notes already answer.",
     "",
@@ -112,7 +113,7 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
     "- minimum_booking and availability_notes: from the notes, otherwise empty.",
     "- deliverables: the proof handed back after booking, one or two sentences. For a physical space, a photo of the ad in place. This one may be drafted; it describes the process, not a fact about the space.",
     "- questions: everything you still need, as direct questions the owner can answer in one line each, most important first, at most 5. Always ask about any of these that was not stated: the price and what it is per; where it is (city or area) if the notes and profile city do not say; who sees it and roughly how many (people walking past per day, followers, or attendance); when it is available; and for a physical space, its rough size, what may go up on it, and who puts it up. Empty when nothing is missing. Do not ask about things already answered.",
-    "- photo_observations: up to six short, plain facts you can see in the owner's photo, one each (\"a wooden door with a wire-mesh window\", \"a corridor with about six doors\", \"a bulletin board with three flyers on it\"). Only what is visible: no judgements, no guesses about what is out of frame, nothing from the Street View frame. Empty when there is no owner's photo. The owner checks this list, so a wrong item is worse than a missing one.",
+    "- photo_observations: up to six short, plain facts you can see in the owner's photo, one each (\"a wooden door with a wire-mesh window\", \"a corridor with about six doors\", \"a bulletin board with three flyers on it\"). Only what is visible: no judgements, no guesses about what is out of frame. Empty when there is no owner's photo. The owner checks this list, so a wrong item is worse than a missing one.",
     "",
     "The standard, from one owner's notes: \"dorm door, 4th floor of Blackwell, corner by the emergency stairs, flyers ok, I put them up, $1 a week, available now\".",
     "Weak: \"This is the door to my dorm room on the fourth floor. It is near the stairs. People walk past it.\"",
@@ -125,13 +126,9 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
 
 function userText(body: Body) {
   const parts = [
-    body.image && body.streetImage
-      ? "Two images: the first is the owner's photo of the space, the second is a Google Street View frame of the address (surroundings only, possibly out of date). Draft the listing."
-      : body.image
-        ? "Draft the listing for the space in this photo."
-        : body.streetImage
-          ? "The image is a Google Street View frame of the address (surroundings only, possibly out of date); the owner has not added a photo of the space itself. Draft the listing."
-          : "Draft the listing from these notes.",
+    body.image
+      ? "Draft the listing for the space in this photo."
+      : "Draft the listing from these notes.",
     body.notes ? `Owner's notes: ${body.notes}` : "The owner left no notes.",
     body.city ? `Owner's profile city: ${body.city}` : "",
   ];
@@ -149,8 +146,6 @@ type Body = {
   notes: string;
   /** The owner's own photo of the space, JPEG base64. */
   image: string | null;
-  /** A Google Street View frame of the address, JPEG base64: surroundings only. */
-  streetImage: string | null;
   audio: { data: string; mimeType: string } | null;
   /** What the form holds now, on a second Fill. */
   current: Record<string, string> | null;
@@ -179,7 +174,6 @@ async function readBody(request: Request): Promise<Body> {
   const notes =
     typeof raw.notes === "string" ? raw.notes.trim().slice(0, MAX_NOTES) : "";
   const image = readImage(raw.image, "That photo could not be read.");
-  const streetImage = readImage(raw.street_image, "That Street View frame could not be read.");
   let current: Body["current"] = null;
   if (raw.current && typeof raw.current === "object") {
     const entries = Object.entries(raw.current as Record<string, unknown>)
@@ -212,11 +206,11 @@ async function readBody(request: Request): Promise<Body> {
       audio = { data, mimeType };
     }
   }
-  if (!image && !notes && !audio && !streetImage) {
+  if (!image && !notes && !audio) {
     throw new ApiError("Add a photo or a few words first, then press Fill with AI.");
   }
   const city = typeof raw.city === "string" ? raw.city.trim().slice(0, 80) : "";
-  return { kind, notes, image, streetImage, audio, current, city };
+  return { kind, notes, image, audio, current, city };
 }
 
 /** Shared handling of the HTTP layer: both providers use the same codes. */
@@ -244,7 +238,7 @@ type AnthropicResponse = {
 
 async function anthropicRequest(apiKey: string, body: Body, withFallbacks: boolean) {
   const content: Array<Record<string, unknown>> = [];
-  for (const data of [body.image, body.streetImage]) {
+  for (const data of [body.image]) {
     if (data) {
       content.push({
         type: "image",
@@ -336,7 +330,7 @@ type GeminiResponse = {
 
 async function draftWithGemini(apiKey: string, body: Body): Promise<string> {
   const input: Array<Record<string, string>> = [];
-  for (const data of [body.image, body.streetImage]) {
+  for (const data of [body.image]) {
     if (data) input.push({ type: "image", data, mime_type: "image/jpeg" });
   }
   input.push({ type: "text", text: userText(body) });
@@ -474,7 +468,7 @@ export async function POST(request: Request) {
     // provider, whether a photo was sent, how many questions came back, and
     // how long it took. No member data.
     console.info(
-      `[listing draft] ok provider=${chosen.provider} kind=${body.kind} photo=${body.image ? "yes" : "no"} street=${body.streetImage ? "yes" : "no"} refill=${body.current ? "yes" : "no"} audio=${body.audio ? "yes" : "no"} questions=${draft.questions.length} ms=${Date.now() - startedAt}`,
+      `[listing draft] ok provider=${chosen.provider} kind=${body.kind} photo=${body.image ? "yes" : "no"} refill=${body.current ? "yes" : "no"} audio=${body.audio ? "yes" : "no"} questions=${draft.questions.length} ms=${Date.now() - startedAt}`,
     );
 
     return Response.json(
