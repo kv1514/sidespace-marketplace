@@ -5195,6 +5195,15 @@ export default function MarketplaceApp({
     useState<CreatorPortfolioItem[]>([]);
   const [selectedCreatorReviews, setSelectedCreatorReviews] =
     useState<CreatorReview[]>([]);
+  /**
+   * The seller whose profile is open over a listing, and everything they have
+   * live. Fetched rather than filtered out of `listings`: that array holds
+   * only the most recent rows the grid asked for, so a member with an older
+   * listing would have looked like they had fewer than they do.
+   */
+  const [selectedOwner, setSelectedOwner] = useState<Profile | null>(null);
+  const [ownerListings, setOwnerListings] = useState<Listing[]>([]);
+  const [ownerListingsLoading, setOwnerListingsLoading] = useState(false);
   const [stripeAccountStatus, setStripeAccountStatus] =
     useState<StripeAccountStatus | null>(null);
   const [campaignListing, setCampaignListing] = useState<Listing | null>(null);
@@ -6733,6 +6742,50 @@ export default function MarketplaceApp({
     const url = new URL(window.location.href);
     url.searchParams.delete("listing");
     window.history.replaceState(null, "", url);
+  }
+
+  /**
+   * The seller's profile, opened from the listing you are reading.
+   *
+   * A listing is one thing someone offers; the question a buyer asks next is
+   * "what else have they got?". This answers it without leaving the listing -
+   * the profile opens over it, and closing comes straight back.
+   */
+  async function openOwnerProfile(owner: Profile) {
+    setSelectedOwner(owner);
+    setOwnerListings([]);
+    if (!supabase) return;
+    setOwnerListingsLoading(true);
+    const { data, error } = await supabase
+      .from("listings")
+      .select(
+        `${PUBLIC_LISTING_COLUMNS}, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
+      )
+      .eq("owner_profile_id", owner.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    // A profile that cannot list its listings is still worth showing, so a
+    // failure leaves the header and an empty state rather than an error.
+    if (error) console.error("[owner profile] listings fetch failed", error);
+    setOwnerListings(error ? [] : safeListings(data));
+    setOwnerListingsLoading(false);
+  }
+
+  function closeOwnerProfile() {
+    setSelectedOwner(null);
+    setOwnerListings([]);
+    setOwnerListingsLoading(false);
+  }
+
+  /**
+   * Following a listing from the profile replaces the profile rather than
+   * stacking on it: two dialogs deep, Escape stops meaning what a reader
+   * expects it to mean.
+   */
+  function openListingFromProfile(listing: Listing) {
+    closeOwnerProfile();
+    openListing(listing);
   }
 
   async function handleAuth(event: FormEvent<HTMLFormElement>) {
@@ -15891,19 +15944,29 @@ export default function MarketplaceApp({
             </div>
             <div className="detail-copy">
               <div className="owner-line">
-                <Avatar profile={selectedListing.owner} />
-                <div>
-                  <strong>
-                    {selectedListing.owner.display_name}
-                    {selectedListing.owner.verified && (
-                      <span className="verified">✓</span>
-                    )}
-                  </strong>
-                  <small>
-                    {rolesLabel(selectedListing.owner)} ·{" "}
-                    {selectedListing.owner.city}
-                  </small>
-                </div>
+                {/* The whole identity is the control, the way a marketplace
+                    seller's name is: avatar, name and role all lead to the
+                    same place, so nobody has to hunt for the small link. */}
+                <button
+                  type="button"
+                  className="owner-line-link"
+                  onClick={() => void openOwnerProfile(selectedListing.owner)}
+                  aria-label={`See ${selectedListing.owner.display_name}'s profile and other listings`}
+                >
+                  <Avatar profile={selectedListing.owner} />
+                  <div>
+                    <strong>
+                      {selectedListing.owner.display_name}
+                      {selectedListing.owner.verified && (
+                        <span className="verified">✓</span>
+                      )}
+                    </strong>
+                    <small>
+                      {rolesLabel(selectedListing.owner)} ·{" "}
+                      {selectedListing.owner.city}
+                    </small>
+                  </div>
+                </button>
                 <span
                   className={`owner-trust-badge ${
                     selectedListing.owner.verified ? "verified-owner" : ""
@@ -16081,6 +16144,139 @@ export default function MarketplaceApp({
                 )}
               </div>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {selectedOwner && (
+        <Modal
+          label={`${selectedOwner.display_name}'s profile`}
+          onClose={closeOwnerProfile}
+          wide
+        >
+          <div className="seller-profile">
+            <header className="seller-profile-head">
+              <Avatar profile={selectedOwner} size="large" />
+              <div>
+                <h2>
+                  {selectedOwner.display_name}
+                  {selectedOwner.verified && <span className="verified">✓</span>}
+                </h2>
+                <p className="seller-profile-meta">
+                  {rolesLabel(selectedOwner)}
+                  {selectedOwner.city ? ` · ${selectedOwner.city}` : ""}
+                  {displayHandle(selectedOwner.handle ?? "")
+                    ? ` · ${displayHandle(selectedOwner.handle ?? "")}`
+                    : ""}
+                </p>
+                <span
+                  className={`owner-trust-badge ${
+                    selectedOwner.verified ? "verified-owner" : ""
+                  }`}
+                >
+                  {selectedOwner.is_demo
+                    ? "Demo profile"
+                    : selectedOwner.verified
+                      ? "Verified by SideSpace"
+                      : "Unverified profile"}
+                </span>
+              </div>
+            </header>
+
+            {selectedOwner.bio && <p className="seller-profile-bio">{selectedOwner.bio}</p>}
+            <SocialLinks profile={selectedOwner} />
+
+            {/* Same rule as the person card: a row of zeroes says less than
+                no row at all, so it only appears when there is a number. */}
+            {Boolean(
+              selectedOwner.followers ||
+                selectedOwner.avg_views ||
+                selectedOwner.audience_age,
+            ) && (
+              <div className="person-stats seller-profile-stats">
+                {Boolean(selectedOwner.followers || selectedOwner.avg_views) && (
+                  <span>
+                    <b>
+                      {compactNumber(
+                        selectedOwner.followers || selectedOwner.avg_views,
+                      )}
+                    </b>
+                    {selectedOwner.followers
+                      ? " followers"
+                      : ` ${selectedOwner.reach_unit || "weekly looks"}`}
+                  </span>
+                )}
+                {Boolean(selectedOwner.audience_age) && (
+                  <span>{selectedOwner.audience_age}</span>
+                )}
+              </div>
+            )}
+
+            <div className="seller-profile-listings">
+              <div className="seller-profile-listings-head">
+                <strong>
+                  {ownerListingsLoading
+                    ? "Everything they have live"
+                    : ownerListings.length === 1
+                      ? "1 listing live"
+                      : `${ownerListings.length} listings live`}
+                </strong>
+              </div>
+              {ownerListingsLoading ? (
+                <p className="seller-profile-empty">Loading their listings…</p>
+              ) : ownerListings.length ? (
+                <div className="seller-listing-grid">
+                  {ownerListings.map((listing) => (
+                    <button
+                      type="button"
+                      className="seller-listing"
+                      key={listing.id}
+                      onClick={() => openListingFromProfile(listing)}
+                      aria-current={
+                        listing.id === selectedListing?.id ? "true" : undefined
+                      }
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={listing.image_url || DEFAULT_LISTING_IMAGE}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <span className="seller-listing-body">
+                        <span className="seller-listing-channel">
+                          {listing.channel}
+                        </span>
+                        <strong>{listing.title}</strong>
+                        <span className="seller-listing-price">
+                          {priceLabel(listing)} / {listing.price_unit}
+                        </span>
+                        {listing.id === selectedListing?.id && (
+                          <span className="seller-listing-current">
+                            The one you were reading
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="seller-profile-empty">
+                  Nothing live right now.
+                </p>
+              )}
+            </div>
+
+            {profile?.id !== selectedOwner.id && (
+              <button
+                className="button button-dark"
+                onClick={() =>
+                  requireAccount(() => void startConversation(selectedOwner))
+                }
+              >
+                Message {selectedOwner.display_name} <span>↗</span>
+              </button>
+            )}
           </div>
         </Modal>
       )}

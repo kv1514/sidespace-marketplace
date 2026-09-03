@@ -11181,3 +11181,150 @@ html.reveal-ready [data-reveal].is-visible {
   cursor: not-allowed;
   opacity: 0.4;
 }
+
+/* The seller's profile, opened from the listing you are reading: who they are,
+   then everything else they have live. */
+.owner-line-link {
+  align-items: center;
+  background: none;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  font: inherit;
+  gap: 12px;
+  margin: -6px;
+  padding: 6px;
+  text-align: left;
+  transition: background 150ms ease-out;
+}
+
+.owner-line-link:hover {
+  background: var(--paper);
+}
+
+.owner-line-link strong {
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+
+.owner-line-link:hover strong {
+  text-decoration-color: currentColor;
+}
+
+.seller-profile {
+  display: grid;
+  gap: 18px;
+}
+
+.seller-profile-head {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+}
+
+.seller-profile-head h2 {
+  font-size: clamp(24px, 4vw, 34px);
+  letter-spacing: -0.04em;
+  margin: 0 0 4px;
+}
+
+.seller-profile-meta {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+
+.seller-profile-bio {
+  font-size: 14px;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.seller-profile-stats {
+  margin: 0;
+}
+
+.seller-profile-listings-head {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.seller-profile-listings-head strong {
+  font-size: 14px;
+}
+
+.seller-profile-empty {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+.seller-listing-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  margin-top: 14px;
+}
+
+.seller-listing {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  transition:
+    border-color 150ms ease-out,
+    transform 150ms var(--ease-out, ease-out);
+}
+
+.seller-listing:hover {
+  border-color: var(--ink);
+  transform: translateY(-2px);
+}
+
+/* The listing you came in from, so the set reads as "and these others". */
+.seller-listing[aria-current="true"] {
+  border-color: var(--ink);
+}
+
+.seller-listing > img {
+  aspect-ratio: 16 / 10;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.seller-listing-body {
+  display: grid;
+  gap: 4px;
+  padding: 12px 13px 14px;
+}
+
+.seller-listing-channel {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.seller-listing-body strong {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.seller-listing-price {
+  font-size: 13px;
+}
+
+.seller-listing-current {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+}
