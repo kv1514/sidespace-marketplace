@@ -10774,16 +10774,41 @@ html.reveal-ready [data-reveal].is-visible {
   opacity: 0.85;
 }
 
-/* Delete on your own listing card: quiet until hovered, then unmistakable. */
-.my-listing-actions button.is-danger {
+/* Delete, wherever you meet your own listing: quiet until hovered, then
+   unmistakable. The same treatment on the account card, the dashboard row and
+   the listing page, so it reads as one control in three places. */
+.my-listing-actions button.is-danger,
+.dashboard-row-actions button.is-danger,
+.detail-owner-actions .button.is-danger {
   border-color: rgba(212, 61, 0, 0.45);
   color: #d43d00;
 }
 
-.my-listing-actions button.is-danger:hover {
+.my-listing-actions button.is-danger:hover,
+.dashboard-row-actions button.is-danger:hover,
+.detail-owner-actions .button.is-danger:hover {
   background: #d43d00;
   border-color: #d43d00;
   color: var(--white);
+}
+
+/* Your own listing, seen from the marketplace. The buyer's controls are gone -
+   they only ever dead-ended on your own row - and these took their place. */
+.detail-owner-actions {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 18px;
+  padding-top: 16px;
+}
+
+.detail-owner-actions > p {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 0;
+}
+
+.detail-owner-actions .detail-primary-actions {
+  justify-content: flex-start;
+  margin-top: 12px;
 }
 
 /* Fill with AI: what the model says it saw, listed so it can be checked. */

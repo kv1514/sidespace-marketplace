@@ -5244,6 +5244,13 @@ export default function MarketplaceApp({
         selectedListing.street_view_captured ||
         selectedListing.tour_url),
   );
+  // Opening your own listing used to offer you the buyer's controls - book it,
+  // offer on it, message yourself - which all dead-end, while the controls that
+  // do apply to it (edit, pause, delete) lived only on the dashboard. Owning it
+  // swaps the whole action block.
+  const viewingOwnListing = Boolean(
+    selectedListing && profile && selectedListing.owner.id === profile.id,
+  );
   const [inboxOpen, setInboxOpen] = useState(false);
   // Distinguishes still-fetching and failed from genuinely empty, so the
   // drawer stops asserting a member has no conversations before it knows,
@@ -9840,6 +9847,14 @@ export default function MarketplaceApp({
       return;
     }
     setToast(nextStatus === "active" ? "Listing is live again." : "Listing paused.");
+    // The listing page can be the thing that was just paused, and it holds its
+    // own copy of the row - without this it keeps offering "Pause listing"
+    // after the pause went through.
+    setSelectedListing((current) =>
+      current && current.id === listing.id
+        ? { ...current, status: nextStatus }
+        : current,
+    );
     await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
   }
 
@@ -11274,6 +11289,13 @@ export default function MarketplaceApp({
                       <div className="dashboard-row-actions">
                         <button onClick={() => openListing(listing)}>View</button>
                         <button onClick={() => openListingEdit(listing)}>Edit</button>
+                        <button
+                          className="is-danger"
+                          disabled={busy}
+                          onClick={() => setDeleteListingTarget(listing)}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </article>
                   ))}
@@ -16153,14 +16175,60 @@ export default function MarketplaceApp({
                 {selectedListing.minimum_booking && <p>{selectedListing.minimum_booking}</p>}
                 <p><strong>Cancellation: </strong>{selectedListing.cancellation_policy || "Agree with the owner before payment."}</p>
               </details>
-              {isListingRequestable(selectedListing) && !isBrief(selectedListing) && selectedListing.instant_booking_enabled && selectedListing.price_cents > 0 && (
+              {!viewingOwnListing && isListingRequestable(selectedListing) && !isBrief(selectedListing) && selectedListing.instant_booking_enabled && selectedListing.price_cents > 0 && (
                 <InstantBookingPanel key={selectedListing.id} listing={selectedListing} busy={busy}
                   onCheckout={(start, end) => startInstantCheckout(selectedListing, start, end)} />
               )}
-              {isListingRequestable(selectedListing) && !isBrief(selectedListing) && <div className="detail-primary-actions">
+              {!viewingOwnListing && isListingRequestable(selectedListing) && !isBrief(selectedListing) && <div className="detail-primary-actions">
                 {!selectedListing.instant_booking_enabled && isFixedPriceListing(selectedListing) && <button className="button button-coral" onClick={() => openCampaignFlow(selectedListing,"buy_now")}>Request a booking</button>}
                 <button className={`button ${!selectedListing.instant_booking_enabled && !isFixedPriceListing(selectedListing) ? "button-coral" : "button-ghost"}`} onClick={() => openCampaignFlow(selectedListing,"offer")}>Make a custom offer</button>
               </div>}
+              {viewingOwnListing ? (
+                <div className="detail-owner-actions">
+                  <p>
+                    This is your listing.
+                    {selectedListing.status === "active"
+                      ? " It is live in the marketplace."
+                      : " It is paused, so nobody can see it."}
+                  </p>
+                  <div className="detail-primary-actions">
+                    <button
+                      className="button button-coral"
+                      onClick={() => {
+                        // Both of these open another dialog, so this one closes
+                        // first: the confirm and the editor render earlier in
+                        // the tree and would otherwise be painted over by the
+                        // listing page still sitting on top of them.
+                        const listing = selectedListing;
+                        closeListing();
+                        openListingEdit(listing);
+                      }}
+                    >
+                      Edit listing
+                    </button>
+                    <button
+                      className="button button-ghost"
+                      disabled={busy}
+                      onClick={() => void updateListingStatus(selectedListing)}
+                    >
+                      {selectedListing.status === "active"
+                        ? "Pause listing"
+                        : "Make it live again"}
+                    </button>
+                    <button
+                      className="button button-ghost is-danger"
+                      disabled={busy}
+                      onClick={() => {
+                        const listing = selectedListing;
+                        closeListing();
+                        setDeleteListingTarget(listing);
+                      }}
+                    >
+                      Delete listing
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="detail-primary-actions">
                 {(!isListingRequestable(selectedListing) || isBrief(selectedListing)) && (
                   <button
@@ -16185,6 +16253,7 @@ export default function MarketplaceApp({
                   Message owner
                 </button>
               </div>
+              )}
               <div className="detail-safety-actions">
                 <button
                   onClick={() => {
