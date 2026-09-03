@@ -34,7 +34,7 @@ select id,owner_profile_id,title,channel,format,price_cents,price_unit,descripti
  image_urls,location_area,availability_notes,available_from,available_to,lead_time_days,minimum_booking,deliverables,cancellation_policy,
  price_max_cents,brief_scope,target_platforms,street_address,surface_types,install_by,space_size,sponsor_tier,sponsor_slots,
  provenance_status,availability_confirmed_at,instant_booking_enabled,availability_dates,booking_duration_days,booking_timezone,street_view_captured,
- timing_kind,pricing_kind,minimum_duration_days from private.current_user_listing_rows();
+ street_view_pano,tour_url,tour_kind,timing_kind,pricing_kind,minimum_duration_days from private.current_user_listing_rows();
 
 create function private.listing_subtotal_cents(rate bigint, day_count integer, basis text) returns bigint
 language sql immutable strict set search_path='' as $$

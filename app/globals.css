@@ -10579,3 +10579,205 @@ html.reveal-ready [data-reveal].is-visible {
   .composer-kind button { flex: 1 1 auto; }
   .booking-price-summary { padding: 14px; }
 }
+/* Walkthroughs: the owner's video or 360 file, in the editor and on the listing. */
+.tour-pick,
+.tour-current {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  gap: 10px 14px;
+}
+
+.tour-pick small,
+.tour-current small {
+  flex-basis: 100%;
+  opacity: 0.75;
+}
+
+.tour-current a {
+  color: inherit;
+}
+
+.tour-current button {
+  background: none;
+  border: 0;
+  color: #d43d00;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+/* Like .photo-count, on the other corner of the card. */
+.tour-badge {
+  background: var(--ink);
+  border-radius: 999px;
+  bottom: 13px;
+  color: var(--lime);
+  font-family: var(--mono);
+  font-size: 10px;
+  left: 13px;
+  padding: 7px 10px;
+  position: absolute;
+  text-transform: uppercase;
+}
+
+/* The Street View card and the walkthrough sit under the photos as plain
+   blocks, not as the 520px hero figure the detail layout gives its figures. */
+.detail-layout figure.detail-street-view,
+.detail-layout figure.detail-tour {
+  border-radius: 0;
+  min-height: 0;
+  overflow: visible;
+}
+
+.detail-tour {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+
+.detail-tour video {
+  aspect-ratio: 16 / 9;
+  background: var(--ink);
+  border-radius: 10px;
+  display: block;
+  width: 100%;
+}
+
+.detail-tour figcaption {
+  font-size: 12.5px;
+  opacity: 0.8;
+}
+
+.pano-viewer {
+  aspect-ratio: 16 / 9;
+  background: var(--ink);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.pano-canvas {
+  inset: 0;
+  position: absolute;
+}
+
+.pano-canvas canvas {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.pano-status,
+.pano-hint {
+  color: var(--paper);
+  font-size: 12.5px;
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  white-space: nowrap;
+}
+
+.pano-status {
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.pano-hint {
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 999px;
+  bottom: 12px;
+  padding: 6px 12px;
+  transform: translateX(-50%);
+}
+
+.pano-controls {
+  bottom: 10px;
+  display: flex;
+  gap: 8px;
+  left: 10px;
+  position: absolute;
+}
+
+.pano-controls button {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  color: var(--paper);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 12px;
+}
+
+.pano-controls button:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.pano-fallback {
+  border-radius: 10px;
+  display: block;
+  width: 100%;
+}
+
+/* "View whole street": Google's panorama in the page, when the embed key is set. */
+.street-view-embed {
+  aspect-ratio: 16 / 10;
+  border: 0;
+  border-radius: 10px;
+  display: block;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.street-view-card figcaption .street-view-open,
+.street-view-card figcaption a {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* The listing's own photos in the editor: cover first, each removable. */
+.listing-photo-manager {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+
+.listing-photo-manager > strong {
+  display: block;
+  font-size: 14px;
+}
+
+.listing-photo-manager > p {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  margin: 4px 0 14px;
+  max-width: 460px;
+}
+
+.saved-media-cover {
+  background: color-mix(in srgb, var(--ink) 86%, transparent);
+  border: 0;
+  border-radius: 999px;
+  bottom: 6px;
+  color: var(--white);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10.5px;
+  left: 6px;
+  padding: 4px 8px;
+  position: absolute;
+}
+
+.saved-media-cover:hover {
+  background: var(--ink);
+}
+
+.saved-media-cover:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
