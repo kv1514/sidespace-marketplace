@@ -74,6 +74,36 @@ describe("idempotent delayed payout release", () => {
     expect(result.alreadyReleased).toBe(false);
   });
 
+  it.each(["ch_discounted", null])("funds the full creator payout from SideSpace for a promo order (%s)", async (charge) => {
+    mocks.transferCreate.mockResolvedValue({ id: "tr_promo", amount: 9500, currency: "usd", destination: "acct_creator", source_transaction: null, transfer_group: "sidespace_campaign_transaction-1" });
+    const admin = adminWithClaims({ should_transfer: true, transaction: {
+      ...transaction, stripe_charge_id: charge, payout_funding: "platform", charged_total_cents: charge ? 5500 : 0,
+      ad_credit_cents: charge ? 5000 : 10500, customer_total_cents: 10500,
+      paid_at: "2026-09-03T00:00:00Z", stripe_checkout_session_id: "cs_promo",
+    } });
+    await releasePendingPayout(admin as never, { transactionId: transaction.id, mode: "automatic" });
+    const [params, options] = mocks.transferCreate.mock.calls[0];
+    expect(params.amount).toBe(9500);
+    expect(params).not.toHaveProperty("source_transaction");
+    expect(options.idempotencyKey).toBe("sidespace-payout-transaction-1-platform-0");
+    expect(admin.rpc).toHaveBeenCalledWith("finalize_campaign_payout_release", expect.objectContaining({ transfer_id: "tr_promo" }));
+  });
+
+  it.each([true, false])("advances a funding attempt only after a definitive Stripe rejection (%s)", async (definitive) => {
+    mocks.transferCreate.mockRejectedValue(Object.assign(new Error("Funding unavailable"), definitive ? { type: "StripeInvalidRequestError", code: "balance_insufficient", statusCode: 400 } : { type: "StripeConnectionError" }));
+    const admin = adminWithClaims({ should_transfer: true, transaction: { ...transaction, payout_funding: "platform", payout_funding_attempt: 2 } });
+    await expect(releasePendingPayout(admin as never, { transactionId: transaction.id, mode: "automatic" })).rejects.toThrow("Funding unavailable");
+    expect(mocks.transferCreate.mock.calls[0][1].idempotencyKey).toBe("sidespace-payout-transaction-1-platform-2");
+    expect(admin.rpc).toHaveBeenCalledWith(definitive ? "record_platform_payout_funding_failure" : "record_campaign_payout_release_failure", expect.objectContaining({ target_transaction_id: transaction.id }));
+    if (!definitive) expect(admin.rpc).not.toHaveBeenCalledWith("record_platform_payout_funding_failure", expect.anything());
+  });
+
+  it("does not fund an unverified free order", async () => {
+    const admin = adminWithClaims({ should_transfer: true, transaction: { ...transaction, payout_funding: "platform", stripe_charge_id: null, charged_total_cents: 0 } });
+    await expect(releasePendingPayout(admin as never, { transactionId: transaction.id, mode: "automatic" })).rejects.toThrow(/verified platform charge/);
+    expect(mocks.transferCreate).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["amount", { amount: 9_499 }],
     ["currency", { currency: "eur" }],

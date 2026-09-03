@@ -139,6 +139,22 @@ describe("checkout route authorization", () => {
     expect(mocks.getStripe).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { date: "2026-02-30", conflict: false, status: 400 },
+    { date: "2026-09-06", conflict: true, status: 409 },
+  ])("rejects invalid or unavailable instant dates before Stripe ($status)", async ({ date, conflict, status }) => {
+    const admin = { rpc: vi.fn().mockResolvedValue({ error: { message: "These dates were just booked." } }), from: vi.fn() };
+    mocks.requireAuthenticatedProfile.mockResolvedValue({ user: {}, profile: { id: "trusted-buyer" }, admin });
+    const response = await POST(new Request("http://localhost:3000/api/stripe/checkout", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ listingId: "listing-1", bookingDate: date, listingUpdatedAt: "2026-09-03T12:00:00Z" }),
+    }));
+    expect(response.status).toBe(status);
+    expect(admin.rpc).toHaveBeenCalledTimes(conflict ? 1 : 0);
+    expect(admin.from).not.toHaveBeenCalled();
+    expect(mocks.getStripe).not.toHaveBeenCalled();
+  });
+
   it("rejects an unknown campaign before touching Stripe", async () => {
     const campaignQuery = queryResult({
       data: null,
@@ -217,11 +233,15 @@ describe("checkout route authorization", () => {
   // drives the route all the way to the insert and asserts the payload carries
   // every column the schema requires, rather than only the one that regressed.
   it.each([
-    { mode: "test" as const, livemode: false },
-    { mode: "live" as const, livemode: true },
+    { mode: "test" as const, livemode: false, instant: false, credit: 0 },
+    { mode: "test" as const, livemode: false, instant: false, credit: 5000 },
+    { mode: "test" as const, livemode: false, instant: false, credit: 10500 },
+    { mode: "live" as const, livemode: true, instant: false },
+    { mode: "test" as const, livemode: false, instant: true },
+    { mode: "live" as const, livemode: true, instant: true },
   ])(
-    "returns a Stripe checkout URL and writes every column the schema requires in $mode mode",
-    async ({ mode, livemode }) => {
+    "returns a Stripe checkout URL and writes every column the schema requires in $mode mode (instant=$instant)",
+    async ({ mode, livemode, instant, credit = 0 }) => {
     // From 20260830060711 and 20260830120000: NOT NULL, no default, and not
     // generated. Kept as a literal so adding such a column to the table
     // without adding it here is a failing test rather than a 500 in production.
@@ -256,7 +276,8 @@ describe("checkout route authorization", () => {
 
     let insertPayload: Record<string, unknown> | null = null;
 
-    const campaignQuery = queryResult({ data: acceptedCampaign(), error: null });
+    const campaignQuery = queryResult({ data: { ...acceptedCampaign(), instant_booking: instant }, error: null });
+    const holdExpiry = "2026-09-03T12:45:00Z";
     // stripe_accounts is read twice: the creator's payout account, then the
     // payer's customer record. Giving the payer an existing customer id keeps
     // this test on the path it is actually about - the ledger insert - instead
@@ -326,9 +347,10 @@ describe("checkout route authorization", () => {
       }
       return transactionQuery;
     }),
-    rpc: vi.fn().mockResolvedValue({
-      data: { reserved_cents: 0, charged_total_cents: 10_500 },
-      error: null,
+    rpc: vi.fn(async (name: string) => {
+      if (name === "reserve_listing_booking") return { data: acceptedCampaign().id, error: null };
+      if (name === "begin_listing_booking_checkout") return { data: holdExpiry, error: null };
+      return { data: { reserved_cents: credit, charged_total_cents: 10_500 - credit }, error: null };
     }),
   };
     mocks.requireAuthenticatedProfile.mockResolvedValue({
@@ -348,6 +370,7 @@ describe("checkout route authorization", () => {
         sessions: {
           create: vi.fn().mockResolvedValue({
             id: "cs_test",
+            status: "open",
             url: "https://checkout.stripe.com/c/pay/cs_test",
             livemode,
             expires_at: 0,
@@ -356,7 +379,20 @@ describe("checkout route authorization", () => {
       },
     });
 
-    const response = await POST(checkoutRequest());
+    const response = await POST(instant ? new Request("http://localhost:3000/api/stripe/checkout", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ listingId: "listing-1", bookingDate: "2026-09-06", listingUpdatedAt: "2026-09-03T12:00:00Z", priceCents: 1, buyerProfileId: "attacker" }),
+    }) : checkoutRequest());
+    if (instant) {
+      expect(admin.rpc).toHaveBeenCalledWith("reserve_listing_booking", {
+        target_listing_id: "listing-1", buyer_profile_id: "business-1", booking_date: "2026-09-06",
+        expected_updated_at: "2026-09-03T12:00:00Z", payment_livemode: livemode,
+      });
+      expect(admin.rpc).toHaveBeenCalledWith("begin_listing_booking_checkout", { target_campaign_id: acceptedCampaign().id });
+      expect(mocks.getStripe().checkout.sessions.create).toHaveBeenCalledWith(
+        expect.objectContaining({ expires_at: Date.parse(holdExpiry) / 1000 }), expect.anything());
+      expect(admin.rpc.mock.invocationCallOrder.at(-1)).toBeLessThan(mocks.getStripe().checkout.sessions.create.mock.invocationCallOrder[0]);
+    }
 
     // The whole point: a real Stripe-hosted checkout URL comes back.
     expect(response.status).toBe(200);
@@ -372,6 +408,12 @@ describe("checkout route authorization", () => {
     expect(payload).not.toBeNull();
     const supplied = Object.keys(payload ?? {});
     expect(REQUIRED_COLUMNS.filter((c) => !supplied.includes(c))).toEqual([]);
+    const params = mocks.getStripe().checkout.sessions.create.mock.calls[0][0];
+    expect(params.metadata.sidespace_ad_credit_cents).toBe(String(credit));
+    expect(params.line_items.reduce((sum: number, item: { price_data: { unit_amount: number } }) => sum + item.price_data.unit_amount, 0)).toBe(10500 - credit);
+    expect(admin.rpc).toHaveBeenCalledWith("reserve_business_ad_credit", {
+      target_business_profile_id: "business-1", target_transaction_id: "txn-1", maximum_cents: 10500,
+    });
     // The release transfers this amount; creator_payout_cents is its ceiling.
     expect(payload?.payout_amount_cents).toBe(payload?.creator_payout_cents);
     },

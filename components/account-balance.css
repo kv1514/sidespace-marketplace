@@ -1,0 +1,51 @@
+.balance-card {
+  align-items: center; background: #edf3e4; border-color: #cbd8bd;
+  display: flex; gap: 22px; justify-content: space-between; text-align: left;
+  width: 100%; cursor: pointer; color: var(--ink); transition: background 160ms ease-out;
+}
+.balance-card:hover { background: #e3edda; }
+.balance-card:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+.balance-card-copy { display: grid; gap: 7px; min-width: 0; }
+.balance-card-copy > strong { font-size: clamp(26px, 3vw, 38px); letter-spacing: -0.045em; font-variant-numeric: tabular-nums; }
+.balance-card-copy > span:last-child { color: var(--ink-soft); font-size: 13px; }
+.balance-card-action { display: flex; align-items: center; gap: 18px; font-weight: 650; font-size: 13px; flex-shrink: 0; }
+.balance-card-action > span { font-size: 25px; }
+.balance-detail { padding-top: 5px; }
+.balance-heading h2 { font-size: 34px; letter-spacing: -0.045em; margin: 8px 0; }
+.balance-heading > p:last-child, .balance-section > p { color: var(--ink-soft); font-size: 13px; line-height: 1.55; }
+.balance-refresh { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin: 20px 0; font-size: 11px; color: var(--ink-soft); }
+.balance-refresh button { color: var(--ink); background: none; border: 0; font-weight: 650; padding: 8px 0 8px 8px; cursor: pointer; }
+.balance-earned { background: #e9f2de; color: #243721; padding: 24px; border-radius: 18px; }
+.balance-earned strong { display: block; font-size: clamp(32px, 7vw, 48px); letter-spacing: -0.05em; margin: 8px 0; font-variant-numeric: tabular-nums; }
+.balance-earned p:not(.eyebrow) { font-size: 12px; line-height: 1.5; }
+.balance-earned small, .balance-section > small { display: block; font-size: 11px; line-height: 1.5; color: var(--ink-soft); }
+.balance-section { padding: 24px 0 0; margin-top: 24px; border-top: 1px solid var(--line); }
+.balance-section-title { display: flex; gap: 12px; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.balance-section-title h3 { font-size: 17px; margin: 0; letter-spacing: -0.025em; }
+.balance-badge { font-size: 10px; border: 1px solid var(--line); padding: 5px 9px; border-radius: 99px; white-space: nowrap; color: var(--ink-soft); }
+.balance-amounts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+.balance-amounts dt { font-size: 11px; color: var(--ink-soft); margin-bottom: 8px; }
+.balance-amounts dd { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: -0.035em; font-variant-numeric: tabular-nums; }
+.balance-promo-amount { display: block; font-size: 32px; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+.balance-code-form { margin: 22px 0 0; display: grid; gap: 8px; }
+.balance-code-form label { font-size: 12px; font-weight: 650; }
+.balance-code-form > div { display: flex; gap: 8px; }
+.balance-code-form input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; background: var(--white); color: var(--ink); font-size: 16px; }
+.balance-code-form button { white-space: nowrap; flex: none; }
+.balance-code-form small { font-size: 11px; color: var(--ink-soft); }
+.balance-code-form p { font-size: 12px; margin: 4px 0; }
+.balance-activity { margin-top: 24px; }
+.balance-activity h4 { font-size: 12px; }
+.balance-activity ul { list-style: none; padding: 0; margin: 0; }
+.balance-activity li { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.balance-activity li > div { display: grid; gap: 4px; }
+.balance-activity small { color: var(--ink-soft); font-size: 10px; }
+.balance-activity b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.balance-notice { background: #fff1da; color: #735119; padding: 10px 12px; border-radius: 8px; font-size: 12px; }
+@media (max-width: 480px) {
+  .balance-card { gap: 16px; }
+  .balance-card-action { font-size: 0; gap: 0; }
+  .balance-amounts { grid-template-columns: 1fr; }
+  .balance-earned { padding: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .balance-card { transition: none; } }

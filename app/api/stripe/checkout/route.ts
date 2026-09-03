@@ -9,7 +9,6 @@ import {
 import {
   applyAdCreditToCheckout,
   maximumAdCreditCents,
-  MINIMUM_STRIPE_CHARGE_CENTS,
 } from "@/lib/payments/ad-credits";
 import { buildCheckoutSessionParams, getAppOrigin } from "@/lib/payments/checkout";
 import {
@@ -25,6 +24,7 @@ import {
 import { getStripe, stripeKeyMode } from "@/lib/stripe/server";
 import { requireStripeHostedUrl } from "@/lib/stripe/urls";
 import { enforcePaymentRateLimit } from "@/lib/payments/rate-limit";
+import { validCalendarDay } from "@/lib/listings/availability";
 
 const transactionColumns =
   "id,status,checkout_attempt,stripe_checkout_session_id,currency,subtotal_cents,buyer_fee_cents,creator_fee_cents,customer_total_cents,ad_credit_cents,charged_total_cents,creator_payout_cents,payout_amount_cents,platform_gross_revenue_cents,stripe_connected_account_id,business_profile_id,creator_profile_id";
@@ -73,11 +73,12 @@ export async function POST(request: Request) {
     const origin = getAppOrigin(request.url);
     const body = (await request.json().catch(() => null)) as {
       campaignRequestId?: unknown;
+      listingId?: unknown;
+      bookingDate?: unknown;
+      listingUpdatedAt?: unknown;
     } | null;
-    const campaignRequestId = requireUuid(
-      body?.campaignRequestId,
-      "Choose an accepted campaign to check out.",
-    );
+    let campaignRequestId = body?.listingId ? "" : requireUuid(
+      body?.campaignRequestId, "Choose a campaign or an available listing date.");
 
     const { user, profile, admin } = await requireAuthenticatedProfile();
     await enforcePaymentRateLimit(admin, {
@@ -86,16 +87,33 @@ export async function POST(request: Request) {
       maxRequests: 8,
       windowSeconds: 10 * 60,
     });
+    if (body?.listingId) {
+      const listingId = requireUuid(body.listingId, "Choose a listing to book.");
+      if (!validCalendarDay(body.bookingDate) || typeof body.listingUpdatedAt !== "string" ||
+        !Number.isFinite(Date.parse(body.listingUpdatedAt))) {
+        throw new ApiError("Choose an available date and refresh the listing before checkout.", 400);
+      }
+      const reserved = await admin.rpc("reserve_listing_booking", {
+        target_listing_id: listingId,
+        buyer_profile_id: profile.id,
+        booking_date: body.bookingDate,
+        expected_updated_at: body.listingUpdatedAt,
+        payment_livemode: stripeKeyMode() === "live",
+      });
+      if (reserved.error) throw new ApiError(reserved.error.message, 409);
+      campaignRequestId = requireUuid(reserved.data, "Could not reserve this date.");
+    }
     const { data: rawCampaign, error: campaignError } = await admin
       .from("campaign_requests")
       .select(
-        "id,campaign_name,status,accepted_subtotal_cents,requester_profile_id,owner_profile_id,payer_profile_id,payee_profile_id,listing:listings!campaign_requests_listing_id_fkey(id,owner_profile_id,title,channel,provenance_status,availability_confirmed_at),requester:profiles!campaign_requests_requester_profile_id_fkey(id,display_name,role,extra_roles),owner:profiles!campaign_requests_owner_profile_id_fkey(id,display_name,role,extra_roles)",
+        "id,campaign_name,status,instant_booking,accepted_subtotal_cents,requester_profile_id,owner_profile_id,payer_profile_id,payee_profile_id,listing:listings!campaign_requests_listing_id_fkey(id,owner_profile_id,title,channel,provenance_status,availability_confirmed_at),requester:profiles!campaign_requests_requester_profile_id_fkey(id,display_name,role,extra_roles),owner:profiles!campaign_requests_owner_profile_id_fkey(id,display_name,role,extra_roles)",
       )
       .eq("id", campaignRequestId)
       .single();
     if (campaignError || !rawCampaign) {
       throw new ApiError("Campaign request not found.", 404);
     }
+    const instantBooking = rawCampaign.instant_booking === true;
 
     const campaign = {
       ...rawCampaign,
@@ -312,6 +330,13 @@ export async function POST(request: Request) {
         { target_transaction_id: transaction.id },
       );
       if (releaseError) throw releaseError;
+      if (instantBooking) {
+        const expired = await admin.from("payment_transactions")
+          .update({ status: "expired", workflow_status: "expired" })
+          .eq("id", transaction.id).eq("stripe_checkout_session_id", existing.id);
+        if (expired.error) throw expired.error;
+        throw new ApiError("Your checkout expired. Reopen the listing to choose an available date.", 409);
+      }
       const advanced = await admin
         .from("payment_transactions")
         .update({
@@ -355,14 +380,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const minimumChargedCents = Math.max(
-      MINIMUM_STRIPE_CHARGE_CENTS,
-      snapshot.creatorPayoutCents,
-    );
-    const maximumCreditCents = maximumAdCreditCents(
-      snapshot.customerTotalCents,
-      minimumChargedCents,
-    );
+    const maximumCreditCents = maximumAdCreditCents(snapshot.customerTotalCents);
     const reserved = await admin.rpc("reserve_business_ad_credit", {
       target_business_profile_id: profile.id,
       target_transaction_id: transaction.id,
@@ -383,7 +401,6 @@ export async function POST(request: Request) {
       subtotalCents: snapshot.subtotalCents,
       buyerFeeCents: snapshot.buyerFeeCents,
       availableCents: adCreditCents,
-      minimumChargedCents,
     });
     transaction = {
       ...transaction,
@@ -408,12 +425,18 @@ export async function POST(request: Request) {
       chargedCampaignCents: charged.chargedCampaignCents,
       chargedBuyerFeeCents: charged.chargedBuyerFeeCents,
       chargedTotalCents: charged.chargedTotalCents,
-      minimumChargedCents,
     };
     const params = buildCheckoutSessionParams(
       checkoutSnapshot,
       origin,
     );
+    if (instantBooking) {
+      const claimed = await admin.rpc("begin_listing_booking_checkout", {
+        target_campaign_id: campaign.id,
+      });
+      if (claimed.error) throw new ApiError(claimed.error.message, 409);
+      params.expires_at = Math.floor(Date.parse(String(claimed.data)) / 1000);
+    }
     let session;
     try {
       session = await stripe.checkout.sessions.create(params, {
@@ -434,6 +457,7 @@ export async function POST(request: Request) {
           .update({
             checkout_attempt: transaction.checkout_attempt + 1,
             ad_credit_cents: 0,
+            ...(instantBooking ? { status: "expired", workflow_status: "expired" } : {}),
           })
           .eq("id", transaction.id)
           .eq("checkout_attempt", transaction.checkout_attempt)
@@ -444,6 +468,21 @@ export async function POST(request: Request) {
     }
     if (session.livemode !== (stripeKeyMode() === "live")) {
       throw new Error("Checkout Session mode does not match the configured API keys.");
+    }
+    if (instantBooking && session.status === "expired") {
+      // An uncertain creation can be retried after its persisted expiry.
+      // Stripe's idempotent replay is authoritative; release only now.
+      const expired = await admin.from("payment_transactions")
+        .update({ status: "expired", workflow_status: "expired", stripe_checkout_session_id: session.id })
+        .eq("id", transaction.id).eq("checkout_attempt", transaction.checkout_attempt)
+        .in("status", ["requires_checkout", "checkout_open"]);
+      if (expired.error) throw expired.error;
+      const released = await admin.rpc("release_business_ad_credit", { target_transaction_id: transaction.id });
+      if (released.error) throw released.error;
+      throw new ApiError("Your checkout expired. Reopen the listing to choose an available date.", 409);
+    }
+    if (instantBooking && session.status !== "open") {
+      throw new ApiError("Your payment is being verified. Check your Dashboard shortly.", 409);
     }
     const checkoutUrl = requireStripeHostedUrl(session.url, [
       "checkout.stripe.com",

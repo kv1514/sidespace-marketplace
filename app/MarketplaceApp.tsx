@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { AccountBalance } from "@/components/AccountBalance";
 import {
   type Dispatch,
   FormEvent,
@@ -39,6 +40,7 @@ import {
 } from "@/lib/payments/fees";
 import {
   BUSINESS_SIGNUP_CREDIT_CENTS,
+  applyAdCreditToCheckout,
   isBusinessReferralCode,
   normalizeBusinessReferralCode,
 } from "@/lib/payments/ad-credits";
@@ -57,6 +59,9 @@ import {
   type SideSpaceRoute,
 } from "@/app/components/SiteChrome";
 import CityAutocomplete from "@/app/components/CityAutocomplete";
+import { ListingAvailabilityFields } from "@/components/AvailabilityCalendar";
+import { InstantBookingPanel } from "@/components/InstantBookingPanel";
+import { availableStartDates, type BookingSchedule } from "@/lib/listings/availability";
 import { isUnitedStatesPlaceLabel } from "@/lib/geo/places";
 
 const stripeConfigured = /^pk_(?:test|live)_/.test(
@@ -141,7 +146,7 @@ type IgStats = {
   error?: string;
 };
 
-type Listing = {
+type Listing = BookingSchedule & {
   id: string;
   owner_profile_id: string;
   title: string;
@@ -180,6 +185,7 @@ type Listing = {
   provenance_status?: ListingProvenanceStatus | null;
   availability_confirmed_at?: string | null;
   created_at?: string;
+  updated_at?: string;
   owner: Profile;
 };
 
@@ -223,6 +229,7 @@ type CampaignRequest = {
   owner_profile_id: string;
   conversation_id: string | null;
   purchase_mode: CampaignRequestMode;
+  instant_booking?: boolean;
   campaign_name: string;
   goals: string;
   requested_deliverables: string;
@@ -4448,9 +4455,11 @@ function Modal({
 function CreatorOfferSwitcher({
   answers,
   onSelect,
+  isOfferComplete,
 }: {
   answers: OnboardingAnswers;
   onSelect: (offer: CreatorOfferType) => void;
+  isOfferComplete?: (offer: CreatorOfferType) => boolean;
 }) {
   const offers = selectedCreatorOffers(answers);
   if (!offers.length) return null;
@@ -4472,18 +4481,24 @@ function CreatorOfferSwitcher({
       >
         {offers.map((offer) => {
           const active = answers.creatorOffer === offer;
-          const ready = creatorOfferIsReady(answers, offer);
+          const ready = isOfferComplete
+            ? isOfferComplete(offer)
+            : creatorOfferIsReady(answers, offer);
           return (
             <button
               key={offer}
               type="button"
-              className={"creator-offer-tab" + (active ? " active" : "")}
+              className={
+                "creator-offer-tab" +
+                (active ? " active" : "") +
+                (ready ? " is-complete" : "")
+              }
               role="tab"
               aria-selected={active}
               onClick={() => onSelect(offer)}
             >
               <span>{creatorOfferLabel(offer)}</span>
-              <small>{ready ? "Ready" : "Needs details"}</small>
+              <small>{ready ? "Complete" : "Needs details"}</small>
             </button>
           );
         })}
@@ -4698,6 +4713,7 @@ export default function MarketplaceApp({
   const [onboardingPreview, setOnboardingPreview] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [onboardingDirection, setOnboardingDirection] = useState<1 | -1>(1);
+  const [creatorOfferDirection, setCreatorOfferDirection] = useState<1 | -1>(1);
   // Mirrors onboardingOpen for callbacks with stale closures (loadOwnProfile
   // is memoized against supabase only).
   const onboardingOpenRef = useRef(false);
@@ -4855,6 +4871,24 @@ export default function MarketplaceApp({
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const onboardingFormRef = useRef<HTMLFormElement | null>(null);
+  const [onboardingBookings, setOnboardingBookings] = useState<Partial<Record<CreatorOfferType, {
+    schedule: BookingSchedule; deliverables: string; cancellation: string;
+  }>>>({});
+  const activeBookingOffer = answers.creatorOffer || "social";
+  const onboardingSchedule = onboardingBookings[activeBookingOffer]?.schedule ?? {};
+  const onboardingDeliverables = onboardingBookings[activeBookingOffer]?.deliverables ?? "";
+  const onboardingCancellation = onboardingBookings[activeBookingOffer]?.cancellation ?? "";
+  function updateOnboardingBooking(change: Partial<{ schedule: BookingSchedule; deliverables: string; cancellation: string }>) {
+    setOnboardingBookings((current) => ({ ...current, [activeBookingOffer]: {
+      schedule: current[activeBookingOffer]?.schedule ?? {},
+      deliverables: current[activeBookingOffer]?.deliverables ?? "",
+      cancellation: current[activeBookingOffer]?.cancellation ?? "", ...change,
+    } }));
+  }
+  function bookingForDraft(draft: ReturnType<typeof buildListingDraft>) {
+    return onboardingBookings[isSponsorshipListing(draft) ? "sponsorship" : isPhysicalListing(draft) ? "physical" : "social"];
+  }
+  const [listingInstantEnabled, setListingInstantEnabled] = useState(false);
   const [listingOpen, setListingOpen] = useState(false);
   const [listingFeedback, setListingFeedback] = useState("");
   const [formatPreview, setFormatPreview] = useState("");
@@ -6218,6 +6252,7 @@ export default function MarketplaceApp({
   function updateCreatorOfferSelection(
     offer: CreatorOfferType,
     remove = false,
+    activateOffer?: CreatorOfferType,
   ) {
     const currentOffers = selectedCreatorOffers(answers);
     const details = {
@@ -6239,9 +6274,10 @@ export default function MarketplaceApp({
         ? currentOffers
         : [...currentOffers, offer];
     const nextActive =
-      remove && answers.creatorOffer === offer
+      activateOffer ??
+      (remove && answers.creatorOffer === offer
         ? nextOffers[0] ?? ""
-        : answers.creatorOffer || offer;
+        : answers.creatorOffer || offer);
     const nextDetails = nextActive
       ? details[nextActive] ?? emptyCreatorOfferDetails(nextActive)
       : emptyCreatorOfferDetails("social");
@@ -6266,8 +6302,16 @@ export default function MarketplaceApp({
   }
 
   function switchCreatorOffer(offer: CreatorOfferType) {
-    if (!selectedCreatorOffers(answers).includes(offer)) return;
-    updateCreatorOfferSelection(offer);
+    const offers = selectedCreatorOffers(answers);
+    if (!offers.includes(offer)) return;
+    const currentIndex = answers.creatorOffer
+      ? offers.indexOf(answers.creatorOffer)
+      : -1;
+    const nextIndex = offers.indexOf(offer);
+    if (currentIndex !== -1 && nextIndex !== currentIndex) {
+      setCreatorOfferDirection(nextIndex > currentIndex ? 1 : -1);
+    }
+    updateCreatorOfferSelection(offer, false, offer);
   }
 
   async function saveBusinessPreferences(
@@ -6879,9 +6923,58 @@ export default function MarketplaceApp({
   }
 
   function missingAnswers() {
-    return allMissingAnswers().filter(
+    const stepProblems = allMissingAnswers().filter(
       ([, field]) => onboardingStepForField(field) === onboardingStep,
     );
+    // Creator offer fields are shown one selected offer at a time. Keep the
+    // visible section answerable without making an unfinished sibling offer
+    // hide the action for the offer currently on screen. Publish still calls
+    // allMissingAnswers() directly, so the final submit remains global.
+    if (
+      onboardingMode === "setup" &&
+      selectedRole === "creator" &&
+      onboardingStep >= 3 &&
+      onboardingStep <= 5 &&
+      answers.creatorOffer
+    ) {
+      return stepProblems.filter(([, field]) => {
+        const offer = field.match(
+          /^offer:(social|physical|sponsorship):/,
+        )?.[1];
+        return !offer || offer === answers.creatorOffer;
+      });
+    }
+    return stepProblems;
+  }
+
+  function creatorOfferSectionIsComplete(offer: CreatorOfferType) {
+    if (onboardingStep === 5) {
+      return creatorOfferIsReady(answers, offer);
+    }
+    return !allMissingAnswers().some(([, field]) => {
+      const match = field.match(
+        /^offer:(social|physical|sponsorship):(.+)$/,
+      );
+      return (
+        match?.[1] === offer && onboardingStepForField(field) === onboardingStep
+      );
+    });
+  }
+
+  function nextSelectedCreatorOffer() {
+    if (
+      onboardingMode !== "setup" ||
+      selectedRole !== "creator" ||
+      onboardingStep < 3 ||
+      onboardingStep > 5
+    ) {
+      return null;
+    }
+    const activeOffer = answers.creatorOffer;
+    if (!activeOffer) return null;
+    const offers = selectedCreatorOffers(answers);
+    const currentIndex = offers.indexOf(activeOffer);
+    return currentIndex === -1 ? null : offers[currentIndex + 1] ?? null;
   }
 
   function isCurrentOnboardingStepComplete() {
@@ -6984,6 +7077,11 @@ export default function MarketplaceApp({
       reportMissing(problem);
       return;
     }
+    const nextOffer = nextSelectedCreatorOffer();
+    if (nextOffer) {
+      switchCreatorOffer(nextOffer);
+      return;
+    }
     goToOnboardingStep(onboardingStep + 1);
   }
 
@@ -7074,6 +7172,21 @@ export default function MarketplaceApp({
       return;
     }
 
+    if (!skipListing && role !== "business") {
+      const drafts = buildListingDrafts(role, answers, { title: titleTouched, description: descriptionTouched });
+      const invalid = drafts.find((draft) => {
+        const setup = bookingForDraft(draft);
+        return setup?.schedule.instant_booking_enabled && (!isFixedPriceListing(draft) || !availableStartDates(setup.schedule).length ||
+          setup.deliverables.trim().length < 2 || setup.deliverables.trim().length > 1000 ||
+          setup.cancellation.trim().length < 2 || setup.cancellation.trim().length > 1000);
+      });
+      if (invalid) {
+        setOnboardingError(`For “${invalid.title}”, add a fixed price, open dates, deliverables, and cancellation terms to enable instant booking.`);
+        setOnboardingStep(5);
+        return;
+      }
+    }
+
     if (onboardingPreview) {
       setOnboardingOpen(false);
       setOnboardingPreview(false);
@@ -7086,7 +7199,7 @@ export default function MarketplaceApp({
 
     setBusy(true);
     let savedProfile: Profile | null = null;
-    let adCreditAwarded = false;
+    let adCreditAwarded = 0;
     let adCreditSyncFailed = false;
     try {
       // Re-read the stored row before building the payload, every time. It
@@ -7319,7 +7432,7 @@ export default function MarketplaceApp({
             const result = Array.isArray(redemption.data)
               ? redemption.data[0]
               : redemption.data;
-            adCreditAwarded = Number(result?.awarded_cents ?? 0) > 0;
+            adCreditAwarded = Number(result?.awarded_cents ?? 0);
           }
         } catch (error) {
           adCreditSyncFailed = true;
@@ -7341,7 +7454,7 @@ export default function MarketplaceApp({
             const result = Array.isArray(redemption.data)
               ? redemption.data[0]
               : redemption.data;
-            adCreditAwarded = Number(result?.awarded_cents ?? 0) > 0;
+            adCreditAwarded = Number(result?.awarded_cents ?? 0);
           }
         } catch (error) {
           adCreditSyncFailed = true;
@@ -7386,6 +7499,11 @@ export default function MarketplaceApp({
             .insert(
               drafts.map((draft) => ({
                 ...draft,
+                ...(role !== "business" && bookingForDraft(draft)?.schedule.instant_booking_enabled ? {
+                  ...bookingForDraft(draft)!.schedule,
+                  deliverables: bookingForDraft(draft)!.deliverables.trim(),
+                  cancellation_policy: bookingForDraft(draft)!.cancellation.trim(),
+                } : {}),
                 owner_profile_id: ownerId,
                 image_url: cover,
                 image_urls: listingUploads.length ? listingUploads : [cover],
@@ -7410,7 +7528,7 @@ export default function MarketplaceApp({
           setToast(
             role === "business"
               ? adCreditAwarded
-                ? `Your brief is live. ${formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in ad credit is ready for your first campaign.`
+                ? `Your brief is live. ${formatCents(adCreditAwarded)} in ad credit is ready for your first campaign.`
                 : adCreditSyncFailed
                   ? "Your brief is live. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
                   : "Your brief is live. We’ll tell you the moment someone answers."
@@ -7434,7 +7552,7 @@ export default function MarketplaceApp({
         ]);
         setToast(
           adCreditAwarded
-            ? `You’re in. ${formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in ad credit is ready when you start a campaign.`
+            ? `You’re in. ${formatCents(adCreditAwarded)} in ad credit is ready when you start a campaign.`
             : adCreditSyncFailed
               ? "You’re in. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
               : "You’re in. Browse listings, or start a campaign whenever you’re ready.",
@@ -7455,7 +7573,7 @@ export default function MarketplaceApp({
       ]);
       setToast(
         adCreditAwarded
-          ? `${formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in ad credit is ready for your first campaign.`
+          ? `${formatCents(adCreditAwarded)} in ad credit is ready for your first campaign.`
           : adCreditSyncFailed
             ? "Saved. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
             : "Saved. Your profile is up to date.",
@@ -7961,6 +8079,10 @@ export default function MarketplaceApp({
     setBusy(true);
     try {
       const fields = {
+        instant_booking_enabled: !editingListingIsBrief && values.get("instant_booking_enabled") === "on",
+        availability_dates: JSON.parse(String(values.get("availability_dates") ?? "[]")) as string[],
+        booking_duration_days: Number(values.get("booking_duration_days") ?? 1),
+        booking_timezone: String(values.get("booking_timezone") ?? "UTC"),
         title: String(values.get("title") ?? "").trim(),
         channel: String(values.get("channel") ?? "").trim(),
         format: String(values.get("format") ?? "").trim(),
@@ -8048,6 +8170,15 @@ export default function MarketplaceApp({
         fields.available_to < fields.available_from
       ) {
         throw new Error("Availability must end on or after it starts.");
+      }
+
+      if (fields.instant_booking_enabled) {
+        if (!isFixedPriceListing(fields) || fields.price_cents <= 0 || fields.deliverables.length < 2 || fields.deliverables.length > 1000 || fields.cancellation_policy.length < 2 || fields.cancellation_policy.length > 1000) {
+          throw new Error("Instant booking needs a fixed price, clear deliverables, and cancellation terms (up to 1,000 characters each).");
+        }
+        if (!availableStartDates(fields).length) {
+          throw new Error("Select enough consecutive available days for one package, allowing for your required notice.");
+        }
       }
 
       const saved = editingListing
@@ -8590,6 +8721,30 @@ export default function MarketplaceApp({
       );
       setBusy(false);
     }
+  }
+
+  function startInstantCheckout(listing: Listing, bookingDate: string) {
+    requireAccount(() => {
+      if (listing.owner_profile_id === profile?.id) {
+        setToast("This is your listing. Manage its available dates in Dashboard.");
+        return;
+      }
+      void (async () => {
+        setBusy(true);
+        try {
+          const response = await fetch("/api/stripe/checkout", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ listingId: listing.id, bookingDate, listingUpdatedAt: listing.updated_at }),
+          });
+          const result = await response.json() as { url?: string; error?: string };
+          if (!response.ok || !result.url) throw new Error(result.error || "Could not open checkout. Please try again.");
+          window.location.assign(result.url);
+        } catch (error) {
+          setToast(error instanceof Error ? error.message : "Could not open checkout.");
+          setBusy(false);
+        }
+      })();
+    });
   }
 
   async function startCampaignCheckout(campaignRequestId: string) {
@@ -9545,6 +9700,7 @@ export default function MarketplaceApp({
       setListingFeedback("");
       setFormatPreview("");
       setEditingListing(null);
+      setListingInstantEnabled(false);
       setNewListingOffer("social");
       setListingOpen(true);
     });
@@ -9554,6 +9710,7 @@ export default function MarketplaceApp({
     setListingFeedback("");
     setFormatPreview(listing.format ?? "");
     setEditingListing(listing);
+    setListingInstantEnabled(listing.instant_booking_enabled ?? false);
     setNewListingOffer(
       isSponsorshipListing(listing)
         ? "sponsorship"
@@ -9748,12 +9905,15 @@ export default function MarketplaceApp({
               const acceptedMoney = request.accepted_subtotal_cents
                 ? calculatePaymentBreakdown(request.accepted_subtotal_cents)
                 : null;
+              const promoPreview = acceptedMoney && isPayer && !payment
+                ? applyAdCreditToCheckout({ ...acceptedMoney, availableCents: adCreditBalanceCents })
+                : null;
               return (
                 <article className="campaign-request-card" key={request.id}>
                   <header>
                     <div>
                       <small>
-                        {incoming ? "Incoming" : "You sent"} · {isBookAsListed ? "Book as listed" : "Offer"}
+                        {incoming ? "Incoming" : "You sent"} · {request.instant_booking ? "Instant booking" : isBookAsListed ? "Book as listed" : "Offer"}
                       </small>
                       <h4>{request.campaign_name}</h4>
                       <p>
@@ -9826,17 +9986,17 @@ export default function MarketplaceApp({
                         <b>{formatCents(acceptedMoney.buyerFeeCents)}</b>
                       </span>
                       <span>
-                        <small>Total before tax</small>
+                        <small>{promoPreview ? "Estimated total before tax" : "Total before tax"}</small>
                         <b>
                           {formatCents(
-                            payment?.charged_total_cents ?? acceptedMoney.customerTotalCents,
+                            payment?.charged_total_cents ?? promoPreview?.chargedTotalCents ?? acceptedMoney.customerTotalCents,
                           )}
                         </b>
                       </span>
-                      {(payment?.ad_credit_cents ?? 0) > 0 && (
+                      {(payment?.ad_credit_cents ?? promoPreview?.adCreditCents ?? 0) > 0 && (
                         <span>
-                          <small>Ad credit</small>
-                          <b>−{formatCents(payment?.ad_credit_cents ?? 0)}</b>
+                          <small>Promo credit</small>
+                          <b>−{formatCents(payment?.ad_credit_cents ?? promoPreview?.adCreditCents ?? 0)}</b>
                         </span>
                       )}
                     </div>
@@ -9844,8 +10004,10 @@ export default function MarketplaceApp({
                   {acceptedMoney && isPayer && !payment && adCreditBalanceCents > 0 && (
                     <p className="campaign-request-brief">
                       <small>Available ad credit</small>
-                      {formatCents(adCreditBalanceCents)} will be applied automatically at
-                      secure checkout. It cannot be withdrawn or transferred.
+                      {formatCents(applyAdCreditToCheckout({
+                        ...acceptedMoney, availableCents: adCreditBalanceCents,
+                      }).adCreditCents)} can apply at checkout. Any remaining promo
+                      credit stays in your balance. Your creator receives their normal payout.
                     </p>
                   )}
                   {acceptedMoney && isPayee && (
@@ -9949,7 +10111,7 @@ export default function MarketplaceApp({
         ) : (
           <div className="account-empty">
             <strong>No offers or bookings yet.</strong>
-            <p>Open a listing and choose Book as listed or Make an offer to start one.</p>
+            <p>Open a listing to book an available date or make a custom offer.</p>
             <a className="button button-ghost button-small" href="/marketplace">
               Browse marketplace <span>↗</span>
             </a>
@@ -10288,7 +10450,7 @@ export default function MarketplaceApp({
             >
               <span>I&rsquo;m a business</span>
               <strong>Book local reach</strong>
-              <p>Choose a creator or physical space, then book as listed or make an offer.</p>
+              <p>Choose a creator or space, pick an open date, and check out.</p>
               <b>Browse creators and spaces →</b>
             </a>
           </div>
@@ -10359,25 +10521,28 @@ export default function MarketplaceApp({
             })()}
           </div>
 
-          {profile.role === "business" && (
-            <section className="dashboard-panel ad-credit-panel" id="ad-credit" data-reveal>
-              <div>
-                <p className="eyebrow">Advertising credit</p>
-                <h2>
-                  {adCreditBalanceCents > 0
-                    ? `${formatCents(adCreditBalanceCents)} ready for your next campaign.`
-                    : "Your advertising credit balance is $0."}
-                </h2>
-                <p>
-                  Applied automatically at secure checkout. Promotional credit cannot be
-                  withdrawn or transferred.
-                </p>
-              </div>
-              <a className="button button-ghost button-small" href="/marketplace?role=supply">
-                Find creators and spaces <span>↗</span>
-              </a>
-            </section>
-          )}
+          <AccountBalance
+            key={profile.id}
+            profileId={profile.id}
+            canEarn={profileHasRole(profile, "creator")}
+            canRedeem={profile.role === "business"}
+            stripeConfigured={stripeConfigured}
+            busy={busy}
+            onCreditsChange={setAdCreditBalanceCents}
+            onStripe={(path) => {
+              if (path === "/api/stripe/connect/login" || path === "/api/stripe/connect/onboard") {
+                void openStripeFlow(path);
+              }
+            }}
+            onRedeem={async (code) => {
+              if (!supabase) throw new Error("Sign in to redeem a code.");
+              const { data, error } = await supabase.rpc("redeem_business_referral_credit", { referral_code: code });
+              if (error) throw error;
+              const result = Array.isArray(data) ? data[0] : data;
+              return Number(result?.awarded_cents ?? 0);
+            }}
+            renderDialog={(content, close) => <Modal label="Your balance" onClose={close}>{content}</Modal>}
+          />
 
           <div className="dashboard-workspace">
             <section
@@ -10515,7 +10680,9 @@ export default function MarketplaceApp({
                                 <div>
                                   <small>
                                     {incoming ? "Incoming" : "You sent"} ·{" "}
-                                    {request.purchase_mode === "buy_now"
+                                    {request.instant_booking
+                                      ? "Instant booking · "
+                                      : request.purchase_mode === "buy_now"
                                       ? "Book as listed · "
                                       : "Offer · "}
                                     {request.status}
@@ -10651,7 +10818,7 @@ export default function MarketplaceApp({
                               openCampaignRequest(recommendation.listing)
                             }
                           >
-                            Make an offer <span>↗</span>
+                            Make an offer
                           </button>
                           <button
                             className="dashboard-text-action"
@@ -11143,14 +11310,14 @@ export default function MarketplaceApp({
                       isListingRequestable(listing)
                         ? isBrief(listing)
                           ? undefined
-                          : "Choose Book as listed or Make an offer."
+                          : listing.instant_booking_enabled ? "Choose an open date and check out." : "Make an offer for custom dates."
                         : "The owner must confirm this listing before requests open."
                     }
                   >
                     {isListingRequestable(listing)
                       ? isBrief(listing)
                         ? "Offer my space"
-                        : "View booking options"
+                        : listing.instant_booking_enabled ? "Choose dates" : "View booking options"
                       : "View only"}{" "}
                     <span>↗</span>
                   </button>
@@ -12908,12 +13075,19 @@ export default function MarketplaceApp({
                       <CreatorOfferSwitcher
                         answers={answers}
                         onSelect={switchCreatorOffer}
+                        isOfferComplete={creatorOfferSectionIsComplete}
                       />
                     )}
 
                     {/* ---------------- CREATOR ---------------- */}
                     {selectedRole === "creator" && (
-                      <>
+                      <div
+                        className="creator-offer-section-slide"
+                        data-direction={
+                          creatorOfferDirection > 0 ? "forward" : "back"
+                        }
+                        key={answers.creatorOffer || "no-creator-offer"}
+                      >
                         {onboardingStep === 3 && (
                         <>
                         <div className="form-subsection field-wide">
@@ -12957,6 +13131,7 @@ export default function MarketplaceApp({
                         <CreatorOfferSwitcher
                           answers={answers}
                           onSelect={switchCreatorOffer}
+                          isOfferComplete={creatorOfferSectionIsComplete}
                         />
 
                         {answers.creatorOffer === "social" && (
@@ -13089,7 +13264,7 @@ export default function MarketplaceApp({
                         </div>
                         </>
                         )}
-                      </>
+                      </div>
                     )}
 
                     {/* ---------------- CREATOR: PHYSICAL PLACEMENT ---------------- */}
@@ -14281,6 +14456,20 @@ export default function MarketplaceApp({
                       </h4>
                     </div>
                     <div className="field-grid">
+                      {selectedRole !== "business" && (
+                        <>
+                          <ListingAvailabilityFields key={activeBookingOffer} listing={onboardingSchedule} onChange={(schedule) => updateOnboardingBooking({ schedule })} />
+                          {onboardingSchedule.instant_booking_enabled && <>
+                            <label className="field-wide">Exactly what the buyer receives
+                              <small>Include quantities, how long the ad stays up, and proof of delivery.</small>
+                              <textarea value={onboardingDeliverables} maxLength={1000} onChange={(event) => updateOnboardingBooking({ deliverables: event.target.value })} placeholder="One Instagram Reel, live for at least 30 days, plus a performance report after 7 days." />
+                            </label>
+                            <label className="field-wide">Cancellation terms
+                              <input value={onboardingCancellation} maxLength={1000} onChange={(event) => updateOnboardingBooking({ cancellation: event.target.value })} placeholder="Free cancellation until 48 hours before the start date." />
+                            </label>
+                          </>}
+                        </>
+                      )}
                       {/* A sponsorship offer names each level in the tier editor,
                           and every tier composes its own headline from that name
                           plus what they are raising for. One shared title input
@@ -14740,15 +14929,20 @@ export default function MarketplaceApp({
                   ) &&
                     isCurrentOnboardingStepComplete() && (
                     <span className="onboarding-primary-action-enter">
-                      {onboardingMode === "setup" && onboardingStep < 5 ? (
+                      {onboardingMode === "setup" &&
+                      (onboardingStep < 5 || Boolean(nextSelectedCreatorOffer())) ? (
                         <button
                           type="button"
                           className="button button-dark"
                           onClick={advanceOnboarding}
                         >
-                          {onboardingStep === 3
-                            ? "Next: the details"
-                            : "Next: review"}{" "}
+                          {selectedRole === "creator"
+                            ? nextSelectedCreatorOffer()
+                              ? "Next Section"
+                              : "Next"
+                            : onboardingStep === 3
+                              ? "Next: the details"
+                              : "Next: review"}{" "}
                           <span>→</span>
                         </button>
                       ) : (
@@ -15184,6 +15378,8 @@ export default function MarketplaceApp({
                 placeholder="Brea, CA · within 10 miles"
               />
             </label>
+            {!editingListingIsBrief && <ListingAvailabilityFields listing={editingListing ?? {}} onChange={(schedule) => setListingInstantEnabled(Boolean(schedule.instant_booking_enabled))} />}
+            {(!listingInstantEnabled || editingListingIsBrief) && <>
             <label>
               Available from
               <input
@@ -15200,6 +15396,7 @@ export default function MarketplaceApp({
                 defaultValue={editingListing?.available_to ?? ""}
               />
             </label>
+            </>}
             <label>
               How much notice you need
               <small>Days between someone booking and you starting.</small>
@@ -15211,7 +15408,7 @@ export default function MarketplaceApp({
                 defaultValue={editingListing?.lead_time_days ?? 2}
               />
             </label>
-            <label>
+            {(!listingInstantEnabled || editingListingIsBrief) && <label>
               Smallest booking you accept
               <small>Leave blank if you have no minimum.</small>
               <input
@@ -15219,7 +15416,7 @@ export default function MarketplaceApp({
                 defaultValue={editingListing?.minimum_booking ?? ""}
                 placeholder={listingHints.minimumPlaceholder}
               />
-            </label>
+            </label>}
             <div className="form-subsection field-wide">
               <span>Details</span>
               <h4>What buyers will read.</h4>
@@ -15249,8 +15446,8 @@ export default function MarketplaceApp({
               />
             </label>
             <label className="field-wide">
-              What happens after they book
-              <small>The proof or finished work you hand back, like photos of the placement.</small>
+              Deliverables included in the package
+              <small>Describe exactly what the buyer receives, including quantities, placement duration, and proof of delivery. Required for instant booking.</small>
               {/* Not required. Onboarding never asks for it - every creator
                   and every physical-only brief publishes with it empty - so a
                   `required` here blocked the FIRST edit of a listing this app
@@ -15272,7 +15469,7 @@ export default function MarketplaceApp({
             </label>
             <label className="field-wide">
               If someone cancels
-              <small>Optional. For example free cancellation up to 48 hours before.</small>
+              <small>Required for instant booking. Explain when a buyer can cancel and what is refundable.</small>
               <input
                 name="cancellation_policy"
                 defaultValue={editingListing?.cancellation_policy ?? ""}
@@ -15670,15 +15867,14 @@ export default function MarketplaceApp({
                 <div>
                   <small>Availability</small>
                   <strong>
-                    {selectedListing.availability_notes ||
-                      "Ask the owner for open dates"}
+                    {selectedListing.instant_booking_enabled ? "Choose from the calendar below" : selectedListing.availability_notes ||
+                      "Custom dates by offer"}
                   </strong>
                 </div>
                 <div>
                   <small>Booking window</small>
                   <strong>
-                    {displayDate(selectedListing.available_from)} –{" "}
-                    {displayDate(selectedListing.available_to)}
+                    {selectedListing.instant_booking_enabled ? "Available dates up to one year ahead" : `${displayDate(selectedListing.available_from)} – ${displayDate(selectedListing.available_to)}`}
                   </strong>
                 </div>
                 <div>
@@ -15692,7 +15888,7 @@ export default function MarketplaceApp({
                 <div>
                   <small>Minimum booking</small>
                   <strong>
-                    {selectedListing.minimum_booking || "One placement"}
+                    {selectedListing.instant_booking_enabled ? `${selectedListing.booking_duration_days ?? 1}-day package` : selectedListing.minimum_booking || "One placement"}
                   </strong>
                 </div>
               </div>
@@ -15711,38 +15907,23 @@ export default function MarketplaceApp({
               </div>
               <div className="detail-price">
                 <div>
-                  <small>Starting at</small>
+                  <small>{selectedListing.instant_booking_enabled ? "Package price" : "Starting at"}</small>
                   <strong>{formatCents(selectedListing.price_cents)}</strong>
-                  <span> / {selectedListing.price_unit}</span>
+                  <span> / {selectedListing.instant_booking_enabled ? `${selectedListing.booking_duration_days ?? 1}-day package` : selectedListing.price_unit}</span>
                 </div>
               </div>
+              {isListingRequestable(selectedListing) && !isBrief(selectedListing) && selectedListing.instant_booking_enabled && selectedListing.price_cents > 0 && (
+                <InstantBookingPanel key={selectedListing.id} listing={selectedListing} busy={busy}
+                  onCheckout={(date) => startInstantCheckout(selectedListing, date)} />
+              )}
               {isListingRequestable(selectedListing) && !isBrief(selectedListing) && (
                 <div
                   className="detail-action-options"
                   role="group"
                   aria-label="Choose how to continue"
                 >
-                  {isFixedPriceListing(selectedListing) && (
-                    <div className="detail-action-option is-direct">
-                      <div className="detail-action-option-heading">
-                        <small>FIXED TERMS</small>
-                        <strong>Book as listed</strong>
-                      </div>
-                      <p>
-                        Use the owner&apos;s price, deliverables, and cancellation terms exactly as shown.
-                      </p>
-                      <button
-                        className="button button-coral"
-                        onClick={() => openCampaignFlow(selectedListing, "buy_now")}
-                      >
-                        Book as listed <span>↗</span>
-                      </button>
-                    </div>
-                  )}
                   <div
-                    className={`detail-action-option${
-                      isFixedPriceListing(selectedListing) ? "" : " is-full"
-                    }`}
+                    className="detail-action-option is-full"
                   >
                     <div className="detail-action-option-heading">
                       <small>FLEXIBLE TERMS</small>
@@ -15755,7 +15936,7 @@ export default function MarketplaceApp({
                       className="button button-dark"
                       onClick={() => openCampaignFlow(selectedListing, "offer")}
                     >
-                      Make an offer <span>↗</span>
+                      Make an offer
                     </button>
                   </div>
                 </div>
@@ -15781,7 +15962,7 @@ export default function MarketplaceApp({
                     openListingChat(listing);
                   }}
                 >
-                  Message owner <span>↗</span>
+                  Message owner
                 </button>
               </div>
               <div className="detail-safety-actions">

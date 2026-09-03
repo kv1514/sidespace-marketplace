@@ -29,7 +29,7 @@ const transfer = {
   transfer_group: "sidespace_campaign_transaction-1",
 };
 
-function adminWithRecoveryClaim(targetAmountCents = 905) {
+function adminWithRecoveryClaim(targetAmountCents = 905, platformFunded = false) {
   const rpc = vi.fn(async (name: string) => {
     if (name === "queue_campaign_transfer_reversal") {
       return {
@@ -41,6 +41,7 @@ function adminWithRecoveryClaim(targetAmountCents = 905) {
           transaction_id: "transaction-1",
           stripe_transfer_id: "tr_creator",
           stripe_charge_id: "ch_platform",
+          payout_funding: platformFunded ? "platform" : "charge",
           currency: "usd",
           stripe_connected_account_id: "acct_creator",
           payout_amount_cents: 9_500,
@@ -57,6 +58,17 @@ function adminWithRecoveryClaim(targetAmountCents = 905) {
   });
   return { rpc };
 }
+
+describe("promo-funded transfer recovery", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("verifies and reverses a platform-funded transfer without expecting a source charge", async () => {
+    mocks.transferRetrieve.mockResolvedValueOnce({ ...transfer, source_transaction: null }).mockResolvedValueOnce({ ...transfer, source_transaction: null, amount_reversed: 905 });
+    mocks.transferCreateReversal.mockResolvedValue({ id: "trr_promo" });
+    const admin = adminWithRecoveryClaim(905, true);
+    await recoverReleasedPayout(admin as never, { transactionId: "transaction-1", targetReversalCents: 905, reason: "refund" });
+    expect(admin.rpc).toHaveBeenCalledWith("finalize_campaign_transfer_reversal", expect.objectContaining({ reversed_amount_cents: 905 }));
+  });
+});
 
 describe("released payout recovery math", () => {
   it("reverses the full Creator payout for a full refund", () => {

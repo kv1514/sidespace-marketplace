@@ -243,6 +243,33 @@ describe("Stripe webhook route lifecycle", () => {
     });
   });
 
+  it.each([false, true])("verifies fully credited Checkout without a charge and preserves refunds (refunded=%s)", async (refunded) => {
+    mocks.getStripe().checkout.sessions.retrieve.mockResolvedValue(checkoutSession({
+      status: "complete", payment_status: "no_payment_required", payment_intent: null,
+      amount_subtotal: 0, amount_total: 0, currency: "usd", total_details: { amount_tax: 0 },
+      metadata: { sidespace_transaction_id: transactionId, sidespace_ad_credit_cents: "10500" },
+    }));
+    mocks.verifyStripeWebhookEvent.mockReturnValue(eventFor("checkout.session.completed"));
+    const state = makeAdmin({ transaction: storedTransaction({ charged_total_cents: 0, ad_credit_cents: 10500, status: refunded ? "refunded" : "checkout_open" }) });
+    mocks.createAdminClient.mockReturnValue(state.admin);
+    expect((await POST(webhookRequest())).status).toBe(200);
+    if (refunded) expect(state.transactionUpdate).toBeNull();
+    else expect(state.transactionUpdate).toMatchObject({ status: "paid", stripe_charge_id: null, payout_status: "pending" });
+  });
+
+  it("rejects a free completion that does not match reserved credit", async () => {
+    mocks.getStripe().checkout.sessions.retrieve.mockResolvedValue(checkoutSession({
+      status: "complete", payment_status: "no_payment_required", payment_intent: null,
+      amount_subtotal: 0, amount_total: 0, currency: "usd", total_details: { amount_tax: 0 },
+      metadata: { sidespace_transaction_id: transactionId, sidespace_ad_credit_cents: "1" },
+    }));
+    mocks.verifyStripeWebhookEvent.mockReturnValue(eventFor("checkout.session.completed"));
+    const state = makeAdmin({ transaction: storedTransaction({ charged_total_cents: 0, ad_credit_cents: 10500 }) });
+    mocks.createAdminClient.mockReturnValue(state.admin);
+    expect((await POST(webhookRequest())).status).toBe(500);
+    expect(state.transactionUpdate).toBeNull();
+  });
+
   it("turns a successful retry after an async payment failure into a payout-ready payment", async () => {
     const stripe = mocks.getStripe();
     stripe.checkout.sessions.retrieve.mockResolvedValue(checkoutSession());

@@ -59,6 +59,7 @@ type RecoveryClaim = {
   transaction_id?: string;
   stripe_transfer_id?: string;
   stripe_charge_id?: string;
+  payout_funding?: "charge" | "platform";
   currency?: string;
   stripe_connected_account_id?: string;
   payout_amount_cents?: number;
@@ -100,7 +101,7 @@ export async function recoverReleasedPayout(
   try {
     if (
       !claim.stripe_transfer_id ||
-      !claim.stripe_charge_id ||
+      (!claim.stripe_charge_id && claim.payout_funding !== "platform") ||
       !claim.currency ||
       !claim.stripe_connected_account_id ||
       !Number.isSafeInteger(claim.payout_amount_cents) ||
@@ -115,7 +116,7 @@ export async function recoverReleasedPayout(
       transfer.amount !== claim.payout_amount_cents ||
       transfer.currency !== claim.currency ||
       destination !== claim.stripe_connected_account_id ||
-      stripeObjectId(transfer.source_transaction) !== claim.stripe_charge_id ||
+      stripeObjectId(transfer.source_transaction) !== (claim.payout_funding === "platform" ? undefined : claim.stripe_charge_id) ||
       transfer.transfer_group !== `sidespace_campaign_${input.transactionId}`
     ) {
       throw new Error("Stripe transfer does not match the SideSpace recovery ledger.");

@@ -101,7 +101,20 @@ async function syncCheckoutSession(
     taxCents,
     paymentStatus: session.payment_status,
   });
-  if (paid) {
+  const fullyCredited = chargedTotalCents === 0 &&
+    storedTransaction.ad_credit_cents > 0 &&
+    storedTransaction.ad_credit_cents === storedTransaction.customer_total_cents;
+  if (paid && fullyCredited) {
+    if (session.status !== "complete" || session.payment_status !== "no_payment_required" ||
+        session.amount_total !== 0 || taxCents !== 0 || session.payment_intent !== null ||
+        session.currency !== storedTransaction.currency ||
+        session.metadata?.sidespace_ad_credit_cents !== String(storedTransaction.ad_credit_cents)) {
+      throw new Error("Free Checkout Session does not match the credited ledger.");
+    }
+    // A delayed completion event cannot revive an order whose promo credit
+    // has already been refunded by staff.
+    if (storedTransaction.status === "refunded") return;
+  } else if (paid) {
     if (!paymentIntent || !latestCharge) {
       throw new Error("Paid Checkout Session is missing expanded charge data.");
     }

@@ -1,7 +1,6 @@
 import type Stripe from "stripe";
 import {
   applyAdCreditToCheckout,
-  MINIMUM_STRIPE_CHARGE_CENTS,
 } from "./ad-credits";
 import type { PaymentBreakdown } from "./fees";
 
@@ -17,7 +16,6 @@ export type CheckoutSnapshot = PaymentBreakdown & {
   chargedCampaignCents?: number;
   chargedBuyerFeeCents?: number;
   chargedTotalCents?: number;
-  minimumChargedCents?: number;
 };
 
 export function getAppOrigin(requestUrl: string) {
@@ -45,15 +43,10 @@ export function buildCheckoutSessionParams(
   const campaignTaxCode = process.env.STRIPE_CAMPAIGN_TAX_CODE ?? "txcd_20030000";
   const serviceFeeTaxCode =
     process.env.STRIPE_SERVICE_FEE_TAX_CODE ?? "txcd_20030000";
-  const minimumChargedCents = Math.max(
-    MINIMUM_STRIPE_CHARGE_CENTS,
-    snapshot.minimumChargedCents ?? snapshot.creatorPayoutCents,
-  );
   const discounted = applyAdCreditToCheckout({
     subtotalCents: snapshot.subtotalCents,
     buyerFeeCents: snapshot.buyerFeeCents,
     availableCents: snapshot.adCreditCents ?? 0,
-    minimumChargedCents,
   });
   const chargedCampaignCents =
     snapshot.chargedCampaignCents ?? discounted.chargedCampaignCents;
@@ -71,7 +64,7 @@ export function buildCheckoutSessionParams(
     throw new Error("Checkout credit amounts do not match the trusted ledger.");
   }
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
-  if (chargedCampaignCents > 0) {
+  if (chargedCampaignCents > 0 || chargedTotalCents === 0) {
     lineItems.push({
       quantity: 1,
       price_data: {
@@ -80,7 +73,7 @@ export function buildCheckoutSessionParams(
         tax_behavior: "exclusive",
         product_data: {
           name: snapshot.campaignName,
-          description: snapshot.listingTitle,
+          description: chargedTotalCents === 0 ? `${snapshot.listingTitle} · Covered by SideSpace promo credit` : snapshot.listingTitle,
           tax_code: campaignTaxCode,
           metadata: { sidespace_kind: "campaign_subtotal" },
         },
@@ -130,7 +123,7 @@ export function buildCheckoutSessionParams(
       },
     },
     line_items: lineItems,
-    payment_intent_data: {
+    payment_intent_data: chargedTotalCents === 0 ? undefined : {
       // This is intentionally a platform charge. Creator earnings stay in the
       // SideSpace platform balance until delivery is confirmed or the 72-hour
       // review window expires, at which point a separate Connect transfer is

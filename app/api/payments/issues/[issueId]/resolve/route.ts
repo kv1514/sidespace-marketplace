@@ -78,9 +78,13 @@ export async function POST(
         idempotency_key: string;
         stripe_refund_id: string | null;
         status: string;
+        promo_refund_cents?: number;
       };
       transaction: { stripe_charge_id: string };
     };
+    if (payload.resolution.status === "completed" && (payload.resolution.promo_refund_cents ?? 0) > 0) {
+      return Response.json({ resolution: payload.resolution });
+    }
     if (payload.resolution.stripe_refund_id) {
       return Response.json({ resolution: payload.resolution, duplicate: true });
     }

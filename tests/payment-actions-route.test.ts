@@ -263,6 +263,15 @@ describe("staff payment resolution routes", () => {
     });
   });
 
+  it("returns an atomic promo-only refund without creating a Stripe cash refund", async () => {
+    const resolution = { id: "resolution-promo", status: "completed", stripe_refund_id: null, refund_amount_cents: 0, promo_refund_cents: 2100 };
+    staffAdmin({ claimResult: { data: { resolution, transaction: { stripe_charge_id: null } }, error: null } });
+    const response = await resolvePOST(request(`/api/payments/issues/${issueId}/resolve`, { action: "full_refund" }), issueContext());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ resolution });
+    expect(mocks.refundsCreate).not.toHaveBeenCalled();
+  });
+
   it("creates a staff partial refund with the claimed idempotency key", async () => {
     const state = staffAdmin({
       claimResult: {
