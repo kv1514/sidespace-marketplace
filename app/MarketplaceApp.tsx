@@ -2903,6 +2903,30 @@ async function photoToJpegBase64(file: Blob, maxEdge = 1280): Promise<string> {
   }
 }
 
+/**
+ * A recording straight out of MediaRecorder - an in-browser screen or camera
+ * recorder - carries no length in its header, so duration reads Infinity
+ * until the browser has seen the end of the file. Seeking past the end makes
+ * it look, and durationchange follows with the real number. Phone videos
+ * never need this; it is over in a moment for the ones that do.
+ */
+async function settleDuration(video: HTMLVideoElement) {
+  if (Number.isFinite(video.duration)) return;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      window.clearTimeout(timer);
+      video.removeEventListener("durationchange", onChange);
+      resolve();
+    };
+    const onChange = () => {
+      if (Number.isFinite(video.duration)) done();
+    };
+    const timer = window.setTimeout(done, 8_000);
+    video.addEventListener("durationchange", onChange);
+    video.currentTime = 1e101;
+  });
+}
+
 /** Every 360 camera and phone panorama mode exports equirectangular: exactly twice as wide as tall. */
 function looksSpherical(width: number, height: number) {
   return width > 0 && height > 0 && Math.abs(width / height - 2) < 0.06;
@@ -2953,6 +2977,7 @@ async function probeTourFile(file: File): Promise<TourProbe> {
         };
         video.src = url;
       });
+      await settleDuration(video);
       return {
         kind: "video",
         width: video.videoWidth,
@@ -3012,6 +3037,7 @@ async function videoStills(
     const loaded = until("loadedmetadata", 20_000);
     video.src = url;
     await loaded;
+    await settleDuration(video);
     const duration = Number.isFinite(video.duration) ? video.duration : 0;
     if (!duration || !video.videoWidth) return [];
     const scale = Math.min(1, maxEdge / Math.max(video.videoWidth, video.videoHeight));
