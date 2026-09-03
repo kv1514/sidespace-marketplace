@@ -144,6 +144,14 @@ const INVENTORY_TYPES = [
  * Emptying an entry restores the default.
  */
 const HERO_PINS: Record<string, string[]> = {
+  // A placement on an actual street, described in plain words, which is what
+  // this tab promises ("a real window on a real street"). The dorm door is
+  // the runner-up: it is the more detailed listing and carries its owner's
+  // own photo, but it is an interior door rather than a street.
+  Storefront: [
+    "e54988cb-24b6-4ed0-80da-96163b053929", // Dylan Nguyen - yard sign on a Yorba Linda street
+    "de1b07a4-7cb0-46c6-a692-b30ea460a59d", // Kausthubh Veldanda - dorm room door, floor 4 corner
+  ],
   // Creators with a real audience, a real listing photo, and an offer a
   // business can picture. These two are how we want the marketplace
   // introduced, so the tab shows them rather than the newest creator to
@@ -153,6 +161,11 @@ const HERO_PINS: Record<string, string[]> = {
     "86b8e144-4952-45d8-8b5d-807932a4810c", // Aidan Chen - Instagram story for local businesses
   ],
   Vehicle: ["3aeba0db-3bf1-4acc-a51a-eba0f1417f64"],
+  // The only sponsorship listing on the marketplace today, and a good one:
+  // a real club, its own photo, and copy that names who it reaches. Pinned
+  // so the next sponsorship listing to be published does not silently take
+  // the front page from it.
+  Event: ["8af17b87-b816-4edf-901c-750bd4f03938"], // Troy Physics Club - whiteboard for sponsors
 };
 
 /**
