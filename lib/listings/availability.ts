@@ -1,4 +1,7 @@
 export type BookingSchedule = {
+  timing_kind?: "deadline" | "date_range" | null;
+  pricing_kind?: "fixed" | "day" | "week" | "30_days" | null;
+  minimum_duration_days?: number;
   instant_booking_enabled?: boolean;
   availability_dates?: string[];
   booking_duration_days?: number;
@@ -29,7 +32,8 @@ export function availableStartDates(schedule: BookingSchedule, now = new Date())
   const minimum = addCalendarDays(today, schedule.lead_time_days ?? 0);
   const maximum = addCalendarDays(today, 365);
   const dates = new Set(schedule.availability_dates ?? []);
-  const duration = schedule.booking_duration_days ?? 1;
+  const duration = schedule.timing_kind === "deadline" ? 1 : schedule.pricing_kind && schedule.pricing_kind !== "fixed"
+    ? schedule.minimum_duration_days ?? 1 : schedule.booking_duration_days ?? 1;
   if (!Number.isInteger(duration) || duration < 1 || duration > 365) return [];
   return [...dates].filter((day) => validCalendarDay(day) && day >= minimum &&
     addCalendarDays(day, duration - 1) <= maximum &&

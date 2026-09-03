@@ -165,7 +165,9 @@ export function SiteHeader({
                 Sign in
               </button>
               <button className="ss-header-join" onClick={onJoin}>
-                Join<span className="ss-header-join-full"> SideSpace</span>{" "}
+                <span>
+                  Join<span className="ss-header-join-full"> SideSpace</span>
+                </span>
                 <span aria-hidden="true">↗</span>
               </button>
             </>

@@ -60,8 +60,11 @@ import {
 } from "@/app/components/SiteChrome";
 import CityAutocomplete from "@/app/components/CityAutocomplete";
 import { ListingAvailabilityFields } from "@/components/AvailabilityCalendar";
+import { ListingComposerFields, revealInvalidField } from "@/components/ListingComposerFields";
+import { BookingFields } from "@/components/BookingFields";
+import { bookingDateLabel, pricingLabel } from "@/lib/listings/booking";
 import { InstantBookingPanel } from "@/components/InstantBookingPanel";
-import { availableStartDates, type BookingSchedule } from "@/lib/listings/availability";
+import { addCalendarDays, calendarToday, availableStartDates, type BookingSchedule } from "@/lib/listings/availability";
 import { isUnitedStatesPlaceLabel } from "@/lib/geo/places";
 
 const stripeConfigured = /^pk_(?:test|live)_/.test(
@@ -246,6 +249,9 @@ type CampaignRequest = {
   budget_cents: number;
   start_date: string;
   end_date: string;
+  timing_kind?: BookingSchedule["timing_kind"];
+  pricing_kind?: BookingSchedule["pricing_kind"];
+  listing_terms?: { cancellation_policy?: string; booking_timezone?: string };
   notes: string;
   status:
     | "pending"
@@ -841,79 +847,7 @@ type ListingFormKind = "brief" | CreatorOfferType;
  * one row of this table, chosen by the same flags that already pick its
  * labels and help text.
  */
-const LISTING_FORM_HINTS: Record<
-  ListingFormKind,
-  {
-    titleExample: string;
-    titlePlaceholder: string;
-    formatPlaceholder: string;
-    formatExamples: string[];
-    minimumPlaceholder: string;
-    descriptionPlaceholder: string;
-    deliverablesPlaceholder: string;
-  }
-> = {
-  brief: {
-    titleExample: "Window space for our spring opening",
-    titlePlaceholder: "Looking for a storefront window in Brea",
-    formatPlaceholder: "a storefront window on a busy street",
-    formatExamples: [
-      "a storefront window on a busy street",
-      "three Instagram stories from a local creator",
-      "a counter card in a cafe for 30 days",
-    ],
-    minimumPlaceholder: "One week, or one run",
-    descriptionPlaceholder:
-      "What you\u2019re promoting, what the artwork looks like, and the kind of place you want it seen.",
-    deliverablesPlaceholder:
-      "Photos of the placement, or a link to the post, once it\u2019s up.",
-  },
-  physical: {
-    titleExample: "Cafe window, Main Street",
-    titlePlaceholder: "Cafe window, Main Street",
-    formatPlaceholder: "one letter-size poster in my front window for a week",
-    formatExamples: [
-      "one letter-size poster in my front window for a week",
-      "one 18 by 24 inch poster, displayed for a week",
-      "a card on the counter for 30 days",
-    ],
-    minimumPlaceholder: "1 week, or 3 days",
-    descriptionPlaceholder:
-      "A 4 by 6 foot front window facing the sidewalk on Main Street. A few hundred people walk past on a weekday, mostly locals on a lunch break.",
-    deliverablesPlaceholder:
-      "A photo of your poster in the window the day it goes up, and another at the end of the week.",
-  },
-  sponsorship: {
-    titleExample: "Home-game banner, fall season",
-    titlePlaceholder: "Home-game banner, fall season",
-    formatPlaceholder: "your logo on the team banner for the full season",
-    formatExamples: [
-      "your logo on the team banner for the full season",
-      "a named tier on our sponsor page and jerseys",
-      "a shout-out at every home game",
-    ],
-    minimumPlaceholder: "One season, or one event",
-    descriptionPlaceholder:
-      "Who the team or event is, how many people turn up, and what a sponsor\u2019s money pays for.",
-    deliverablesPlaceholder:
-      "Photos of your logo on the banner or jerseys, and the sponsor-page link.",
-  },
-  social: {
-    titleExample: "Three-story launch package",
-    titlePlaceholder: "Three-story launch package",
-    formatPlaceholder: "three Instagram stories over 48 hours",
-    formatExamples: [
-      "three Instagram stories over 48 hours",
-      "one in-feed post",
-      "a 30-second segment in my next video",
-    ],
-    minimumPlaceholder: "1 story, or one post",
-    descriptionPlaceholder:
-      "What a brand gets, your turnaround, who your audience is, and anything you won\u2019t do.",
-    deliverablesPlaceholder:
-      "Screenshots of the story or post with view counts after 24 hours, and a link.",
-  },
-};
+
 
 /** Suggestion chips for `format`, filtered to the platforms actually picked. */
 const CREATOR_OFFER_EXAMPLES: Record<string, string[]> = {
@@ -1336,18 +1270,7 @@ const PRICE_CHIPS: Record<string, number[]> = {
 };
 
 /** Every unit the editor offers. The row's own value is unioned in at render. */
-const PRICE_UNIT_OPTIONS = [
-  "campaign",
-  "day",
-  "week",
-  "month",
-  "post",
-  "video",
-  "story",
-  "mention",
-  "sponsor",
-  "partner",
-];
+
 
 const PRICE_UNIT_CHIPS: Record<string, string[]> = {
   creator: ["post", "video", "story", "campaign", "week", "month", "day"],
@@ -4263,7 +4186,7 @@ const LISTING_READY_MIN = { title: 8, format: 10, description: 60 };
  * An empty list means the grid treats it as complete.
  */
 function listingGaps(
-  listing: Pick<Listing, "title" | "format" | "description">,
+  listing: Pick<Listing, "title" | "format" | "description"> & Partial<Pick<Listing, "timing_kind" | "deliverables">>,
 ) {
   const gaps: string[] = [];
   if (listing.title.trim().length < LISTING_READY_MIN.title) {
@@ -4272,7 +4195,7 @@ function listingGaps(
   if (listing.format.trim().length < LISTING_READY_MIN.format) {
     gaps.push("more detail in what the buyer gets");
   }
-  if (listing.description.trim().length < LISTING_READY_MIN.description) {
+  if (!listing.timing_kind && listing.description.trim().length < LISTING_READY_MIN.description) {
     gaps.push("a longer description");
   }
   return gaps;
@@ -4336,17 +4259,12 @@ function charCount(value: string) {
   return Array.from(value).length;
 }
 
-/** Today in the viewer's own local day, as YYYY-MM-DD for date inputs. */
-function todayIso() {
-  return new Date().toLocaleDateString("en-CA");
-}
-
 function listingBookingMinDate(
-  listing: Pick<Listing, "available_from" | "lead_time_days">,
+  listing: Pick<Listing, "available_from" | "lead_time_days" | "booking_timezone">,
 ) {
-  const today = todayIso();
+  const today = calendarToday(listing.booking_timezone);
   const leadTime = Math.max(0, listing.lead_time_days ?? 0);
-  const leadDate = leadTime ? isoDaysFromToday(leadTime) : today;
+  const leadDate = addCalendarDays(today, leadTime);
   return [today, leadDate, listing.available_from ?? today].sort().at(-1) ?? today;
 }
 
@@ -5069,6 +4987,11 @@ export default function MarketplaceApp({
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarCropPending, setAvatarCropPending] = useState(false);
   const [listingFiles, setListingFiles] = useState<File[]>([]);
+  const listingFilesRef = useRef<File[]>([]);
+  function setPendingListingFiles(files: File[]) {
+    listingFilesRef.current = files;
+    setListingFiles(files);
+  }
   const [aiFilling, setAiFilling] = useState(false);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
   /** What the model says it can see in the owner's photo, shown so a wrong "fact" is caught before it is published. */
@@ -5141,10 +5064,35 @@ export default function MarketplaceApp({
   function bookingForDraft(draft: ReturnType<typeof buildListingDraft>) {
     return onboardingBookings[isSponsorshipListing(draft) ? "sponsorship" : isPhysicalListing(draft) ? "physical" : "social"];
   }
-  const [listingInstantEnabled, setListingInstantEnabled] = useState(false);
+  const [, setListingInstantEnabled] = useState(false);
   const [listingOpen, setListingOpen] = useState(false);
+  const [composerRevision, setComposerRevision] = useState(0);
+  const [listingPreview, setListingPreview] = useState(false);
+  const [newListingDrafts, setNewListingDrafts] = useState<Partial<Record<CreatorOfferType, { listing: Partial<Listing> & { draft_price?: string; draft_price_max?: string; ai_notes?: string }; files: File[] }>>>({});
+  function switchListingFormKind(kind: CreatorOfferType, form: HTMLFormElement | null) {
+    if (form) {
+      const values = new FormData(form);
+      const text = (name: string) => String(values.get(name) ?? "");
+      const snapshot: Partial<Listing> = Object.fromEntries(["title","channel","format","description","deliverables","price_unit","location_area","availability_notes","available_from","available_to","minimum_booking","demographics","cancellation_policy","space_size","street_address","install_by","sponsor_tier","brief_scope"].map((name) => [name,text(name)]));
+      Object.assign(snapshot, {
+        draft_price: text("price"), draft_price_max: text("price_max"), ai_notes: text("ai_notes"),
+        timing_kind: text("timing_kind") || null, pricing_kind: text("pricing_kind") || null,
+        lead_time_days: Number(text("lead_time_days") || 0), minimum_duration_days: Number(text("minimum_duration_days") || 1),
+        booking_duration_days: Number(text("booking_duration_days") || 1), booking_timezone: text("booking_timezone"),
+        instant_booking_enabled: values.get("instant_booking_enabled") === "on", availability_dates: JSON.parse(text("availability_dates") || "[]"),
+        surface_types: values.getAll("surface_types").map(String), target_platforms: values.getAll("target_platforms").map(String),
+        sponsor_slots: Number(text("sponsor_slots")) || null,
+      });
+      setNewListingDrafts((current) => ({ ...current, [newListingOffer]: { listing: snapshot, files: listingFilesRef.current.filter((file) => file.size > 0) } }));
+    }
+    setAiQuestions([]);
+    setAiObservations([]);
+    setPendingListingFiles(newListingDrafts[kind]?.files ?? []);
+    setNewListingOffer(kind);
+    setListingInstantEnabled(Boolean(newListingDrafts[kind]?.listing.instant_booking_enabled));
+  }
   const [listingFeedback, setListingFeedback] = useState("");
-  const [formatPreview, setFormatPreview] = useState("");
+  const [, setFormatPreview] = useState("");
   const [editingListing, setEditingListing] = useState<Listing | null>(null);
   const [newListingOffer, setNewListingOffer] =
     useState<CreatorOfferType>("social");
@@ -5171,7 +5119,7 @@ export default function MarketplaceApp({
     Boolean(!editingListing && canonicalRole(listingRole ?? "consumer") === "creator" && newListingOffer === "sponsorship");
   const editingListingIsBrief = editingListing
     ? isBrief(editingListing)
-    : listingRole === "business";
+    : listingRole === "business" || (listingPreview && selectedRole === "business");
   const listingFormKind: ListingFormKind = editingListingIsBrief
     ? "brief"
     : editingListingIsPhysical
@@ -5179,7 +5127,6 @@ export default function MarketplaceApp({
       : editingListingIsSponsorship
         ? "sponsorship"
         : "social";
-  const listingHints = LISTING_FORM_HINTS[listingFormKind];
   /**
    * What a listing published without photos is seeded with - the default
    * cover or a profile photo. These give way when real photos arrive; a
@@ -5198,7 +5145,7 @@ export default function MarketplaceApp({
    * behind when somebody re-picks five times before they are happy.
    */
   function chooseListingFiles(files: File[]) {
-    setListingFiles(files);
+    setPendingListingFiles(files);
     if (previewPhotoUrl) URL.revokeObjectURL(previewPhotoUrl);
     const file = files.find((item) => item.size > 0);
     setPreviewPhotoUrl(file ? URL.createObjectURL(file) : "");
@@ -5251,6 +5198,7 @@ export default function MarketplaceApp({
   const [stripeAccountStatus, setStripeAccountStatus] =
     useState<StripeAccountStatus | null>(null);
   const [campaignListing, setCampaignListing] = useState<Listing | null>(null);
+  const [campaignFeedback, setCampaignFeedback] = useState("");
   const [campaignRequestMode, setCampaignRequestMode] =
     useState<CampaignRequestMode>("offer");
   const [counteringRequest, setCounteringRequest] = useState<CampaignRequest | null>(null);
@@ -7299,6 +7247,7 @@ export default function MarketplaceApp({
       form?.querySelector<HTMLElement>(`[data-field="${field}"]`) ??
       form?.elements.namedItem(field);
     if (target instanceof HTMLElement) {
+      revealInvalidField(target);
       target.scrollIntoView({ block: "center", behavior: "auto" });
       if (
         target instanceof HTMLInputElement ||
@@ -7922,8 +7871,16 @@ export default function MarketplaceApp({
     if (draft.demographics) setValue("demographics", draft.demographics);
     if (draft.location_area) setValue("location_area", draft.location_area);
     if (draft.space_size) setValue("space_size", draft.space_size);
-    if (draft.price_dollars !== null) setValue("price", String(draft.price_dollars));
-    setValue("price_unit", draft.price_unit);
+    const selectedUnit = (form.elements.namedItem("price_unit") as HTMLInputElement | null)?.value;
+    const fixed = (form.elements.namedItem("pricing_kind") as HTMLInputElement | null)?.value === "fixed";
+    const unitMatches = !selectedUnit || selectedUnit === draft.price_unit || (fixed && !["day", "week", "month"].includes(draft.price_unit));
+    if (draft.price_dollars !== null && unitMatches) setValue("price", String(draft.price_dollars));
+    const basis = form.elements.namedItem("pricing_kind");
+    // Preserve the selected pricing basis; surface AI rate suggestions for review.
+    if (!(basis instanceof HTMLSelectElement) && !(basis instanceof HTMLInputElement)) setValue("price_unit", draft.price_unit);
+    if (basis && String((basis as HTMLInputElement).value) && draft.price_unit !== String((form.elements.namedItem("price_unit") as HTMLInputElement)?.value)) {
+      setAiQuestions((current) => [...current, `The draft suggests a price per ${draft.price_unit}. Check your selected price unit.`]);
+    }
     if (draft.minimum_booking) setValue("minimum_booking", draft.minimum_booking);
     if (draft.availability_notes) {
       setValue("availability_notes", draft.availability_notes);
@@ -7937,6 +7894,7 @@ export default function MarketplaceApp({
         );
       });
     if (draft.install_by) {
+      setValue("install_by", draft.install_by);
       form
         .querySelectorAll<HTMLInputElement>('input[name="install_by"]')
         .forEach((radio) => {
@@ -8300,7 +8258,8 @@ export default function MarketplaceApp({
           .join(" ")
           .slice(0, AI_NOTES_MAX);
       }
-      setAiQuestions(payload.draft.questions ?? []);
+      const followupQuestions = payload.draft.questions ?? [];
+      setAiQuestions((current) => [...current, ...followupQuestions]);
       setAiObservations(payload.draft.photo_observations ?? []);
       const asked = payload.draft.questions?.length ?? 0;
       const skipped = tourSkipped
@@ -8513,6 +8472,7 @@ export default function MarketplaceApp({
 
   async function saveListing(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (listingPreview) { setListingFeedback("Preview complete. Nothing was saved."); return; }
     if (!supabase) return;
     if (!profile) {
       // The session ended while they were typing. The form is uncontrolled and
@@ -8525,10 +8485,14 @@ export default function MarketplaceApp({
       setAuthOpen(true);
       return;
     }
-    const values = new FormData(event.currentTarget);
-    const listingFiles = values
-      .getAll("listing_photos")
-      .filter((value): value is File => value instanceof File && value.size > 0);
+    const listingForm = event.currentTarget;
+    const invalid = (name: string, message: string): never => {
+      const target = listingForm.elements.namedItem(name);
+      if (target instanceof HTMLElement) { revealInvalidField(target); target.focus(); }
+      throw new Error(message);
+    };
+    const values = new FormData(listingForm);
+    const selectedListingFiles = listingFilesRef.current.filter((file) => file.size > 0);
     const fallbackImage =
       editingListing?.image_url ||
       profile.gallery_urls?.[0] ||
@@ -8545,7 +8509,7 @@ export default function MarketplaceApp({
       const keptImages = editingListing
         ? listingImages(editingListing).filter((url) => !listingSeedImages.has(url))
         : [];
-      if (keptImages.length + listingFiles.length > MAX_LISTING_PHOTOS) {
+      if (keptImages.length + selectedListingFiles.length > MAX_LISTING_PHOTOS) {
         const room = MAX_LISTING_PHOTOS - keptImages.length;
         throw new Error(
           room > 0
@@ -8559,13 +8523,16 @@ export default function MarketplaceApp({
         );
       }
       const fields = {
+        timing_kind: (String(values.get("timing_kind") ?? "") || null) as BookingSchedule["timing_kind"],
+        pricing_kind: (String(values.get("pricing_kind") ?? "") || null) as BookingSchedule["pricing_kind"],
+        minimum_duration_days: Number(values.get("minimum_duration_days") ?? 1),
         instant_booking_enabled: !editingListingIsBrief && values.get("instant_booking_enabled") === "on",
         availability_dates: JSON.parse(String(values.get("availability_dates") ?? "[]")) as string[],
         booking_duration_days: Number(values.get("booking_duration_days") ?? 1),
         booking_timezone: String(values.get("booking_timezone") ?? "UTC"),
         title: String(values.get("title") ?? "").trim(),
         channel: String(values.get("channel") ?? "").trim(),
-        format: String(values.get("format") ?? "").trim(),
+        format: String(values.get("format") || values.get("deliverables") || "").trim().split("\n")[0].slice(0, 140),
         price_cents: dollarsToCents(String(values.get("price") ?? "0")),
         price_max_cents: values.get("price_max")
           ? dollarsToCents(String(values.get("price_max")))
@@ -8632,11 +8599,11 @@ export default function MarketplaceApp({
           ["title", "a listing title"],
           ["channel", "where it appears"],
           ["format", "what the buyer gets"],
-          ["description", "a description"],
+          ["deliverables", "what’s included"],
         ] as Array<[keyof typeof fields, string]>
       ).find(([key]) => !String(fields[key] ?? "").trim());
       if (missing) {
-        throw new Error(`Add ${missing[1]} before publishing.`);
+        invalid(missing[0], `Add ${missing[1]} before publishing.`);
       }
       if (!Number.isSafeInteger(fields.price_cents) || fields.price_cents < 0) {
         throw new Error("Enter a price of 0 or more.");
@@ -8647,22 +8614,22 @@ export default function MarketplaceApp({
         typeof fields.price_max_cents === "number" &&
         fields.price_max_cents < fields.price_cents
       ) {
-        throw new Error("The top of the range is below the bottom.");
+        invalid("price_max", "The maximum price must be at least the starting price.");
       }
       if (
         fields.available_from &&
         fields.available_to &&
         fields.available_to < fields.available_from
       ) {
-        throw new Error("Availability must end on or after it starts.");
+        invalid("available_to", "Availability must end on or after it starts.");
       }
 
       if (fields.instant_booking_enabled) {
         if (!isFixedPriceListing(fields) || fields.price_cents <= 0 || fields.deliverables.length < 2 || fields.deliverables.length > 1000 || fields.cancellation_policy.length < 2 || fields.cancellation_policy.length > 1000) {
-          throw new Error("Instant booking needs a fixed price, clear deliverables, and cancellation terms (up to 1,000 characters each).");
+          throw new Error("Add a price, what’s included, and cancellation terms to allow instant booking.");
         }
         if (!availableStartDates(fields).length) {
-          throw new Error("Select enough consecutive available days for one package, allowing for your required notice.");
+          throw new Error("Choose available dates that allow the required notice and minimum duration.");
         }
       }
 
@@ -8699,9 +8666,9 @@ export default function MarketplaceApp({
       ]);
 
       let photoWarning = "";
-      if (listingFiles.length) {
+      if (selectedListingFiles.length) {
         try {
-          const uploadedImages = await uploadImages(listingFiles, "listings");
+          const uploadedImages = await uploadImages(selectedListingFiles, "listings");
           const imageUrls = [...keptImages, ...uploadedImages].slice(0, MAX_LISTING_PHOTOS);
           if (imageUrls.length) {
             const updated = await supabase
@@ -8784,7 +8751,17 @@ export default function MarketplaceApp({
       }
 
       const wasEditing = Boolean(editingListing);
-      setListingOpen(false);
+      const remainingDraft = !wasEditing && Object.entries(newListingDrafts).find(([kind, draft]) => kind !== newListingOffer && draft?.listing.title);
+      const anotherTier = !wasEditing && values.get("add_another_tier") === "on";
+      setListingOpen(Boolean(remainingDraft) || anotherTier);
+      if (anotherTier) {
+        setNewListingDrafts((current) => ({ ...current, sponsorship: { listing: { ...fields, title: "", sponsor_tier: "", price_cents: undefined }, files: selectedListingFiles } }));
+        setComposerRevision((current) => current + 1);
+      }
+      if (remainingDraft && !anotherTier) {
+        setNewListingOffer(remainingDraft[0] as CreatorOfferType);
+        setNewListingDrafts((current) => { const next = { ...current }; delete next[newListingOffer]; return next; });
+      }
       resetAiHelpers();
       setEditingListing(null);
       setAccountOpen(false);
@@ -9000,6 +8977,7 @@ export default function MarketplaceApp({
         return;
       }
       closeListing();
+      setCampaignFeedback("");
       setCampaignRequestMode(mode);
       setCampaignListing(listing);
     });
@@ -9014,30 +8992,31 @@ export default function MarketplaceApp({
     if (!supabase || !campaignListing) return;
     if (!profile) {
       // Session ended mid-offer; the form still holds everything they wrote.
-      setToast(
+      setCampaignFeedback(
         "Your session ended. Sign in again, then send it — your details are still here.",
       );
       setAuthMode("signin");
       setAuthOpen(true);
       return;
     }
+    setCampaignFeedback("");
     const form = event.currentTarget;
     const values = new FormData(form);
     const startDate = String(values.get("start_date") ?? "");
     const endDate = String(values.get("end_date") ?? "");
     if (!startDate || !endDate) {
-      setToast("Choose the dates your campaign should run.");
+      setCampaignFeedback("Choose your delivery date or campaign dates.");
       return;
     }
     if (endDate < startDate) {
-      setToast("Choose an end date on or after the start date.");
+      setCampaignFeedback("Choose an end date on or after the start date.");
       return;
     }
     // A window that has already elapsed cannot be run. The common way in is a
     // mistyped year on the native date picker, which otherwise commits both
     // sides to negotiating a campaign that can never happen.
-    if (endDate < todayIso()) {
-      setToast(
+    if (endDate < calendarToday(campaignListing.booking_timezone)) {
+      setCampaignFeedback(
         "That campaign window has already ended. Pick dates that run today or later.",
       );
       return;
@@ -9045,13 +9024,13 @@ export default function MarketplaceApp({
     if (campaignRequestMode === "buy_now") {
       const minimumDate = listingBookingMinDate(campaignListing);
       if (startDate < minimumDate) {
-        setToast(
+        setCampaignFeedback(
           `This listing needs dates starting ${displayDate(minimumDate)} or later.`,
         );
         return;
       }
       if (campaignListing.available_to && endDate > campaignListing.available_to) {
-        setToast(
+        setCampaignFeedback(
           `Choose an end date on or before ${displayDate(campaignListing.available_to)}.`,
         );
         return;
@@ -9063,7 +9042,7 @@ export default function MarketplaceApp({
     // This used to open the conversation first, so a brief the database then
     // rejected left a permanent empty thread in the owner's inbox and showed
     // the member a raw constraint error.
-    const campaignName = String(values.get("campaign_name") ?? "").trim();
+    const campaignName = String(values.get("campaign_name") || campaignListing.title).trim().slice(0, 120);
     const goals = String(values.get("goals") ?? "").trim();
     const notes = String(values.get("notes") ?? "").trim();
     const isBookAsListed = campaignRequestMode === "buy_now";
@@ -9080,37 +9059,44 @@ export default function MarketplaceApp({
     // after the conversation had already been created.
     if (charCount(campaignName) < 2 || charCount(campaignName) > 120) {
       setBusy(false);
-      return setToast("Give the campaign a name between 2 and 120 characters.");
+      return setCampaignFeedback("Give the campaign a name between 2 and 120 characters.");
     }
-    if (charCount(goals) < 10 || charCount(goals) > 1500) {
+    if (charCount(goals) > 1500) {
       setBusy(false);
-      return setToast(
-        "Describe your goal in at least 10 characters (1500 max).",
+      return setCampaignFeedback(
+        "Keep campaign details under 1,500 characters.",
       );
     }
     if (charCount(deliverables) < 2 || charCount(deliverables) > 1000) {
       setBusy(false);
-      return setToast("Say what you are asking for (2 to 1000 characters).");
+      return setCampaignFeedback("Say what you are asking for (2 to 1000 characters).");
     }
     if (charCount(notes) > 2000) {
       setBusy(false);
-      return setToast("Notes are limited to 2000 characters.");
+      return setCampaignFeedback("Notes are limited to 2000 characters.");
     }
     if (
       !isBookAsListed &&
       (!budgetInput || !Number.isFinite(proposedBudget) || proposedBudget < 0)
     ) {
       setBusy(false);
-      return setToast("Enter a budget of 0 or more.");
+      return setCampaignFeedback("Enter a budget of 0 or more.");
     }
 
     let budgetCents = campaignListing.price_cents;
+    if (isBookAsListed) {
+      const quoted = Number(values.get("quote_subtotal"));
+      if (!Number.isSafeInteger(quoted) || quoted <= 0 || !values.get("quote_version")) {
+        setBusy(false); setCampaignFeedback("Choose available dates and wait for the price before sending."); return;
+      }
+      budgetCents = quoted;
+    }
     if (!isBookAsListed) {
       try {
         budgetCents = dollarsToCents(budgetInput);
       } catch (error) {
         setBusy(false);
-        return setToast(
+        return setCampaignFeedback(
           error instanceof Error
             ? error.message
             : "Enter a dollar amount with no more than two decimals.",
@@ -9131,6 +9117,8 @@ export default function MarketplaceApp({
         owner_profile_id: campaignListing.owner.id,
         conversation_id: existingConversation?.id ?? null,
         purchase_mode: campaignRequestMode,
+        timing_kind: campaignListing.timing_kind ?? null,
+        listing_terms: isBookAsListed ? { listing_updated_at: String(values.get("quote_version")) } : {},
         campaign_name: campaignName,
         goals,
         requested_deliverables: deliverables,
@@ -9145,7 +9133,7 @@ export default function MarketplaceApp({
 
     if (inserted.error) {
       setBusy(false);
-      setToast(friendlyDbError(inserted.error));
+      setCampaignFeedback(friendlyDbError(inserted.error));
       return;
     }
 
@@ -9174,7 +9162,7 @@ export default function MarketplaceApp({
       await supabase.from("messages").insert({
         conversation_id: conversation.id,
         sender_profile_id: profile.id,
-        body: `${isBookAsListed ? "Book as listed" : "Offer"}: ${campaignName}\n${displayDate(startDate)} to ${displayDate(endDate)} · Budget ${formatCents(budgetCents)}\n${isBookAsListed ? "Listed deliverables" : "Requested"}: ${deliverables}`,
+        body: `${isBookAsListed ? "Book as listed" : "Offer"}: ${campaignName}\n${bookingDateLabel(campaignListing.timing_kind, startDate, endDate)} · Budget ${formatCents(budgetCents)}\n${isBookAsListed ? "Listed deliverables" : "Requested"}: ${deliverables}`,
       });
     }
 
@@ -9245,7 +9233,7 @@ export default function MarketplaceApp({
     }
   }
 
-  function startInstantCheckout(listing: Listing, bookingDate: string) {
+  function startInstantCheckout(listing: Listing, bookingDate: string, bookingEndDate: string) {
     requireAccount(() => {
       if (listing.owner_profile_id === profile?.id) {
         setToast("This is your listing. Manage its available dates in Dashboard.");
@@ -9256,7 +9244,7 @@ export default function MarketplaceApp({
         try {
           const response = await fetch("/api/stripe/checkout", {
             method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ listingId: listing.id, bookingDate, listingUpdatedAt: listing.updated_at }),
+            body: JSON.stringify({ listingId: listing.id, bookingDate, bookingEndDate, listingUpdatedAt: listing.updated_at }),
           });
           const result = await response.json() as { url?: string; error?: string };
           if (!response.ok || !result.url) throw new Error(result.error || "Could not open checkout. Please try again.");
@@ -10236,11 +10224,15 @@ export default function MarketplaceApp({
       setTourSpherical(false);
       setListingInstantEnabled(false);
       setNewListingOffer("social");
+      setListingPreview(false);
+      setNewListingDrafts({});
+      setPendingListingFiles([]);
       setListingOpen(true);
     });
   }
 
   function openListingEdit(listing: Listing) {
+    setListingPreview(false);
     setListingFeedback("");
     setFormatPreview(listing.format ?? "");
     setEditingListing(listing);
@@ -10256,6 +10248,7 @@ export default function MarketplaceApp({
     setTourPick(null);
     setTourSpherical(false);
     setListingInstantEnabled(listing.instant_booking_enabled ?? false);
+    setPendingListingFiles([]);
     setNewListingOffer(
       isSponsorshipListing(listing)
         ? "sponsorship"
@@ -10365,7 +10358,7 @@ export default function MarketplaceApp({
                   </span>
                   <h4>{listing.title}</h4>
                   <p>
-                    {listing.channel} • {priceLabel(listing)}/{listing.price_unit}
+                    {listing.channel} • {priceLabel(listing)}/{pricingLabel(listing)}
                   </p>
                   {(() => {
                     const gaps = listingGaps(listing);
@@ -10480,7 +10473,7 @@ export default function MarketplaceApp({
                     <span>
                       <small>Dates</small>
                       <b>
-                        {displayDate(request.start_date)} – {displayDate(request.end_date)}
+                        {bookingDateLabel(request.timing_kind, request.start_date, request.end_date)}
                       </b>
                     </span>
                     <span>
@@ -10492,12 +10485,7 @@ export default function MarketplaceApp({
                       <b>{request.requested_deliverables}</b>
                     </span>
                   </div>
-                  {isBookAsListed && (
-                    <p className="campaign-request-brief booking-mode-note">
-                      <small>Fixed terms</small>
-                      The published price and deliverables are locked. The owner can confirm or decline this booking, but it cannot be countered here.
-                    </p>
-                  )}
+                  {request.listing_terms?.cancellation_policy && <details className="composer-options"><summary>Agreed cancellation terms</summary><p>{request.listing_terms.cancellation_policy}</p></details>}
                   {request.goals && (
                     <p className="campaign-request-brief">
                       <small>Goal</small>
@@ -11135,7 +11123,7 @@ export default function MarketplaceApp({
                         </div>
                         <strong>{listing.title}</strong>
                         <p>
-                          {priceLabel(listing)} / {listing.price_unit}
+                          {priceLabel(listing)} / {pricingLabel(listing)}
                         </p>
                       </div>
                       <div className="dashboard-row-actions">
@@ -11235,6 +11223,7 @@ export default function MarketplaceApp({
                                   <b>{formatCents(request.budget_cents)}</b>
                                 </div>
                                 <strong>{request.campaign_name}</strong>
+                                <small>{bookingDateLabel(request.timing_kind,request.start_date,request.end_date)}</small>
                                 <p>
                                   {request.listing?.title ?? "Listing"} ·{" "}
                                   {other.display_name}
@@ -11847,7 +11836,7 @@ export default function MarketplaceApp({
                       <span className="price-lead">Budget</span>
                     )}
                     <strong>{priceLabel(listing)}</strong>
-                    <small> / {listing.price_unit}</small>
+                    <small> / {pricingLabel(listing)}</small>
                   </div>
                   <button
                     disabled={!isListingRequestable(listing)}
@@ -13341,7 +13330,8 @@ export default function MarketplaceApp({
                     )}
                   </label>
                   )}
-                  {(onboardingMode === "edit" || Boolean(answers.city.trim())) && (
+                  {(onboardingMode === "edit" ||
+                    Boolean(answers.city.trim())) && (
                   <label className="field-wide progressive-field">
                     {selectedRole === "business"
                       ? "One line about your business"
@@ -15545,21 +15535,7 @@ export default function MarketplaceApp({
           }}
           wide
         >
-          <div className="modal-heading">
-            <p className="eyebrow">
-              {editingListing ? "Edit listing" : "Create a listing"}
-            </p>
-            <h2>
-              {editingListing
-                ? "Update what people can book."
-                : "What can people book?"}
-            </h2>
-            <p>
-              {editingListing
-                ? "Change any detail below. Your listing keeps its history, conversations, and campaign requests."
-                : "List a social placement, creator package, business brief, wall, window, vehicle, room, or anything else with useful attention."}
-            </p>
-          </div>
+          <div className="modal-heading"><h2>{editingListing ? "Edit listing" : editingListingIsBrief ? "Create a campaign" : "Create a listing"}</h2></div>
           {listingFeedback && (
             <div className="form-feedback" role="alert">
               <strong>Your listing was not saved yet.</strong>
@@ -15568,102 +15544,26 @@ export default function MarketplaceApp({
           )}
           <form
             key={editingListing?.id ?? "new-listing"}
-            className="field-grid listing-form"
+            className="field-grid listing-form listing-composer"
+            onInvalidCapture={(event) => revealInvalidField(event.target)}
             onSubmit={saveListing}
           >
-            {/* A brief is a WANTED card. Asking its author "What are you
-                offering?" and telling them to name it like "Cafe window, Main
-                Street" describes the opposite of what they posted. */}
-            <div className="form-subsection field-wide">
-              <span>The basics</span>
-              <h4>
-                {editingListingIsBrief
-                  ? "What are you looking for?"
-                  : "What are you offering?"}
-              </h4>
-            </div>
-            {canonicalRole(profile?.role ?? "consumer") === "creator" &&
-              !editingListing && (
-              <div className="field-wide">
-                <div className="form-subsection">
-                  <span>Creator inventory</span>
-                  <h4>What kind of advertising do you have?</h4>
-                  <p>
-                    Pick the shape of this listing so we can keep the useful
-                    details with it.
-                  </p>
-                </div>
-                <div
-                  className="scope-grid creator-offer-grid"
-                  data-field="creatorOffer"
-                  role="group"
-                  aria-label="What kind of advertising this listing offers"
-                >
-                  {CREATOR_OFFER_TYPES.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      aria-pressed={newListingOffer === option.value}
-                      className={
-                        newListingOffer === option.value ? "active" : ""
-                      }
-                      onClick={(event) => {
-                        setNewListingOffer(option.value);
-                        const channel =
-                          event.currentTarget.form?.elements.namedItem("channel");
-                        const priceUnit =
-                          event.currentTarget.form?.elements.namedItem("price_unit");
-                        if (channel instanceof HTMLSelectElement) {
-                          channel.value =
-                            option.value === "physical"
-                              ? "Storefront"
-                              : option.value === "sponsorship"
-                                ? "Sponsorship"
-                                : "Instagram";
-                        }
-                        if (priceUnit instanceof HTMLSelectElement) {
-                          priceUnit.value = defaultCreatorPriceUnit(option.value);
-                        }
-                      }}
-                    >
-                      <strong>{option.label}</strong>
-                      <small>{option.help}</small>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {!editingListingIsBrief && (
-              <div className="field-wide ai-fill">
-                <div className="ai-fill-copy">
-                  <strong>Fill with AI</strong>
-                  <small>
-                    Type it or tap the mic and say it. Cover these and the
-                    whole listing gets drafted for you to edit:
-                  </small>
-                  <ul className="ai-fill-checklist">
-                    <li>what it is and where</li>
-                    <li>who sees it, roughly how many</li>
-                    <li>the price, and per what</li>
-                    <li>when it is available</li>
-                    {listingFormKind === "physical" && (
-                      <li>size, what can go up, who puts it up</li>
-                    )}
-                  </ul>
-                  <small>
-                    Anything you leave out, it asks you for. It never guesses
-                    a price or a number.
-                  </small>
-                  <small className="ai-fill-tip">
-                    Tip: add a photo of the space, or a walkthrough video, in
-                    the fields below first. Drafts are a lot better when the
-                    AI can see it.
-                  </small>
-                </div>
-                <div className="ai-fill-row">
+            {!editingListing && !editingListingIsBrief && <div className="composer-kind field-wide" role="group" aria-label="Offer type">
+              {CREATOR_OFFER_TYPES.map((option) => <button type="button" key={option.value} disabled={busy || aiFilling || listening} aria-pressed={newListingOffer === option.value}
+                onClick={(event) => switchListingFormKind(option.value, event.currentTarget.form)}>{option.label}</button>)}
+            </div>}
+            <ListingComposerFields key={`${editingListing?.id ?? newListingOffer}-${composerRevision}`} listing={editingListing ?? newListingDrafts[newListingOffer]?.listing}
+              kind={listingFormKind} city={profile?.city || answers.city} audience={profile?.audience_age}
+              channels={LISTING_CHANNELS} surfaces={SURFACE_CHIPS} installers={INSTALL_CHIPS} platforms={BRIEF_PLATFORM_CHIPS}
+              draftFiles={newListingDrafts[newListingOffer]?.files} onFilesChange={setPendingListingFiles} onInstantChange={setListingInstantEnabled}
+              hasSavedPhotos={Boolean(editingListing && listingImages(editingListing).some((url) => !listingSeedImages.has(url)))}
+              aiTools={!editingListingIsBrief ? (<div className="field-wide ai-fill">
+                <p>Describe your offer, price, and audience. Review the draft before publishing.</p>
+<div className="ai-fill-row">
                   <textarea
                     ref={aiNotesRef}
                     name="ai_notes"
+                    defaultValue={newListingDrafts[newListingOffer]?.listing.ai_notes || ""}
                     rows={2}
                     maxLength={AI_NOTES_MAX}
                     placeholder={
@@ -15736,382 +15636,8 @@ export default function MarketplaceApp({
                 >
                   {aiFilling ? "Drafting…" : "Fill with AI"} <span>✦</span>
                 </button>
-              </div>
-            )}
-            <label className="field-wide">
-              {editingListingIsBrief ? "Name the brief" : "Listing title"}
-              <small>
-                {`A short name people will see first, like \u201c${listingHints.titleExample}\u201d.`}
-              </small>
-              <input
-                name="title"
-                required
-                maxLength={120}
-                defaultValue={editingListing?.title ?? ""}
-                placeholder={listingHints.titlePlaceholder}
-              />
-            </label>
-            <label>
-              Where does it appear?
-              <small>The kind of space or platform this runs on.</small>
-              <select
-                name="channel"
-                required
-                defaultValue={
-                  editingListing?.channel ??
-                  (newListingOffer === "physical"
-                    ? "Storefront"
-                    : newListingOffer === "sponsorship"
-                      ? "Sponsorship"
-                      : "Instagram")
-                }
-              >
-                {/* A listing whose channel is not one of these had no
-                    matching option, so the select fell back to the first and
-                    saving ANY edit silently rewrote the channel to Instagram.
-                    Seven live listings were in that state. Always offer the
-                    listing's own value so editing never rewrites it. */}
-                {Array.from(
-                  new Set([
-                    ...LISTING_CHANNELS,
-                    ...(editingListing?.channel ? [editingListing.channel] : []),
-                  ]),
-                ).map((channel) => (
-                  <option key={channel}>{channel}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {editingListingIsBrief ? "What you want back" : "What the buyer gets"}
-              <small>
-                Finish the sentence{" "}
-                <b>
-                  {editingListingIsBrief
-                    ? "\u201cLooking for\u2026\u201d"
-                    : "\u201cYou get\u2026\u201d"}
-                </b>{" "}
-                exactly as it should read on your card.
-              </small>
-              {/* 140, not 60. Onboarding composes this line from chips and
-                  routinely runs past 60 - two live listings sit at 62 right
-                  now - and maxLength does not truncate a value it inherits, it
-                  just stops accepting keystrokes. Measured in Chromium: at 60
-                  those owners can delete from their offer line but cannot add
-                  a single character to it, and the field swallows the typing
-                  with no message. The cap has to clear what the flow itself
-                  writes. */}
-              <input
-                name="format"
-                required
-                maxLength={140}
-                defaultValue={editingListing?.format ?? ""}
-                placeholder={listingHints.formatPlaceholder}
-                onChange={(event) => setFormatPreview(event.target.value)}
-              />
-              <span className="offer-preview" aria-live="polite">
-                Your card will read:{" "}
-                <b>
-                  {editingListingIsBrief ? "Looking for " : "You get "}
-                  {formatOffer(formatPreview || editingListing?.format || "") ||
-                    "…"}
-                </b>
-              </span>
-              {/* Unlabelled, these read as three things that already happened
-                  to the field rather than three things you can tap. */}
-              <span className="offer-examples-label">Or start from one of these:</span>
-              <span className="offer-examples">
-                {listingHints.formatExamples.map((example) => (
-                  <button
-                    type="button"
-                    key={example}
-                    onClick={(event) => {
-                      const input =
-                        event.currentTarget.form?.elements.namedItem("format");
-                      if (input instanceof HTMLInputElement) {
-                        input.value = example;
-                        setFormatPreview(example);
-                      }
-                    }}
-                  >
-                    {example}
-                  </button>
-                ))}
-              </span>
-            </label>
-            <div className="form-subsection field-wide">
-              <span>Pricing</span>
-              <h4>What does it cost?</h4>
-            </div>
-            <label>
-              Price
-              <input
-                name="price"
-                type="number"
-                max="2000000000"
-                min="2"
-                required
-                defaultValue={
-                  editingListing
-                    ? centsToInputDollars(editingListing.price_cents)
-                    : ""
-                }
-                placeholder="2"
-              />
-              <small>Start at $2, or set any higher price that fits your placement.</small>
-            </label>
-            {/* A band, not a number. price_max has been written by onboarding
-                since 0017 - by briefs, spaces and sponsorship tiers - and this
-                form had no input for it, so a listing published with a range
-                could never have that range changed or cleared. */}
-            <label>
-              Up to
-              <small>Optional. Leave blank for a flat price.</small>
-              <input
-                name="price_max"
-                type="number"
-                min="1"
-                max="2000000000"
-                defaultValue={
-                  editingListing?.price_max_cents == null
-                    ? ""
-                    : centsToInputDollars(editingListing.price_max_cents)
-                }
-                placeholder="400"
-              />
-            </label>
-            <label>
-              Priced per
-              <small>What one unit of your price covers.</small>
-              <select
-                name="price_unit"
-                defaultValue={
-                  editingListing?.price_unit ??
-                  (newListingOffer === "physical"
-                    ? "week"
-                    : newListingOffer === "sponsorship"
-                      ? "sponsor"
-                      : "post")
-                }
-              >
-                {/* Same reasoning as `channel` above. Production carries
-                    'story set' and 'run' from the 0002 seeds and onboarding now
-                    writes 'sponsor'; none of those were in this list, so opening
-                    such a listing selected nothing, the browser fell back to the
-                    first option, and saving ANY edit silently rewrote the unit
-                    to 'campaign'. There is deliberately no CHECK on
-                    listings.price_unit (0016) so the column really can hold
-                    anything - the select has to carry the row's own value. */}
-                {Array.from(
-                  new Set([
-                    ...PRICE_UNIT_OPTIONS,
-                    ...(editingListing?.price_unit
-                      ? [editingListing.price_unit]
-                      : []),
-                  ]),
-                ).map((unit) => (
-                  <option key={unit} value={unit}>
-                    {unit}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="form-subsection field-wide">
-              <span>Where and when</span>
-              <h4>Location and availability.</h4>
-              <p>Pulled from your profile where possible — adjust if this listing differs.</p>
-            </div>
-            <label className="field-wide">
-              Where is it?
-              <small>City or the area you cover. Prefilled from your profile.</small>
-              <input
-                name="location_area"
-                defaultValue={editingListing?.location_area || profile?.city || ""}
-                placeholder="Brea, CA · within 10 miles"
-              />
-            </label>
-            {!editingListingIsBrief && <ListingAvailabilityFields listing={editingListing ?? {}} onChange={(schedule) => setListingInstantEnabled(Boolean(schedule.instant_booking_enabled))} />}
-            {(!listingInstantEnabled || editingListingIsBrief) && <>
-            <label>
-              Available from
-              <input
-                name="available_from"
-                type="date"
-                defaultValue={editingListing?.available_from ?? ""}
-              />
-            </label>
-            <label>
-              Available until
-              <input
-                name="available_to"
-                type="date"
-                defaultValue={editingListing?.available_to ?? ""}
-              />
-            </label>
-            </>}
-            <label>
-              How much notice you need
-              <small>Days between someone booking and you starting.</small>
-              <input
-                name="lead_time_days"
-                type="number"
-                max="2000000000"
-                min="0"
-                defaultValue={editingListing?.lead_time_days ?? 2}
-              />
-            </label>
-            {(!listingInstantEnabled || editingListingIsBrief) && <label>
-              Smallest booking you accept
-              <small>Leave blank if you have no minimum.</small>
-              <input
-                name="minimum_booking"
-                defaultValue={editingListing?.minimum_booking ?? ""}
-                placeholder={listingHints.minimumPlaceholder}
-              />
-            </label>}
-            <div className="form-subsection field-wide">
-              <span>Details</span>
-              <h4>What buyers will read.</h4>
-            </div>
-            <label className="field-wide">
-              {editingListingIsBrief ? "Describe the brief" : "Describe it"}
-              {/* This used to read "where exactly it sits, and who walks past"
-                  for every role - advice that means nothing to a creator
-                  selling three stories, and describes the wrong side of the
-                  deal entirely for a business posting a brief. */}
-              <small>
-                {editingListingIsBrief
-                  ? "What you’re promoting, what the artwork is, and anything whoever answers must know."
-                  : editingListingIsPhysical
-                    ? "What it is, where exactly it sits, and who walks past."
-                    : editingListingIsSponsorship
-                      ? "What the season looks like, who turns up, and what a sponsor’s money pays for."
-                      : listingRole === "creator"
-                        ? "What a brand gets, your turnaround, and anything you won’t do."
-                        : "What it is, where exactly it sits, and who walks past."}
-              </small>
-              <textarea
-                name="description"
-                required
-                defaultValue={editingListing?.description ?? ""}
-                placeholder={listingHints.descriptionPlaceholder}
-              />
-            </label>
-            <label className="field-wide">
-              Deliverables included in the package
-              <small>Describe exactly what the buyer receives, including quantities, placement duration, and proof of delivery. Required for instant booking.</small>
-              {/* Not required. Onboarding never asks for it - every creator
-                  and every physical-only brief publishes with it empty - so a
-                  `required` here blocked the FIRST edit of a listing this app
-                  created itself, on a field saveListing does not even check. */}
-              <textarea
-                name="deliverables"
-                defaultValue={editingListing?.deliverables ?? ""}
-                placeholder={listingHints.deliverablesPlaceholder}
-              />
-            </label>
-            <label className="field-wide">
-              Anything else about timing?
-              <small>Optional. For example weekday mornings only, or closed in August.</small>
-              <input
-                name="availability_notes"
-                defaultValue={editingListing?.availability_notes ?? ""}
-                placeholder="Weekdays after 3 PM, weekends, seasonal, or flexible"
-              />
-            </label>
-            <label className="field-wide">
-              If someone cancels
-              <small>Required for instant booking. Explain when a buyer can cancel and what is refundable.</small>
-              <input
-                name="cancellation_policy"
-                defaultValue={editingListing?.cancellation_policy ?? ""}
-                placeholder="Example: Free cancellation up to 48 hours before the start date"
-              />
-            </label>
-            {/* ------------------------------------------------------------
-                ROLE-SHAPED SECTION.
-
-                Onboarding asks each role its own questions and writes nine
-                structured columns - surface_types, install_by, space_size,
-                street_address, brief_scope, target_platforms, sponsor_tier,
-                sponsor_slots, price_max. This editor had an input for none of
-                them, so everything a member answered in onboarding became
-                permanently uneditable the moment they published.
-
-                These are real checkboxes and radios rather than the chip
-                component: the form is uncontrolled, and FormData.getAll gives
-                us the array for free with no state to seed or keep in sync.
-                ------------------------------------------------------------ */}
-            {editingListingIsPhysical && (
-              <>
-                {/* Presence marker. An unchecked checkbox group and an
-                    ABSENT one both yield [] from getAll, so without this a
-                    creator opening their own listing would save empty arrays
-                    over a space owner's answers. */}
-                <input type="hidden" name="has_space_section" value="1" />
-                <div className="form-subsection field-wide">
-                  <span>The space</span>
-                  <h4>What can go up, and who puts it up?</h4>
-                </div>
-                <fieldset className="chip-check-group field-wide">
-                  <legend>Everything you&rsquo;d allow</legend>
-                  {SURFACE_CHIPS.map((surface) => (
-                    <label key={surface} className="chip-check">
-                      <input
-                        type="checkbox"
-                        name="surface_types"
-                        value={surface}
-                        defaultChecked={editingListing?.surface_types?.includes(
-                          surface,
-                        )}
-                      />
-                      <span>{surface}</span>
-                    </label>
-                  ))}
-                </fieldset>
-                <fieldset className="chip-check-group field-wide">
-                  <legend>Who puts it up</legend>
-                  {INSTALL_CHIPS.map((item) => (
-                    <label key={item.value} className="chip-check">
-                      <input
-                        type="radio"
-                        name="install_by"
-                        value={item.value}
-                        defaultChecked={
-                          editingListing?.install_by === item.value
-                        }
-                      />
-                      <span>{item.label}</span>
-                    </label>
-                  ))}
-                </fieldset>
-                <label>
-                  How big is it?
-                  <small>Roughly. Width by height is enough.</small>
-                  <input
-                    name="space_size"
-                    maxLength={80}
-                    defaultValue={editingListing?.space_size ?? ""}
-                    placeholder="6 ft × 3 ft"
-                  />
-                </label>
-                <label>
-                  Exact address
-                  <small>
-                    Optional. Never shown on your card, and visitors to the site
-                    cannot read it — though anyone signed in to SideSpace could.
-                  </small>
-                  <input
-                    name="street_address"
-                    maxLength={240}
-                    defaultValue={editingListing?.street_address ?? ""}
-                    placeholder="1398 Solano Ave, Albany, CA 94706"
-                  />
-                </label>
-                {/* Google Street View of that address, shown on the listing
-                    as a labelled card fetched live from Google. Outdoor frames
-                    only: a storefront or a wall on a street usually works, a
-                    dorm corridor gets a no. */}
-                <div className="street-view">
+              </div>) : undefined}
+              spaceTools={(<div className="street-view">
                   <button
                     type="button"
                     disabled={busy || streetViewLoading}
@@ -16152,114 +15678,8 @@ export default function MarketplaceApp({
                       </figcaption>
                     </figure>
                   )}
-                </div>
-              </>
-            )}
-
-            {editingListingIsSponsorship && (
-              <>
-                <input type="hidden" name="has_sponsor_section" value="1" />
-                <div className="form-subsection field-wide">
-                  <span>This tier</span>
-                  <h4>Which level is this listing?</h4>
-                  <p>
-                    Each tier is its own listing. Renaming this one does not
-                    touch your other levels.
-                  </p>
-                </div>
-                <label>
-                  Tier name
-                  <small>Gold, Founding Partner, anything you call it.</small>
-                  <input
-                    name="sponsor_tier"
-                    maxLength={40}
-                    defaultValue={editingListing?.sponsor_tier ?? ""}
-                    placeholder="Gold"
-                  />
-                </label>
-                <label>
-                  Spots at this level
-                  <small>Optional. How many sponsors fit.</small>
-                  <input
-                    name="sponsor_slots"
-                    type="number"
-                    min="1"
-                    max="10000"
-                    defaultValue={editingListing?.sponsor_slots ?? ""}
-                    placeholder="3"
-                  />
-                </label>
-              </>
-            )}
-
-            {editingListingIsBrief && (
-              <>
-                <input type="hidden" name="has_brief_section" value="1" />
-                <div className="form-subsection field-wide">
-                  <span>Your brief</span>
-                  <h4>What are you looking for?</h4>
-                </div>
-                <fieldset className="chip-check-group field-wide">
-                  <legend>Physical space, social, or both</legend>
-                  {BRIEF_SCOPE_CHIPS.map((item) => (
-                    <label key={item.value} className="chip-check">
-                      <input
-                        type="radio"
-                        name="brief_scope"
-                        value={item.value}
-                        defaultChecked={
-                          (editingListing?.brief_scope ?? "both") === item.value
-                        }
-                      />
-                      <span>{item.label}</span>
-                    </label>
-                  ))}
-                </fieldset>
-                <fieldset className="chip-check-group field-wide">
-                  <legend>Platforms to target</legend>
-                  {BRIEF_PLATFORM_CHIPS.map((platform) => (
-                    <label key={platform} className="chip-check">
-                      <input
-                        type="checkbox"
-                        name="target_platforms"
-                        value={platform}
-                        defaultChecked={editingListing?.target_platforms?.includes(
-                          platform,
-                        )}
-                      />
-                      <span>{platform}</span>
-                    </label>
-                  ))}
-                </fieldset>
-              </>
-            )}
-
-            <div className="form-subsection field-wide">
-              <span>Audience and photos</span>
-              <h4>Show them who they reach.</h4>
-            </div>
-            <label>
-              Who will see it?
-              {/* `||`, not `??`. demographics is a NOT NULL text column that
-                  defaults to the empty string, so `??` never fell through and
-                  the profile value it promised to prefill was never used -
-                  three live listings sit on an empty string right now. */}
-              <input
-                name="demographics"
-                defaultValue={
-                  editingListing?.demographics || profile?.audience_age || ""
-                }
-                placeholder="68% ages 21–34 · local"
-              />
-              {/* Only claim the prefill when there is something to prefill
-                  with, and only call it "from your profile" when it came from
-                  there rather than from this listing's own saved value. */}
-              <small>
-                {!editingListing?.demographics && profile?.audience_age
-                  ? "Prefilled from your profile — edit if this listing reaches a different audience."
-                  : "Who actually sees this placement. Leave blank if you’d rather not say."}
-              </small>
-            </label>
+                </div>)}
+            />
             {editingListing &&
               listingImages(editingListing).some((url) => !listingSeedImages.has(url)) && (
                 <div className="listing-photo-manager field-wide">
@@ -16308,20 +15728,6 @@ export default function MarketplaceApp({
                 </div>
               )}
             <label className="field-wide media-upload-field">
-              {editingListing ? "Add photos" : "Upload listing photos"}
-              <input
-                name="listing_photos"
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                multiple
-              />
-              <small>
-                {editingListing
-                  ? "Your current photos stay, cover first; new ones go after them, up to 6 in all. Leave empty to keep what you have."
-                  : "Add up to 6 photos of the land, wall, room, vehicle, storefront, or placement."}
-              </small>
-            </label>
-            <label className="field-wide media-upload-field">
               {editingListing?.tour_url ? "Replace the walkthrough" : "Add a walkthrough (optional)"}
               <input
                 name="listing_tour"
@@ -16331,11 +15737,8 @@ export default function MarketplaceApp({
               />
               <small>
                 A short video walking through the space, a 360° video, or a
-                360° photo, so buyers see the actual place and how people move
-                through it. Up to 50 MB, about a minute of phone video: trim it
-                first if it is longer. iPhone: export as &ldquo;Most
-                Compatible&rdquo; so it plays everywhere. Fill with AI reads it
-                too.
+                360° photo. Up to 50 MB. Tick 360° after choosing a spherical
+                file so buyers can drag around it.
               </small>
             </label>
             {tourPick && (
@@ -16358,7 +15761,7 @@ export default function MarketplaceApp({
                   {tourSpherical
                     ? "Opens in the 360° viewer: buyers drag to look around."
                     : tourPick.kind === "photo"
-                      ? "A regular photo belongs in the photos field above. Tick 360° only if this is a spherical panorama."
+                      ? "Tick 360° only if this is a spherical panorama."
                       : "Plays as a plain video. Tick 360° if it came from a 360 camera."}
                 </small>
               </div>
@@ -16401,7 +15804,7 @@ export default function MarketplaceApp({
                   ? "Saving listing..."
                   : editingListing
                     ? "Save changes"
-                    : "Publish listing"}{" "}
+                    : Object.entries(newListingDrafts).some(([kind, draft]) => kind !== newListingOffer && draft?.listing.title) ? "Publish and continue" : editingListingIsBrief ? "Publish campaign" : "Publish listing"}{" "}
                 <span>↗</span>
               </button>
             </div>
@@ -16566,99 +15969,37 @@ export default function MarketplaceApp({
                 </div>
               )}
               <h2>{selectedListing.title}</h2>
-              <p>{selectedListing.description}</p>
+              <p className="listing-included">{selectedListing.deliverables || selectedListing.format}</p>
+              <div className="detail-price"><strong>{priceLabel(selectedListing)}</strong><span> / {pricingLabel(selectedListing)}</span></div>
               <div className="detail-facts">
-                <div>
-                  <small>Format</small>
-                  <strong>{selectedListing.format}</strong>
-                </div>
-                <div>
-                  <small>Audience</small>
-                  <strong>{selectedListing.demographics || "Not specified"}</strong>
-                </div>
-                <div>
-                  <small>Location / service area</small>
-                  <strong>
-                    {listingCity(selectedListing)}
-                  </strong>
-                </div>
-                <div>
-                  <small>Availability</small>
-                  <strong>
-                    {selectedListing.instant_booking_enabled ? "Choose from the calendar below" : selectedListing.availability_notes ||
-                      "Custom dates by offer"}
-                  </strong>
-                </div>
-                <div>
-                  <small>Booking window</small>
-                  <strong>
-                    {selectedListing.instant_booking_enabled ? "Available dates up to one year ahead" : `${displayDate(selectedListing.available_from)} – ${displayDate(selectedListing.available_to)}`}
-                  </strong>
-                </div>
-                <div>
-                  <small>Lead time</small>
-                  <strong>
-                    {selectedListing.lead_time_days
-                      ? `${selectedListing.lead_time_days} days`
-                      : "Flexible"}
-                  </strong>
-                </div>
-                <div>
-                  <small>Minimum booking</small>
-                  <strong>
-                    {selectedListing.instant_booking_enabled ? `${selectedListing.booking_duration_days ?? 1}-day package` : selectedListing.minimum_booking || "One placement"}
-                  </strong>
-                </div>
+                <div><small>Location</small><strong>{listingCity(selectedListing)}</strong></div>
+                <div><small>Timing</small><strong>{isBrief(selectedListing) ? selectedListing.available_from && selectedListing.available_to ? bookingDateLabel(selectedListing.timing_kind,selectedListing.available_from,selectedListing.available_to) : "Flexible" : selectedListing.timing_kind === "deadline" ? "Choose a delivery deadline" : "Choose your campaign dates"}</strong></div>
+                {!!selectedListing.lead_time_days && <div><small>Notice needed</small><strong>{selectedListing.lead_time_days} days</strong></div>}
+                {selectedListing.timing_kind === "date_range" && selectedListing.pricing_kind !== "fixed" && <div><small>Minimum duration</small><strong>{selectedListing.minimum_duration_days ?? 1} {(selectedListing.minimum_duration_days ?? 1) === 1 ? "day" : "days"}</strong></div>}
               </div>
-              <div className="detail-terms">
-                <div>
-                  <small>What you receive</small>
-                  <p>{selectedListing.deliverables || selectedListing.format}</p>
-                </div>
-                <div>
-                  <small>Cancellation</small>
-                  <p>
-                    {selectedListing.cancellation_policy ||
-                      "Agree on cancellation terms before accepting the campaign."}
-                  </p>
-                </div>
-              </div>
-              <div className="detail-price">
-                <div>
-                  <small>{selectedListing.instant_booking_enabled ? "Package price" : "Starting at"}</small>
-                  <strong>{formatCents(selectedListing.price_cents)}</strong>
-                  <span> / {selectedListing.instant_booking_enabled ? `${selectedListing.booking_duration_days ?? 1}-day package` : selectedListing.price_unit}</span>
-                </div>
-              </div>
+              <details className="composer-options"><summary>Details and booking terms</summary>
+                {selectedListing.description && selectedListing.description !== selectedListing.deliverables && <p>{selectedListing.description}</p>}
+                {selectedListing.space_size && <p><strong>Size: </strong>{selectedListing.space_size}</p>}
+                {!!selectedListing.surface_types?.length && <p><strong>Allowed formats: </strong>{selectedListing.surface_types.join(", ")}</p>}
+                {selectedListing.install_by && <p><strong>Installation: </strong>{INSTALL_CHIPS.find((item) => item.value === selectedListing.install_by)?.label || selectedListing.install_by}</p>}
+                {selectedListing.sponsor_tier && <p><strong>Tier: </strong>{selectedListing.sponsor_tier}</p>}
+                {selectedListing.sponsor_slots != null && <p><strong>Available spots: </strong>{selectedListing.sponsor_slots}</p>}
+                {isBrief(selectedListing) && !!selectedListing.target_platforms?.length && <p><strong>Target platforms: </strong>{selectedListing.target_platforms.join(", ")}</p>}
+                {isBrief(selectedListing) && selectedListing.brief_scope && <p><strong>Placements: </strong>{selectedListing.brief_scope === "both" ? "Physical and online" : selectedListing.brief_scope === "physical" ? "Physical" : "Online"}</p>}
+                {selectedListing.demographics && <p><strong>Audience: </strong>{selectedListing.demographics}</p>}
+                {selectedListing.availability_notes && <p>{selectedListing.availability_notes}</p>}
+                {(selectedListing.available_from || selectedListing.available_to) && <p>Available {displayDate(selectedListing.available_from)} – {displayDate(selectedListing.available_to)}</p>}
+                {selectedListing.minimum_booking && <p>{selectedListing.minimum_booking}</p>}
+                <p><strong>Cancellation: </strong>{selectedListing.cancellation_policy || "Agree with the owner before payment."}</p>
+              </details>
               {isListingRequestable(selectedListing) && !isBrief(selectedListing) && selectedListing.instant_booking_enabled && selectedListing.price_cents > 0 && (
                 <InstantBookingPanel key={selectedListing.id} listing={selectedListing} busy={busy}
-                  onCheckout={(date) => startInstantCheckout(selectedListing, date)} />
+                  onCheckout={(start, end) => startInstantCheckout(selectedListing, start, end)} />
               )}
-              {isListingRequestable(selectedListing) && !isBrief(selectedListing) && (
-                <div
-                  className="detail-action-options"
-                  role="group"
-                  aria-label="Choose how to continue"
-                >
-                  <div
-                    className="detail-action-option is-full"
-                  >
-                    <div className="detail-action-option-heading">
-                      <small>FLEXIBLE TERMS</small>
-                      <strong>Make an offer</strong>
-                    </div>
-                    <p>
-                      Suggest different timing, scope, or budget — or ask the owner a question.
-                    </p>
-                    <button
-                      className="button button-dark"
-                      onClick={() => openCampaignFlow(selectedListing, "offer")}
-                    >
-                      Make an offer
-                    </button>
-                  </div>
-                </div>
-              )}
+              {isListingRequestable(selectedListing) && !isBrief(selectedListing) && <div className="detail-primary-actions">
+                {!selectedListing.instant_booking_enabled && isFixedPriceListing(selectedListing) && <button className="button button-coral" onClick={() => openCampaignFlow(selectedListing,"buy_now")}>Request a booking</button>}
+                <button className={`button ${!selectedListing.instant_booking_enabled && !isFixedPriceListing(selectedListing) ? "button-coral" : "button-ghost"}`} onClick={() => openCampaignFlow(selectedListing,"offer")}>Make a custom offer</button>
+              </div>}
               <div className="detail-primary-actions">
                 {(!isListingRequestable(selectedListing) || isBrief(selectedListing)) && (
                   <button
@@ -16673,7 +16014,7 @@ export default function MarketplaceApp({
                   </button>
                 )}
                 <button
-                  className="button button-dark"
+                  className="button button-ghost"
                   onClick={() => {
                     const listing = selectedListing;
                     closeListing();
@@ -16753,162 +16094,23 @@ export default function MarketplaceApp({
           }}
           wide
         >
-          <div className="modal-heading">
-            <p className="eyebrow">
-              {campaignRequestMode === "buy_now" ? "Book as listed" : "Make an offer"}
-            </p>
-            <h2>
-              {campaignRequestMode === "buy_now"
-                ? `Book ${campaignListing.title}`
-                : `Make an offer on ${campaignListing.title}`}
-            </h2>
-            <p>
-              {campaignRequestMode === "buy_now"
-                ? "Accept the owner’s published terms, choose your dates, and share the campaign context. The owner confirms availability before payment."
-                : isBrief(campaignListing)
-                  ? "Tell the business how you can meet this brief. Suggest your scope, timing, and terms, then keep the conversation going in Messages."
-                  : "Suggest different timing, scope, deliverables, or budget. Ask questions before you agree. Nothing is charged at this stage."}
-            </p>
-          </div>
-          {campaignListing.owner.is_demo && (
-            <div className="demo-notice">
-              <strong>This is a demo listing.</strong>
-              <p>Your {campaignRequestMode === "buy_now" ? "booking" : "offer"} will be saved as a sample and will not contact a real person.</p>
-            </div>
-          )}
-          {campaignRequestMode === "buy_now" && (
-            <div className="locked-listing-terms" aria-label="Terms you are accepting">
-              <div>
-                <small>Published price</small>
-                <strong>{formatCents(campaignListing.price_cents)}</strong>
-                <span>/ {campaignListing.price_unit}</span>
-              </div>
-              <div>
-                <small>What you receive</small>
-                <strong>
-                  {campaignListing.deliverables || campaignListing.format}
-                </strong>
-              </div>
-              <div>
-                <small>Booking rules</small>
-                <strong>{campaignListing.minimum_booking || "One placement"}</strong>
-                <span>
-                  {campaignListing.lead_time_days
-                    ? `${campaignListing.lead_time_days}-day lead time`
-                    : "Flexible lead time"}
-                  {campaignListing.available_from || campaignListing.available_to
-                    ? ` · ${displayDate(campaignListing.available_from)}–${displayDate(campaignListing.available_to)}`
-                    : " · Open dates"}
-                </span>
-              </div>
-              <div>
-                <small>Cancellation</small>
-                <strong>
-                  {campaignListing.cancellation_policy ||
-                    "Agree with the owner before accepting the campaign."}
-                </strong>
-              </div>
-              <p>
-                These terms are fixed for this booking. To suggest changes, go back and choose Make an offer.
-              </p>
-            </div>
-          )}
-          <form className="field-grid campaign-form" onSubmit={submitCampaignRequest}>
-            <label className="field-wide">
-              Campaign name
-              <input
-                name="campaign_name"
-                required
-                minLength={2}
-                placeholder="Fall neighborhood launch"
-              />
-            </label>
-            <label>
-              {campaignRequestMode === "buy_now" ? "Start date" : "Offer budget"}
-              {campaignRequestMode === "buy_now" ? (
-                <input
-                  name="start_date"
-                  type="date"
-                  min={listingBookingMinDate(campaignListing)}
-                  max={campaignListing.available_to ?? undefined}
-                  required
-                />
-              ) : (
-                <input
-                  name="budget"
-                  type="number"
-                  max="2000000000"
-                  min="0"
-                  required
-                  defaultValue={centsToInputDollars(campaignListing.price_cents)}
-                />
-              )}
-            </label>
-            <label>
-              {campaignRequestMode === "buy_now" ? "End date" : "Published rate"}
-              {campaignRequestMode === "buy_now" ? (
-                <input
-                  name="end_date"
-                  type="date"
-                  min={listingBookingMinDate(campaignListing)}
-                  max={campaignListing.available_to ?? undefined}
-                  required
-                />
-              ) : (
-                <input
-                  value={`${formatCents(campaignListing.price_cents)} / ${campaignListing.price_unit}`}
-                  readOnly
-                />
-              )}
-            </label>
-            {campaignRequestMode !== "buy_now" && (
-              <>
-                <label>
-                  Start date
-                  <input name="start_date" type="date" required />
-                </label>
-                <label>
-                  End date
-                  <input name="end_date" type="date" required />
-                </label>
-              </>
-            )}
-            <label className="field-wide">
-              {campaignRequestMode === "buy_now" ? "Campaign context" : "What are you trying to achieve?"}
-              <textarea
-                name="goals"
-                required
-                minLength={10}
-                placeholder={
-                  campaignRequestMode === "buy_now"
-                    ? "Share what you’re promoting and who it is for."
-                    : "What should this campaign help your business achieve?"
-                }
-              />
-            </label>
-            {campaignRequestMode !== "buy_now" && (
-              <label className="field-wide">
-                {isBrief(campaignListing) ? "What you’ll deliver" : "What you’d like delivered"}
-                <textarea
-                  name="requested_deliverables"
-                  required
-                  placeholder={campaignListing.deliverables || campaignListing.format}
-                />
-              </label>
-            )}
-            <label className="field-wide">
-              {campaignRequestMode === "buy_now"
-                ? "Notes for the owner (optional)"
-                : "Questions or extra details (optional)"}
-              <textarea
-                name="notes"
-                placeholder={
-                  campaignRequestMode === "buy_now"
-                    ? "Share useful context without changing the listed terms."
-                    : "Creative requirements, audience details, links, or questions"
-                }
-              />
-            </label>
+          <div className="modal-heading"><h2>{campaignRequestMode === "buy_now" ? "Request a booking" : "Make a custom offer"}</h2><p>{campaignListing.title}</p></div>
+          {campaignRequestMode === "buy_now" && <div className="booking-terms-summary"><strong>What’s included</strong><p>{campaignListing.deliverables || campaignListing.format}</p>
+            <details><summary>Booking and cancellation terms</summary><p>{campaignListing.cancellation_policy || "Agree cancellation terms with the owner before payment."}</p><p>{campaignListing.minimum_booking}</p></details>
+          </div>}
+          <form className="field-grid campaign-form" onSubmit={submitCampaignRequest} onInvalidCapture={(event) => revealInvalidField(event.target)}>
+            <BookingFields listing={campaignListing} quoteRequired={campaignRequestMode === "buy_now"} />
+            {campaignRequestMode !== "buy_now" && <>
+              <label className="field-wide">Offer total ($)<input name="budget" type="number" min="0" step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
+              <label className="field-wide">{isBrief(campaignListing) ? "What you’ll deliver" : "What you need"}<textarea name="requested_deliverables" required minLength={2} maxLength={1000} defaultValue={campaignListing.deliverables || campaignListing.format} /></label>
+            </>}
+            <details className="composer-options field-wide"><summary>Campaign details (optional)</summary><div className="field-grid">
+              <label className="field-wide">Campaign name<input name="campaign_name" maxLength={120} defaultValue={campaignListing.title} /></label>
+              <label className="field-wide">What are you promoting?<textarea name="goals" maxLength={1500} /></label>
+              <label className="field-wide">Notes or questions<textarea name="notes" maxLength={2000} /></label>
+            </div></details>
+            {campaignFeedback && <p className="field-error field-wide" role="alert">{campaignFeedback}</p>}
+            <small className="field-wide">{campaignRequestMode === "buy_now" ? "The owner confirms before you pay." : "Nothing is charged when you send an offer."}</small>
             <div className="form-submit field-wide">
               <button
                 type="button"

@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 export const SITE_URL = "https://sidespace.ad";
 
 /**
- * The image every link preview uses.
+ * The default image for link previews that do not point at a listing.
  *
  * Next does not deep-merge `openGraph`: a page that declares its own
  * `openGraph` block replaces the layout's entirely, `images` included. Every
@@ -33,3 +33,98 @@ export const OG_IMAGE: NonNullable<
     alt: "SideSpace - local attention, now bookable",
   },
 ];
+
+export type ListingSocialPreview = {
+  id: string;
+  title: string;
+  channel?: string | null;
+  format?: string | null;
+  description?: string | null;
+  imageUrl?: string | null;
+  imageUrls?: readonly string[] | null;
+  locationArea?: string | null;
+  ownerName?: string | null;
+  ownerCity?: string | null;
+};
+
+function metadataText(value: unknown) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+function truncateMetadata(value: string, maxLength: number) {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function metadataImageUrl(value: unknown) {
+  const candidate = metadataText(value);
+  if (!candidate) return null;
+
+  try {
+    const url = new URL(candidate, SITE_URL);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Build share metadata for the listing URL used by marketplace cards. */
+export function createListingSocialMetadata(
+  listing: ListingSocialPreview,
+): Metadata {
+  const listingTitle =
+    truncateMetadata(metadataText(listing.title), 100) || "SideSpace listing";
+  const ownerName = truncateMetadata(metadataText(listing.ownerName), 60);
+  const socialTitle = truncateMetadata(
+    ownerName ? `${listingTitle} by ${ownerName}` : listingTitle,
+    140,
+  );
+  const location = metadataText(listing.locationArea || listing.ownerCity);
+  const context = [
+    metadataText(listing.channel),
+    metadataText(listing.format),
+    location,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const description = truncateMetadata(
+    [metadataText(listing.description), context].filter(Boolean).join(" · ") ||
+      "Local advertising inventory listed on SideSpace.",
+    220,
+  );
+  const listingUrl = new URL(
+    `/marketplace?listing=${encodeURIComponent(listing.id)}`,
+    SITE_URL,
+  ).toString();
+  const imageUrl = [
+    listing.imageUrl,
+    ...(listing.imageUrls ?? []),
+  ]
+    .map(metadataImageUrl)
+    .find((value): value is string => Boolean(value));
+  const images = imageUrl
+    ? [{ url: imageUrl, alt: `${listingTitle} on SideSpace` }]
+    : OG_IMAGE;
+
+  return {
+    alternates: { canonical: listingUrl },
+    title: listingTitle,
+    description,
+    openGraph: {
+      type: "website",
+      siteName: "SideSpace",
+      url: listingUrl,
+      title: socialTitle,
+      description,
+      images,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: socialTitle,
+      description,
+      images,
+    },
+  };
+}

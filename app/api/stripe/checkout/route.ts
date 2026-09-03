@@ -9,6 +9,7 @@ import {
 import {
   applyAdCreditToCheckout,
   maximumAdCreditCents,
+  MINIMUM_STRIPE_CHARGE_CENTS,
 } from "@/lib/payments/ad-credits";
 import { buildCheckoutSessionParams, getAppOrigin } from "@/lib/payments/checkout";
 import {
@@ -75,6 +76,7 @@ export async function POST(request: Request) {
       campaignRequestId?: unknown;
       listingId?: unknown;
       bookingDate?: unknown;
+      bookingEndDate?: unknown;
       listingUpdatedAt?: unknown;
     } | null;
     let campaignRequestId = body?.listingId ? "" : requireUuid(
@@ -89,7 +91,7 @@ export async function POST(request: Request) {
     });
     if (body?.listingId) {
       const listingId = requireUuid(body.listingId, "Choose a listing to book.");
-      if (!validCalendarDay(body.bookingDate) || typeof body.listingUpdatedAt !== "string" ||
+      if (!validCalendarDay(body.bookingDate) || (body.bookingEndDate !== undefined && !validCalendarDay(body.bookingEndDate)) || typeof body.listingUpdatedAt !== "string" ||
         !Number.isFinite(Date.parse(body.listingUpdatedAt))) {
         throw new ApiError("Choose an available date and refresh the listing before checkout.", 400);
       }
@@ -99,6 +101,7 @@ export async function POST(request: Request) {
         booking_date: body.bookingDate,
         expected_updated_at: body.listingUpdatedAt,
         payment_livemode: stripeKeyMode() === "live",
+        ...(body.bookingEndDate !== undefined ? { booking_end_date: body.bookingEndDate } : {}),
       });
       if (reserved.error) throw new ApiError(reserved.error.message, 409);
       campaignRequestId = requireUuid(reserved.data, "Could not reserve this date.");
@@ -402,6 +405,9 @@ export async function POST(request: Request) {
       buyerFeeCents: snapshot.buyerFeeCents,
       availableCents: adCreditCents,
     });
+    if (charged.chargedTotalCents > 0 && charged.chargedTotalCents < MINIMUM_STRIPE_CHARGE_CENTS) {
+      throw new ApiError("This booking is below the card payment minimum. Choose a longer duration or use enough ad credit to cover it.", 400);
+    }
     transaction = {
       ...transaction,
       ad_credit_cents: adCreditCents,

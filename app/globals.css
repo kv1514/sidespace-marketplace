@@ -3707,6 +3707,406 @@ h2 em {
   }
 }
 
+/* ===== Listing photo picker =====
+   The file input is still present for FormData and keyboard access, but the
+   member sees the gallery they are actually building: previews, an explicit
+   cover, and a small touch-friendly reorder fallback alongside drag-and-drop. */
+.listing-photo-picker {
+  background: color-mix(in srgb, var(--paper-2) 42%, var(--white));
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 18px;
+}
+
+.listing-photo-picker-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.listing-photo-picker-label {
+  color: var(--ink);
+  display: inline-block;
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  text-transform: none;
+}
+
+.listing-photo-picker-heading p {
+  color: var(--ink-soft);
+  font-family: var(--display);
+  font-size: 12.5px;
+  line-height: 1.4;
+  margin: 6px 0 0;
+  max-width: 540px;
+}
+
+.listing-photo-count {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
+
+.listing-photo-dropzone {
+  background: color-mix(in srgb, var(--white) 70%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--ink) 24%, transparent);
+  border-radius: 14px;
+  min-height: 180px;
+  padding: 12px;
+  transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.listing-photo-picker.is-drop-active .listing-photo-dropzone {
+  background: color-mix(in srgb, var(--lime) 14%, var(--white));
+  border-color: var(--coral);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 13%, transparent);
+}
+
+.listing-photo-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.listing-photo-card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  transition: border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease, transform 180ms ease;
+}
+
+.listing-photo-card[draggable="true"] {
+  cursor: grab;
+}
+
+.listing-photo-card[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.listing-photo-card:hover {
+  border-color: color-mix(in srgb, var(--coral) 48%, var(--line));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--ink) 12%, transparent);
+  transform: translateY(-2px);
+}
+
+.listing-photo-card.is-dragging {
+  opacity: 0.55;
+  transform: rotate(1deg) scale(0.98);
+}
+
+.listing-photo-card.is-drag-over {
+  border: 2px solid var(--coral);
+}
+
+.listing-photo-preview {
+  aspect-ratio: 1;
+  background: var(--paper-2);
+  overflow: hidden;
+  position: relative;
+}
+
+.listing-photo-preview img {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.listing-photo-order {
+  align-items: center;
+  background: color-mix(in srgb, var(--white) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+  border-radius: 50%;
+  display: flex;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  height: 24px;
+  justify-content: center;
+  left: 7px;
+  position: absolute;
+  top: 7px;
+  width: 24px;
+}
+
+.listing-photo-cover {
+  background: var(--ink);
+  border-radius: 999px;
+  bottom: 7px;
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 9px;
+  left: 7px;
+  letter-spacing: 0.08em;
+  padding: 4px 7px;
+  position: absolute;
+  text-transform: uppercase;
+}
+
+.listing-photo-remove {
+  align-items: center;
+  background: color-mix(in srgb, var(--ink) 82%, transparent);
+  border: 0;
+  border-radius: 50%;
+  color: var(--white);
+  display: flex;
+  font-size: 17px;
+  height: 28px;
+  justify-content: center;
+  line-height: 1;
+  opacity: 0;
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  transition: background 150ms ease, opacity 150ms ease, transform 150ms ease;
+  width: 28px;
+}
+
+.listing-photo-card:hover .listing-photo-remove,
+.listing-photo-remove:focus-visible {
+  opacity: 1;
+}
+
+.listing-photo-remove:hover {
+  background: var(--coral);
+  transform: scale(1.06);
+}
+
+.listing-photo-remove:focus-visible,
+.listing-photo-move-buttons button:focus-visible,
+.listing-photo-add:focus-visible,
+.listing-photo-empty .button:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 3px;
+}
+
+.listing-photo-meta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px 0;
+}
+
+.listing-photo-name {
+  display: block;
+  font-size: 11px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listing-photo-size {
+  color: var(--ink-mute);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.listing-photo-actions {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  padding: 8px 8px 9px 10px;
+}
+
+.listing-photo-actions > span {
+  color: var(--ink-mute);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.listing-photo-move-buttons {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.listing-photo-move-buttons button {
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: flex;
+  font-size: 15px;
+  height: 26px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+  width: 26px;
+}
+
+.listing-photo-move-buttons button:hover:not(:disabled) {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.listing-photo-move-buttons button:disabled {
+  cursor: not-allowed;
+  opacity: 0.28;
+}
+
+.listing-photo-add {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 7px;
+  justify-content: center;
+  margin: 12px auto 0;
+  min-height: 38px;
+  padding: 0 14px;
+  transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.listing-photo-add:hover {
+  background: var(--white);
+  border-color: var(--coral);
+  transform: translateY(-1px);
+}
+
+.listing-photo-add span {
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.listing-photo-empty {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  min-height: 154px;
+  text-align: center;
+}
+
+.listing-photo-empty-mark {
+  align-items: center;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--coral);
+  display: flex;
+  font-size: 30px;
+  font-weight: 300;
+  height: 56px;
+  justify-content: center;
+  line-height: 1;
+  margin-bottom: 3px;
+  width: 56px;
+}
+
+.listing-photo-empty strong {
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.listing-photo-empty > span:not(.listing-photo-empty-mark) {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.listing-photo-empty .button {
+  margin-top: 6px;
+}
+
+.listing-photo-input,
+.field-grid input.listing-photo-input {
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  margin: -1px;
+  min-height: 1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px !important;
+}
+
+.listing-photo-picker-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  justify-content: space-between;
+  margin-top: 9px;
+}
+
+.listing-photo-picker-footer small {
+  color: var(--ink-mute);
+  font-family: var(--display);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.listing-photo-picker-footer .listing-photo-message {
+  color: var(--coral);
+  font-weight: 600;
+}
+
+@media (hover: none) {
+  .listing-photo-remove {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 620px) {
+  .listing-photo-picker {
+    padding: 14px;
+  }
+
+  .listing-photo-picker-heading {
+    gap: 10px;
+  }
+
+  .listing-photo-picker-heading p {
+    font-size: 12px;
+  }
+
+  .listing-photo-dropzone {
+    padding: 9px;
+  }
+
+  .listing-photo-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .listing-photo-actions > span {
+    font-size: 8px;
+  }
+}
+
 /* ===== Antigravity layer (white-first, hairlines, pill buttons) ===== */
 
 body {
@@ -10543,6 +10943,42 @@ html.reveal-ready [data-reveal].is-visible {
   max-width: 100%;
 }
 
+/* Creation and booking: concise sections, optional detail, one primary action. */
+.listing-composer { gap: 26px; }
+.composer-section { min-width: 0; padding: 0 0 24px; border-bottom: 1px solid var(--line, #dedbd5); }
+.composer-section h3 { margin: 0 0 18px; font-size: 1.15rem; letter-spacing: -.025em; }
+.composer-section .field-grid { gap: 16px; }
+.composer-section textarea { min-height: 90px; resize: vertical; }
+.composer-options { border-top: 1px solid var(--line, #dedbd5); padding-top: 14px; min-width: 0; }
+.composer-options summary, .booking-terms-summary summary { cursor: pointer; font-size: .88rem; font-weight: 600; padding: 4px 0; }
+.composer-options[open] > .field-grid { margin-top: 16px; }
+.composer-toggle { display: flex !important; align-items: center; gap: 10px; }
+.composer-toggle input { width: 18px !important; height: 18px; min-height: 0; accent-color: var(--coral, #ef7157); }
+.composer-kind { display: flex; flex-wrap: wrap; gap: 8px; }
+.composer-kind button { padding: 9px 14px; border: 1px solid var(--line, #dedbd5); border-radius: 8px; background: transparent; }
+.composer-kind button[aria-pressed="true"] { background: #272822; color: #fff; border-color: #272822; }
+.listing-composer .ai-fill { margin-top: 16px; }
+.listing-composer .ai-fill > p { margin: 0 0 12px; font-size: .88rem; }
+.listing-composer .form-submit { position: sticky; bottom: -1px; background: var(--paper, #fffdf7); padding: 16px 0; z-index: 2; }
+.booking-fields { min-width: 0; }
+.booking-price-summary { margin-top: 16px; padding: 18px; background: #f4f3ee; border-radius: 12px; }
+.booking-price-summary > strong { font-size: .92rem; }
+.booking-price-summary dl { display: grid; gap: 8px; margin: 16px 0 10px; }
+.booking-price-summary dl > div { display: flex; justify-content: space-between; gap: 16px; }
+.booking-price-summary dd { margin: 0; font-variant-numeric: tabular-nums; }
+.booking-price-summary dl > div:last-child { padding-top: 10px; border-top: 1px solid #d9d8d0; font-weight: 700; }
+.booking-terms-summary { margin-bottom: 20px; }
+.booking-terms-summary p { white-space: pre-line; }
+.instant-booking-panel > .button { width: 100%; margin: 16px 0 8px; }
+.instant-booking-panel > small { display: block; }
+.field-error { color: #a13225; padding: 10px 0; }
+.composer-options summary:focus-visible, .composer-kind button:focus-visible { outline: 2px solid #c04a32; outline-offset: 4px; }
+@media (max-width: 600px) {
+  .listing-composer .field-grid, .booking-fields .field-grid { grid-template-columns: minmax(0, 1fr); }
+  .listing-composer .form-submit { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .composer-kind button { flex: 1 1 auto; }
+  .booking-price-summary { padding: 14px; }
+}
 /* Walkthroughs: the owner's video or 360 file, in the editor and on the listing. */
 .tour-pick,
 .tour-current {
