@@ -741,7 +741,8 @@ h2 em {
   width: 100%;
 }
 
-.listing-image img {
+.listing-image img,
+.listing-image .listing-cover-blank {
   height: 100%;
   object-fit: cover;
   transition: transform 500ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -2182,7 +2183,8 @@ h2 em {
   padding: 10px;
 }
 
-.my-listing-card > img {
+.my-listing-card > img,
+.my-listing-card > .listing-cover-blank {
   border-radius: 11px;
   height: 100%;
   min-height: 128px;
@@ -2586,6 +2588,12 @@ h2 em {
 
 .detail-media {
   min-width: 0;
+}
+
+/* A brief with no photo, no Street View and no walkthrough has nothing in the
+   media column, so the column goes rather than sitting there empty at 0.85fr. */
+.detail-layout.has-no-media {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .detail-layout figure {
@@ -4779,7 +4787,8 @@ html {
   aspect-ratio: auto;
 }
 
-.my-listing-card > img {
+.my-listing-card > img,
+.my-listing-card > .listing-cover-blank {
   aspect-ratio: 4 / 3;
   height: auto;
   min-height: 0;
@@ -10188,7 +10197,8 @@ html.reveal-ready [data-reveal].is-visible {
   padding: 9px;
 }
 
-.dashboard-listing-row > img {
+.dashboard-listing-row > img,
+.dashboard-listing-row > .listing-cover-blank {
   aspect-ratio: 1;
   border-radius: 9px;
   object-fit: cover;
@@ -10343,7 +10353,8 @@ html.reveal-ready [data-reveal].is-visible {
   overflow: hidden;
 }
 
-.dashboard-recommendation-card > img {
+.dashboard-recommendation-card > img,
+.dashboard-recommendation-card > .listing-cover-blank {
   aspect-ratio: 1.45 / 1;
   object-fit: cover;
   width: 100%;
@@ -10590,7 +10601,8 @@ html.reveal-ready [data-reveal].is-visible {
     grid-template-columns: 44px minmax(0, 1fr);
   }
 
-  .dashboard-listing-row > img {
+  .dashboard-listing-row > img,
+  .dashboard-listing-row > .listing-cover-blank {
     width: 44px;
   }
 
@@ -11299,7 +11311,8 @@ html.reveal-ready [data-reveal].is-visible {
   border-color: var(--ink);
 }
 
-.seller-listing > img {
+.seller-listing > img,
+.seller-listing > .listing-cover-blank {
   aspect-ratio: 16 / 10;
   display: block;
   object-fit: cover;
@@ -11384,4 +11397,32 @@ label:has(.city-autocomplete-list),
    every line wrapped two or three words in. */
 .onboarding-preview:not(.has-multiple) .preview-card-grid {
   grid-template-columns: minmax(0, 340px);
+}
+
+
+/* ------------------------------------------------------------------ */
+/* A listing with no photo                                             */
+/* ------------------------------------------------------------------ */
+
+/* A business brief is a wanted ad, and most are written before there is
+   anything to photograph. Publishing used to seed those with a stock cover, so
+   every campaign arrived carrying a picture of somebody else's market stall.
+   This is what stands in its place: a quiet hatched panel, deliberately
+   wordless, because the same element is 44px on a dashboard row and full width
+   on a card, and any label would be clipped at one of those sizes. */
+.listing-cover-blank {
+  background-color: var(--paper-2);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 9px,
+    color-mix(in srgb, var(--line) 45%, transparent) 9px 10px
+  );
+  display: block;
+}
+
+/* On a marketplace card the photo is 250px tall. Standing an empty panel that
+   high leaves a hole in the grid, so a photo-less card keeps just enough room
+   for the "Wanted" chip sitting on it. */
+.listing-image.is-blank {
+  height: 132px;
 }

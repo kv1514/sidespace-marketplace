@@ -28,11 +28,25 @@ type Row = Record<string, unknown>;
 
 const FALLBACK_IMAGE = "/photos/market-creator.jpg";
 
+/**
+ * A listing's cover, or "" when it has none.
+ *
+ * A business brief is a wanted ad, written before there is anything to
+ * photograph, and publishing used to seed those with FALLBACK_IMAGE - so every
+ * campaign showed up here as a picture of somebody else's market stall.
+ * Briefs no longer get it, and the ones published before that stopped are read
+ * as having no photo rather than being rewritten. .cardMedia keeps its ratio
+ * and surface tone with no <img> inside it, so those cards stay cards.
+ */
 function listingImage(listing: Row) {
   const gallery = listing.image_urls as string[] | null | undefined;
   const first = gallery?.find((url) => typeof url === "string" && url);
   const single = typeof listing.image_url === "string" ? listing.image_url : "";
-  return first || single || FALLBACK_IMAGE;
+  const cover = first || single;
+  if (listing.channel === "Business brief") {
+    return cover === FALLBACK_IMAGE ? "" : cover;
+  }
+  return cover || FALLBACK_IMAGE;
 }
 
 function initials(name: string) {
@@ -356,12 +370,14 @@ export default async function PreviewPage() {
                       configured as remote patterns for no real gain here.
                       Decorative-ish, but the title is the caption below it,
                       so alt stays empty rather than repeating it. */}
-                  <img
-                    src={listingImage(listing)}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                  />
+                  {listingImage(listing) && (
+                    <img
+                      src={listingImage(listing)}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  )}
                 </div>
                 <div className={styles.cardBody}>
                   <div className={styles.cardTop}>

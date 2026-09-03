@@ -4322,6 +4322,62 @@ function listingImages(listing: Listing) {
     : [listing.image_url].filter(Boolean);
 }
 
+/**
+ * The photos a listing actually shows.
+ *
+ * A business brief is a wanted ad - "here is the campaign, who has the space"
+ * - and businesses write them without a photo of anything, because there is
+ * nothing yet to photograph. Publishing seeded those with the stock cover, so
+ * every brief arrived carrying a picture of somebody else's market stall and
+ * presented it as the campaign. A brief now shows a photo only when the
+ * business uploaded one.
+ *
+ * The seed already sitting in the column on older briefs is read as no photo
+ * here rather than migrated away: no row has to be rewritten, and a business
+ * that uploads later simply replaces it. Only briefs are filtered - the
+ * default is still a sensible cover for space that exists and was listed
+ * without a picture of it.
+ */
+function listingPhotos(listing: Listing) {
+  const images = listingImages(listing);
+  return isBrief(listing)
+    ? images.filter((url) => url !== DEFAULT_LISTING_IMAGE)
+    : images;
+}
+
+/** A listing's cover photo, or "" when a brief has none of its own. */
+function listingCover(listing: Listing) {
+  const photos = listingPhotos(listing);
+  if (photos[0]) return photos[0];
+  return isBrief(listing) ? "" : DEFAULT_LISTING_IMAGE;
+}
+
+/**
+ * A listing's cover, or the quiet panel that stands in for one.
+ *
+ * Not an <img> with an empty src: a browser treats that as a broken image and
+ * draws the torn-page icon, which reads as a fault rather than as a brief that
+ * simply has no photo. The panel carries no words - it sits at 52px on a
+ * dashboard row and at full width on a card, and any label would be clipped at
+ * one of those sizes.
+ */
+function ListingCover({
+  listing,
+  alt = "",
+}: {
+  listing: Listing;
+  alt?: string;
+}) {
+  const cover = listingCover(listing);
+  if (!cover) {
+    return <span className="listing-cover-blank" aria-hidden="true" />;
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={cover} alt={alt} loading="lazy" decoding="async" />
+  );
+}
+
 /** Newest messages fetched per thread. See loadMessages for why this is bounded. */
 const MESSAGE_PAGE_SIZE = 100;
 
@@ -5177,6 +5233,17 @@ export default function MarketplaceApp({
   const igSyncedUrlRef = useRef("");
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
+  // The photos the open listing shows, and whether its media column holds
+  // anything at all. A brief with no photo, no Street View and no walkthrough
+  // has an empty left column, and the layout closes it up rather than leaving
+  // a 520px hole beside the copy.
+  const detailPhotos = selectedListing ? listingPhotos(selectedListing) : [];
+  const detailHasMedia = Boolean(
+    selectedListing &&
+      (detailPhotos.length ||
+        selectedListing.street_view_captured ||
+        selectedListing.tour_url),
+  );
   const [inboxOpen, setInboxOpen] = useState(false);
   // Distinguishes still-fetching and failed from genuinely empty, so the
   // drawer stops asserting a member has no conversations before it knows,
@@ -7762,11 +7829,17 @@ export default function MarketplaceApp({
           // listings that share a URL with a deleted gallery photo, re-pointing
           // them at the default cover; double-writing would make that the
           // guaranteed fate of every listing this flow creates.
+          //
+          // A business publishes a brief - a wanted ad, usually written before
+          // there is anything to photograph - and the chain ends there for
+          // them. Their own logo still stands in, because a brief under the
+          // business's mark reads as theirs; the stock cover never did, and
+          // gave every campaign a photo of somebody else's market stall.
           const cover =
             listingUploads[0] ||
             payload.avatar_url ||
             payload.gallery_urls[0] ||
-            DEFAULT_LISTING_IMAGE;
+            (role === "business" ? "" : DEFAULT_LISTING_IMAGE);
           // Captured before the map: narrowing on the outer binding does not
           // survive into a closure, and this is the only reference inside one.
           const ownerId = savedProfile.id;
@@ -7782,7 +7855,11 @@ export default function MarketplaceApp({
                 } : {}),
                 owner_profile_id: ownerId,
                 image_url: cover,
-                image_urls: listingUploads.length ? listingUploads : [cover],
+                image_urls: listingUploads.length
+                  ? listingUploads
+                  : cover
+                    ? [cover]
+                    : [],
                 status: "active",
                 provenance_status: "owner_attested",
                 availability_confirmed_at: new Date().toISOString(),
@@ -8467,11 +8544,20 @@ export default function MarketplaceApp({
     setBusy(true);
     try {
       const remaining = listingImages(listing).filter((item) => item !== url);
+      // Taking the last photo off a brief can leave it with none, which is how
+      // most briefs are written anyway. Anything else is a listing of real
+      // space, where a stock cover beats an empty frame.
       const cover =
-        remaining[0] || profile.gallery_urls?.[0] || profile.avatar_url || DEFAULT_LISTING_IMAGE;
+        remaining[0] ||
+        profile.gallery_urls?.[0] ||
+        profile.avatar_url ||
+        (isBrief(listing) ? "" : DEFAULT_LISTING_IMAGE);
       const { data, error } = await supabase
         .from("listings")
-        .update({ image_url: cover, image_urls: remaining.length ? remaining : [cover] })
+        .update({
+          image_url: cover,
+          image_urls: remaining.length ? remaining : cover ? [cover] : [],
+        })
         .eq("id", listing.id)
         .eq("owner_profile_id", profile.id)
         .select(PUBLIC_LISTING_COLUMNS)
@@ -8557,11 +8643,14 @@ export default function MarketplaceApp({
     };
     const values = new FormData(listingForm);
     const selectedListingFiles = listingFilesRef.current.filter((file) => file.size > 0);
+    // A brief published with nothing keeps nothing rather than picking up the
+    // stock cover. (Only the insert path reads this; an edit leaves the image
+    // columns alone unless photos were chosen.)
     const fallbackImage =
       editingListing?.image_url ||
       profile.gallery_urls?.[0] ||
       profile.avatar_url ||
-      DEFAULT_LISTING_IMAGE;
+      (editingListingIsBrief ? "" : DEFAULT_LISTING_IMAGE);
     setListingFeedback("");
     setBusy(true);
     try {
@@ -8711,7 +8800,7 @@ export default function MarketplaceApp({
               ...fields,
               owner_profile_id: profile.id,
               image_url: fallbackImage,
-              image_urls: [fallbackImage],
+              image_urls: fallbackImage ? [fallbackImage] : [],
               status: "active",
             })
             .select(PUBLIC_LISTING_COLUMNS)
@@ -10409,12 +10498,9 @@ export default function MarketplaceApp({
           <div className="my-listings-grid">
             {ownListings.map((listing) => (
               <article className="my-listing-card" key={listing.id}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={listing.image_url || DEFAULT_LISTING_IMAGE}
+                <ListingCover
+                  listing={listing}
                   alt={`${listing.title} listing`}
-                  loading="lazy"
-                  decoding="async"
                 />
                 <div>
                   <span className={`listing-status status-${listing.status}`}>
@@ -11168,12 +11254,7 @@ export default function MarketplaceApp({
                 <div className="dashboard-listing-list">
                   {ownListings.slice(0, 4).map((listing) => (
                     <article className="dashboard-listing-row" key={listing.id}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={listing.image_url || DEFAULT_LISTING_IMAGE}
-                        alt=""
-                        loading="lazy"
-                      />
+                      <ListingCover listing={listing} />
                       <div className="dashboard-listing-copy">
                         <div>
                           <span
@@ -11388,15 +11469,7 @@ export default function MarketplaceApp({
                       className="dashboard-recommendation-card"
                       key={recommendation.listing.id}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={
-                          recommendation.listing.image_url ||
-                          DEFAULT_LISTING_IMAGE
-                        }
-                        alt=""
-                        loading="lazy"
-                      />
+                      <ListingCover listing={recommendation.listing} />
                       <div className="dashboard-recommendation-body">
                         <div className="dashboard-recommendation-meta">
                           <span>{recommendation.listing.channel}</span>
@@ -11827,19 +11900,20 @@ export default function MarketplaceApp({
           {visibleListings.map((listing) => (
             <article className="listing-card" key={listing.id}>
               <button
-                className="listing-image"
+                className={`listing-image${
+                  listingCover(listing) ? "" : " is-blank"
+                }`}
                 onClick={() => openListing(listing)}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={listing.image_url} alt="" loading="lazy" decoding="async" />
+                <ListingCover listing={listing} />
                 <span
                   className={`listing-channel ${isBrief(listing) ? "is-brief" : ""}`}
                 >
                   {isBrief(listing) ? "Wanted" : listing.channel}
                 </span>
-                {listingImages(listing).length > 1 && (
+                {listingPhotos(listing).length > 1 && (
                   <span className="photo-count">
-                    {listingImages(listing).length} photos
+                    {listingPhotos(listing).length} photos
                   </span>
                 )}
                 {listing.tour_kind && (
@@ -15887,19 +15961,22 @@ export default function MarketplaceApp({
 
       {selectedListing && (
         <Modal label={selectedListing.title} onClose={closeListing} wide>
-          <div className="detail-layout">
+          <div className={`detail-layout${detailHasMedia ? "" : " has-no-media"}`}>
+            {detailHasMedia && (
             <div className="detail-media">
+              {detailPhotos.length > 0 && (
               <figure>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={listingImages(selectedListing)[selectedPhotoIndex] || selectedListing.image_url}
+                  src={detailPhotos[selectedPhotoIndex] || detailPhotos[0]}
                   alt={`${selectedListing.title} photo ${selectedPhotoIndex + 1}`}
                 />
                 <span className="listing-channel">{selectedListing.channel}</span>
               </figure>
-              {listingImages(selectedListing).length > 1 && (
+              )}
+              {detailPhotos.length > 1 && (
                 <div className="detail-thumbnails" aria-label="Listing photos">
-                  {listingImages(selectedListing).map((url, index) => (
+                  {detailPhotos.map((url, index) => (
                     <button
                       key={`${url}-${index}`}
                       className={selectedPhotoIndex === index ? "active" : ""}
@@ -15962,6 +16039,7 @@ export default function MarketplaceApp({
               )}
               <ListingTour listing={selectedListing} />
             </div>
+            )}
             <div className="detail-copy">
               <div className="owner-line">
                 {/* The whole identity is the control, the way a marketplace
@@ -16256,13 +16334,7 @@ export default function MarketplaceApp({
                         listing.id === selectedListing?.id ? "true" : undefined
                       }
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={listing.image_url || DEFAULT_LISTING_IMAGE}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                      />
+                      <ListingCover listing={listing} />
                       <span className="seller-listing-body">
                         <span className="seller-listing-channel">
                           {listing.channel}
