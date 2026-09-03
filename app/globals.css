@@ -11348,3 +11348,40 @@ label:has(.city-autocomplete-list),
   position: relative;
   z-index: 30;
 }
+
+/* Every row inside the preview card has to be able to shrink.
+
+   The card clips its overflow, its body is a grid whose auto track cannot go
+   below its items' min-content, and the budget line is a non-wrapping flex row
+   ("Budget", the price, "/ campaign"). In a narrow column that row decided the
+   body's width, pushed it past the card, and overflow: hidden then sliced
+   every line at the same edge - the title lost its last word, the price lost
+   its unit, the description lost the end of each line. */
+.preview-card-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.preview-card-body > *,
+.preview-card-top > * {
+  min-width: 0;
+}
+
+.preview-card-top,
+.preview-card-foot {
+  flex-wrap: wrap;
+}
+
+/* A long unbroken run - a URL, a run-together name - breaks instead of
+   widening the card past its column. */
+.preview-card-body strong,
+.preview-card-blurb,
+.preview-card-top .preview-offer {
+  overflow-wrap: anywhere;
+}
+
+/* One draft does not need a three-column grid. A business brief previews a
+   single card, and at a third of a wide panel it was cramped enough that
+   every line wrapped two or three words in. */
+.onboarding-preview:not(.has-multiple) .preview-card-grid {
+  grid-template-columns: minmax(0, 340px);
+}
