@@ -9754,7 +9754,12 @@ html.reveal-ready [data-reveal].is-visible {
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    /* `none`, not `translateY(0) scale(1)`: with animation-fill-mode: both the
+       final frame sticks, and any transform other than none leaves the field a
+       stacking context for good. That trapped the city autocomplete's z-index
+       inside its own field, so the fields below it painted over the open list.
+       Visually identical - the animation still ends at the identity matrix. */
+    transform: none;
   }
 }
 
@@ -11327,4 +11332,19 @@ html.reveal-ready [data-reveal].is-visible {
 .seller-listing-current {
   color: var(--ink-soft);
   font-size: 11.5px;
+}
+
+/* A field whose city list is open has to outrank whatever follows it.
+
+   The list is absolutely positioned with a z-index, which is enough only when
+   nothing between it and the form makes its own stacking context. Onboarding
+   fields animate in, and an animating (or transformed) element is exactly
+   that, so the list's z-index counts only inside its own field and the next
+   field paints straight over the suggestions. Raising the field itself puts
+   the whole thing, list included, above its siblings. */
+label:has(.city-autocomplete-list),
+.progressive-field:has(.city-autocomplete-list),
+.location-input-row:has(.city-autocomplete-list) {
+  position: relative;
+  z-index: 30;
 }
