@@ -9763,12 +9763,14 @@ html.reveal-ready [data-reveal].is-visible {
 
   to {
     opacity: 1;
-    /* `none`, not `translateY(0) scale(1)`: with animation-fill-mode: both the
-       final frame sticks, and any transform other than none leaves the field a
-       stacking context for good. That trapped the city autocomplete's z-index
-       inside its own field, so the fields below it painted over the open list.
-       Visually identical - the animation still ends at the identity matrix. */
-    transform: none;
+    /* `transform: none` here would read as the fix for the city autocomplete
+       being painted over, and it is not: with animation-fill-mode: both the
+       filled value resolves to the interpolated matrix either way, so the
+       field stays a stacking context and the open list stays trapped in it.
+       Hit-testing an open list against the field below it confirms the two
+       are indistinguishable. The lift on the field itself is the fix - see
+       the rule on .progressive-field:has(.city-autocomplete-list). */
+    transform: translateY(0) scale(1);
   }
 }
 
