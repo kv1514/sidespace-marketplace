@@ -381,12 +381,12 @@ describe("checkout route authorization", () => {
 
     const response = await POST(instant ? new Request("http://localhost:3000/api/stripe/checkout", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ listingId: "listing-1", bookingDate: "2026-09-06", listingUpdatedAt: "2026-09-03T12:00:00Z", priceCents: 1, buyerProfileId: "attacker" }),
+      body: JSON.stringify({ listingId: "listing-1", bookingDate: "2026-09-06", bookingEndDate: "2026-09-15", listingUpdatedAt: "2026-09-03T12:00:00Z", priceCents: 1, buyerProfileId: "attacker" }),
     }) : checkoutRequest());
     if (instant) {
       expect(admin.rpc).toHaveBeenCalledWith("reserve_listing_booking", {
         target_listing_id: "listing-1", buyer_profile_id: "business-1", booking_date: "2026-09-06",
-        expected_updated_at: "2026-09-03T12:00:00Z", payment_livemode: livemode,
+        expected_updated_at: "2026-09-03T12:00:00Z", payment_livemode: livemode, booking_end_date: "2026-09-15",
       });
       expect(admin.rpc).toHaveBeenCalledWith("begin_listing_booking_checkout", { target_campaign_id: acceptedCampaign().id });
       expect(mocks.getStripe().checkout.sessions.create).toHaveBeenCalledWith(

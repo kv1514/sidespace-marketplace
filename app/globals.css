@@ -10542,3 +10542,40 @@ html.reveal-ready [data-reveal].is-visible {
 .detail-street-view img {
   max-width: 100%;
 }
+
+/* Creation and booking: concise sections, optional detail, one primary action. */
+.listing-composer { gap: 26px; }
+.composer-section { min-width: 0; padding: 0 0 24px; border-bottom: 1px solid var(--line, #dedbd5); }
+.composer-section h3 { margin: 0 0 18px; font-size: 1.15rem; letter-spacing: -.025em; }
+.composer-section .field-grid { gap: 16px; }
+.composer-section textarea { min-height: 90px; resize: vertical; }
+.composer-options { border-top: 1px solid var(--line, #dedbd5); padding-top: 14px; min-width: 0; }
+.composer-options summary, .booking-terms-summary summary { cursor: pointer; font-size: .88rem; font-weight: 600; padding: 4px 0; }
+.composer-options[open] > .field-grid { margin-top: 16px; }
+.composer-toggle { display: flex !important; align-items: center; gap: 10px; }
+.composer-toggle input { width: 18px !important; height: 18px; min-height: 0; accent-color: var(--coral, #ef7157); }
+.composer-kind { display: flex; flex-wrap: wrap; gap: 8px; }
+.composer-kind button { padding: 9px 14px; border: 1px solid var(--line, #dedbd5); border-radius: 8px; background: transparent; }
+.composer-kind button[aria-pressed="true"] { background: #272822; color: #fff; border-color: #272822; }
+.listing-composer .ai-fill { margin-top: 16px; }
+.listing-composer .ai-fill > p { margin: 0 0 12px; font-size: .88rem; }
+.listing-composer .form-submit { position: sticky; bottom: -1px; background: var(--paper, #fffdf7); padding: 16px 0; z-index: 2; }
+.booking-fields { min-width: 0; }
+.booking-price-summary { margin-top: 16px; padding: 18px; background: #f4f3ee; border-radius: 12px; }
+.booking-price-summary > strong { font-size: .92rem; }
+.booking-price-summary dl { display: grid; gap: 8px; margin: 16px 0 10px; }
+.booking-price-summary dl > div { display: flex; justify-content: space-between; gap: 16px; }
+.booking-price-summary dd { margin: 0; font-variant-numeric: tabular-nums; }
+.booking-price-summary dl > div:last-child { padding-top: 10px; border-top: 1px solid #d9d8d0; font-weight: 700; }
+.booking-terms-summary { margin-bottom: 20px; }
+.booking-terms-summary p { white-space: pre-line; }
+.instant-booking-panel > .button { width: 100%; margin: 16px 0 8px; }
+.instant-booking-panel > small { display: block; }
+.field-error { color: #a13225; padding: 10px 0; }
+.composer-options summary:focus-visible, .composer-kind button:focus-visible { outline: 2px solid #c04a32; outline-offset: 4px; }
+@media (max-width: 600px) {
+  .listing-composer .field-grid, .booking-fields .field-grid { grid-template-columns: minmax(0, 1fr); }
+  .listing-composer .form-submit { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .composer-kind button { flex: 1 1 auto; }
+  .booking-price-summary { padding: 14px; }
+}
