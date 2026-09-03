@@ -137,11 +137,15 @@ const INVENTORY_TYPES = [
  * happens to be newest.
  *
  * Keyed by tab label so it reads as an editorial choice rather than a rule.
- * Pins are resolved inside the same filtered set as everything else, so one
- * can never reintroduce a brief or a listing of the wrong kind, and the list
- * falls back to the rule the moment none of its entries are available -
- * deleted, deactivated, or simply pushed out of the rows the page fetches.
- * Emptying an entry restores the default.
+ * A pin is resolved against every bookable listing, NOT only the ones whose
+ * channel matches its tab: the listing we want to introduce a category with
+ * does not always carry the channel the matcher would guess, and a human
+ * naming a specific id has already made that call. Demand briefs stay
+ * excluded either way - the front page never presents someone asking for
+ * space as someone offering it. The list falls back to the channel rule the
+ * moment none of its entries are available - deleted, deactivated, or simply
+ * pushed out of the rows the page fetches. Emptying an entry restores the
+ * default.
  */
 const HERO_PINS: Record<string, string[]> = {
   // A placement on an actual street, described in plain words, which is what
@@ -161,11 +165,14 @@ const HERO_PINS: Record<string, string[]> = {
     "86b8e144-4952-45d8-8b5d-807932a4810c", // Aidan Chen - Instagram story for local businesses
   ],
   Vehicle: ["3aeba0db-3bf1-4acc-a51a-eba0f1417f64"],
-  // The only sponsorship listing on the marketplace today, and a good one:
-  // a real club, its own photo, and copy that names who it reaches. Pinned
-  // so the next sponsorship listing to be published does not silently take
-  // the front page from it.
-  Event: ["8af17b87-b816-4edf-901c-750bd4f03938"], // Troy Physics Club - whiteboard for sponsors
+  // A local occasion you can actually buy, and the one we want to lead with.
+  // Its channel is "Other", so only a pin can put it here - the tab's matcher
+  // would never find it. Troy Physics Club's sponsor whiteboard sits behind
+  // it as the conventional sponsorship example.
+  Event: [
+    "7f32be7a-1f79-4c37-9fdc-73968d00ea23", // Aiden Guan - run across campus with your flag
+    "8af17b87-b816-4edf-901c-750bd4f03938", // Troy Physics Club - whiteboard for sponsors
+  ],
 };
 
 /**
@@ -189,7 +196,7 @@ function pickInventory(listings: PublicListing[]) {
       type.match.test(listing.channel),
     );
     const pinned = (HERO_PINS[type.label] ?? [])
-      .map((id) => matches.find((listing) => listing.id === id))
+      .map((id) => bookable.find((listing) => listing.id === id))
       .find(Boolean);
     return (
       pinned ||
