@@ -31,7 +31,7 @@ export default function PrivacyPage() {
         ← SideSpace
       </Link>
       <h1>Privacy Policy</h1>
-      <p className="legal-updated">Last updated: September 1, 2026</p>
+      <p className="legal-updated">Last updated: September 2, 2026</p>
 
       <h2>1. What we collect</h2>
       <ul>
@@ -45,9 +45,9 @@ export default function PrivacyPage() {
           <strong>Profile and listing content.</strong> Whatever you choose to
           put on your profile and listings: display name, city, bio, photos,
           social links, audience numbers, and listing details. If you tap “Use
-          my location,” we also store a rounded, city-level location pin for
-          future location-aware matching. That pin is not part of your public
-          profile.
+          my location,” we also store a rounded, U.S. city-level location pin
+          for future location-aware matching. That pin is not part of your
+          public profile.
         </li>
         <li>
           <strong>Messages.</strong> Conversations you have with other members
@@ -90,8 +90,8 @@ export default function PrivacyPage() {
         SideSpace is a marketplace, so profiles, listings, and the photos on
         them are public and visible to anyone who visits the site. Your email
         address and password are never public. Messages are private between
-        you and the person you are talking to. The approximate location pin is
-        private. Payment and payout details are visible only to the relevant
+        you and the person you are talking to. The approximate U.S. location
+        pin is private. Payment and payout details are visible only to the relevant
         member, SideSpace administrators who need them to operate the service,
         and Stripe.
       </p>

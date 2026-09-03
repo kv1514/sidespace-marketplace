@@ -25,6 +25,7 @@ export default async function Dashboard({
   const referralCode = isBusinessReferralCode(referralParam)
     ? normalizeBusinessReferralCode(referralParam)
     : "";
+  const openProfile = params.profile === "1";
   const [invite, referralCreditCents] = await Promise.all([
     loadInvite(params.p),
     loadReferralCredit(referralCode),
@@ -35,6 +36,7 @@ export default async function Dashboard({
       invite={invite}
       referralCode={referralCode}
       referralCreditCents={referralCreditCents}
+      openProfile={openProfile}
     />
   );
 }

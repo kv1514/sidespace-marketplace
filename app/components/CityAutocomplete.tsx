@@ -40,14 +40,9 @@ export default function CityAutocomplete({
   useEffect(() => {
     if (!open) return;
     const query = value.trim();
-    if (query.length < 2) {
-      setPlaces([]);
-      setLoading(false);
-      return;
-    }
+    if (query.length < 2) return;
 
     const controller = new AbortController();
-    setLoading(true);
     const timer = window.setTimeout(() => {
       void fetch(`/api/geo?q=${encodeURIComponent(query)}`, {
         signal: controller.signal,
@@ -93,7 +88,10 @@ export default function CityAutocomplete({
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
-      if (value.trim().length >= 2) setOpen(true);
+      if (value.trim().length >= 2) {
+        setOpen(true);
+        setLoading(true);
+      }
       return;
     }
     if (!open || places.length === 0) {
@@ -117,7 +115,8 @@ export default function CityAutocomplete({
     }
   }
 
-  const showList = open && (loading || places.length > 0);
+  const showList =
+    open && value.trim().length >= 2 && (loading || places.length > 0);
 
   return (
     <div className="city-autocomplete" ref={rootRef}>
@@ -140,11 +139,21 @@ export default function CityAutocomplete({
           showList && places[activeIndex] ? `${listId}-${places[activeIndex].id}` : undefined
         }
         onFocus={() => {
-          if (value.trim().length >= 2) setOpen(true);
+          if (value.trim().length >= 2) {
+            setOpen(true);
+            setLoading(true);
+          }
         }}
         onChange={(event) => {
-          onChange(event.target.value);
+          const nextValue = event.target.value;
+          onChange(nextValue);
           setOpen(true);
+          if (nextValue.trim().length < 2) {
+            setPlaces([]);
+            setLoading(false);
+          } else {
+            setLoading(true);
+          }
         }}
         onKeyDown={onKeyDown}
       />
@@ -168,7 +177,7 @@ export default function CityAutocomplete({
           ))}
           {loading && places.length === 0 ? (
             <li className="city-autocomplete-status" role="presentation">
-              Searching cities…
+              Searching U.S. cities…
             </li>
           ) : null}
         </ul>

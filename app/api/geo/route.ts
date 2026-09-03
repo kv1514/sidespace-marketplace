@@ -31,7 +31,13 @@ export async function GET(request: Request) {
       }
       const place = await reverseGeocode(latitude, longitude);
       if (!place) {
-        return json({ error: "We could not find a city for that location." }, 404);
+        return json(
+          {
+            error:
+              "We could not find a U.S. city for that location. SideSpace currently supports U.S. locations only.",
+          },
+          404,
+        );
       }
       return json({ place });
     }

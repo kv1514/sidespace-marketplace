@@ -188,7 +188,7 @@ export default function PublicSiteApp({
         onMessages={() => router.push("/dashboard")}
         onSignIn={() => openAuth("signin")}
         onJoin={() => openAuth("signup")}
-        onAccount={() => router.push("/dashboard")}
+        onAccount={() => router.push("/dashboard?profile=1")}
       />
 
       {route === "home" && (

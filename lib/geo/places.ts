@@ -4,6 +4,7 @@ export type GeoPlace = {
   city: string;
   latitude: number;
   longitude: number;
+  countryCode: "US";
 };
 
 const US_STATES: Record<string, string> = {
@@ -62,34 +63,44 @@ const US_STATES: Record<string, string> = {
   "Washington DC": "DC",
 };
 
-const CA_PROVINCES: Record<string, string> = {
-  Alberta: "AB",
-  "British Columbia": "BC",
-  Manitoba: "MB",
-  "New Brunswick": "NB",
-  "Newfoundland and Labrador": "NL",
-  "Northwest Territories": "NT",
-  "Nova Scotia": "NS",
-  Nunavut: "NU",
-  Ontario: "ON",
-  "Prince Edward Island": "PE",
-  Quebec: "QC",
-  Québec: "QC",
-  Saskatchewan: "SK",
-  Yukon: "YT",
-};
+const US_STATE_CODES = new Set(Object.values(US_STATES));
+const US_STATE_NAMES = new Set(
+  Object.keys(US_STATES).map((name) => name.replace(/\./g, "").toLowerCase()),
+);
 
-function regionCode(countryCode: string, admin1: string | undefined) {
+export function isUnitedStatesCountryCode(value: unknown) {
+  return typeof value === "string" && value.trim().toUpperCase() === "US";
+}
+
+function regionCode(admin1: string | undefined) {
   if (!admin1) return "";
-  const code = countryCode.toUpperCase();
-  if (code === "US") return US_STATES[admin1] ?? admin1;
-  if (code === "CA") return CA_PROVINCES[admin1] ?? admin1;
-  return admin1;
+  return US_STATES[admin1] ?? admin1;
 }
 
 /**
- * Public profile label: "Brea, CA", "Toronto, ON", "Paris, France".
- * Buyers filter on this string, so keep it short and familiar.
+ * Free-text fallback guard for the profile city field. Autocomplete and GPS
+ * are the preferred paths, but a member can still type a city when a lookup
+ * is unavailable. Requiring a U.S. state prevents "Paris, France" (or a bare
+ * city with no country context) from becoming new profile location data.
+ */
+export function isUnitedStatesPlaceLabel(value: string) {
+  const parts = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return false;
+  const city = parts.slice(0, -1).join(",").trim();
+  const region = parts.at(-1)?.replace(/\./g, "").trim() ?? "";
+  return (
+    Boolean(city) &&
+    (US_STATE_CODES.has(region.toUpperCase()) ||
+      US_STATE_NAMES.has(region.toLowerCase()))
+  );
+}
+
+/**
+ * Public profile label: "Brea, CA". Buyers filter on this string, so keep it
+ * short and familiar. Non-U.S. provider results are intentionally rejected.
  */
 export function formatPlaceLabel(input: {
   name: string;
@@ -99,17 +110,9 @@ export function formatPlaceLabel(input: {
 }) {
   const name = input.name.trim();
   if (!name) return "";
-  const countryCode = (input.countryCode ?? "").toUpperCase();
-  const country = (input.country ?? "").trim();
-  const region = regionCode(countryCode, input.admin1?.trim());
-
-  if (countryCode === "US" || countryCode === "CA") {
-    return region && region !== name ? `${name}, ${region}` : name;
-  }
-  if (country && country !== name) {
-    return `${name}, ${country}`;
-  }
-  return name;
+  if (!isUnitedStatesCountryCode(input.countryCode)) return "";
+  const region = regionCode(input.admin1?.trim());
+  return region && region !== name ? `${name}, ${region}` : name;
 }
 
 export function isPopulatedPlace(featureCode: string | undefined) {

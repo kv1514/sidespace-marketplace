@@ -146,7 +146,7 @@ export function SiteHeader({
               <button
                 className="ss-profile-control"
                 onClick={onAccount}
-                aria-label={`Open ${viewer.displayName}'s account settings`}
+                aria-label={`Open ${viewer.displayName}'s profile and settings`}
               >
                 {viewer.avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -156,7 +156,7 @@ export function SiteHeader({
                     {viewer.displayName.slice(0, 1).toUpperCase()}
                   </span>
                 )}
-                <span>Account</span>
+                <span>Profile</span>
               </button>
             </>
           ) : (
@@ -206,7 +206,7 @@ export function SiteHeader({
                 aria-current={route === "dashboard" ? "page" : undefined}
                 onClick={() => setMenuOpen(false)}
               >
-                <span>06</span>
+                <span>05</span>
                 Dashboard
                 <b aria-hidden="true">↗</b>
               </Link>
@@ -216,9 +216,19 @@ export function SiteHeader({
                   onMessages();
                 }}
               >
-                <span>07</span>
+                <span>06</span>
                 Messages
                 {unreadCount > 0 && <b>{unreadCount}</b>}
+              </button>
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  onAccount();
+                }}
+              >
+                <span>07</span>
+                Profile
+                <b aria-hidden="true">↗</b>
               </button>
             </>
           )}

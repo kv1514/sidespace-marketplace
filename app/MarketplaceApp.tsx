@@ -57,6 +57,7 @@ import {
   type SideSpaceRoute,
 } from "@/app/components/SiteChrome";
 import CityAutocomplete from "@/app/components/CityAutocomplete";
+import { isUnitedStatesPlaceLabel } from "@/lib/geo/places";
 
 const stripeConfigured = /^pk_(?:test|live)_/.test(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "",
@@ -204,6 +205,8 @@ type Conversation = {
   updated_at: string;
 };
 
+type CampaignRequestMode = "offer" | "buy_now";
+
 type Message = {
   id: string;
   conversation_id: string;
@@ -219,6 +222,7 @@ type CampaignRequest = {
   requester_profile_id: string;
   owner_profile_id: string;
   conversation_id: string | null;
+  purchase_mode: CampaignRequestMode;
   campaign_name: string;
   goals: string;
   requested_deliverables: string;
@@ -3931,6 +3935,15 @@ function isBrief(listing: Pick<Listing, "channel">) {
   return listing.channel === "Business brief";
 }
 
+function isFixedPriceListing(
+  listing: Pick<Listing, "price_cents" | "price_max_cents">,
+) {
+  return (
+    typeof listing.price_max_cents !== "number" ||
+    listing.price_max_cents <= listing.price_cents
+  );
+}
+
 /** Legacy listings keep their original channel, but edit as Creator inventory. */
 function isPhysicalListing(
   listing: Pick<
@@ -4077,6 +4090,15 @@ function charCount(value: string) {
 /** Today in the viewer's own local day, as YYYY-MM-DD for date inputs. */
 function todayIso() {
   return new Date().toLocaleDateString("en-CA");
+}
+
+function listingBookingMinDate(
+  listing: Pick<Listing, "available_from" | "lead_time_days">,
+) {
+  const today = todayIso();
+  const leadTime = Math.max(0, listing.lead_time_days ?? 0);
+  const leadDate = leadTime ? isoDaysFromToday(leadTime) : today;
+  return [today, leadDate, listing.available_from ?? today].sort().at(-1) ?? today;
 }
 
 function initials(name: string) {
@@ -4617,6 +4639,7 @@ export default function MarketplaceApp({
   initialChannel = "All",
   referralCode = "",
   referralCreditCents = null,
+  openProfile = false,
 }: {
   /** Server-rendered marketplace, so crawlers and link previews see real
    *  members instead of the seeded demo set. Null when Supabase was
@@ -4629,6 +4652,8 @@ export default function MarketplaceApp({
   referralCode?: string;
   /** Server-validated value for a dynamic founder-created referral. */
   referralCreditCents?: number | null;
+  /** One-shot intent from the public header to open profile settings. */
+  openProfile?: boolean;
   /** Public information architecture route. The marketplace/auth engine stays
    * mounted so every route keeps the same dialogs, sessions, and handlers. */
   route?: SideSpaceRoute;
@@ -4931,6 +4956,8 @@ export default function MarketplaceApp({
   const [stripeAccountStatus, setStripeAccountStatus] =
     useState<StripeAccountStatus | null>(null);
   const [campaignListing, setCampaignListing] = useState<Listing | null>(null);
+  const [campaignRequestMode, setCampaignRequestMode] =
+    useState<CampaignRequestMode>("offer");
   const [counteringRequest, setCounteringRequest] = useState<CampaignRequest | null>(null);
   const [verificationRequest, setVerificationRequest] =
     useState<VerificationRequest | null>(null);
@@ -5363,7 +5390,7 @@ export default function MarketplaceApp({
         }
         if (event === "PASSWORD_RECOVERY") {
           setAccountOpen(true);
-          setToast("Choose a new password in Account settings.");
+          setToast("Choose a new password in Profile & settings.");
         }
       } else {
         // A background sign-out must wipe exactly what an explicit one wipes.
@@ -6046,7 +6073,7 @@ export default function MarketplaceApp({
   function captureCurrentLocation() {
     if (!navigator.geolocation) {
       setLocationError(
-        "This browser cannot share a location. Type your city and state instead.",
+        "This browser cannot share a U.S. location. Choose a U.S. city and state instead.",
       );
       return;
     }
@@ -6071,10 +6098,14 @@ export default function MarketplaceApp({
         )
           .then(async (response) => {
             const body = (await response.json()) as {
-              place?: { label?: string };
+              place?: { label?: string; countryCode?: string };
               error?: string;
             };
-            if (!response.ok || !body.place?.label) {
+            if (
+              !response.ok ||
+              !body.place?.label ||
+              body.place.countryCode !== "US"
+            ) {
               throw new Error(body.error || "lookup failed");
             }
             setAnswers((current) => ({
@@ -6085,7 +6116,7 @@ export default function MarketplaceApp({
           })
           .catch(() => {
             setLocationError(
-              "We could not find your city from that location. Type it instead.",
+              "SideSpace currently supports U.S. locations only. Choose a U.S. city and state instead.",
             );
           })
           .finally(() => {
@@ -6096,10 +6127,10 @@ export default function MarketplaceApp({
         setLocationBusy(false);
         setLocationError(
           error.code === 1
-            ? "Location permission was not granted. Type your city and state instead."
+            ? "Location permission was not granted. Choose a U.S. city and state instead."
             : error.code === 2
-              ? "We could not find your location. Type your city and state instead."
-              : "Finding your location took too long. Type your city and state instead.",
+              ? "We could not find your location. Choose a U.S. city and state instead."
+              : "Finding your location took too long. Choose a U.S. city and state instead.",
         );
       },
       {
@@ -6160,6 +6191,29 @@ export default function MarketplaceApp({
       void loadOwnListings(profile);
     }
   }
+
+  // Public pages send profile intent through the lightweight dashboard route.
+  // Consume it once after the member profile is ready so the header opens the
+  // same Profile surface no matter where a signed-in member started.
+  const profileIntentHandledRef = useRef(false);
+  useEffect(() => {
+    if (
+      !openProfile ||
+      !profile ||
+      profileIntentHandledRef.current ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+    profileIntentHandledRef.current = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("profile");
+    window.history.replaceState({}, "", url.toString());
+    openAccountPanel();
+    // openAccountPanel intentionally stays a local action rather than a
+    // dependency: its closure is refreshed with the profile above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openProfile, profile]);
 
   function updateCreatorOfferSelection(
     offer: CreatorOfferType,
@@ -6505,6 +6559,12 @@ export default function MarketplaceApp({
     need(
       !answers.city.trim(),
       "Add your city or market before continuing.",
+      "city",
+    );
+    need(
+      Boolean(answers.city.trim()) &&
+        !isUnitedStatesPlaceLabel(answers.city.trim()),
+      "Choose a U.S. city and state from the suggestions.",
       "city",
     );
     need(
@@ -8074,11 +8134,11 @@ export default function MarketplaceApp({
       setListingOpen(false);
       resetAiHelpers();
       setEditingListing(null);
-      setAccountOpen(true);
+      setAccountOpen(false);
       setToast(
         wasEditing
           ? `Your listing changes are saved.${photoWarning}`
-          : `Your listing is live and saved to My listings.${photoWarning}`,
+          : `Your listing is live and ready to manage in Dashboard.${photoWarning}`,
       );
       await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
     } catch (error) {
@@ -8261,7 +8321,10 @@ export default function MarketplaceApp({
     await loadMessages(conversation, target);
   }
 
-  function openCampaignRequest(listing: Listing) {
+  function openCampaignFlow(
+    listing: Listing,
+    mode: CampaignRequestMode = "offer",
+  ) {
     if (!isListingRequestable(listing)) {
       setToast(
         listing.owner.is_demo
@@ -8270,23 +8333,36 @@ export default function MarketplaceApp({
       );
       return;
     }
+    if (mode === "buy_now" && isBrief(listing)) {
+      setToast("Business briefs use Make an offer so you can propose the right fit.");
+      return;
+    }
+    if (mode === "buy_now" && !isFixedPriceListing(listing)) {
+      setToast("This listing has a price range. Make an offer to agree on the exact terms.");
+      return;
+    }
     requireAccount(() => {
       if (listing.owner.id === profile?.id) {
-        setToast("This is your listing. Manage incoming requests from your account.");
+        setToast("This is your listing. Manage incoming requests in Dashboard.");
         return;
       }
       closeListing();
+      setCampaignRequestMode(mode);
       setCampaignListing(listing);
     });
+  }
+
+  function openCampaignRequest(listing: Listing) {
+    openCampaignFlow(listing, "offer");
   }
 
   async function submitCampaignRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !campaignListing) return;
     if (!profile) {
-      // Session ended mid-brief; the form still holds everything they wrote.
+      // Session ended mid-offer; the form still holds everything they wrote.
       setToast(
-        "Your session ended. Sign in again, then send the request — your brief is still here.",
+        "Your session ended. Sign in again, then send it — your details are still here.",
       );
       setAuthMode("signin");
       setAuthOpen(true);
@@ -8313,6 +8389,21 @@ export default function MarketplaceApp({
       );
       return;
     }
+    if (campaignRequestMode === "buy_now") {
+      const minimumDate = listingBookingMinDate(campaignListing);
+      if (startDate < minimumDate) {
+        setToast(
+          `This listing needs dates starting ${displayDate(minimumDate)} or later.`,
+        );
+        return;
+      }
+      if (campaignListing.available_to && endDate > campaignListing.available_to) {
+        setToast(
+          `Choose an end date on or before ${displayDate(campaignListing.available_to)}.`,
+        );
+        return;
+      }
+    }
 
     setBusy(true);
     // Validate against the database's own bounds BEFORE creating anything.
@@ -8320,12 +8411,16 @@ export default function MarketplaceApp({
     // rejected left a permanent empty thread in the owner's inbox and showed
     // the member a raw constraint error.
     const campaignName = String(values.get("campaign_name") ?? "").trim();
-    const budget = Number(values.get("budget") ?? 0);
     const goals = String(values.get("goals") ?? "").trim();
-    const deliverables = String(
-      values.get("requested_deliverables") ?? "",
-    ).trim();
     const notes = String(values.get("notes") ?? "").trim();
+    const isBookAsListed = campaignRequestMode === "buy_now";
+    const listedDeliverables =
+      campaignListing.deliverables?.trim() || campaignListing.format.trim();
+    const deliverables = isBookAsListed
+      ? listedDeliverables
+      : String(values.get("requested_deliverables") ?? "").trim();
+    const budgetInput = String(values.get("budget") ?? "").trim();
+    const proposedBudget = Number(budgetInput);
 
     // Count the way Postgres does. JS .length counts UTF-16 code units, so five
     // emoji read as 10 and slipped past a minimum the database then rejected -
@@ -8348,9 +8443,26 @@ export default function MarketplaceApp({
       setBusy(false);
       return setToast("Notes are limited to 2000 characters.");
     }
-    if (!Number.isFinite(budget) || budget < 0) {
+    if (
+      !isBookAsListed &&
+      (!budgetInput || !Number.isFinite(proposedBudget) || proposedBudget < 0)
+    ) {
       setBusy(false);
       return setToast("Enter a budget of 0 or more.");
+    }
+
+    let budgetCents = campaignListing.price_cents;
+    if (!isBookAsListed) {
+      try {
+        budgetCents = dollarsToCents(budgetInput);
+      } catch (error) {
+        setBusy(false);
+        return setToast(
+          error instanceof Error
+            ? error.message
+            : "Enter a dollar amount with no more than two decimals.",
+        );
+      }
     }
 
     // Was this pair already talking? If so the thread is pre-existing and
@@ -8365,10 +8477,11 @@ export default function MarketplaceApp({
         requester_profile_id: profile.id,
         owner_profile_id: campaignListing.owner.id,
         conversation_id: existingConversation?.id ?? null,
+        purchase_mode: campaignRequestMode,
         campaign_name: campaignName,
         goals,
         requested_deliverables: deliverables,
-        budget_cents: dollarsToCents(budget),
+        budget_cents: budgetCents,
         start_date: startDate,
         end_date: endDate,
         notes,
@@ -8401,23 +8514,26 @@ export default function MarketplaceApp({
           // Not fatal: the request and the thread both exist, they are just not
           // cross-linked. Say so rather than pretending it all worked.
           setToast(
-            "Request sent, but we could not attach it to the message thread.",
+            `${isBookAsListed ? "Booking request" : "Offer"} sent, but we could not attach it to the message thread.`,
           );
         }
       }
       await supabase.from("messages").insert({
         conversation_id: conversation.id,
         sender_profile_id: profile.id,
-        body: `Campaign request: ${campaignName}\n${displayDate(startDate)} to ${displayDate(endDate)} · Budget $${budget}\nRequested: ${deliverables}`,
+        body: `${isBookAsListed ? "Book as listed" : "Offer"}: ${campaignName}\n${displayDate(startDate)} to ${displayDate(endDate)} · Budget ${formatCents(budgetCents)}\n${isBookAsListed ? "Listed deliverables" : "Requested"}: ${deliverables}`,
       });
     }
 
     setCampaignListing(null);
+    setCampaignRequestMode("offer");
     setBusy(false);
     setToast(
       campaignListing.owner.is_demo
-        ? "Demo request saved. This sample profile is not a real recipient."
-        : "Campaign request sent. You can track it from your account.",
+        ? `Demo ${isBookAsListed ? "booking" : "offer"} saved. This sample profile is not a real recipient.`
+        : isBookAsListed
+          ? "Booking request sent. The owner will confirm availability before payment."
+            : "Offer sent. You can track it in Dashboard.",
     );
     await Promise.all([
       loadAccountMarketplaceState(profile),
@@ -8447,10 +8563,10 @@ export default function MarketplaceApp({
     }
     setToast(
       status === "accepted"
-        ? "Campaign accepted. Payment is required before the work is confirmed."
+        ? `${request.purchase_mode === "buy_now" ? "Booking" : "Offer"} accepted. Payment is required before the work is confirmed.`
         : status === "declined"
-          ? "Campaign request declined."
-          : "Campaign request cancelled.",
+          ? `${request.purchase_mode === "buy_now" ? "Booking" : "Offer"} declined.`
+          : `${request.purchase_mode === "buy_now" ? "Booking" : "Offer"} cancelled.`,
     );
     await loadAccountMarketplaceState(profile);
   }
@@ -8625,6 +8741,11 @@ export default function MarketplaceApp({
   async function submitCounteroffer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !profile || !counteringRequest) return;
+    if (counteringRequest.purchase_mode === "buy_now") {
+      setCounteringRequest(null);
+      setToast("Book-as-listed terms are fixed. Send an offer if they need to change.");
+      return;
+    }
     const values = new FormData(event.currentTarget);
     setBusy(true);
     const { error } = await supabase.rpc("respond_campaign_request", {
@@ -8737,7 +8858,7 @@ export default function MarketplaceApp({
     // appear anywhere on screen.
     await reconcileUnreadCount(profile);
     setToast(
-      `${target.display_name} is now hidden. You can undo this in Account settings.`,
+      `${target.display_name} is now hidden. You can undo this in Profile & settings.`,
     );
   }
 
@@ -9479,7 +9600,7 @@ export default function MarketplaceApp({
     const parts: string[] = [];
     if (incoming) {
       parts.push(
-        `${incoming} campaign request${incoming === 1 ? "" : "s"} waiting on you`,
+        `${incoming} offer or booking${incoming === 1 ? "" : "s"} waiting on you`,
       );
     }
     if (awaitingYou) {
@@ -9495,6 +9616,568 @@ export default function MarketplaceApp({
       return "Nothing is listed yet. Add your first space or audience to start getting requests.";
     }
     return "Nothing needs your attention right now.";
+  }
+
+  function renderDashboardListings() {
+    if (!profile) return null;
+    return (
+      <section
+        className="account-section dashboard-work-section"
+        id="dashboard-listings-all"
+        data-reveal
+      >
+        <div className="account-section-heading">
+          <div>
+            <p className="eyebrow">Listings</p>
+            <h3>Manage what you have published.</h3>
+            <p className="account-section-lede">
+              Keep your audience, placement, or sponsorship offer clear and bookable.
+            </p>
+          </div>
+          {profile.role !== "consumer" && (
+            <button
+              className="button button-dark button-small"
+              onClick={openListingEditor}
+            >
+              New listing <span>＋</span>
+            </button>
+          )}
+        </div>
+
+        {ownListingsLoading ? (
+          <div className="account-empty">Loading your saved listings…</div>
+        ) : ownListings.length ? (
+          <div className="my-listings-grid">
+            {ownListings.map((listing) => (
+              <article className="my-listing-card" key={listing.id}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={listing.image_url || DEFAULT_LISTING_IMAGE}
+                  alt={`${listing.title} listing`}
+                  loading="lazy"
+                  decoding="async"
+                />
+                <div>
+                  <span className={`listing-status status-${listing.status}`}>
+                    {listing.status}
+                  </span>
+                  <h4>{listing.title}</h4>
+                  <p>
+                    {listing.channel} • {priceLabel(listing)}/{listing.price_unit}
+                  </p>
+                  {(() => {
+                    const gaps = listingGaps(listing);
+                    if (!gaps.length) return null;
+                    return (
+                      <p className="listing-gap">
+                        Sorted below complete listings — it needs {joinList(gaps)}.
+                      </p>
+                    );
+                  })()}
+                  <div className="my-listing-actions">
+                    <button onClick={() => openListing(listing)}>View</button>
+                    <button onClick={() => openListingEdit(listing)}>Edit</button>
+                    <button
+                      disabled={busy}
+                      onClick={() => void updateListingStatus(listing)}
+                    >
+                      {listing.status === "active" ? "Pause" : "Make active"}
+                    </button>
+                    <button
+                      className="is-danger"
+                      disabled={busy}
+                      onClick={() => setDeleteListingTarget(listing)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="account-empty">
+            <strong>No listings yet.</strong>
+            <p>
+              Your first listing will appear here immediately after you publish it.
+            </p>
+            {profile.role !== "consumer" && (
+              <button
+                className="button button-coral button-small"
+                onClick={openListingEditor}
+              >
+                Create my first listing <span>↗</span>
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  function renderDashboardCampaigns() {
+    if (!profile) return null;
+    return (
+      <section
+        className="account-section dashboard-work-section"
+        id="dashboard-campaigns-all"
+        data-reveal
+      >
+        <div className="account-section-heading">
+          <div>
+            <p className="eyebrow">Offers &amp; bookings</p>
+            <h3>Review every offer and next step.</h3>
+            <p className="account-section-lede">
+              Accept, counter, pay, and keep active work moving from one place.
+            </p>
+          </div>
+          <span className="section-count">{campaignRequests.length} total</span>
+        </div>
+
+        {campaignRequests.length ? (
+          <div className="campaign-request-list">
+            {campaignRequests.map((request) => {
+              const incoming = request.owner_profile_id === profile.id;
+              const other = incoming ? request.requester : request.owner;
+              const payment = paymentTransactions.find(
+                (item) => item.campaign_request_id === request.id,
+              );
+              const isPayer = request.payer_profile_id === profile.id;
+              const isPayee = request.payee_profile_id === profile.id;
+              const isBookAsListed = request.purchase_mode === "buy_now";
+              const acceptedMoney = request.accepted_subtotal_cents
+                ? calculatePaymentBreakdown(request.accepted_subtotal_cents)
+                : null;
+              return (
+                <article className="campaign-request-card" key={request.id}>
+                  <header>
+                    <div>
+                      <small>
+                        {incoming ? "Incoming" : "You sent"} · {isBookAsListed ? "Book as listed" : "Offer"}
+                      </small>
+                      <h4>{request.campaign_name}</h4>
+                      <p>
+                        {request.listing?.title ??
+                          (request.status === "accepted" || request.status === "completed"
+                            ? "This listing is not currently public"
+                            : "Listing no longer available")}
+                        {" · "}
+                        {other.display_name}
+                      </p>
+                    </div>
+                    <span
+                      className={`request-status status-${payment?.status ?? request.status}`}
+                    >
+                      {payment?.status?.replaceAll("_", " ") ?? request.status}
+                    </span>
+                  </header>
+                  <div className="campaign-request-facts">
+                    <span>
+                      <small>Dates</small>
+                      <b>
+                        {displayDate(request.start_date)} – {displayDate(request.end_date)}
+                      </b>
+                    </span>
+                    <span>
+                      <small>{isBookAsListed ? "Listed price" : "Budget"}</small>
+                      <b>{formatCents(request.budget_cents)}</b>
+                    </span>
+                    <span>
+                      <small>{isBookAsListed ? "Listed deliverables" : "Requested"}</small>
+                      <b>{request.requested_deliverables}</b>
+                    </span>
+                  </div>
+                  {isBookAsListed && (
+                    <p className="campaign-request-brief booking-mode-note">
+                      <small>Fixed terms</small>
+                      The published price and deliverables are locked. The owner can confirm or decline this booking, but it cannot be countered here.
+                    </p>
+                  )}
+                  {request.goals && (
+                    <p className="campaign-request-brief">
+                      <small>Goal</small>
+                      {request.goals}
+                    </p>
+                  )}
+                  {request.notes && (
+                    <p className="campaign-request-brief">
+                      <small>Notes</small>
+                      {request.notes}
+                    </p>
+                  )}
+                  {request.counter_budget_cents != null && (
+                    <div className="counter-summary">
+                      <strong>
+                        {request.status === "accepted"
+                          ? `Agreed at ${formatCents(request.counter_budget_cents)}`
+                          : `Counteroffer: ${formatCents(request.counter_budget_cents)}`}
+                      </strong>
+                      {request.counter_message && <p>{request.counter_message}</p>}
+                    </div>
+                  )}
+                  {acceptedMoney && isPayer && (
+                    <div className="campaign-request-facts">
+                      <span>
+                        <small>Campaign</small>
+                        <b>{formatCents(acceptedMoney.subtotalCents)}</b>
+                      </span>
+                      <span>
+                        <small>SideSpace buyer fee (5%)</small>
+                        <b>{formatCents(acceptedMoney.buyerFeeCents)}</b>
+                      </span>
+                      <span>
+                        <small>Total before tax</small>
+                        <b>
+                          {formatCents(
+                            payment?.charged_total_cents ?? acceptedMoney.customerTotalCents,
+                          )}
+                        </b>
+                      </span>
+                      {(payment?.ad_credit_cents ?? 0) > 0 && (
+                        <span>
+                          <small>Ad credit</small>
+                          <b>−{formatCents(payment?.ad_credit_cents ?? 0)}</b>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {acceptedMoney && isPayer && !payment && adCreditBalanceCents > 0 && (
+                    <p className="campaign-request-brief">
+                      <small>Available ad credit</small>
+                      {formatCents(adCreditBalanceCents)} will be applied automatically at
+                      secure checkout. It cannot be withdrawn or transferred.
+                    </p>
+                  )}
+                  {acceptedMoney && isPayee && (
+                    <div className="campaign-request-facts">
+                      <span>
+                        <small>Campaign</small>
+                        <b>{formatCents(acceptedMoney.subtotalCents)}</b>
+                      </span>
+                      <span>
+                        <small>SideSpace creator fee (5%)</small>
+                        <b>−{formatCents(acceptedMoney.creatorFeeCents)}</b>
+                      </span>
+                      <span>
+                        <small>Your earnings</small>
+                        <b>{formatCents(acceptedMoney.creatorPayoutCents)}</b>
+                      </span>
+                    </div>
+                  )}
+                  {(payment?.tax_cents ?? 0) > 0 && isPayer && (
+                    <p className="campaign-request-brief">
+                      <small>Tax collected by Stripe</small>
+                      {formatCents(payment?.tax_cents ?? 0)}
+                    </p>
+                  )}
+                  <div className="campaign-request-actions">
+                    {incoming && request.status === "pending" && (
+                      <button
+                        className="button button-dark button-small"
+                        disabled={busy}
+                        onClick={() => void respondToCampaignRequest(request, "accepted")}
+                      >
+                        Accept
+                      </button>
+                    )}
+                    {incoming &&
+                      request.purchase_mode !== "buy_now" &&
+                      ["pending", "countered"].includes(request.status) && (
+                        <button onClick={() => setCounteringRequest(request)}>
+                          {request.status === "countered" ? "Revise counteroffer" : "Counteroffer"}
+                        </button>
+                      )}
+                    {incoming && ["pending", "countered"].includes(request.status) && (
+                      <button
+                        disabled={busy}
+                        onClick={() => void respondToCampaignRequest(request, "declined")}
+                      >
+                        Decline
+                      </button>
+                    )}
+                    {!incoming && request.status === "countered" && (
+                      <button
+                        className="button button-dark button-small"
+                        disabled={busy}
+                        onClick={() => void respondToCampaignRequest(request, "accepted")}
+                      >
+                        Accept counteroffer
+                      </button>
+                    )}
+                    {!incoming && ["pending", "countered"].includes(request.status) && (
+                      <button
+                        disabled={busy}
+                        onClick={() => void respondToCampaignRequest(request, "cancelled")}
+                      >
+                        {isBookAsListed ? "Cancel booking" : "Cancel offer"}
+                      </button>
+                    )}
+                    {request.status === "accepted" && (
+                      <>
+                        {isPayer && (
+                          <button
+                            className="button button-coral button-small"
+                            disabled={busy}
+                            onClick={() => void startCampaignCheckout(request.id)}
+                          >
+                            {payment?.status === "checkout_open"
+                              ? "Continue secure checkout"
+                              : "Pay securely with Stripe"}
+                          </button>
+                        )}
+                        {isPayee &&
+                          profileHasRole(profile, "creator") &&
+                          !stripeAccountStatus?.ready && (
+                            <button
+                              className="button button-dark button-small"
+                              disabled={busy}
+                              onClick={() =>
+                                void openStripeFlow("/api/stripe/connect/onboard")
+                              }
+                            >
+                              Finish payout setup
+                            </button>
+                          )}
+                        <button onClick={openInbox}>Continue in Messages</button>
+                      </>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="account-empty">
+            <strong>No offers or bookings yet.</strong>
+            <p>Open a listing and choose Book as listed or Make an offer to start one.</p>
+            <a className="button button-ghost button-small" href="/marketplace">
+              Browse marketplace <span>↗</span>
+            </a>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  function renderDashboardPayments() {
+    if (!profile || paymentTransactions.length === 0) return null;
+    return (
+      <section
+        className="account-section dashboard-work-section"
+        id="dashboard-payments"
+        data-reveal
+      >
+        <div className="account-section-heading">
+          <div>
+            <p className="eyebrow">Payments</p>
+            <h3>Track money in motion.</h3>
+            <p className="account-section-lede">
+              Payment, delivery, review, refund, and payout status stay together here.
+            </p>
+          </div>
+          <span className="section-count">{paymentTransactions.length} total</span>
+        </div>
+        <div className="campaign-request-list">
+          {paymentTransactions.map((transaction) => {
+            const buyer = transaction.business_profile_id === profile.id;
+            const reviewExpired = transaction.review_deadline
+              ? Date.now() >= new Date(transaction.review_deadline).getTime()
+              : false;
+            const statusLabel =
+              transaction.workflow_status === "refund_pending"
+                ? "Refund processing"
+                : transaction.payout_status === "released"
+                  ? "Payout released"
+                  : transaction.payout_status === "releasing"
+                    ? "Releasing payout"
+                    : transaction.workflow_status === "awaiting_payer_review"
+                      ? "Awaiting payer review"
+                      : transaction.issue_status === "escalated"
+                        ? "Issue escalated"
+                        : transaction.issue_status === "open"
+                          ? "Issue open"
+                          : transaction.payout_status === "pending"
+                            ? "Payout pending"
+                            : transaction.workflow_status.replaceAll("_", " ");
+            return (
+              <article className="campaign-request-card" key={transaction.id}>
+                <header>
+                  <div>
+                    <small>{buyer ? "Business payment" : "Creator earnings"}</small>
+                    <h4>{transaction.campaign_name}</h4>
+                    <p>{transaction.listing_title}</p>
+                  </div>
+                  <span className={`request-status status-${transaction.workflow_status}`}>
+                    {statusLabel}
+                  </span>
+                </header>
+                <div className="campaign-request-facts">
+                  <span>
+                    <small>{buyer ? "Campaign" : "Gross campaign"}</small>
+                    <b>{formatCents(transaction.subtotal_cents)}</b>
+                  </span>
+                  <span>
+                    <small>{buyer ? "Buyer fee" : "Creator fee"}</small>
+                    <b>
+                      {buyer ? "" : "−"}
+                      {formatCents(
+                        buyer ? transaction.buyer_fee_cents : transaction.creator_fee_cents,
+                      )}
+                    </b>
+                  </span>
+                  <span>
+                    <small>{buyer ? "Total before tax" : "Your earnings"}</small>
+                    <b>
+                      {formatCents(
+                        buyer
+                          ? transaction.charged_total_cents ?? transaction.customer_total_cents
+                          : transaction.creator_payout_cents,
+                      )}
+                    </b>
+                  </span>
+                </div>
+                {buyer && (transaction.ad_credit_cents ?? 0) > 0 && (
+                  <p className="campaign-request-brief">
+                    <small>Ad credit applied</small>
+                    −{formatCents(transaction.ad_credit_cents ?? 0)} promotional credit. It
+                    cannot be withdrawn or transferred.
+                  </p>
+                )}
+                {transaction.refunded_cents > 0 && (
+                  <p className="campaign-request-brief">
+                    <small>Refunded</small>
+                    {formatCents(transaction.refunded_cents)}
+                  </p>
+                )}
+                {transaction.payout_status === "pending" &&
+                  transaction.workflow_status === "paid_payout_pending" && (
+                    <div className="campaign-request-brief">
+                      <small>{buyer ? "Creator payout" : "Payment pending"}</small>
+                      {buyer
+                        ? "Your payment is verified. The Creator can begin work; their payout stays pending until delivery is reviewed."
+                        : "The customer paid in full. Your earnings remain pending until you mark the campaign delivered and the review period ends."}
+                    </div>
+                  )}
+                {transaction.delivered_at && transaction.review_deadline && (
+                  <div className="campaign-request-brief">
+                    <small>
+                      {buyer ? "Creator marked this campaign delivered" : "Review period ends"}
+                    </small>
+                    {buyer && `Delivered ${displayDateTime(transaction.delivered_at)}. `}
+                    Review deadline: {displayDateTime(transaction.review_deadline)}.
+                    {!buyer &&
+                      " Payout is expected after that time unless the payer reports an issue."}
+                    {reviewExpired &&
+                      transaction.payout_status !== "released" &&
+                      transaction.issue_status === "none" &&
+                      " The deadline has passed; automatic release is processing server-side."}
+                  </div>
+                )}
+                {transaction.issue_status !== "none" && transaction.issue && (
+                  <div className="counter-summary">
+                    <strong>
+                      {transaction.issue_status === "escalated"
+                        ? "Issue escalated to SideSpace"
+                        : transaction.issue_status === "resolved"
+                          ? "Issue resolved"
+                          : "Resolve with the Creator"}
+                    </strong>
+                    <p>{transaction.issue.details}</p>
+                    {transaction.issue_status === "open" && (
+                      <p>
+                        Payout remains pending. Use Messages to try to resolve the issue
+                        directly before escalating it.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {transaction.payout_status === "released" && (
+                  <div className="campaign-request-brief">
+                    <small>Payout released</small>
+                    {buyer
+                      ? "The Creator payout has been released and this campaign is complete."
+                      : `${formatCents(transaction.payout_amount_cents)} was released${
+                          transaction.payout_released_at
+                            ? ` on ${displayDateTime(transaction.payout_released_at)}`
+                            : ""
+                        }.`}
+                  </div>
+                )}
+                {transaction.review && (
+                  <div className="campaign-request-brief">
+                    <small>Creator review · {transaction.review.rating}/5</small>
+                    {transaction.review.review_text}
+                  </div>
+                )}
+                {transaction.payout_issue && (
+                  <div className="campaign-request-brief">
+                    <small>Payout release needs attention</small>
+                    SideSpace could not finish the transfer yet. It is safe to retry; no
+                    duplicate payout will be created.
+                  </div>
+                )}
+                <div className="campaign-request-actions">
+                  {!buyer &&
+                    transaction.workflow_status === "paid_payout_pending" &&
+                    transaction.payout_status === "pending" && (
+                      <button
+                        className="button button-dark button-small"
+                        disabled={busy}
+                        onClick={() => void runCampaignPaymentAction(transaction, "deliver")}
+                      >
+                        {busy ? "Updating…" : "Mark campaign delivered"}
+                      </button>
+                    )}
+                  {buyer &&
+                    transaction.workflow_status === "awaiting_payer_review" &&
+                    transaction.issue_status === "none" &&
+                    transaction.payout_status === "pending" &&
+                    !reviewExpired && (
+                      <>
+                        <button
+                          className="button button-coral button-small"
+                          disabled={busy}
+                          onClick={() => void runCampaignPaymentAction(transaction, "confirm")}
+                        >
+                          {busy ? "Releasing…" : "Confirm work completed"}
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void runCampaignPaymentAction(transaction, "report_issue")
+                          }
+                        >
+                          Report an issue
+                        </button>
+                      </>
+                    )}
+                  {transaction.issue_status === "open" && (
+                    <button onClick={openInbox}>Resolve with the Creator</button>
+                  )}
+                  {buyer && transaction.issue_status === "open" && (
+                    <button
+                      disabled={busy}
+                      onClick={() => void runCampaignPaymentAction(transaction, "escalate")}
+                    >
+                      Escalate to SideSpace
+                    </button>
+                  )}
+                  {buyer && transaction.payout_status === "released" && !transaction.review && (
+                    <button
+                      className="button button-dark button-small"
+                      disabled={busy}
+                      onClick={() => void submitCreatorReview(transaction)}
+                    >
+                      Review Creator
+                    </button>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    );
   }
 
   // The old root-page marketing sections remain in this file temporarily as
@@ -9540,7 +10223,7 @@ export default function MarketplaceApp({
               <h1 className="dashboard-title">
                 Setting things <em>up...</em>
               </h1>
-              <p className="dashboard-sub">One moment while we load your account.</p>
+              <p className="dashboard-sub">One moment while we load your dashboard.</p>
             </div>
           </div>
         </section>
@@ -9569,10 +10252,25 @@ export default function MarketplaceApp({
                 className="button button-ghost"
                 onClick={openAccountPanel}
               >
-                Account <span>↗</span>
+                Profile <span>↗</span>
               </button>
             </div>
           </div>
+
+          <nav className="dashboard-map" aria-label="Dashboard areas">
+            <span>Work lives here</span>
+            <a href="#dashboard-listings-all">Listings</a>
+            <a href="#dashboard-campaigns-all">Campaigns</a>
+            {paymentTransactions.length > 0 && (
+              <a href="#dashboard-payments">Payments</a>
+            )}
+            <button type="button" onClick={openInbox}>
+              Messages{unreadCount > 0 ? ` · ${unreadCount} new` : ""}
+            </button>
+            <span className="dashboard-map-note">
+              Profile holds your public details and settings.
+            </span>
+          </nav>
 
           <div className="dashboard-paths" data-reveal>
             <a
@@ -9590,7 +10288,7 @@ export default function MarketplaceApp({
             >
               <span>I&rsquo;m a business</span>
               <strong>Book local reach</strong>
-              <p>Choose a creator or physical space, then send a request.</p>
+              <p>Choose a creator or physical space, then book as listed or make an offer.</p>
               <b>Browse creators and spaces →</b>
             </a>
           </div>
@@ -9625,14 +10323,14 @@ export default function MarketplaceApp({
                   tone: active ? "" : "muted",
                 },
                 {
-                  label: "Requests to you",
+                  label: "Offers to you",
                   value: incoming,
                   caption: incoming ? "Waiting on your reply" : "Nothing pending",
                   icon: "✉",
                   tone: incoming ? "alert" : "muted",
                 },
                 {
-                  label: "Requests you sent",
+                  label: "Offers you sent",
                   value: outgoing,
                   caption: outgoing ? "Awaiting a reply" : "None open",
                   icon: "↗",
@@ -9739,7 +10437,11 @@ export default function MarketplaceApp({
                   {ownListings.length > 4 && (
                     <button
                       className="dashboard-text-action"
-                      onClick={openAccountPanel}
+                      onClick={() =>
+                        document
+                          .getElementById("dashboard-listings-all")
+                          ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                      }
                     >
                       View all {ownListings.length} listings →
                     </button>
@@ -9780,11 +10482,15 @@ export default function MarketplaceApp({
                       <div>
                         <p className="eyebrow">Campaigns</p>
                         <h2>Work in motion.</h2>
-                        <p>Requests, replies, and next actions in one place.</p>
+                        <p>Offers, bookings, replies, and next actions in one place.</p>
                       </div>
                       <button
                         className="dashboard-text-action"
-                        onClick={openAccountPanel}
+                        onClick={() =>
+                          document
+                            .getElementById("dashboard-campaigns-all")
+                            ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                        }
                       >
                         View all →
                       </button>
@@ -9809,6 +10515,9 @@ export default function MarketplaceApp({
                                 <div>
                                   <small>
                                     {incoming ? "Incoming" : "You sent"} ·{" "}
+                                    {request.purchase_mode === "buy_now"
+                                      ? "Book as listed · "
+                                      : "Offer · "}
                                     {request.status}
                                   </small>
                                   <b>{formatCents(request.budget_cents)}</b>
@@ -9835,13 +10544,14 @@ export default function MarketplaceApp({
                                   </button>
                                 )}
                                 {incoming &&
+                                  request.purchase_mode !== "buy_now" &&
                                   ["pending", "countered"].includes(
                                     request.status,
                                   ) && (
                                     <button
                                       onClick={() => setCounteringRequest(request)}
                                     >
-                                      Counter
+                                      Counteroffer
                                     </button>
                                   )}
                                 {!incoming && request.status === "countered" && (
@@ -9941,7 +10651,7 @@ export default function MarketplaceApp({
                               openCampaignRequest(recommendation.listing)
                             }
                           >
-                            Request <span>↗</span>
+                            Make an offer <span>↗</span>
                           </button>
                           <button
                             className="dashboard-text-action"
@@ -10038,6 +10748,12 @@ export default function MarketplaceApp({
               </li>
             )}
           </ol>
+
+          <div className="dashboard-work-sections">
+            {renderDashboardListings()}
+            {renderDashboardCampaigns()}
+            {renderDashboardPayments()}
+          </div>
         </section>
       ) : (
         <DashboardGate
@@ -10334,7 +11050,7 @@ export default function MarketplaceApp({
           <span className="result-count" role="status" aria-live="polite">
             {blocksPending
               ? "Loading the marketplace"
-              : `${visibleListings.length} listing${visibleListings.length === 1 ? "" : "s"} · ${requestableListingCount} requestable · ${visibleListings.length - requestableListingCount} view-only`}
+              : `${visibleListings.length} listing${visibleListings.length === 1 ? "" : "s"} · ${requestableListingCount} available · ${visibleListings.length - requestableListingCount} view-only`}
           </span>
         </div>
 
@@ -10418,17 +11134,23 @@ export default function MarketplaceApp({
                   </div>
                   <button
                     disabled={!isListingRequestable(listing)}
-                    onClick={() => openCampaignRequest(listing)}
+                    onClick={() =>
+                      isListingRequestable(listing) && !isBrief(listing)
+                        ? openListing(listing)
+                        : openCampaignRequest(listing)
+                    }
                     title={
                       isListingRequestable(listing)
-                        ? undefined
+                        ? isBrief(listing)
+                          ? undefined
+                          : "Choose Book as listed or Make an offer."
                         : "The owner must confirm this listing before requests open."
                     }
                   >
                     {isListingRequestable(listing)
                       ? isBrief(listing)
                         ? "Offer my space"
-                        : "Request"
+                        : "View booking options"
                       : "View only"}{" "}
                     <span>↗</span>
                   </button>
@@ -10942,76 +11664,65 @@ export default function MarketplaceApp({
       )}
 
       {accountOpen && user && profile && (
-        <Modal label="Account settings" onClose={() => setAccountOpen(false)} wide>
+        <Modal
+          label="Profile and settings"
+          onClose={() => setAccountOpen(false)}
+          wide
+        >
           <div className="account-dashboard">
             <header className="account-hero">
               <Avatar profile={profile} size="large" />
               <div>
-                <p className="eyebrow">Your SideSpace account</p>
+                <p className="eyebrow">Your SideSpace profile</p>
                 <h2>{profile.display_name}</h2>
                 <p>
                   {user.email} <span>•</span> {rolesLabel(profile)} <span>•</span>{" "}
                   {profile.city || "Location not added"}
                 </p>
               </div>
-              <span className="saved-account-badge">Saved securely</span>
+              <span className="saved-account-badge">Profile saved</span>
             </header>
 
-            <div className="account-actions" aria-label="Account shortcuts">
+            <div className="profile-action-panel">
+              <div>
+                <p className="eyebrow">Profile controls</p>
+                <h3>Show up the way you want.</h3>
+                <p>
+                  Update the public details businesses and Creators see. Your
+                  listings, campaigns, messages, and payments live in Dashboard.
+                </p>
+              </div>
               <button
+                className="button button-dark"
                 onClick={() => {
                   setAccountOpen(false);
                   openProfileEditor(1);
                 }}
               >
-                <span>Edit profile</span>
-                <b>Update photos, links, and details</b>
-              </button>
-              <button
-                onClick={() => {
-                  setAccountOpen(false);
-                  openListingEditor();
-                }}
-              >
-                <span>Create a listing</span>
-                <b>Add a space or marketing placement</b>
-              </button>
-              <button
-                onClick={() => {
-                  setAccountOpen(false);
-                  openInbox();
-                }}
-              >
-                <span>Messages</span>
-                <b>Continue private conversations</b>
-              </button>
-              <button
-                onClick={() =>
-                  document
-                    .getElementById("campaign-requests")
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                }
-              >
-                <span>Campaigns</span>
-                <b>Review requests, dates, and offers</b>
+                Edit profile <span>↗</span>
               </button>
             </div>
 
-            {profile.role === "business" && (
-              <section className="account-section ad-credit-account-section" id="account-ad-credit">
-                <div className="account-section-heading">
-                  <div>
-                    <p className="eyebrow">Advertising credit</p>
-                    <h3>{formatCents(adCreditBalanceCents)} available for advertising.</h3>
-                    <p className="account-section-lede">
-                      It is applied automatically to eligible campaign checkout and cannot be
-                      withdrawn or transferred.
-                    </p>
-                  </div>
-                  <span className="section-count">Spend-only</span>
-                </div>
-              </section>
-            )}
+            <nav className="profile-section-nav" aria-label="Profile settings">
+              {profile.role === "business" && (
+                <a href="#campaign-preferences">Preferences</a>
+              )}
+              {stripeConfigured && profileHasRole(profile, "creator") && (
+                <a href="#payouts">Payouts</a>
+              )}
+              {canonicalRole(profile.role) === "creator" && (
+                <a href="#portfolio">Portfolio</a>
+              )}
+              <a href="#profile-trust">Trust</a>
+              <a href="#profile-security">Security</a>
+              <a
+                className="profile-dashboard-link"
+                href="/dashboard"
+                onClick={() => setAccountOpen(false)}
+              >
+                Open Dashboard ↗
+              </a>
+            </nav>
 
             {profile.role === "business" && (
               <section
@@ -11208,497 +11919,6 @@ export default function MarketplaceApp({
               </section>
             )}
 
-            <section className="account-section" id="campaign-requests">
-              <div className="account-section-heading">
-                <div>
-                  <p className="eyebrow">Campaign requests</p>
-                  <h3>From first idea to accepted work.</h3>
-                </div>
-                <span className="section-count">{campaignRequests.length} total</span>
-              </div>
-
-              {campaignRequests.length ? (
-                <div className="campaign-request-list">
-                  {campaignRequests.map((request) => {
-                    const incoming = request.owner_profile_id === profile.id;
-                    const other = incoming ? request.requester : request.owner;
-                    const payment = paymentTransactions.find(
-                      (item) => item.campaign_request_id === request.id,
-                    );
-                    const isPayer = request.payer_profile_id === profile.id;
-                    const isPayee = request.payee_profile_id === profile.id;
-                    const acceptedMoney = request.accepted_subtotal_cents
-                      ? calculatePaymentBreakdown(request.accepted_subtotal_cents)
-                      : null;
-                    return (
-                      <article className="campaign-request-card" key={request.id}>
-                        <header>
-                          <div>
-                            <small>{incoming ? "Incoming request" : "Your request"}</small>
-                            <h4>{request.campaign_name}</h4>
-                            <p>
-                              {/* A paused listing is hidden from everyone but
-                                  its owner, so the other party's embed comes
-                                  back null. The booking is still perfectly
-                                  valid, so do not tell them it is gone. */}
-                              {request.listing?.title ??
-                                (request.status === "accepted" ||
-                                request.status === "completed"
-                                  ? "This listing is not currently public"
-                                  : "Listing no longer available")}
-                              {" · "}
-                              {other.display_name}
-                            </p>
-                          </div>
-                          <span className={`request-status status-${payment?.status ?? request.status}`}>
-                            {payment?.status?.replaceAll("_", " ") ?? request.status}
-                          </span>
-                        </header>
-                        <div className="campaign-request-facts">
-                          <span>
-                            <small>Dates</small>
-                            <b>{displayDate(request.start_date)} – {displayDate(request.end_date)}</b>
-                          </span>
-                          <span>
-                            <small>Budget</small>
-                            <b>{formatCents(request.budget_cents)}</b>
-                          </span>
-                          <span>
-                            <small>Requested</small>
-                            <b>{request.requested_deliverables}</b>
-                          </span>
-                        </div>
-                        {/* The request modal makes the goal mandatory and
-                            promises the owner a clear brief, but nothing
-                            ever rendered it - owners were accepting and
-                            countering without the one thing the requester
-                            was required to write. */}
-                        {request.goals && (
-                          <p className="campaign-request-brief">
-                            <small>Goal</small>
-                            {request.goals}
-                          </p>
-                        )}
-                        {request.notes && (
-                          <p className="campaign-request-brief">
-                            <small>Notes</small>
-                            {request.notes}
-                          </p>
-                        )}
-                        {request.counter_budget_cents != null && (
-                          <div className="counter-summary">
-                            <strong>
-                              {request.status === "accepted"
-                                ? `Agreed at ${formatCents(request.counter_budget_cents)}`
-                                : `Counteroffer: ${formatCents(request.counter_budget_cents)}`}
-                            </strong>
-                            {request.counter_message && (
-                              <p>{request.counter_message}</p>
-                            )}
-                          </div>
-                        )}
-                        {acceptedMoney && isPayer && (
-                          <div className="campaign-request-facts">
-                            <span>
-                              <small>Campaign</small>
-                              <b>{formatCents(acceptedMoney.subtotalCents)}</b>
-                            </span>
-                            <span>
-                              <small>SideSpace buyer fee (5%)</small>
-                              <b>{formatCents(acceptedMoney.buyerFeeCents)}</b>
-                            </span>
-                            <span>
-                              <small>Total before tax</small>
-                              <b>
-                                {formatCents(
-                                  payment?.charged_total_cents ??
-                                    acceptedMoney.customerTotalCents,
-                                )}
-                              </b>
-                            </span>
-                            {(payment?.ad_credit_cents ?? 0) > 0 && (
-                              <span>
-                                <small>Ad credit</small>
-                                <b>−{formatCents(payment?.ad_credit_cents ?? 0)}</b>
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {acceptedMoney &&
-                          isPayer &&
-                          !payment &&
-                          adCreditBalanceCents > 0 && (
-                            <p className="campaign-request-brief">
-                              <small>Available ad credit</small>
-                              {formatCents(adCreditBalanceCents)} will be applied automatically at
-                              secure checkout. It cannot be withdrawn or transferred.
-                            </p>
-                          )}
-                        {acceptedMoney && isPayee && (
-                          <div className="campaign-request-facts">
-                            <span>
-                              <small>Campaign</small>
-                              <b>{formatCents(acceptedMoney.subtotalCents)}</b>
-                            </span>
-                            <span>
-                              <small>SideSpace creator fee (5%)</small>
-                              <b>−{formatCents(acceptedMoney.creatorFeeCents)}</b>
-                            </span>
-                            <span>
-                              <small>Your earnings</small>
-                              <b>{formatCents(acceptedMoney.creatorPayoutCents)}</b>
-                            </span>
-                          </div>
-                        )}
-                        {(payment?.tax_cents ?? 0) > 0 && isPayer && (
-                          <p className="campaign-request-brief">
-                            <small>Tax collected by Stripe</small>
-                            {formatCents(payment?.tax_cents ?? 0)}
-                          </p>
-                        )}
-                        <div className="campaign-request-actions">
-                          {/* Owners can act after countering - the earlier gate
-                              on "pending" alone stranded them with an empty row.
-                              But Accept is deliberately NOT offered once they
-                              have countered: accepting your own counteroffer
-                              would bind the requester to a price they never
-                              agreed to. To take the original price, revise the
-                              counter back to it and let them accept. */}
-                          {incoming && request.status === "pending" && (
-                            <button
-                              className="button button-dark button-small"
-                              disabled={busy}
-                              onClick={() =>
-                                void respondToCampaignRequest(request, "accepted")
-                              }
-                            >
-                              Accept
-                            </button>
-                          )}
-                          {incoming &&
-                            ["pending", "countered"].includes(request.status) && (
-                            <>
-                              <button onClick={() => setCounteringRequest(request)}>
-                                {request.status === "countered"
-                                  ? "Revise counteroffer"
-                                  : "Counteroffer"}
-                              </button>
-                              <button
-                                disabled={busy}
-                                onClick={() =>
-                                  void respondToCampaignRequest(request, "declined")
-                                }
-                              >
-                                Decline
-                              </button>
-                            </>
-                          )}
-                          {!incoming && request.status === "countered" && (
-                            <button
-                              className="button button-dark button-small"
-                              disabled={busy}
-                              onClick={() =>
-                                void respondToCampaignRequest(request, "accepted")
-                              }
-                            >
-                              Accept counteroffer
-                            </button>
-                          )}
-                          {!incoming && ["pending", "countered"].includes(request.status) && (
-                            <button
-                              disabled={busy}
-                              onClick={() =>
-                                void respondToCampaignRequest(request, "cancelled")
-                              }
-                            >
-                              Cancel request
-                            </button>
-                          )}
-                          {request.status === "accepted" && (
-                            <>
-                              {isPayer && (
-                                <button
-                                  className="button button-coral button-small"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void startCampaignCheckout(request.id)
-                                  }
-                                >
-                                  {payment?.status === "checkout_open"
-                                    ? "Continue secure checkout"
-                                    : "Pay securely with Stripe"}
-                                </button>
-                              )}
-                              {isPayee &&
-                                profileHasRole(profile, "creator") &&
-                                !stripeAccountStatus?.ready && (
-                                <button
-                                  className="button button-dark button-small"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void openStripeFlow(
-                                      "/api/stripe/connect/onboard",
-                                    )
-                                  }
-                                >
-                                  Finish payout setup
-                                </button>
-                              )}
-                              <button
-                                onClick={() => {
-                                  setAccountOpen(false);
-                                  openInbox();
-                                }}
-                              >
-                                Continue in Messages
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="account-empty">
-                  <strong>No campaign requests yet.</strong>
-                  <p>Open a listing and choose Request this placement to start one.</p>
-                </div>
-              )}
-            </section>
-
-            {paymentTransactions.length > 0 && (
-              <section className="account-section" id="payments">
-                <div className="account-section-heading">
-                  <div>
-                    <p className="eyebrow">Payments and earnings</p>
-                    <h3>A durable record of every Stripe checkout.</h3>
-                  </div>
-                  <span className="section-count">
-                    {paymentTransactions.length} total
-                  </span>
-                </div>
-                <div className="campaign-request-list">
-                  {paymentTransactions.map((transaction) => {
-                    const buyer = transaction.business_profile_id === profile.id;
-                    const reviewExpired = transaction.review_deadline
-                      ? Date.now() >= new Date(transaction.review_deadline).getTime()
-                      : false;
-                    const statusLabel =
-                      transaction.workflow_status === "refund_pending"
-                        ? "Refund processing"
-                        : transaction.payout_status === "released"
-                          ? "Payout released"
-                          : transaction.payout_status === "releasing"
-                            ? "Releasing payout"
-                            : transaction.workflow_status === "awaiting_payer_review"
-                              ? "Awaiting payer review"
-                              : transaction.issue_status === "escalated"
-                                ? "Issue escalated"
-                                : transaction.issue_status === "open"
-                                  ? "Issue open"
-                                  : transaction.payout_status === "pending"
-                                    ? "Payout pending"
-                                    : transaction.workflow_status.replaceAll("_", " ");
-                    return (
-                      <article className="campaign-request-card" key={transaction.id}>
-                        <header>
-                          <div>
-                            <small>{buyer ? "Business payment" : "Creator earnings"}</small>
-                            <h4>{transaction.campaign_name}</h4>
-                            <p>{transaction.listing_title}</p>
-                          </div>
-                          <span className={`request-status status-${transaction.workflow_status}`}>
-                            {statusLabel}
-                          </span>
-                        </header>
-                        <div className="campaign-request-facts">
-                          <span>
-                            <small>{buyer ? "Campaign" : "Gross campaign"}</small>
-                            <b>{formatCents(transaction.subtotal_cents)}</b>
-                          </span>
-                          <span>
-                            <small>{buyer ? "Buyer fee" : "Creator fee"}</small>
-                            <b>
-                              {buyer ? "" : "−"}
-                              {formatCents(
-                                buyer
-                                  ? transaction.buyer_fee_cents
-                                  : transaction.creator_fee_cents,
-                              )}
-                            </b>
-                          </span>
-                          <span>
-                            <small>{buyer ? "Total before tax" : "Your earnings"}</small>
-                            <b>
-                              {formatCents(
-                                buyer
-                                  ? transaction.charged_total_cents ??
-                                    transaction.customer_total_cents
-                                  : transaction.creator_payout_cents,
-                              )}
-                            </b>
-                          </span>
-                        </div>
-                        {buyer && (transaction.ad_credit_cents ?? 0) > 0 && (
-                          <p className="campaign-request-brief">
-                            <small>Ad credit applied</small>
-                            −{formatCents(transaction.ad_credit_cents ?? 0)} promotional credit.
-                            It cannot be withdrawn or transferred.
-                          </p>
-                        )}
-                        {transaction.refunded_cents > 0 && (
-                          <p className="campaign-request-brief">
-                            <small>Refunded</small>
-                            {formatCents(transaction.refunded_cents)}
-                          </p>
-                        )}
-                        {transaction.payout_status === "pending" &&
-                          transaction.workflow_status === "paid_payout_pending" && (
-                            <div className="campaign-request-brief">
-                              <small>{buyer ? "Creator payout" : "Payment pending"}</small>
-                              {buyer
-                                ? "Your payment is verified. The Creator can begin work; their payout stays pending until delivery is reviewed."
-                                : "The customer paid in full. Your earnings remain pending until you mark the campaign delivered and the review period ends."}
-                            </div>
-                          )}
-                        {transaction.delivered_at && transaction.review_deadline && (
-                          <div className="campaign-request-brief">
-                            <small>
-                              {buyer
-                                ? "Creator marked this campaign delivered"
-                                : "Review period ends"}
-                            </small>
-                            {buyer && `Delivered ${displayDateTime(transaction.delivered_at)}. `}
-                            Review deadline: {displayDateTime(transaction.review_deadline)}.
-                            {!buyer && " Payout is expected after that time unless the payer reports an issue."}
-                            {reviewExpired &&
-                              transaction.payout_status !== "released" &&
-                              transaction.issue_status === "none" &&
-                              " The deadline has passed; automatic release is processing server-side."}
-                          </div>
-                        )}
-                        {transaction.issue_status !== "none" && transaction.issue && (
-                          <div className="counter-summary">
-                            <strong>
-                              {transaction.issue_status === "escalated"
-                                ? "Issue escalated to SideSpace"
-                                : transaction.issue_status === "resolved"
-                                  ? "Issue resolved"
-                                  : "Resolve with the Creator"}
-                            </strong>
-                            <p>{transaction.issue.details}</p>
-                            {transaction.issue_status === "open" && (
-                              <p>
-                                Payout remains pending. Use Messages to try to resolve the issue
-                                directly before escalating it.
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        {transaction.payout_status === "released" && (
-                          <div className="campaign-request-brief">
-                            <small>Payout released</small>
-                            {buyer
-                              ? "The Creator payout has been released and this campaign is complete."
-                              : `${formatCents(transaction.payout_amount_cents)} was released${
-                                  transaction.payout_released_at
-                                    ? ` on ${displayDateTime(transaction.payout_released_at)}`
-                                    : ""
-                                }.`}
-                          </div>
-                        )}
-                        {transaction.review && (
-                          <div className="campaign-request-brief">
-                            <small>Creator review · {transaction.review.rating}/5</small>
-                            {transaction.review.review_text}
-                          </div>
-                        )}
-                        {transaction.payout_issue && (
-                          <div className="campaign-request-brief">
-                            <small>Payout release needs attention</small>
-                            SideSpace could not finish the transfer yet. It is safe to retry; no
-                            duplicate payout will be created.
-                          </div>
-                        )}
-                        <div className="campaign-request-actions">
-                          {!buyer &&
-                            transaction.workflow_status === "paid_payout_pending" &&
-                            transaction.payout_status === "pending" && (
-                              <button
-                                className="button button-dark button-small"
-                                disabled={busy}
-                                onClick={() =>
-                                  void runCampaignPaymentAction(transaction, "deliver")
-                                }
-                              >
-                                {busy ? "Updating..." : "Mark campaign delivered"}
-                              </button>
-                            )}
-                          {buyer &&
-                            transaction.workflow_status === "awaiting_payer_review" &&
-                            transaction.issue_status === "none" &&
-                            transaction.payout_status === "pending" &&
-                            !reviewExpired && (
-                              <>
-                                <button
-                                  className="button button-coral button-small"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void runCampaignPaymentAction(transaction, "confirm")
-                                  }
-                                >
-                                  {busy ? "Releasing..." : "Confirm work completed"}
-                                </button>
-                                <button
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void runCampaignPaymentAction(transaction, "report_issue")
-                                  }
-                                >
-                                  Report an issue
-                                </button>
-                              </>
-                            )}
-                          {transaction.issue_status === "open" && (
-                            <button
-                              onClick={() => {
-                                setAccountOpen(false);
-                                openInbox();
-                              }}
-                            >
-                              Resolve with the Creator
-                            </button>
-                          )}
-                          {buyer && transaction.issue_status === "open" && (
-                            <button
-                              disabled={busy}
-                              onClick={() =>
-                                void runCampaignPaymentAction(transaction, "escalate")
-                              }
-                            >
-                              Escalate to SideSpace
-                            </button>
-                          )}
-                          {buyer &&
-                            transaction.payout_status === "released" &&
-                            !transaction.review && (
-                              <button
-                                className="button button-dark button-small"
-                                disabled={busy}
-                                onClick={() => void submitCreatorReview(transaction)}
-                              >
-                                Review Creator
-                              </button>
-                            )}
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
-
             {canonicalRole(profile.role) === "creator" && (
               <section className="account-section" id="portfolio">
                 <div className="account-section-heading">
@@ -11795,113 +12015,7 @@ export default function MarketplaceApp({
               </section>
             )}
 
-            <section className="account-section">
-              <div className="account-section-heading">
-                <div>
-                  <p className="eyebrow">My listings</p>
-                  <h3>Everything you have published.</h3>
-                </div>
-                {profile.role !== "consumer" && (
-                  <button
-                    className="button button-dark button-small"
-                    onClick={() => {
-                      setAccountOpen(false);
-                      openListingEditor();
-                    }}
-                  >
-                    New listing <span>+</span>
-                  </button>
-                )}
-              </div>
-
-              {ownListingsLoading ? (
-                <div className="account-empty">Loading your saved listings...</div>
-              ) : ownListings.length ? (
-                <div className="my-listings-grid">
-                  {ownListings.map((listing) => (
-                    <article className="my-listing-card" key={listing.id}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={listing.image_url || "/photos/market-creator.jpg"}
-                        alt={`${listing.title} listing`}
-                        loading="lazy"
-                        decoding="async"
-                      />
-                      <div>
-                        <span className={`listing-status status-${listing.status}`}>
-                          {listing.status}
-                        </span>
-                        <h4>{listing.title}</h4>
-                        <p>
-                          {listing.channel} • {priceLabel(listing)}/{listing.price_unit}
-                        </p>
-                        {/* The one place an owner can find out that the grid
-                            is sinking their listing. listingRank has always
-                            sorted a thin row below every complete one; this
-                            says so, and says which piece is missing, next to
-                            the Edit button that fixes it. */}
-                        {(() => {
-                          const gaps = listingGaps(listing);
-                          if (!gaps.length) return null;
-                          return (
-                            <p className="listing-gap">
-                              Sorted below complete listings — it needs{" "}
-                              {joinList(gaps)}.
-                            </p>
-                          );
-                        })()}
-                        <div className="my-listing-actions">
-                          <button
-                            onClick={() => {
-                              setAccountOpen(false);
-                              openListing(listing);
-                            }}
-                          >
-                            View
-                          </button>
-                          <button onClick={() => openListingEdit(listing)}>
-                            Edit
-                          </button>
-                          <button
-                            disabled={busy}
-                            onClick={() => void updateListingStatus(listing)}
-                          >
-                            {listing.status === "active" ? "Pause" : "Make active"}
-                          </button>
-                          <button
-                            className="is-danger"
-                            disabled={busy}
-                            onClick={() => setDeleteListingTarget(listing)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="account-empty">
-                  <strong>No listings yet.</strong>
-                  <p>
-                    Your first listing will appear here immediately after you publish it.
-                  </p>
-                  {profile.role !== "consumer" && (
-                    <button
-                      className="button button-coral button-small"
-                      onClick={() => {
-                        setAccountOpen(false);
-                        openListingEditor();
-                      }}
-                    >
-                      Create my first listing <span>↗</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </section>
-
-            <section className="account-section trust-section">
+            <section className="account-section trust-section" id="profile-trust">
               <div className="account-section-heading">
                 <div>
                   <p className="eyebrow">Profile trust</p>
@@ -11975,11 +12089,11 @@ export default function MarketplaceApp({
               )}
             </section>
 
-            <section className="account-section settings-section">
+            <section className="account-section settings-section" id="profile-security">
               <div className="account-section-heading">
                 <div>
                   <p className="eyebrow">Login & security</p>
-                  <h3>Account settings.</h3>
+                  <h3>Keep your account protected.</h3>
                 </div>
                 <div className="account-storage-note">
                   <span>✓</span>
@@ -12460,7 +12574,7 @@ export default function MarketplaceApp({
                     Boolean(answers.display_name.trim())) && (
                   <label className="progressive-field">
                     <span className="location-field-label">Where are you based?</span>
-                    <small>City and state. This is how buyers filter.</small>
+                    <small>U.S. city and state. This is how buyers filter.</small>
                     <div className="location-input-row">
                       <CityAutocomplete
                         value={answers.city}
@@ -12499,7 +12613,15 @@ export default function MarketplaceApp({
                       <small className="location-data-status is-error" role="alert">
                         {locationError}
                       </small>
-                    ) : null}
+                    ) : answers.location ? (
+                      <small className="location-data-status" role="status">
+                        ✓ U.S. city-level location saved. Your exact device location is never published.
+                      </small>
+                    ) : (
+                      <small className="location-data-status">
+                        U.S. locations only. Choose a result or use your location to attach an approximate pin.
+                      </small>
+                    )}
                   </label>
                   )}
                   {(onboardingMode === "edit" || Boolean(answers.city.trim())) && (
@@ -15593,30 +15715,74 @@ export default function MarketplaceApp({
                   <strong>{formatCents(selectedListing.price_cents)}</strong>
                   <span> / {selectedListing.price_unit}</span>
                 </div>
-                <div className="detail-primary-actions">
+              </div>
+              {isListingRequestable(selectedListing) && !isBrief(selectedListing) && (
+                <div
+                  className="detail-action-options"
+                  role="group"
+                  aria-label="Choose how to continue"
+                >
+                  {isFixedPriceListing(selectedListing) && (
+                    <div className="detail-action-option is-direct">
+                      <div className="detail-action-option-heading">
+                        <small>FIXED TERMS</small>
+                        <strong>Book as listed</strong>
+                      </div>
+                      <p>
+                        Use the owner&apos;s price, deliverables, and cancellation terms exactly as shown.
+                      </p>
+                      <button
+                        className="button button-coral"
+                        onClick={() => openCampaignFlow(selectedListing, "buy_now")}
+                      >
+                        Book as listed <span>↗</span>
+                      </button>
+                    </div>
+                  )}
+                  <div
+                    className={`detail-action-option${
+                      isFixedPriceListing(selectedListing) ? "" : " is-full"
+                    }`}
+                  >
+                    <div className="detail-action-option-heading">
+                      <small>FLEXIBLE TERMS</small>
+                      <strong>Make an offer</strong>
+                    </div>
+                    <p>
+                      Suggest different timing, scope, or budget — or ask the owner a question.
+                    </p>
+                    <button
+                      className="button button-dark"
+                      onClick={() => openCampaignFlow(selectedListing, "offer")}
+                    >
+                      Make an offer <span>↗</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="detail-primary-actions">
+                {(!isListingRequestable(selectedListing) || isBrief(selectedListing)) && (
                   <button
                     className="button button-coral"
                     disabled={!isListingRequestable(selectedListing)}
                     onClick={() => openCampaignRequest(selectedListing)}
                   >
                     {isListingRequestable(selectedListing)
-                      ? isBrief(selectedListing)
-                        ? "Offer my space"
-                        : "Request this placement"
+                      ? "Offer my space"
                       : "View only"}{" "}
                     <span>↗</span>
                   </button>
-                  <button
-                    className="button button-dark"
-                    onClick={() => {
-                      const listing = selectedListing;
-                      closeListing();
-                      openListingChat(listing);
-                    }}
-                  >
-                    Message owner <span>↗</span>
-                  </button>
-                </div>
+                )}
+                <button
+                  className="button button-dark"
+                  onClick={() => {
+                    const listing = selectedListing;
+                    closeListing();
+                    openListingChat(listing);
+                  }}
+                >
+                  Message owner <span>↗</span>
+                </button>
               </div>
               <div className="detail-safety-actions">
                 <button
@@ -15661,7 +15827,7 @@ export default function MarketplaceApp({
                           const owner = selectedListing.owner;
                           if (
                             window.confirm(
-                              `Block ${owner.display_name}? They will not be able to message you or request your listings, and their listings will be hidden from you. You can undo this in Account settings.`,
+                              `Block ${owner.display_name}? They will not be able to message you or request your listings, and their listings will be hidden from you. You can undo this in Profile & settings.`,
                             )
                           ) {
                             void blockProfile(owner);
@@ -15681,22 +15847,71 @@ export default function MarketplaceApp({
 
       {campaignListing && (
         <Modal
-          label={`Request ${campaignListing.title}`}
-          onClose={() => setCampaignListing(null)}
+          label={`${campaignRequestMode === "buy_now" ? "Book as listed" : "Make an offer"} on ${campaignListing.title}`}
+          onClose={() => {
+            setCampaignListing(null);
+            setCampaignRequestMode("offer");
+          }}
           wide
         >
           <div className="modal-heading">
-            <p className="eyebrow">Campaign request</p>
-            <h2>Request {campaignListing.title}</h2>
+            <p className="eyebrow">
+              {campaignRequestMode === "buy_now" ? "Book as listed" : "Make an offer"}
+            </p>
+            <h2>
+              {campaignRequestMode === "buy_now"
+                ? `Book ${campaignListing.title}`
+                : `Make an offer on ${campaignListing.title}`}
+            </h2>
             <p>
-              Send the owner a clear brief with dates, budget, and the result you
-              want. Nothing is charged at this stage.
+              {campaignRequestMode === "buy_now"
+                ? "Accept the owner’s published terms, choose your dates, and share the campaign context. The owner confirms availability before payment."
+                : isBrief(campaignListing)
+                  ? "Tell the business how you can meet this brief. Suggest your scope, timing, and terms, then keep the conversation going in Messages."
+                  : "Suggest different timing, scope, deliverables, or budget. Ask questions before you agree. Nothing is charged at this stage."}
             </p>
           </div>
           {campaignListing.owner.is_demo && (
             <div className="demo-notice">
               <strong>This is a demo listing.</strong>
-              <p>Your request will be saved as a sample and will not contact a real person.</p>
+              <p>Your {campaignRequestMode === "buy_now" ? "booking" : "offer"} will be saved as a sample and will not contact a real person.</p>
+            </div>
+          )}
+          {campaignRequestMode === "buy_now" && (
+            <div className="locked-listing-terms" aria-label="Terms you are accepting">
+              <div>
+                <small>Published price</small>
+                <strong>{formatCents(campaignListing.price_cents)}</strong>
+                <span>/ {campaignListing.price_unit}</span>
+              </div>
+              <div>
+                <small>What you receive</small>
+                <strong>
+                  {campaignListing.deliverables || campaignListing.format}
+                </strong>
+              </div>
+              <div>
+                <small>Booking rules</small>
+                <strong>{campaignListing.minimum_booking || "One placement"}</strong>
+                <span>
+                  {campaignListing.lead_time_days
+                    ? `${campaignListing.lead_time_days}-day lead time`
+                    : "Flexible lead time"}
+                  {campaignListing.available_from || campaignListing.available_to
+                    ? ` · ${displayDate(campaignListing.available_from)}–${displayDate(campaignListing.available_to)}`
+                    : " · Open dates"}
+                </span>
+              </div>
+              <div>
+                <small>Cancellation</small>
+                <strong>
+                  {campaignListing.cancellation_policy ||
+                    "Agree with the owner before accepting the campaign."}
+                </strong>
+              </div>
+              <p>
+                These terms are fixed for this booking. To suggest changes, go back and choose Make an offer.
+              </p>
             </div>
           )}
           <form className="field-grid campaign-form" onSubmit={submitCampaignRequest}>
@@ -15710,61 +15925,109 @@ export default function MarketplaceApp({
               />
             </label>
             <label>
-              Start date
-              <input name="start_date" type="date" required />
+              {campaignRequestMode === "buy_now" ? "Start date" : "Offer budget"}
+              {campaignRequestMode === "buy_now" ? (
+                <input
+                  name="start_date"
+                  type="date"
+                  min={listingBookingMinDate(campaignListing)}
+                  max={campaignListing.available_to ?? undefined}
+                  required
+                />
+              ) : (
+                <input
+                  name="budget"
+                  type="number"
+                  max="2000000000"
+                  min="0"
+                  required
+                  defaultValue={centsToInputDollars(campaignListing.price_cents)}
+                />
+              )}
             </label>
             <label>
-              End date
-              <input name="end_date" type="date" required />
+              {campaignRequestMode === "buy_now" ? "End date" : "Published rate"}
+              {campaignRequestMode === "buy_now" ? (
+                <input
+                  name="end_date"
+                  type="date"
+                  min={listingBookingMinDate(campaignListing)}
+                  max={campaignListing.available_to ?? undefined}
+                  required
+                />
+              ) : (
+                <input
+                  value={`${formatCents(campaignListing.price_cents)} / ${campaignListing.price_unit}`}
+                  readOnly
+                />
+              )}
             </label>
-            <label>
-              Proposed budget
-              <input
-                name="budget"
-                type="number"
-                max="2000000000"
-                min="0"
-                required
-                defaultValue={centsToInputDollars(campaignListing.price_cents)}
-              />
-            </label>
-            <label>
-              Listing rate
-              <input
-                value={`${formatCents(campaignListing.price_cents)} / ${campaignListing.price_unit}`}
-                readOnly
-              />
-            </label>
+            {campaignRequestMode !== "buy_now" && (
+              <>
+                <label>
+                  Start date
+                  <input name="start_date" type="date" required />
+                </label>
+                <label>
+                  End date
+                  <input name="end_date" type="date" required />
+                </label>
+              </>
+            )}
             <label className="field-wide">
-              Campaign goal
+              {campaignRequestMode === "buy_now" ? "Campaign context" : "What are you trying to achieve?"}
               <textarea
                 name="goals"
                 required
                 minLength={10}
-                placeholder="What should this campaign help your business achieve?"
+                placeholder={
+                  campaignRequestMode === "buy_now"
+                    ? "Share what you’re promoting and who it is for."
+                    : "What should this campaign help your business achieve?"
+                }
               />
             </label>
+            {campaignRequestMode !== "buy_now" && (
+              <label className="field-wide">
+                {isBrief(campaignListing) ? "What you’ll deliver" : "What you’d like delivered"}
+                <textarea
+                  name="requested_deliverables"
+                  required
+                  placeholder={campaignListing.deliverables || campaignListing.format}
+                />
+              </label>
+            )}
             <label className="field-wide">
-              Requested deliverables
-              <textarea
-                name="requested_deliverables"
-                required
-                placeholder={campaignListing.deliverables || campaignListing.format}
-              />
-            </label>
-            <label className="field-wide">
-              Notes for the owner
+              {campaignRequestMode === "buy_now"
+                ? "Notes for the owner (optional)"
+                : "Questions or extra details (optional)"}
               <textarea
                 name="notes"
-                placeholder="Creative requirements, audience details, links, or questions"
+                placeholder={
+                  campaignRequestMode === "buy_now"
+                    ? "Share useful context without changing the listed terms."
+                    : "Creative requirements, audience details, links, or questions"
+                }
               />
             </label>
             <div className="form-submit field-wide">
-              <button type="button" onClick={() => setCampaignListing(null)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setCampaignListing(null);
+                  setCampaignRequestMode("offer");
+                }}
+              >
                 Cancel
               </button>
               <button className="button button-coral" disabled={busy}>
-                {busy ? "Sending request..." : "Send campaign request"}{" "}
+                {busy
+                  ? campaignRequestMode === "buy_now"
+                    ? "Sending booking..."
+                    : "Sending offer..."
+                  : campaignRequestMode === "buy_now"
+                    ? "Send booking request"
+                    : "Send offer"}{" "}
                 <span>↗</span>
               </button>
             </div>

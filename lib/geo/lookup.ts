@@ -1,4 +1,9 @@
-import { formatPlaceLabel, isPopulatedPlace, type GeoPlace } from "./places";
+import {
+  formatPlaceLabel,
+  isPopulatedPlace,
+  isUnitedStatesCountryCode,
+  type GeoPlace,
+} from "./places";
 
 const USER_AGENT =
   "SideSpace/1.0 (https://sidespace.ad; sidespacesupport@gmail.com)";
@@ -41,7 +46,13 @@ function placeId(prefix: string, id: string) {
 
 function fromOpenMeteo(hit: OpenMeteoHit): GeoPlace | null {
   const name = hit.name?.trim();
-  if (!name || !isPopulatedPlace(hit.feature_code)) return null;
+  if (
+    !name ||
+    !isPopulatedPlace(hit.feature_code) ||
+    !isUnitedStatesCountryCode(hit.country_code)
+  ) {
+    return null;
+  }
   if (
     typeof hit.latitude !== "number" ||
     typeof hit.longitude !== "number" ||
@@ -61,6 +72,7 @@ function fromOpenMeteo(hit: OpenMeteoHit): GeoPlace | null {
     }),
     latitude: hit.latitude,
     longitude: hit.longitude,
+    countryCode: "US",
   };
 }
 
@@ -68,7 +80,14 @@ function fromPhoton(feature: PhotonFeature): GeoPlace | null {
   const props = feature.properties;
   const coords = feature.geometry?.coordinates;
   const name = (props?.name || props?.city || "").trim();
-  if (!name || !coords || coords.length < 2) return null;
+  if (
+    !name ||
+    !coords ||
+    coords.length < 2 ||
+    !isUnitedStatesCountryCode(props?.countrycode)
+  ) {
+    return null;
+  }
   const osmValue = (props?.osm_value || props?.type || "").toLowerCase();
   if (SKIP_OSM_VALUES.has(osmValue)) return null;
   const longitude = coords[0];
@@ -88,6 +107,7 @@ function fromPhoton(feature: PhotonFeature): GeoPlace | null {
     }),
     latitude,
     longitude,
+    countryCode: "US",
   };
 }
 
@@ -109,6 +129,7 @@ async function searchOpenMeteo(query: string): Promise<GeoPlace[]> {
   url.searchParams.set("count", "8");
   url.searchParams.set("language", "en");
   url.searchParams.set("format", "json");
+  url.searchParams.set("countryCode", "US");
   const response = await fetch(url, {
     headers: headers(),
     next: { revalidate: 86_400 },
@@ -124,6 +145,7 @@ async function searchPhoton(query: string): Promise<GeoPlace[]> {
   url.searchParams.set("limit", "8");
   url.searchParams.set("lang", "en");
   url.searchParams.set("layer", "city");
+  url.searchParams.set("countrycode", "US");
   const response = await fetch(url, {
     headers: headers(),
     next: { revalidate: 86_400 },
@@ -179,6 +201,7 @@ async function reverseNominatim(
     lon?: string;
   };
   const address = body.address;
+  if (!isUnitedStatesCountryCode(address?.country_code)) return null;
   const name = (
     address?.city ||
     address?.town ||
@@ -200,6 +223,7 @@ async function reverseNominatim(
     }),
     latitude: Number(body.lat ?? latitude),
     longitude: Number(body.lon ?? longitude),
+    countryCode: "US",
   };
 }
 
@@ -220,6 +244,7 @@ async function reversePhoton(
   const feature = body.features?.[0];
   if (!feature) return null;
   const props = feature.properties;
+  if (!isUnitedStatesCountryCode(props?.countrycode)) return null;
   const name = (props?.city || props?.name || "").trim();
   if (!name) return null;
   const coords = feature.geometry?.coordinates;
@@ -234,6 +259,7 @@ async function reversePhoton(
     }),
     latitude: coords?.[1] ?? latitude,
     longitude: coords?.[0] ?? longitude,
+    countryCode: "US",
   };
 }
 
