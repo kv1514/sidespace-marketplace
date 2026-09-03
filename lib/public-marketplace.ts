@@ -4,12 +4,108 @@ import {
   PUBLIC_PROFILE_COLUMNS,
   type Invite,
 } from "@/lib/supabase/public";
+import { localListingSeeds, localProfiles } from "@/app/localMarketplaceData";
+import type { ListingSocialPreview } from "@/lib/site-metadata";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export type PublicListingPreview = ListingSocialPreview & {
+  channel: string;
+};
+
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  if (Array.isArray(value)) {
+    return record(value[0]);
+  }
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function normalizePublicListingPreview(
+  value: unknown,
+): PublicListingPreview | null {
+  const row = record(value);
+  if (!row || row.status !== "active") return null;
+
+  const id = text(row.id);
+  const title = text(row.title);
+  const channel = text(row.channel);
+  if (!id || !title || !channel) return null;
+
+  const owner = record(row.owner);
+  const imageUrls = Array.isArray(row.image_urls)
+    ? row.image_urls.filter((item): item is string => typeof item === "string")
+    : [];
+
+  return {
+    id,
+    title,
+    channel,
+    format: text(row.format) || null,
+    description: text(row.description) || null,
+    imageUrl: text(row.image_url) || null,
+    imageUrls,
+    locationArea: text(row.location_area) || null,
+    ownerName: text(owner?.display_name) || null,
+    ownerCity: text(owner?.city) || null,
+  };
+}
+
+function localListingPreview(listingId: string) {
+  const listing = localListingSeeds.find((item) => item.id === listingId);
+  if (!listing) return null;
+  const owner = localProfiles.find(
+    (profile) => profile.id === listing.owner_profile_id,
+  );
+  if (!owner) return null;
+
+  return normalizePublicListingPreview({
+    ...listing,
+    owner,
+  });
+}
+
 export function isInviteToken(value: unknown): value is string {
   return typeof value === "string" && UUID.test(value);
+}
+
+/** Load only the public fields needed to render a listing link preview. */
+export async function loadPublicListing(
+  listingId: unknown,
+): Promise<PublicListingPreview | null> {
+  if (typeof listingId !== "string" || !UUID.test(listingId)) return null;
+
+  const configured = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  );
+  if (!configured) return localListingPreview(listingId);
+
+  try {
+    const supabase = createPublicClient();
+    const { data, error } = await supabase
+      .from("listings")
+      .select(
+        "id,title,channel,format,description,image_url,image_urls,location_area,status,owner:profiles!listings_owner_profile_id_fkey(id,display_name,city)",
+      )
+      .eq("id", listingId)
+      .eq("status", "active")
+      .maybeSingle();
+    if (error) {
+      console.error("[listing metadata] listing fetch failed:", error);
+      return null;
+    }
+    return normalizePublicListingPreview(data);
+  } catch (error) {
+    console.error("[listing metadata] listing fetch threw:", error);
+    return null;
+  }
 }
 
 export async function loadInvite(token: unknown): Promise<Invite | null> {

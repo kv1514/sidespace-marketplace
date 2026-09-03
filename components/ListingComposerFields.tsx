@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from "react";
 import type { BookingSchedule } from "@/lib/listings/availability";
 import { addCalendarDays, calendarToday } from "@/lib/listings/availability";
 import { centsToInputDollars } from "@/lib/payments/fees";
@@ -10,14 +10,298 @@ type SavedListing = BookingSchedule & Partial<Record<"title" | "channel" | "form
 };
 export type ComposerKind = "social" | "physical" | "sponsorship" | "brief";
 
-export function ListingComposerFields({ listing = {}, kind, city = "", audience = "", channels, surfaces, installers, platforms, aiTools, spaceTools, onInstantChange, draftFiles }: {
+const MAX_LISTING_PHOTO_FILES = 6;
+const LISTING_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const EMPTY_LISTING_FILES: File[] = [];
+
+type ListingPhotoItem = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
+
+function listingPhotoId(file: File) {
+  return [file.name, file.size, file.lastModified, file.type].join("::");
+}
+
+function isListingPhoto(file: File) {
+  return LISTING_PHOTO_TYPES.includes(file.type) || /\.(?:jpe?g|png|webp)$/i.test(file.name);
+}
+
+function formatPhotoSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function revokeListingPhoto(item: ListingPhotoItem) {
+  if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+}
+
+function writeListingFilesToInput(input: HTMLInputElement | null, photos: ListingPhotoItem[]) {
+  if (!input || typeof DataTransfer === "undefined") return;
+  const transfer = new DataTransfer();
+  photos.forEach(({ file }) => transfer.items.add(file));
+  input.files = transfer.files;
+}
+
+function createListingPhotoItems(files: File[]) {
+  return files
+    .filter((file) => file.size > 0 && isListingPhoto(file))
+    .slice(0, MAX_LISTING_PHOTO_FILES)
+    .map((file) => ({
+      id: listingPhotoId(file),
+      file,
+      previewUrl: typeof window === "undefined" ? "" : URL.createObjectURL(file),
+    }));
+}
+
+function hasDragType(event: DragEvent<HTMLElement>, type: string) {
+  return Array.from(event.dataTransfer.types).includes(type);
+}
+
+function ListingPhotoPicker({ label, draftFiles = EMPTY_LISTING_FILES, onFilesChange, hasSavedPhotos = false }: {
+  label: string;
+  draftFiles?: File[];
+  onFilesChange?: (files: File[]) => void;
+  hasSavedPhotos?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
+  const [photos, setPhotos] = useState<ListingPhotoItem[]>(() => createListingPhotoItems(draftFiles));
+  const photosRef = useRef<ListingPhotoItem[]>(photos);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [fileDropActive, setFileDropActive] = useState(false);
+  const [fileMessage, setFileMessage] = useState("");
+
+  useEffect(() => {
+    writeListingFilesToInput(inputRef.current, photosRef.current);
+  }, [draftFiles]);
+
+  useEffect(() => () => {
+    photosRef.current.forEach(revokeListingPhoto);
+    photosRef.current = [];
+  }, []);
+
+  function commitPhotos(next: ListingPhotoItem[]) {
+    const nextIds = new Set(next.map((photo) => photo.id));
+    photosRef.current.forEach((photo) => {
+      if (!nextIds.has(photo.id)) revokeListingPhoto(photo);
+    });
+    photosRef.current = next;
+    setPhotos(next);
+    onFilesChange?.(next.map(({ file }) => file));
+    writeListingFilesToInput(inputRef.current, next);
+  }
+
+  function addFiles(incoming: File[]) {
+    if (!incoming.length) return;
+    const current = photosRef.current;
+    const existingIds = new Set(current.map((photo) => photo.id));
+    const invalidCount = incoming.filter((file) => file.size > 0 && !isListingPhoto(file)).length;
+    const unique = incoming.filter((file) => {
+      if (file.size <= 0 || !isListingPhoto(file)) return false;
+      const id = listingPhotoId(file);
+      if (existingIds.has(id)) return false;
+      existingIds.add(id);
+      return true;
+    });
+    const room = Math.max(0, MAX_LISTING_PHOTO_FILES - current.length);
+    const accepted = unique.slice(0, room).map((file) => ({
+      id: listingPhotoId(file),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+    if (accepted.length) commitPhotos([...current, ...accepted]);
+
+    const messages = [
+      invalidCount ? `${invalidCount} file${invalidCount === 1 ? " was" : "s were"} skipped. Use JPG, PNG, or WebP.` : "",
+      unique.length > room
+        ? room > 0
+          ? `Added ${accepted.length} photo${accepted.length === 1 ? "" : "s"}. ${unique.length - room} more photo${unique.length - room === 1 ? " was" : "s were"} not added; listings can have up to 6.`
+          : "You already have 6 photos. Remove one before adding another."
+        : "",
+    ].filter(Boolean);
+    setFileMessage(messages.join(" "));
+  }
+
+  function removePhoto(index: number) {
+    commitPhotos(photosRef.current.filter((_, photoIndex) => photoIndex !== index));
+    setFileMessage("");
+  }
+
+  function movePhoto(from: number, to: number) {
+    const current = photosRef.current;
+    if (from === to || from < 0 || to < 0 || from >= current.length || to >= current.length) return;
+    const next = [...current];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    commitPhotos(next);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function handlePhotoDragStart(event: DragEvent<HTMLLIElement>, index: number) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+    setDraggedIndex(index);
+  }
+
+  function handlePhotoDragOver(event: DragEvent<HTMLLIElement>, index: number) {
+    if (draggedIndex === null || !hasDragType(event, "text/plain")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverIndex(index);
+  }
+
+  function handlePhotoDrop(event: DragEvent<HTMLLIElement>, index: number) {
+    if (draggedIndex === null || !hasDragType(event, "text/plain")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    movePhoto(draggedIndex, index);
+  }
+
+  function handlePhotoDragEnd() {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function handleFileDropzoneDragOver(event: DragEvent<HTMLDivElement>) {
+    if (draggedIndex !== null || !hasDragType(event, "Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setFileDropActive(true);
+  }
+
+  function handleFileDropzoneDrop(event: DragEvent<HTMLDivElement>) {
+    if (draggedIndex !== null || !hasDragType(event, "Files")) return;
+    event.preventDefault();
+    setFileDropActive(false);
+    addFiles(Array.from(event.dataTransfer.files));
+  }
+
+  return (
+    <div className={`listing-photo-picker field-wide${fileDropActive ? " is-drop-active" : ""}`}>
+      <div className="listing-photo-picker-heading">
+        <div>
+          <label className="listing-photo-picker-label" htmlFor={inputId}>{label}</label>
+          <p>{hasSavedPhotos
+            ? "New photos are added after the current set. Use the photo strip below to change the cover."
+            : "Show people what they’re booking. The first photo becomes your cover."}</p>
+        </div>
+        <span className="listing-photo-count" aria-live="polite">
+          {photos.length}/{MAX_LISTING_PHOTO_FILES}
+        </span>
+      </div>
+      <div
+        className="listing-photo-dropzone"
+        onDragEnter={handleFileDropzoneDragOver}
+        onDragOver={handleFileDropzoneDragOver}
+        onDragLeave={(event) => {
+          const relatedTarget = event.relatedTarget;
+          if (!(relatedTarget instanceof Node) || !event.currentTarget.contains(relatedTarget)) setFileDropActive(false);
+        }}
+        onDrop={handleFileDropzoneDrop}
+      >
+        {photos.length ? (
+          <>
+            <ol className="listing-photo-grid" aria-label="Selected listing photos">
+              {photos.map((photo, index) => (
+                <li
+                  className={`listing-photo-card${draggedIndex === index ? " is-dragging" : ""}${dragOverIndex === index && draggedIndex !== index ? " is-drag-over" : ""}`}
+                  draggable={photos.length > 1}
+                  key={photo.id}
+                  onDragStart={(event) => handlePhotoDragStart(event, index)}
+                  onDragOver={(event) => handlePhotoDragOver(event, index)}
+                  onDrop={(event) => handlePhotoDrop(event, index)}
+                  onDragEnd={handlePhotoDragEnd}
+                >
+                  <div className="listing-photo-preview">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photo.previewUrl} alt={`Selected listing photo ${index + 1}`} />
+                    <span className="listing-photo-order" aria-hidden="true">{index + 1}</span>
+                    {index === 0 && !hasSavedPhotos && <span className="listing-photo-cover">Cover</span>}
+                    <button
+                      type="button"
+                      className="listing-photo-remove"
+                      aria-label={`Remove photo ${index + 1}`}
+                      title="Remove photo"
+                      onClick={() => removePhoto(index)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="listing-photo-meta">
+                    <span className="listing-photo-name" title={photo.file.name}>{photo.file.name}</span>
+                    <span className="listing-photo-size">{formatPhotoSize(photo.file.size)}</span>
+                  </div>
+                  <div className="listing-photo-actions">
+                    <span>{photos.length > 1 ? "Drag to move" : hasSavedPhotos ? "Added photo" : "Cover photo"}</span>
+                    <div className="listing-photo-move-buttons">
+                      <button
+                        type="button"
+                        disabled={index === 0}
+                        aria-label={`Move photo ${index + 1} earlier`}
+                        title="Move earlier"
+                        onClick={() => movePhoto(index, index - 1)}
+                      >
+                        ←
+                      </button>
+                      <button
+                        type="button"
+                        disabled={index === photos.length - 1}
+                        aria-label={`Move photo ${index + 1} later`}
+                        title="Move later"
+                        onClick={() => movePhoto(index, index + 1)}
+                      >
+                        →
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            {photos.length < MAX_LISTING_PHOTO_FILES && (
+              <button type="button" className="listing-photo-add" onClick={() => inputRef.current?.click()}>
+                <span aria-hidden="true">+</span> Add another photo
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="listing-photo-empty">
+            <span className="listing-photo-empty-mark" aria-hidden="true">+</span>
+            <strong>Add photos of what you’re offering</strong>
+            <span>Drop them here or choose them from your device</span>
+            <button type="button" className="button button-dark button-small" onClick={() => inputRef.current?.click()}>
+              Choose photos <span aria-hidden="true">↗</span>
+            </button>
+          </div>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        id={inputId}
+        className="listing-photo-input"
+        name="listing_photos"
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        multiple
+        onChange={(event) => addFiles(Array.from(event.currentTarget.files ?? []))}
+      />
+      <div className="listing-photo-picker-footer">
+        <small>JPG, PNG, or WebP · Up to 6 photos</small>
+        {fileMessage && <small className="listing-photo-message" role="alert">{fileMessage}</small>}
+      </div>
+    </div>
+  );
+}
+
+export function ListingComposerFields({ listing = {}, kind, city = "", audience = "", channels, surfaces, installers, platforms, aiTools, spaceTools, onInstantChange, draftFiles, onFilesChange, hasSavedPhotos }: {
   listing?: SavedListing; kind: ComposerKind; city?: string; audience?: string;
   channels: string[]; surfaces: string[]; installers: { value: string; label: string }[]; platforms: string[];
   aiTools?: ReactNode; spaceTools?: ReactNode; onInstantChange?: (enabled: boolean) => void;
-  draftFiles?: File[];
+  draftFiles?: File[]; onFilesChange?: (files: File[]) => void; hasSavedPhotos?: boolean;
 }) {
-  const photoInput = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (photoInput.current && draftFiles?.length) { const transfer = new DataTransfer(); draftFiles.forEach((file) => transfer.items.add(file)); photoInput.current.files = transfer.files; } }, [draftFiles]);
   const brief = kind === "brief";
   const legacy = Boolean(listing.id && !listing.timing_kind);
   const [timing, setTiming] = useState(listing.timing_kind || (legacy ? "" : kind === "social" ? "deadline" : "date_range"));
@@ -97,7 +381,7 @@ export function ListingComposerFields({ listing = {}, kind, city = "", audience 
       </div>
     </section>
     <section className="composer-section field-wide">{!brief && <h3>Photos and details</h3>}<div className="field-grid">
-      <label className="field-wide">{brief ? "Artwork (optional)" : "Photos (optional)"}<input ref={photoInput} name="listing_photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /><small>Up to 6 photos. Existing photos are kept unless replaced.</small></label>
+      <ListingPhotoPicker label={brief ? "Artwork (optional)" : "Photos (optional)"} draftFiles={draftFiles} onFilesChange={onFilesChange} hasSavedPhotos={hasSavedPhotos} />
       <label className="field-wide">{brief ? "Target area" : "Location or service area"}<input name="location_area" defaultValue={listing.location_area || city} placeholder="City, area, or online" /></label>
       <details className="composer-options field-wide"><summary>Additional description and audience</summary><div className="field-grid">
         <label className="field-wide">Additional description<textarea name="description" rows={3} defaultValue={listing.description || ""} /></label>

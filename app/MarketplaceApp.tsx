@@ -4987,6 +4987,11 @@ export default function MarketplaceApp({
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarCropPending, setAvatarCropPending] = useState(false);
   const [listingFiles, setListingFiles] = useState<File[]>([]);
+  const listingFilesRef = useRef<File[]>([]);
+  function setPendingListingFiles(files: File[]) {
+    listingFilesRef.current = files;
+    setListingFiles(files);
+  }
   const [aiFilling, setAiFilling] = useState(false);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
   /** What the model says it can see in the owner's photo, shown so a wrong "fact" is caught before it is published. */
@@ -5078,10 +5083,11 @@ export default function MarketplaceApp({
         surface_types: values.getAll("surface_types").map(String), target_platforms: values.getAll("target_platforms").map(String),
         sponsor_slots: Number(text("sponsor_slots")) || null,
       });
-      setNewListingDrafts((current) => ({ ...current, [newListingOffer]: { listing: snapshot, files: values.getAll("listing_photos").filter((value): value is File => value instanceof File && value.size > 0) } }));
+      setNewListingDrafts((current) => ({ ...current, [newListingOffer]: { listing: snapshot, files: listingFilesRef.current.filter((file) => file.size > 0) } }));
     }
     setAiQuestions([]);
     setAiObservations([]);
+    setPendingListingFiles(newListingDrafts[kind]?.files ?? []);
     setNewListingOffer(kind);
     setListingInstantEnabled(Boolean(newListingDrafts[kind]?.listing.instant_booking_enabled));
   }
@@ -5139,7 +5145,7 @@ export default function MarketplaceApp({
    * behind when somebody re-picks five times before they are happy.
    */
   function chooseListingFiles(files: File[]) {
-    setListingFiles(files);
+    setPendingListingFiles(files);
     if (previewPhotoUrl) URL.revokeObjectURL(previewPhotoUrl);
     const file = files.find((item) => item.size > 0);
     setPreviewPhotoUrl(file ? URL.createObjectURL(file) : "");
@@ -7195,7 +7201,7 @@ export default function MarketplaceApp({
   }
 
   function onboardingStepCount() {
-    return onboardingMode === "edit" ? 2 : onboardingStep <= 2 ? 3 : 5;
+    return onboardingMode === "edit" ? 2 : 5;
   }
 
   function goToOnboardingStep(step: number) {
@@ -7283,10 +7289,6 @@ export default function MarketplaceApp({
       reportMissing(problem);
       return;
     }
-    if (onboardingMode === "setup" && onboardingStep === 2) {
-      void publishOnboarding(null, { skipListing: true, openComposer: true });
-      return;
-    }
     const nextOffer = nextSelectedCreatorOffer();
     if (nextOffer) {
       switchCreatorOffer(nextOffer);
@@ -7347,7 +7349,7 @@ export default function MarketplaceApp({
    */
   async function publishOnboarding(
     event?: FormEvent<HTMLFormElement> | null,
-    options?: { skipListing?: boolean; openComposer?: boolean },
+    options?: { skipListing?: boolean },
   ) {
     event?.preventDefault();
     const skipListing =
@@ -7398,7 +7400,6 @@ export default function MarketplaceApp({
     }
 
     if (onboardingPreview) {
-      if (options?.openComposer) { setListingPreview(true); setNewListingOffer("social"); setListingOpen(true); }
       setOnboardingOpen(false);
       setOnboardingPreview(false);
       setOnboardingStep(1);
@@ -7768,10 +7769,7 @@ export default function MarketplaceApp({
               ? "You’re in. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
               : "You’re in. Browse listings, or start a campaign whenever you’re ready.",
         );
-        if (options?.openComposer) {
-          setEditingListing(null); setNewListingDrafts({}); setNewListingOffer("social");
-          setListingPreview(false); setListingFeedback(""); setListingInstantEnabled(false); setListingOpen(true);
-        } else if (route !== "marketplace") {
+        if (route !== "marketplace") {
           window.location.assign("/marketplace?role=supply");
         }
         return;
@@ -8494,9 +8492,7 @@ export default function MarketplaceApp({
       throw new Error(message);
     };
     const values = new FormData(listingForm);
-    const listingFiles = values
-      .getAll("listing_photos")
-      .filter((value): value is File => value instanceof File && value.size > 0);
+    const selectedListingFiles = listingFilesRef.current.filter((file) => file.size > 0);
     const fallbackImage =
       editingListing?.image_url ||
       profile.gallery_urls?.[0] ||
@@ -8513,7 +8509,7 @@ export default function MarketplaceApp({
       const keptImages = editingListing
         ? listingImages(editingListing).filter((url) => !listingSeedImages.has(url))
         : [];
-      if (keptImages.length + listingFiles.length > MAX_LISTING_PHOTOS) {
+      if (keptImages.length + selectedListingFiles.length > MAX_LISTING_PHOTOS) {
         const room = MAX_LISTING_PHOTOS - keptImages.length;
         throw new Error(
           room > 0
@@ -8670,9 +8666,9 @@ export default function MarketplaceApp({
       ]);
 
       let photoWarning = "";
-      if (listingFiles.length) {
+      if (selectedListingFiles.length) {
         try {
-          const uploadedImages = await uploadImages(listingFiles, "listings");
+          const uploadedImages = await uploadImages(selectedListingFiles, "listings");
           const imageUrls = [...keptImages, ...uploadedImages].slice(0, MAX_LISTING_PHOTOS);
           if (imageUrls.length) {
             const updated = await supabase
@@ -8759,7 +8755,7 @@ export default function MarketplaceApp({
       const anotherTier = !wasEditing && values.get("add_another_tier") === "on";
       setListingOpen(Boolean(remainingDraft) || anotherTier);
       if (anotherTier) {
-        setNewListingDrafts((current) => ({ ...current, sponsorship: { listing: { ...fields, title: "", sponsor_tier: "", price_cents: undefined }, files: listingFiles } }));
+        setNewListingDrafts((current) => ({ ...current, sponsorship: { listing: { ...fields, title: "", sponsor_tier: "", price_cents: undefined }, files: selectedListingFiles } }));
         setComposerRevision((current) => current + 1);
       }
       if (remainingDraft && !anotherTier) {
@@ -10230,6 +10226,7 @@ export default function MarketplaceApp({
       setNewListingOffer("social");
       setListingPreview(false);
       setNewListingDrafts({});
+      setPendingListingFiles([]);
       setListingOpen(true);
     });
   }
@@ -10251,6 +10248,7 @@ export default function MarketplaceApp({
     setTourPick(null);
     setTourSpherical(false);
     setListingInstantEnabled(listing.instant_booking_enabled ?? false);
+    setPendingListingFiles([]);
     setNewListingOffer(
       isSponsorshipListing(listing)
         ? "sponsorship"
@@ -13124,7 +13122,7 @@ export default function MarketplaceApp({
               <h2>
                 {onboardingMode === "edit"
                   ? "Update your details."
-                  : "Set up your profile."}
+                  : "Let’s get you on the marketplace."}
               </h2>
             </div>
             <div className="step-count">
@@ -13145,7 +13143,8 @@ export default function MarketplaceApp({
               <div className="setup-notice preview-mode-notice">
                 <strong>Nothing in this preview is saved.</strong>
                 <p>
-                  Use any sample answers you like. You are testing account setup and listing creation.
+                  Use any sample answers you like. You are testing the real
+                  five-step flow, validation, transitions, and listing preview.
                 </p>
               </div>
             ) : invite && !profile ? (
@@ -13165,13 +13164,20 @@ export default function MarketplaceApp({
                   anything that is wrong. Nobody can see you until you finish.
                 </p>
               </div>
-            ) : null)}
+            ) : (
+              <div className="setup-notice">
+                <strong>Nobody can see you yet.</strong>
+                <p>
+                  Your profile appears in search once you finish. Each screen
+                  asks for one small part of your listing.
+                </p>
+              </div>
+            ))}
 
           <form
             ref={onboardingFormRef}
             className="onboarding-form"
             onSubmit={publishOnboarding}
-            onInvalidCapture={(event) => revealInvalidField(event.target)}
           >
             {onboardingError && (
               <div className="form-feedback" role="alert">
@@ -13194,7 +13200,11 @@ export default function MarketplaceApp({
                     ? "Which of these is you?"
                     : "Start with the basics."}
                 </h3>
-
+                <p>
+                  {onboardingStep === 1
+                    ? "This changes what we ask next. You can add more later."
+                    : "A few details make the rest of your listing feel personal."}
+                </p>
                 {onboardingStep === 1 && (
                 <div className="role-choice-grid" data-field="role">
                   {PICKABLE_ROLES.map((role) => (
@@ -13266,10 +13276,11 @@ export default function MarketplaceApp({
                       }
                     />
                   </label>
-                  {(
+                  {(onboardingMode === "edit" ||
+                    Boolean(answers.display_name.trim())) && (
                   <label className="progressive-field">
                     <span className="location-field-label">Where are you based?</span>
-                    <small>U.S. city and state</small>
+                    <small>U.S. city and state. This is how buyers filter.</small>
                     <div className="location-input-row">
                       <CityAutocomplete
                         value={answers.city}
@@ -13314,18 +13325,22 @@ export default function MarketplaceApp({
                       </small>
                     ) : (
                       <small className="location-data-status">
-                        Choose a city or use your location.
+                        U.S. locations only. Choose a result or use your location to attach an approximate pin.
                       </small>
                     )}
                   </label>
                   )}
-                  {(
+                  {(onboardingMode === "edit" ||
+                    Boolean(answers.city.trim())) && (
                   <label className="field-wide progressive-field">
                     {selectedRole === "business"
                       ? "One line about your business"
                       : "One line about you"}
                     <small>
-
+                      {selectedRole === "business"
+                        ? "What you do, in a sentence. This sits under your name on the brief."
+                        : "One sentence. It sits under your name on every card."}
+                      {" "}
                       <span
                         className="field-character-count"
                         aria-live="polite"
@@ -13355,8 +13370,9 @@ export default function MarketplaceApp({
                     />
                   </label>
                   )}
-                  {(
-                  <details className="composer-options field-wide"><summary>Photo and contact details (optional)</summary>
+                  {(onboardingMode === "edit" ||
+                    answers.bio.trim().length > 0) && (
+                  <>
                   <div className="field-wide media-upload-field progressive-field">
                     <OptionalFieldLabel>
                       {selectedRole === "business" ? "Add your logo" : "Add a profile photo"}
@@ -13423,12 +13439,12 @@ export default function MarketplaceApp({
                       />
                     </label>
                   )}
-                  </details>
+                  </>
                   )}
                 </div>
                 )}
 
-                {(
+                {(onboardingStep > 1 || isCurrentOnboardingStepComplete()) && (
                 <div
                   className="onboarding-actions"
                   data-ready={isCurrentOnboardingStepComplete() ? "true" : "false"}
@@ -13443,7 +13459,7 @@ export default function MarketplaceApp({
                   ) : (
                     <span />
                   )}
-                  {(
+                  {isCurrentOnboardingStepComplete() && (
                     <span className="onboarding-primary-action-enter">
                       <button
                         type="button"
@@ -13454,7 +13470,11 @@ export default function MarketplaceApp({
                           ? onboardingMode === "edit"
                             ? "Next: your details"
                             : "Continue"
-                          : "Continue to listing"}{" "}
+                          : selectedRole === "business"
+                            ? "Continue"
+                            : selectedRole === "creator"
+                              ? "Next: what you have to advertise"
+                              : "Next"}{" "}
                         <span>→</span>
                       </button>
                     </span>
@@ -15535,7 +15555,8 @@ export default function MarketplaceApp({
             <ListingComposerFields key={`${editingListing?.id ?? newListingOffer}-${composerRevision}`} listing={editingListing ?? newListingDrafts[newListingOffer]?.listing}
               kind={listingFormKind} city={profile?.city || answers.city} audience={profile?.audience_age}
               channels={LISTING_CHANNELS} surfaces={SURFACE_CHIPS} installers={INSTALL_CHIPS} platforms={BRIEF_PLATFORM_CHIPS}
-              draftFiles={newListingDrafts[newListingOffer]?.files} onInstantChange={setListingInstantEnabled}
+              draftFiles={newListingDrafts[newListingOffer]?.files} onFilesChange={setPendingListingFiles} onInstantChange={setListingInstantEnabled}
+              hasSavedPhotos={Boolean(editingListing && listingImages(editingListing).some((url) => !listingSeedImages.has(url)))}
               aiTools={!editingListingIsBrief ? (<div className="field-wide ai-fill">
                 <p>Describe your offer, price, and audience. Review the draft before publishing.</p>
 <div className="ai-fill-row">

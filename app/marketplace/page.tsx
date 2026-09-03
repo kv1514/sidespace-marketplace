@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
 import MarketplaceApp from "../MarketplaceApp";
-import { loadMarketplaceSnapshot } from "@/lib/public-marketplace";
-import { OG_IMAGE } from "@/lib/site-metadata";
+import {
+  loadMarketplaceSnapshot,
+  loadPublicListing,
+} from "@/lib/public-marketplace";
+import {
+  createListingSocialMetadata,
+  OG_IMAGE,
+} from "@/lib/site-metadata";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
+const MARKETPLACE_METADATA: Metadata = {
   alternates: { canonical: "/marketplace" },
   title: "Marketplace",
   description:
@@ -15,9 +21,31 @@ export const metadata: Metadata = {
     url: "/marketplace",
     title: "Browse the SideSpace marketplace",
     description:
-    "Search real local attention from creators: storefronts, vehicles, sponsorships, and more.",
+      "Search real local attention from creators: storefronts, vehicles, sponsorships, and more.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    images: OG_IMAGE,
+    title: "Browse the SideSpace marketplace",
+    description:
+      "Search real local attention from creators: storefronts, vehicles, sponsorships, and more.",
   },
 };
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<Metadata> {
+  const params = await searchParams;
+  const listingId = typeof params.listing === "string" ? params.listing : "";
+  if (!listingId) return MARKETPLACE_METADATA;
+
+  const listing = await loadPublicListing(listingId);
+  return listing
+    ? createListingSocialMetadata(listing)
+    : MARKETPLACE_METADATA;
+}
 
 const ROLE_FILTERS = new Set([
   "all",
