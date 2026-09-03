@@ -12,11 +12,13 @@ import {
  * owner while they edit. The Maps key never reaches the browser.
  *
  * The frame that comes back is a preview only. The form keeps the capture
- * month, which is all the listing stores: Google's terms allow keeping
- * nothing of the imagery, so the public listing fetches the frame live from
- * Google through app/api/listings/[listingId]/street-view every time it is
- * shown. Two calls to Google here: metadata first (free) to learn whether
- * outdoor imagery exists near the address, then the frame itself.
+ * month and the panorama id, which is all the listing stores: Google's terms
+ * allow keeping nothing of the imagery (the panorama id is the one value its
+ * Street View policy lets us keep), so the public listing fetches the frame
+ * live from Google through app/api/listings/[listingId]/street-view every
+ * time it is shown, and "View whole street" opens the panorama by id. Two
+ * calls to Google here: metadata first (free) to learn whether outdoor
+ * imagery exists near the address, then the frame itself.
  */
 
 const LOOKUPS_PER_HOUR = 30;
@@ -65,12 +67,16 @@ export async function POST(request: Request) {
     const frame = await fetchFrame(location, key);
     if (!frame) throw new ApiError("Street View is not available right now.", 502);
     const month = captureMonth(meta.date);
-    console.info(`[street view] ok captured=${month || "unknown"} bytes=${frame.bytes.byteLength}`);
+    // The panorama id is the one Street View value Google lets us keep. The
+    // listing stores it to open the interactive 360 view of the whole street.
+    const pano = /^[A-Za-z0-9_-]{1,120}$/.test(meta.pano_id ?? "") ? String(meta.pano_id) : "";
+    console.info(`[street view] ok captured=${month || "unknown"} pano=${pano ? "yes" : "no"} bytes=${frame.bytes.byteLength}`);
     return new Response(frame.bytes, {
       headers: {
         "content-type": frame.type,
         "cache-control": "private, no-store",
         "x-street-view-date": month,
+        "x-street-view-pano": pano,
       },
     });
   } catch (error) {

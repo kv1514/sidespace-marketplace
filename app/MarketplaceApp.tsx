@@ -146,6 +146,9 @@ type IgStats = {
   error?: string;
 };
 
+/** How a listing's walkthrough shows: a flat video, or one of the two 360 kinds the panorama viewer takes. */
+type TourKind = "video" | "video360" | "photo360";
+
 type Listing = BookingSchedule & {
   id: string;
   owner_profile_id: string;
@@ -176,6 +179,11 @@ type Listing = BookingSchedule & {
   street_address?: string;
   /** Month of the Google Street View frame attached to the address ("March 2025"); empty when none. */
   street_view_captured?: string;
+  /** Google's panorama id at the address, the one Street View value it lets us keep; opens the 360 view of the street. */
+  street_view_pano?: string;
+  /** The owner's walkthrough - a video, a 360 video, or a 360 photo - hosted by SideSpace. Empty when none. */
+  tour_url?: string;
+  tour_kind?: TourKind | "";
   availability_notes?: string;
   available_from?: string | null;
   available_to?: string | null;
@@ -642,6 +650,78 @@ function displayHandle(raw: string) {
 // Cover photo used when a listing has none of its own, and the repair target
 // when a listing's photo is deleted from the member's profile.
 const DEFAULT_LISTING_IMAGE = "/photos/market-creator.jpg";
+/** Photos a listing holds; the editor refuses more before anything uploads. */
+const MAX_LISTING_PHOTOS = 6;
+/**
+ * Walkthrough uploads: what the marketplace-tours bucket accepts and its
+ * ceiling, which is also the largest object the project's Supabase plan
+ * takes. About a minute of phone video.
+ */
+const TOUR_MAX_BYTES = 50 * 1024 * 1024;
+const TOUR_VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
+const TOUR_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
+/** Stills cut from a walkthrough video for Fill with AI, and their long edge. */
+const TOUR_FRAMES = 6;
+const TOUR_FRAME_EDGE = 960;
+/**
+ * A browser key for Google's Maps Embed API, restricted to this site's
+ * origin, so "View whole street" opens the 360 panorama in the page. Without
+ * it the button opens the same panorama on Google Maps, which needs no key.
+ */
+const STREET_VIEW_EMBED_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY ?? "";
+
+/** three.js and the viewer arrive only on a listing that has a 360 walkthrough. */
+const PanoramaViewer = dynamic(() => import("./components/PanoramaViewer"), {
+  ssr: false,
+  loading: () => (
+    <div className="pano-viewer">
+      <span className="pano-status" role="status">
+        Loading the 360° view…
+      </span>
+    </div>
+  ),
+});
+
+/** Google Maps, opened straight on a Street View panorama. Needs no key. */
+function streetPanoUrl(pano: string) {
+  return `https://www.google.com/maps/@?api=1&map_action=pano&pano=${encodeURIComponent(pano)}`;
+}
+
+/**
+ * The walkthrough on a listing page. A plain video plays as one; the two 360
+ * kinds open in the panorama viewer, where a buyer drags to look around.
+ */
+function ListingTour({ listing }: { listing: Listing }) {
+  const kind = listing.tour_kind;
+  if (!listing.tour_url || !kind) return null;
+  return (
+    <figure className="tour-card detail-tour">
+      {kind === "video" ? (
+        <video
+          src={listing.tour_url}
+          controls
+          playsInline
+          preload="metadata"
+          aria-label={`Walkthrough video of ${listing.title}`}
+        />
+      ) : (
+        <PanoramaViewer
+          key={listing.tour_url}
+          src={listing.tour_url}
+          kind={kind}
+          label={`360° ${kind === "video360" ? "video" : "photo"} of ${listing.title}`}
+        />
+      )}
+      <figcaption>
+        {kind === "video"
+          ? "Walkthrough video from the owner: the space as it is, and how people move through it."
+          : kind === "video360"
+            ? "360° walkthrough from the owner. Press play, then drag to look around."
+            : "360° photo from the owner. Drag to look around the whole space."}
+      </figcaption>
+    </figure>
+  );
+}
 
 /**
  * How long each how-it-works step holds before the band moves on.
@@ -2800,7 +2880,7 @@ function blobToBase64(blob: Blob) {
  * posted as-is - and the model needs nowhere near that many pixels to see a
  * window. 1280 px on the long edge at 0.85 lands around 200-400 KB.
  */
-async function photoToJpegBase64(file: File, maxEdge = 1280): Promise<string> {
+async function photoToJpegBase64(file: Blob, maxEdge = 1280): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -2820,6 +2900,147 @@ async function photoToJpegBase64(file: File, maxEdge = 1280): Promise<string> {
     return dataUrl.slice(dataUrl.indexOf(",") + 1);
   } finally {
     URL.revokeObjectURL(url);
+  }
+}
+
+/** Every 360 camera and phone panorama mode exports equirectangular: exactly twice as wide as tall. */
+function looksSpherical(width: number, height: number) {
+  return width > 0 && height > 0 && Math.abs(width / height - 2) < 0.06;
+}
+
+type TourProbe = { kind: "video" | "photo"; width: number; height: number; seconds: number };
+
+/**
+ * Size and shape of a picked walkthrough file, read in the browser before
+ * anything uploads: video or photo, its pixels (a 2:1 frame is almost
+ * certainly a 360 file) and, for a video, its length. Rejects a video this
+ * browser cannot decode, which is the earliest anyone can be told that an
+ * HEVC .mov will not play for most visitors.
+ */
+async function probeTourFile(file: File): Promise<TourProbe> {
+  const url = URL.createObjectURL(file);
+  try {
+    if (TOUR_PHOTO_TYPES.includes(file.type)) {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error("That photo could not be read."));
+        element.src = url;
+      });
+      return { kind: "photo", width: image.naturalWidth, height: image.naturalHeight, seconds: 0 };
+    }
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(
+          () => reject(new Error("That video took too long to read. Try a shorter clip.")),
+          20_000,
+        );
+        video.onloadedmetadata = () => {
+          window.clearTimeout(timer);
+          resolve();
+        };
+        video.onerror = () => {
+          window.clearTimeout(timer);
+          reject(
+            new Error(
+              "That video could not be played here. Export it as MP4 (H.264) - on an iPhone, \"Most Compatible\" - and try again.",
+            ),
+          );
+        };
+        video.src = url;
+      });
+      return {
+        kind: "video",
+        width: video.videoWidth,
+        height: video.videoHeight,
+        seconds: Number.isFinite(video.duration) ? video.duration : 0,
+      };
+    } finally {
+      video.removeAttribute("src");
+      video.load();
+    }
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * Stills from a walkthrough video for Fill with AI: evenly spaced through
+ * the clip, small JPEGs. The model needs a handful of frames to see how a
+ * space is laid out, not the whole file, and Vercel caps a request body at
+ * 4.5 MB. A saved walkthrough is read straight from the bucket, which
+ * answers with access-control-allow-origin: *, so the canvas stays readable.
+ */
+async function videoStills(
+  source: Blob | string,
+  count = TOUR_FRAMES,
+  maxEdge = TOUR_FRAME_EDGE,
+): Promise<string[]> {
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  if (typeof source === "string") video.crossOrigin = "anonymous";
+  // In the document, out of sight: iOS has painted black frames from a video
+  // that was never attached anywhere.
+  video.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none";
+  document.body.appendChild(video);
+  const url = typeof source === "string" ? source : URL.createObjectURL(source);
+  const until = (event: string, ms: number) =>
+    new Promise<void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        window.clearTimeout(timer);
+        video.removeEventListener(event, done);
+        video.removeEventListener("error", failed);
+        if (error) reject(error);
+        else resolve();
+      };
+      const done = () => finish();
+      const failed = () => finish(new Error("That video could not be read."));
+      const timer = window.setTimeout(
+        () => finish(new Error("The video took too long to read.")),
+        ms,
+      );
+      video.addEventListener(event, done);
+      video.addEventListener("error", failed);
+    });
+  try {
+    const loaded = until("loadedmetadata", 20_000);
+    video.src = url;
+    await loaded;
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    if (!duration || !video.videoWidth) return [];
+    const scale = Math.min(1, maxEdge / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) return [];
+    // A three-second clip has two distinct moments in it, not six.
+    const wanted = Math.max(1, Math.min(count, Math.ceil(duration / 2)));
+    const stills: string[] = [];
+    for (let index = 0; index < wanted; index += 1) {
+      const seeked = until("seeked", 15_000);
+      video.currentTime = Math.min(
+        duration * ((index + 0.5) / wanted),
+        Math.max(0, duration - 0.1),
+      );
+      await seeked;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+      stills.push(dataUrl.slice(dataUrl.indexOf(",") + 1));
+    }
+    return stills;
+  } finally {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    video.remove();
+    if (typeof source !== "string") URL.revokeObjectURL(url);
   }
 }
 
@@ -4827,13 +5048,19 @@ export default function MarketplaceApp({
   /** What the model says it can see in the owner's photo, shown so a wrong "fact" is caught before it is published. */
   const [aiObservations, setAiObservations] = useState<string[]>([]);
   /**
-   * Street View attached to the address while editing: the capture month the
-   * listing will store, plus a transient preview URL when the frame was just
-   * fetched (null for a saved one, which the card shows live instead).
-   * Google's terms allow keeping nothing of the imagery itself.
+   * Street View attached to the address while editing: the capture month and
+   * panorama id the listing will store, plus a transient preview URL when the
+   * frame was just fetched (null for a saved one, which the card shows live
+   * instead). Google's terms allow keeping nothing of the imagery itself.
    */
-  const [streetView, setStreetView] = useState<{ captured: string; url: string | null } | null>(null);
+  const [streetView, setStreetView] = useState<{ captured: string; pano: string; url: string | null } | null>(null);
   const [streetViewLoading, setStreetViewLoading] = useState(false);
+  /** The walkthrough file picked in the editor, read for size and shape so the form can say what it will do with it. */
+  const [tourPick, setTourPick] = useState<(TourProbe & { file: File }) | null>(null);
+  /** Whether that file is spherical (360): guessed from a 2:1 frame, and the owner's to change. */
+  const [tourSpherical, setTourSpherical] = useState(false);
+  /** "View whole street": the Street View panorama opened on the listing page. */
+  const [streetPanoOpen, setStreetPanoOpen] = useState(false);
   const [listening, setListening] = useState(false);
   /** How words are coming in while listening: the browser's own recogniser, or a recording the server transcribes. */
   const [voiceMode, setVoiceMode] = useState<"speech" | "recording">("speech");
@@ -4927,6 +5154,14 @@ export default function MarketplaceApp({
         ? "sponsorship"
         : "social";
   const listingHints = LISTING_FORM_HINTS[listingFormKind];
+  /**
+   * What a listing published without photos is seeded with - the default
+   * cover or a profile photo. These give way when real photos arrive; a
+   * photo the owner uploaded to the listing never does.
+   */
+  const listingSeedImages = new Set(
+    [DEFAULT_LISTING_IMAGE, profile?.avatar_url, ...(profile?.gallery_urls ?? [])].filter(Boolean),
+  );
 
   /**
    * Take the photos a member just picked, and point the preview at the first.
@@ -6509,6 +6744,7 @@ export default function MarketplaceApp({
 
   function openListing(listing: Listing) {
     setSelectedPhotoIndex(0);
+    setStreetPanoOpen(false);
     setSelectedCreatorPortfolio([]);
     setSelectedCreatorReviews([]);
     setSelectedListing(listing);
@@ -6519,6 +6755,7 @@ export default function MarketplaceApp({
 
   function closeListing() {
     setSelectedListing(null);
+    setStreetPanoOpen(false);
     const url = new URL(window.location.href);
     url.searchParams.delete("listing");
     window.history.replaceState(null, "", url);
@@ -7879,6 +8116,8 @@ export default function MarketplaceApp({
     setAiObservations([]);
     if (streetView?.url) URL.revokeObjectURL(streetView.url);
     setStreetView(null);
+    setTourPick(null);
+    setTourSpherical(false);
   }
 
   function clearStreetView() {
@@ -7918,10 +8157,11 @@ export default function MarketplaceApp({
       }
       const blob = await response.blob();
       const captured = response.headers.get("x-street-view-date") ?? "";
+      const pano = response.headers.get("x-street-view-pano") ?? "";
       if (streetView?.url) URL.revokeObjectURL(streetView.url);
-      setStreetView({ captured, url: URL.createObjectURL(blob) });
+      setStreetView({ captured, pano, url: URL.createObjectURL(blob) });
       setToast(
-        "Street View attached. Buyers see it under your photos, labelled and fetched live from Google. Remove it if it does not show your spot.",
+        "Street View attached. Buyers see it under your photos, labelled and fetched live from Google, with a View whole street button for the 360 view. Remove it if it does not show your spot.",
       );
     } catch (error) {
       setToast(
@@ -7945,8 +8185,18 @@ export default function MarketplaceApp({
     const file =
       picked.find((item) => item.size > 0) ??
       null;
-    if (!file && !notes && !audio) {
-      setToast("Add a photo or a few words first, then press Fill with AI.");
+    // The walkthrough too: the one just picked, else the one the listing
+    // already has. Stills are cut here, in the browser.
+    const tourSource: { kind: TourKind; source: Blob | string } | null = tourPick
+      ? {
+          kind: tourPick.kind === "photo" ? "photo360" : tourSpherical ? "video360" : "video",
+          source: tourPick.file,
+        }
+      : editingListing?.tour_url && editingListing.tour_kind
+        ? { kind: editingListing.tour_kind, source: editingListing.tour_url }
+        : null;
+    if (!file && !notes && !audio && !tourSource) {
+      setToast("Add a photo, a walkthrough, or a few words first, then press Fill with AI.");
       return;
     }
     // Whatever is in the form now - a first draft the owner edited, or
@@ -7964,14 +8214,43 @@ export default function MarketplaceApp({
     setAiFilling(true);
     setAiQuestions([]);
     setAiObservations([]);
+    let tourSkipped = false;
+    let tour: { kind: TourKind; frames: string[] } | null = null;
     try {
       const image = file ? await photoToJpegBase64(file) : null;
+      if (tourSource) {
+        let frames: string[] = [];
+        try {
+          frames =
+            tourSource.kind === "photo360"
+              ? [
+                  await photoToJpegBase64(
+                    typeof tourSource.source === "string"
+                      ? await (await fetch(tourSource.source)).blob()
+                      : tourSource.source,
+                    1600,
+                  ),
+                ]
+              : await videoStills(tourSource.source);
+        } catch {
+          // The draft still runs on the rest; the toast says so.
+          tourSkipped = true;
+        }
+        // Vercel caps a request body at 4.5 MB. Drop stills from the end
+        // until the whole thing fits with room to spare.
+        const budget = 3_800_000 - (image?.length ?? 0) - (audio?.data.length ?? 0);
+        while (frames.length && frames.reduce((sum, frame) => sum + frame.length, 0) > budget) {
+          frames = frames.slice(0, -1);
+        }
+        if (frames.length) tour = { kind: tourSource.kind, frames };
+      }
       const response = await fetch("/api/listings/draft", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           notes,
           image,
+          tour,
           current: Object.keys(current).length ? current : null,
           audio: audio ? { data: audio.data, mime_type: audio.mimeType } : null,
           kind: listingFormKind === "brief" ? "physical" : listingFormKind,
@@ -7998,12 +8277,16 @@ export default function MarketplaceApp({
       setAiQuestions(payload.draft.questions ?? []);
       setAiObservations(payload.draft.photo_observations ?? []);
       const asked = payload.draft.questions?.length ?? 0;
+      const skipped = tourSkipped
+        ? " The walkthrough could not be read here, so this draft went without it."
+        : "";
       setToast(
-        asked
+        (asked
           ? `Filled what you told me. ${asked} quick question${asked === 1 ? "" : "s"} below - answer them and fill again.`
-          : file
+          : file || tour
             ? "Drafted. Read it over and change anything before you publish."
-            : "Drafted from your words. Add a photo and fill again for a better draft, or edit this one.",
+            : "Drafted from your words. Add a photo and fill again for a better draft, or edit this one.") +
+          skipped,
       );
     } catch (error) {
       setToast(
@@ -8013,6 +8296,192 @@ export default function MarketplaceApp({
       );
     } finally {
       setAiFilling(false);
+    }
+  }
+
+  /** A walkthrough file just picked: read it, guess whether it is 360, and say so in the form. */
+  async function onTourPicked(file: File | null) {
+    if (!file) {
+      setTourPick(null);
+      setTourSpherical(false);
+      return;
+    }
+    if (![...TOUR_VIDEO_TYPES, ...TOUR_PHOTO_TYPES].includes(file.type)) {
+      setTourPick(null);
+      setToast("A walkthrough is an MP4, WebM, or .mov video, or a JPG, PNG, or WebP 360° photo.");
+      return;
+    }
+    if (file.size > TOUR_MAX_BYTES) {
+      setTourPick(null);
+      setToast(
+        `${file.name} is ${Math.round(file.size / 1024 / 1024)} MB and the limit is 50 MB. Trim it, or export it smaller, and pick it again.`,
+      );
+      return;
+    }
+    try {
+      const probe = await probeTourFile(file);
+      setTourPick({ ...probe, file });
+      setTourSpherical(looksSpherical(probe.width, probe.height));
+    } catch (error) {
+      setTourPick(null);
+      setToast(error instanceof Error ? error.message : "That file could not be read.");
+    }
+  }
+
+  /**
+   * One walkthrough into the tours bucket. A 360 photo is painted on a
+   * sphere, so it keeps far more pixels than a listing photo: 4096 wide is
+   * the widest texture every phone GPU takes. Video goes up as it is - the
+   * browser cannot re-encode it - which is what the 50 MB ceiling is for.
+   */
+  async function uploadTour(pick: TourProbe & { file: File }, spherical: boolean) {
+    if (!supabase || !user) throw new Error("Sign in again to add a walkthrough.");
+    let body: Blob = pick.file;
+    let contentType = pick.file.type;
+    let extension =
+      pick.file.name.split(".").pop()?.toLowerCase() || (pick.kind === "video" ? "mp4" : "jpg");
+    if (pick.kind === "photo") {
+      const prepared = await downscaleForUpload(pick.file, 4096);
+      body = prepared.body;
+      contentType = prepared.contentType;
+      extension = prepared.extension;
+    }
+    if (body.size > TOUR_MAX_BYTES) {
+      throw new Error(`${pick.file.name} is larger than 50 MB.`);
+    }
+    const path = `${user.id}/listings/${crypto.randomUUID()}.${extension}`;
+    const { error } = await supabase.storage.from("marketplace-tours").upload(path, body, {
+      contentType,
+      upsert: false,
+      // The path is unique, so the file never changes under this URL and
+      // the CDN may keep it for a year: a listing opened twice serves the
+      // video from the edge, not from the bucket and its egress.
+      cacheControl: "31536000",
+    });
+    if (error) throw error;
+    const { data } = supabase.storage.from("marketplace-tours").getPublicUrl(path);
+    const kind: TourKind = pick.kind === "photo" ? "photo360" : spherical ? "video360" : "video";
+    return { url: data.publicUrl, kind, path };
+  }
+
+  /** Keep the editor, the owner's lists and the open listing on the row just written. */
+  function rememberListing(updated: Listing) {
+    setEditingListing((current) => (current?.id === updated.id ? updated : current));
+    setOwnListings((current) =>
+      current.map((listing) => (listing.id === updated.id ? updated : listing)),
+    );
+    setSelectedListing((current) => (current?.id === updated.id ? updated : current));
+  }
+
+  /** Take the walkthrough off a listing, at the owner's request and only then. The file goes too. */
+  async function removeListingTour(listing: Listing) {
+    if (!supabase || !profile || !listing.tour_url) return;
+    if (!window.confirm("Remove the walkthrough from this listing? The file is deleted too.")) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const { data, error } = await supabase
+        .from("listings")
+        .update({ tour_url: "", tour_kind: "" })
+        .eq("id", listing.id)
+        .eq("owner_profile_id", profile.id)
+        .select(PUBLIC_LISTING_COLUMNS)
+        .single();
+      if (error) throw error;
+      const path = storagePathFromUrl(listing.tour_url, "marketplace-tours");
+      if (path) {
+        await supabase.storage.from("marketplace-tours").remove([path]).catch(() => undefined);
+      }
+      rememberListing({
+        ...listing,
+        ...(data as Partial<Omit<Listing, "owner">>),
+        owner: listing.owner,
+      } as Listing);
+      setToast("Walkthrough removed.");
+      await loadMarketplace();
+    } catch (error) {
+      setToast(friendlyDbError(error) || "Could not remove the walkthrough.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Take one photo off a listing - at the owner's request, and only then;
+   * nothing else on the site removes an uploaded photo. The file goes too,
+   * unless the profile or another listing still shows it.
+   */
+  async function removeListingPhoto(listing: Listing, url: string) {
+    if (!supabase || !profile) return;
+    if (!window.confirm("Remove this photo from the listing?")) return;
+    setBusy(true);
+    try {
+      const remaining = listingImages(listing).filter((item) => item !== url);
+      const cover =
+        remaining[0] || profile.gallery_urls?.[0] || profile.avatar_url || DEFAULT_LISTING_IMAGE;
+      const { data, error } = await supabase
+        .from("listings")
+        .update({ image_url: cover, image_urls: remaining.length ? remaining : [cover] })
+        .eq("id", listing.id)
+        .eq("owner_profile_id", profile.id)
+        .select(PUBLIC_LISTING_COLUMNS)
+        .single();
+      if (error) throw error;
+      const stillShown = new Set<string>([
+        profile.avatar_url ?? "",
+        ...(profile.gallery_urls ?? []),
+        ...ownListings
+          .filter((item) => item.id !== listing.id)
+          .flatMap((item) => listingImages(item)),
+      ]);
+      const path = stillShown.has(url) ? null : storagePathFromUrl(url);
+      if (path) {
+        await supabase.storage.from("marketplace-media").remove([path]).catch(() => undefined);
+      }
+      rememberListing({
+        ...listing,
+        ...(data as Partial<Omit<Listing, "owner">>),
+        owner: listing.owner,
+      } as Listing);
+      setToast(
+        remaining.length
+          ? "Photo removed."
+          : "Photo removed. The listing shows a stand-in cover until you add one.",
+      );
+      await loadMarketplace();
+    } catch (error) {
+      setToast(friendlyDbError(error) || "Could not remove that photo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Put one of the listing's photos first: it becomes the cover on every card. */
+  async function makeListingCover(listing: Listing, url: string) {
+    if (!supabase || !profile) return;
+    setBusy(true);
+    try {
+      const ordered = [url, ...listingImages(listing).filter((item) => item !== url)];
+      const { data, error } = await supabase
+        .from("listings")
+        .update({ image_url: url, image_urls: ordered })
+        .eq("id", listing.id)
+        .eq("owner_profile_id", profile.id)
+        .select(PUBLIC_LISTING_COLUMNS)
+        .single();
+      if (error) throw error;
+      rememberListing({
+        ...listing,
+        ...(data as Partial<Omit<Listing, "owner">>),
+        owner: listing.owner,
+      } as Listing);
+      setToast("Cover photo updated.");
+      await loadMarketplace();
+    } catch (error) {
+      setToast(friendlyDbError(error) || "Could not change the cover.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -8042,6 +8511,27 @@ export default function MarketplaceApp({
     setListingFeedback("");
     setBusy(true);
     try {
+      // The owner's photos stay, in their order, cover first; new ones go
+      // after them. Only the seed a photo-less listing was given gives way.
+      // Nothing an owner uploaded is ever dropped here - that takes their
+      // Remove in the editor - so the cap is checked before a byte uploads
+      // rather than trimmed off the end afterwards.
+      const keptImages = editingListing
+        ? listingImages(editingListing).filter((url) => !listingSeedImages.has(url))
+        : [];
+      if (keptImages.length + listingFiles.length > MAX_LISTING_PHOTOS) {
+        const room = MAX_LISTING_PHOTOS - keptImages.length;
+        throw new Error(
+          room > 0
+            ? `This listing has ${keptImages.length} photos, so you can add ${room} more. Remove one first to add others.`
+            : `This listing already has ${MAX_LISTING_PHOTOS} photos. Remove one first to add another.`,
+        );
+      }
+      if (tourPick?.kind === "photo" && !tourSpherical) {
+        throw new Error(
+          "That walkthrough photo is not a 360° panorama - a 360° photo is exactly twice as wide as tall. Regular photos go in the photos field.",
+        );
+      }
       const fields = {
         instant_booking_enabled: !editingListingIsBrief && values.get("instant_booking_enabled") === "on",
         availability_dates: JSON.parse(String(values.get("availability_dates") ?? "[]")) as string[],
@@ -8087,8 +8577,10 @@ export default function MarketplaceApp({
               space_size: String(values.get("space_size") ?? "").trim(),
               street_address: String(values.get("street_address") ?? "").trim(),
               // Street View: the listing keeps only the capture month, which
-              // is the card's caption and its on/off switch.
+              // is the card's caption and its on/off switch, and Google's
+              // panorama id, which opens the 360 view of the street.
               street_view_captured: streetView?.captured ?? "",
+              street_view_pano: streetView?.captured ? streetView.pano : "",
             }
           : {}),
         ...(values.get("has_sponsor_section")
@@ -8184,19 +8676,7 @@ export default function MarketplaceApp({
       if (listingFiles.length) {
         try {
           const uploadedImages = await uploadImages(listingFiles, "listings");
-          const placeholderImages = new Set(
-            [
-              "/photos/market-creator.jpg",
-              profile.avatar_url,
-              ...(profile.gallery_urls ?? []),
-            ].filter(Boolean),
-          );
-          const existingImages = editingListing
-            ? listingImages(savedListing).filter(
-                (url) => !placeholderImages.has(url),
-              )
-            : [];
-          const imageUrls = [...uploadedImages, ...existingImages].slice(0, 6);
+          const imageUrls = [...keptImages, ...uploadedImages].slice(0, MAX_LISTING_PHOTOS);
           if (imageUrls.length) {
             const updated = await supabase
               .from("listings")
@@ -8228,6 +8708,55 @@ export default function MarketplaceApp({
         }
       }
 
+      let tourWarning = "";
+      if (tourPick) {
+        try {
+          const uploaded = await uploadTour(tourPick, tourSpherical);
+          const previous = savedListing.tour_url ?? "";
+          const updated = await supabase
+            .from("listings")
+            .update({ tour_url: uploaded.url, tour_kind: uploaded.kind })
+            .eq("id", savedListing.id)
+            .eq("owner_profile_id", profile.id)
+            .select(PUBLIC_LISTING_COLUMNS)
+            .single();
+          if (updated.error) {
+            // Nothing points at the file; do not leave it public.
+            await supabase.storage
+              .from("marketplace-tours")
+              .remove([uploaded.path])
+              .catch(() => undefined);
+            throw updated.error;
+          }
+          savedListing = {
+            ...savedListing,
+            ...(updated.data as Partial<Omit<Listing, "owner">>),
+            owner: profile,
+          };
+          setOwnListings((current) =>
+            current.map((listing) =>
+              listing.id === savedListing.id ? savedListing : listing,
+            ),
+          );
+          // The one it replaces is the owner's to drop: they chose the new one.
+          const oldPath =
+            previous && previous !== uploaded.url
+              ? storagePathFromUrl(previous, "marketplace-tours")
+              : null;
+          if (oldPath) {
+            await supabase.storage
+              .from("marketplace-tours")
+              .remove([oldPath])
+              .catch(() => undefined);
+          }
+        } catch (tourError) {
+          const why = friendlyDbError(tourError);
+          tourWarning = ` The walkthrough could not upload${
+            why ? `: ${why}` : "."
+          } You can add it from Edit listing.`;
+        }
+      }
+
       const wasEditing = Boolean(editingListing);
       setListingOpen(false);
       resetAiHelpers();
@@ -8235,8 +8764,8 @@ export default function MarketplaceApp({
       setAccountOpen(false);
       setToast(
         wasEditing
-          ? `Your listing changes are saved.${photoWarning}`
-          : `Your listing is live and ready to manage in Dashboard.${photoWarning}`,
+          ? `Your listing changes are saved.${photoWarning}${tourWarning}`
+          : `Your listing is live and ready to manage in Dashboard.${photoWarning}${tourWarning}`,
       );
       await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
     } catch (error) {
@@ -9189,6 +9718,15 @@ export default function MarketplaceApp({
         .remove(paths)
         .catch(() => undefined);
     }
+    const tourPath = listing.tour_url
+      ? storagePathFromUrl(listing.tour_url, "marketplace-tours")
+      : null;
+    if (tourPath) {
+      await supabase.storage
+        .from("marketplace-tours")
+        .remove([tourPath])
+        .catch(() => undefined);
+    }
     setBusy(false);
     setToast(
       declined
@@ -9267,9 +9805,9 @@ export default function MarketplaceApp({
     setToast("Signed out.");
   }
 
-  /** Public storage URLs look like .../object/public/marketplace-media/<path>. */
-  function storagePathFromUrl(url: string) {
-    const marker = "/marketplace-media/";
+  /** Public storage URLs look like .../object/public/<bucket>/<path>. */
+  function storagePathFromUrl(url: string, bucket = "marketplace-media") {
+    const marker = `/${bucket}/`;
     const index = url.indexOf(marker);
     if (index === -1) return null;
     return decodeURIComponent(url.slice(index + marker.length).split("?")[0]);
@@ -9668,6 +10206,8 @@ export default function MarketplaceApp({
       setFormatPreview("");
       setEditingListing(null);
       setStreetView(null);
+      setTourPick(null);
+      setTourSpherical(false);
       setListingInstantEnabled(false);
       setNewListingOffer("social");
       setListingOpen(true);
@@ -9680,9 +10220,15 @@ export default function MarketplaceApp({
     setEditingListing(listing);
     setStreetView(
       listing.street_view_captured
-        ? { captured: listing.street_view_captured, url: null }
+        ? {
+            captured: listing.street_view_captured,
+            pano: listing.street_view_pano ?? "",
+            url: null,
+          }
         : null,
     );
+    setTourPick(null);
+    setTourSpherical(false);
     setListingInstantEnabled(listing.instant_booking_enabled ?? false);
     setNewListingOffer(
       isSponsorshipListing(listing)
@@ -11215,6 +11761,11 @@ export default function MarketplaceApp({
                 {listingImages(listing).length > 1 && (
                   <span className="photo-count">
                     {listingImages(listing).length} photos
+                  </span>
+                )}
+                {listing.tour_kind && (
+                  <span className="tour-badge">
+                    {listing.tour_kind === "video" ? "▶ Video" : "360°"}
                   </span>
                 )}
                 {/* A 34px circular heart pill sat here on every card - the
@@ -15078,8 +15629,9 @@ export default function MarketplaceApp({
                     a price or a number.
                   </small>
                   <small className="ai-fill-tip">
-                    Tip: add a photo of the space in the photos field below
-                    first. Drafts are a lot better when the AI can see it.
+                    Tip: add a photo of the space, or a walkthrough video, in
+                    the fields below first. Drafts are a lot better when the
+                    AI can see it.
                   </small>
                 </div>
                 <div className="ai-fill-row">
@@ -15124,7 +15676,7 @@ export default function MarketplaceApp({
                 )}
                 {aiObservations.length > 0 && (
                   <div className="ai-fill-questions is-observations" role="status">
-                    <strong>From your photo - check these are right:</strong>
+                    <strong>From what it saw - check these are right:</strong>
                     <ul>
                       {aiObservations.map((item) => (
                         <li key={item}>{item}</li>
@@ -15559,6 +16111,15 @@ export default function MarketplaceApp({
                         Google Street View{streetView.captured ? `, ${streetView.captured}` : ""}.
                         Shown under your photos, labelled, fetched live from Google
                         and never stored. It may be out of date.
+                        {streetView.pano && (
+                          <a
+                            href={streetPanoUrl(streetView.pano)}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                          >
+                            View whole street ↗
+                          </a>
+                        )}
                         <button type="button" onClick={clearStreetView}>
                           Remove
                         </button>
@@ -15673,8 +16234,55 @@ export default function MarketplaceApp({
                   : "Who actually sees this placement. Leave blank if you’d rather not say."}
               </small>
             </label>
+            {editingListing &&
+              listingImages(editingListing).some((url) => !listingSeedImages.has(url)) && (
+                <div className="listing-photo-manager field-wide">
+                  <strong>Photos on this listing</strong>
+                  <p>
+                    The first is the cover. Adding photos keeps these; nothing
+                    comes off unless you remove it here.
+                  </p>
+                  <div className="photo-manager-grid">
+                    {listingImages(editingListing)
+                      .filter((url) => !listingSeedImages.has(url))
+                      .map((url, index) => (
+                        <figure className="saved-media" key={url}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={url}
+                            alt={`Listing photo ${index + 1}`}
+                            loading="lazy"
+                            decoding="async"
+                          />
+                          {index === 0 ? (
+                            <figcaption>Cover</figcaption>
+                          ) : (
+                            <button
+                              type="button"
+                              className="saved-media-cover"
+                              disabled={busy}
+                              onClick={() => void makeListingCover(editingListing, url)}
+                            >
+                              Make cover
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="saved-media-remove"
+                            disabled={busy}
+                            aria-label={`Remove photo ${index + 1}`}
+                            title="Remove photo"
+                            onClick={() => void removeListingPhoto(editingListing, url)}
+                          >
+                            ×
+                          </button>
+                        </figure>
+                      ))}
+                  </div>
+                </div>
+              )}
             <label className="field-wide media-upload-field">
-              {editingListing ? "Add or replace photos" : "Upload listing photos"}
+              {editingListing ? "Add photos" : "Upload listing photos"}
               <input
                 name="listing_photos"
                 type="file"
@@ -15683,10 +16291,73 @@ export default function MarketplaceApp({
               />
               <small>
                 {editingListing
-                  ? "New photos go first and replace older ones past the 6-photo limit. Leave empty to keep current photos."
+                  ? "Your current photos stay, cover first; new ones go after them, up to 6 in all. Leave empty to keep what you have."
                   : "Add up to 6 photos of the land, wall, room, vehicle, storefront, or placement."}
               </small>
             </label>
+            <label className="field-wide media-upload-field">
+              {editingListing?.tour_url ? "Replace the walkthrough" : "Add a walkthrough (optional)"}
+              <input
+                name="listing_tour"
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime,image/jpeg,image/png,image/webp"
+                onChange={(event) => void onTourPicked(event.currentTarget.files?.[0] ?? null)}
+              />
+              <small>
+                A short video walking through the space, a 360° video, or a
+                360° photo, so buyers see the actual place and how people move
+                through it. Up to 50 MB, about a minute of phone video: trim it
+                first if it is longer. iPhone: export as &ldquo;Most
+                Compatible&rdquo; so it plays everywhere. Fill with AI reads it
+                too.
+              </small>
+            </label>
+            {tourPick && (
+              <div className="tour-pick field-wide" role="status">
+                <span>
+                  {tourPick.kind === "video"
+                    ? `Video · ${Math.round(tourPick.seconds)} s · ${tourPick.width}×${tourPick.height}`
+                    : `Photo · ${tourPick.width}×${tourPick.height}`}
+                  {` · ${(tourPick.file.size / 1024 / 1024).toFixed(1)} MB`}
+                </span>
+                <label className="chip-check">
+                  <input
+                    type="checkbox"
+                    checked={tourSpherical}
+                    onChange={(event) => setTourSpherical(event.currentTarget.checked)}
+                  />
+                  <span>360° (spherical)</span>
+                </label>
+                <small>
+                  {tourSpherical
+                    ? "Opens in the 360° viewer: buyers drag to look around."
+                    : tourPick.kind === "photo"
+                      ? "A regular photo belongs in the photos field above. Tick 360° only if this is a spherical panorama."
+                      : "Plays as a plain video. Tick 360° if it came from a 360 camera."}
+                </small>
+              </div>
+            )}
+            {editingListing?.tour_url && editingListing.tour_kind && !tourPick && (
+              <div className="tour-current field-wide">
+                <span>
+                  {editingListing.tour_kind === "video"
+                    ? "Walkthrough video attached."
+                    : editingListing.tour_kind === "video360"
+                      ? "360° video attached."
+                      : "360° photo attached."}
+                </span>
+                <a href={editingListing.tour_url} target="_blank" rel="noreferrer noopener">
+                  Open ↗
+                </a>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void removeListingTour(editingListing)}
+                >
+                  Remove
+                </button>
+              </div>
+            )}
             <div className="form-submit field-wide">
               <button
                 type="button"
@@ -15748,12 +16419,46 @@ export default function MarketplaceApp({
                     loading="lazy"
                     decoding="async"
                   />
+                  {/* The whole street, in 360: Google's panorama by id, in
+                      the page when a browser key for the Maps Embed API is
+                      set, else on Google Maps in a new tab. Either way the
+                      imagery comes from Google as it is looked at. */}
+                  {streetPanoOpen && STREET_VIEW_EMBED_KEY && selectedListing.street_view_pano && (
+                    <iframe
+                      className="street-view-embed"
+                      title="Google Street View of the whole street"
+                      src={`https://www.google.com/maps/embed/v1/streetview?key=${encodeURIComponent(STREET_VIEW_EMBED_KEY)}&pano=${encodeURIComponent(selectedListing.street_view_pano)}`}
+                      allowFullScreen
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                    />
+                  )}
                   <figcaption>
                     Google Street View, {selectedListing.street_view_captured}. The
                     street outside, as Google last photographed it.
+                    {selectedListing.street_view_pano &&
+                      (STREET_VIEW_EMBED_KEY ? (
+                        <button
+                          type="button"
+                          className="street-view-open"
+                          onClick={() => setStreetPanoOpen((open) => !open)}
+                        >
+                          {streetPanoOpen ? "Close the street view" : "View whole street"}
+                        </button>
+                      ) : (
+                        <a
+                          className="street-view-open"
+                          href={streetPanoUrl(selectedListing.street_view_pano)}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        >
+                          View whole street ↗
+                        </a>
+                      ))}
                   </figcaption>
                 </figure>
               )}
+              <ListingTour listing={selectedListing} />
             </div>
             <div className="detail-copy">
               <div className="owner-line">
