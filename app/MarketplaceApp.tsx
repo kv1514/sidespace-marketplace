@@ -375,7 +375,8 @@ type VerificationRequest = {
 
 type BusinessPreferences = {
   categories: string[];
-  goal: string;
+  /** A campaign usually has more than one job to do, so this is a set. */
+  goals: string[];
   briefScope: "" | "physical" | "virtual" | "both";
   placements: string[];
   targetPlatforms: string[];
@@ -1391,7 +1392,7 @@ type OnboardingAnswers = {
   trafficCount: number | null;
   availability: string;
   // Business.
-  goal: string;
+  goals: string[];
   placements: string[];
   deliverables: string;
   artwork: "" | "supply" | "help";
@@ -2489,7 +2490,7 @@ function emptyAnswers(): OnboardingAnswers {
     traffic: "",
     trafficCount: null,
     availability: "",
-    goal: "",
+    goals: [],
     placements: [],
     deliverables: "",
     artwork: "",
@@ -3123,7 +3124,11 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
       .join(" ");
   }
   if (role === "business") {
-    const goal = BUSINESS_GOAL_CHIPS.find((item) => item.label === answers.goal);
+    const goalSentences = BUSINESS_GOAL_CHIPS.filter((item) =>
+      answers.goals.includes(item.label),
+    )
+      .map((item) => item.sentence)
+      .join(" ");
     const artwork =
       answers.artwork === "supply"
         ? "We'll supply the artwork."
@@ -3134,7 +3139,7 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
       answers.promoting.trim()
         ? `We're promoting ${answers.promoting.trim()}.`
         : "",
-      goal?.sentence ?? "",
+      goalSentences,
       bio,
       // Where they want SPACE, not where they happen to be - a Brea business
       // can be briefing for a window in Long Beach - and only when the brief
@@ -3721,7 +3726,7 @@ function creatorOfferIsReady(
 function emptyBusinessPreferences(): BusinessPreferences {
   return {
     categories: [],
-    goal: "",
+    goals: [],
     briefScope: "",
     placements: [],
     targetPlatforms: [],
@@ -3742,7 +3747,7 @@ function normalizeBusinessPreferences(
 ): BusinessPreferences {
   const source =
     raw && typeof raw === "object"
-      ? (raw as Partial<BusinessPreferences>)
+      ? (raw as Partial<BusinessPreferences> & { goal?: unknown })
       : {};
   const briefScope =
     source.briefScope === "physical" ||
@@ -3755,7 +3760,13 @@ function normalizeBusinessPreferences(
     categories: stringArray(source.categories).length
       ? stringArray(source.categories)
       : [...fallbackCategories],
-    goal: typeof source.goal === "string" ? source.goal : "",
+    // Written as `goals` since multi-select; rows saved before that carry a
+    // single `goal` string, so read either and never lose what someone chose.
+    goals: stringArray(source.goals).length
+      ? stringArray(source.goals)
+      : typeof source.goal === "string" && source.goal
+        ? [source.goal as string]
+        : [],
     briefScope,
     placements: stringArray(source.placements),
     targetPlatforms: stringArray(source.targetPlatforms),
@@ -3769,7 +3780,7 @@ function businessPreferencesFromAnswers(
 ): BusinessPreferences {
   return {
     categories: [...answers.categories],
-    goal: answers.goal,
+    goals: [...answers.goals],
     briefScope: answers.briefScope,
     placements: [...answers.placements],
     targetPlatforms: [...answers.targetPlatforms],
@@ -3845,7 +3856,7 @@ function creatorPostRecommendations(
   const preferences = businessPreferencesForProfile(profile, ownListings);
   const targetPlatforms = preferences.targetPlatforms.map(lower);
   const wantedArea = lower(preferences.wantedArea || profile.city);
-  const goalText = lower(preferences.goal);
+  const goalText = lower(preferences.goals.join(" "));
   const goalWords = goalText
     .split(/[^a-z0-9]+/)
     .filter((word) => word.length > 3);
@@ -7052,7 +7063,7 @@ export default function MarketplaceApp({
         "Say what you're promoting — a few words is enough.",
         "promoting",
       );
-      need(!answers.goal, "Pick what the campaign should do.", "goal");
+      need(!answers.goals.length, "Pick what the campaign should do.", "goals");
       need(
         !answers.briefScope,
         "Pick whether you want physical space, social, or both.",
@@ -7143,7 +7154,7 @@ export default function MarketplaceApp({
         "businessSetupPath",
         "promoting",
         "categories",
-        "goal",
+        "goals",
         "briefScope",
         "placements",
         "targetPlatforms",
@@ -12527,11 +12538,14 @@ export default function MarketplaceApp({
                         label,
                         value: label,
                       }))}
-                      selected={businessPreferencesDraft.goal}
+                      multi
+                      selected={businessPreferencesDraft.goals}
                       onPick={(value) =>
                         setBusinessPreferencesDraft((current) => ({
                           ...current,
-                          goal: current.goal === value ? "" : value,
+                          goals: current.goals.includes(value)
+                            ? current.goals.filter((item) => item !== value)
+                            : [...current.goals, value],
                         }))
                       }
                     />
@@ -14241,12 +14255,18 @@ export default function MarketplaceApp({
                           <h4>What should this campaign do?</h4>
                         </div>
                         <ChipRow
-                          field="goal"
+                          field="goals"
                           label="What it should do"
+                          multi
                           options={BUSINESS_GOAL_CHIPS.map((item) => item.label)}
-                          selected={answers.goal ? [answers.goal] : []}
+                          selected={answers.goals}
                           onPick={(value) =>
-                            setAnswers((current) => ({ ...current, goal: value }))
+                            setAnswers((current) => ({
+                              ...current,
+                              goals: current.goals.includes(value)
+                                ? current.goals.filter((item) => item !== value)
+                                : [...current.goals, value],
+                            }))
                           }
                         />
                         {/* The fork. Everything below reshapes around it: pick
