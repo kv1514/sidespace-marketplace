@@ -17,10 +17,14 @@ import {
  * dependency here and the lockfile could not be regenerated where this was
  * written. Swapping in an SDK later touches only the provider function.
  *
- * Evidence: the owner's notes and the owner's photo, nothing else. The prompt
- * holds the model to those two; the form shows back what it says it saw. A
- * Google Street View frame is never sent: Google's terms forbid creating
- * content from its imagery, so the listing page shows it live, labelled.
+ * Evidence: the owner's notes, the owner's photo, and stills from the
+ * owner's walkthrough (a video or a 360 photo), nothing else. The prompt
+ * holds the model to those; the form shows back what it says it saw. The
+ * browser cuts the stills - a handful of small JPEGs evenly spaced through
+ * the clip - because Claude takes images, not video, and Vercel caps a
+ * request body at 4.5 MB. A Google Street View frame is never sent: Google's
+ * terms forbid creating content from its imagery, so the listing page shows
+ * it live, labelled.
  *
  * Voice: browsers with built-in speech recognition send words. The rest
  * (Firefox, Brave, in-app browsers, or a recogniser that failed) send a short
@@ -36,6 +40,11 @@ const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interaction
 
 /** ~2 MB decoded. The form re-encodes photos to ~300 KB JPEG before sending. */
 const MAX_IMAGE_BASE64 = 2_800_000;
+/** Stills from a walkthrough: the form cuts up to six at 960 px, ~100 KB each. */
+const MAX_FRAMES = 6;
+const MAX_FRAME_BASE64 = 600_000;
+const TOUR_KINDS = ["video", "video360", "photo360"] as const;
+type TourKind = (typeof TOUR_KINDS)[number];
 /** Typed notes plus a transcript; a minute of talking is ~150 words. */
 const MAX_NOTES = 1200;
 /** ~2.2 MB decoded: a minute of speech is a few hundred KB as Opus, ~1 MB as AAC. */
@@ -94,7 +103,7 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
     "You draft listings for SideSpace, a marketplace where local businesses rent everyday advertising space from the people who own it.",
     `This listing is ${what}. Write it in the owner's voice, first person, like a sharp copywriter for a local marketplace: confident, concrete, benefit-led. Lead with the strongest fact. Turn every fact the owner gave into a reason a buyer would want the spot - where it sits becomes who passes it, a number becomes reach, timing becomes when the ad works. Specific beats general; short sentences beat long ones. No exclamation marks, no emoji, no clichés ("perfect opportunity", "don't miss out", "great exposure"), and never mention AI.`,
     "",
-    "EVIDENCE. You have two sources: the owner's notes and the owner's photo of the space. Every claim must come from one of them. From the owner's photo you may state what is plainly visible: the surface and what it is made of, its setting (a glass door, a brick wall, a corridor, a counter, a window onto a street), what stands right beside it, its rough size only against a visible reference such as a door or a person, and activity actually in frame. NEVER infer, estimate, round up, or invent: not a price, not a size, not a foot-traffic, follower, or attendance number, not an address, not an availability window, not who installs, not what is nearby unless a photo or the notes show it. If a fact is not stated or shown, leave the field empty (null for price) and ask for it in questions. A blank the owner fills is right; a number you made up is a failure.",
+    "EVIDENCE. You have up to three sources: the owner's notes, the owner's photo of the space, and stills from the owner's walkthrough of the space - a video, or a 360° photo. Every claim must come from one of them. From the owner's photo you may state what is plainly visible: the surface and what it is made of, its setting (a glass door, a brick wall, a corridor, a counter, a window onto a street), what stands right beside it, its rough size only against a visible reference such as a door or a person, and activity actually in frame. The walkthrough stills are in filming order, evenly spaced through the clip: from them you may also state how the space is laid out and how a person moves through it - what they pass on the way in, where the spot sits on that route (by the entrance, on the way to the till, at the end of a corridor), what else is in the room - under the same rules as the photo. A 360° still is equirectangular, the whole surroundings flattened into one wide image: its left and right edges meet behind the camera and straight lines bend, so never read that bending as the shape of the room. NEVER infer, estimate, round up, or invent: not a price, not a size, not a foot-traffic, follower, or attendance number, not an address, not an availability window, not who installs, not what is nearby unless a photo, a still, or the notes show it. If a fact is not stated or shown, leave the field empty (null for price) and ask for it in questions. A blank the owner fills is right; a number you made up is a failure.",
     "",
     "SECOND PASS. When the message includes the current draft, the owner has already seen a version and may have edited it or typed answers straight into the fields. Keep every fact and every specific phrase they kept, fold in the new answers, tighten weak sentences, and fill only what is still blank. Never drop information that was there, and never re-ask what the current draft or the notes already answer.",
     "",
@@ -102,7 +111,7 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
     "- title: at most 9 words, specific and appealing: the space plus its best locator. Examples: \"Dorm door by the 4th-floor stairwell, Blackwell\", \"Cafe window, Main Street\".",
     "- channel: for a physical space, the closest of Storefront, Vehicle, Wall / mural, Room / interior, Community board. A door, hallway, or room is Room / interior. Use Other only when none fits.",
     "- format: finishes the sentence \"You get ...\" exactly as it should read on the card. Example: \"one letter-size poster in my front window for a week\". Only when the owner said what they are offering - what goes up and for how long; otherwise empty, and ask.",
-    "- description: three to five sentences a buyer reads as-is, built only from the evidence. Open with what it is and exactly where. Then who passes or sees it and why that audience matters to an advertiser. Then what goes up, how, and what the owner handles. Make the reader picture their ad there: name what they would see, from the photo - the surface, its setting, what stands beside it. Every sentence must carry a fact; cut any that only sounds good. If the owner gave little, keep it short and let questions do the asking - never pad, never invent. Never write placeholders or refer to missing details (no \"details below\", no \"once I fill this in\"). Use the owner's own words for what the ad is; do not rename or upgrade a feature (a \"link\" stays a link). Do not state the price in the description - the listing shows the price separately, prices change, and SideSpace's floor is $2 so a lower stated price is adjusted; prose that repeats it goes wrong.",
+    "- description: three to five sentences a buyer reads as-is, built only from the evidence. Open with what it is and exactly where. Then who passes or sees it and why that audience matters to an advertiser. Then what goes up, how, and what the owner handles. Make the reader picture their ad there: name what they would see, from the photo or the walkthrough - the surface, its setting, what stands beside it, what someone passes on the way to it. Every sentence must carry a fact; cut any that only sounds good. If the owner gave little, keep it short and let questions do the asking - never pad, never invent. Never write placeholders or refer to missing details (no \"details below\", no \"once I fill this in\"). Use the owner's own words for what the ad is; do not rename or upgrade a feature (a \"link\" stays a link). Do not state the price in the description - the listing shows the price separately, prices change, and SideSpace's floor is $2 so a lower stated price is adjusted; prose that repeats it goes wrong.",
     "- demographics: only what the owner said about who sees it and how many. Empty when they said nothing.",
     `- location_area: the city or area from the notes${city ? `, otherwise "${city}"` : ""}. Never a street address.`,
     "- space_size: only when the owner stated it, or the photo shows it against a visible reference (a standard door, a person, a sheet of paper) - then say it is approximate; otherwise empty. The measurement alone, as it should print on the listing (\"About 6 ft wide\"): never add where it came from (no \"as stated by the owner\", no \"from the photo\").",
@@ -113,7 +122,7 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
     "- minimum_booking and availability_notes: from the notes, otherwise empty.",
     "- deliverables: the proof handed back after booking, one or two sentences. For a physical space, a photo of the ad in place. This one may be drafted; it describes the process, not a fact about the space.",
     "- questions: everything you still need, as direct questions the owner can answer in one line each, most important first, at most 5. Always ask about any of these that was not stated: the price and what it is per; where it is (city or area) if the notes and profile city do not say; who sees it and roughly how many (people walking past per day, followers, or attendance); when it is available; and for a physical space, its rough size, what may go up on it, and who puts it up. Empty when nothing is missing. Do not ask about things already answered.",
-    "- photo_observations: up to six short, plain facts you can see in the owner's photo, one each (\"a wooden door with a wire-mesh window\", \"a corridor with about six doors\", \"a bulletin board with three flyers on it\"). Only what is visible: no judgements, no guesses about what is out of frame. Empty when there is no owner's photo. The owner checks this list, so a wrong item is worse than a missing one.",
+    "- photo_observations: up to eight short, plain facts you can see in the owner's photo or walkthrough stills, one each (\"a wooden door with a wire-mesh window\", \"a corridor with about six doors\", \"a bulletin board with three flyers on it\"). Start one drawn from the walkthrough with \"In the video: \" or \"In the 360° photo: \". Only what is visible: no judgements, no guesses about what is out of frame. Empty when there is no owner's photo and no walkthrough. The owner checks this list, so a wrong item is worse than a missing one.",
     "",
     "The standard, from one owner's notes: \"dorm door, 4th floor of Blackwell, corner by the emergency stairs, flyers ok, I put them up, $1 a week, available now\".",
     "Weak: \"This is the door to my dorm room on the fourth floor. It is near the stairs. People walk past it.\"",
@@ -125,10 +134,24 @@ function systemPrompt(kind: ListingDraftKind, city: string) {
 }
 
 function userText(body: Body) {
+  // Say which image is which: the model sees them in the order they were
+  // attached, photo first, then the stills.
+  const media: string[] = [];
+  if (body.image) media.push("The first image is the owner's photo of the space.");
+  if (body.tour) {
+    const count = body.tour.frames.length;
+    const which = body.image ? "The remaining" : "The";
+    media.push(
+      body.tour.kind === "photo360"
+        ? `${which} image is the owner's 360° photo of the space, equirectangular.`
+        : `${which} ${count} image${count === 1 ? "" : "s"} ${count === 1 ? "is a still" : "are stills"} from the owner's ${body.tour.kind === "video360" ? "360° (equirectangular) " : ""}walkthrough video, in filming order, evenly spaced through it.`,
+    );
+  }
   const parts = [
-    body.image
-      ? "Draft the listing for the space in this photo."
+    body.image || body.tour
+      ? "Draft the listing for the space shown."
       : "Draft the listing from these notes.",
+    ...media,
     body.notes ? `Owner's notes: ${body.notes}` : "The owner left no notes.",
     body.city ? `Owner's profile city: ${body.city}` : "",
   ];
@@ -147,19 +170,42 @@ type Body = {
   /** The owner's own photo of the space, JPEG base64. */
   image: string | null;
   audio: { data: string; mimeType: string } | null;
+  /** Stills from the owner's walkthrough, JPEG base64, in filming order. */
+  tour: { kind: TourKind; frames: string[] } | null;
   /** What the form holds now, on a second Fill. */
   current: Record<string, string> | null;
   city: string;
 };
 
-function readImage(value: unknown, unreadable: string) {
+function readImage(
+  value: unknown,
+  unreadable: string,
+  max = MAX_IMAGE_BASE64,
+  tooLarge = "That photo is too large to draft from. Try a smaller one.",
+) {
   const image = typeof value === "string" ? value.trim() : "";
   if (!image) return null;
-  if (image.length > MAX_IMAGE_BASE64) {
-    throw new ApiError("That photo is too large to draft from. Try a smaller one.", 413);
-  }
+  if (image.length > max) throw new ApiError(tooLarge, 413);
   if (!/^[A-Za-z0-9+/]+=*$/.test(image)) throw new ApiError(unreadable);
   return image;
+}
+
+function readTour(value: unknown): Body["tour"] {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (!TOUR_KINDS.includes(raw.kind as TourKind)) return null;
+  const frames = (Array.isArray(raw.frames) ? raw.frames : [])
+    .slice(0, MAX_FRAMES)
+    .map((frame) =>
+      readImage(
+        frame,
+        "A still from that walkthrough could not be read.",
+        MAX_FRAME_BASE64,
+        "A still from that walkthrough is too large to draft from.",
+      ),
+    )
+    .filter((frame): frame is string => Boolean(frame));
+  return frames.length ? { kind: raw.kind as TourKind, frames } : null;
 }
 
 async function readBody(request: Request): Promise<Body> {
@@ -206,11 +252,12 @@ async function readBody(request: Request): Promise<Body> {
       audio = { data, mimeType };
     }
   }
-  if (!image && !notes && !audio) {
+  const tour = readTour(raw.tour);
+  if (!image && !notes && !audio && !tour) {
     throw new ApiError("Add a photo or a few words first, then press Fill with AI.");
   }
   const city = typeof raw.city === "string" ? raw.city.trim().slice(0, 80) : "";
-  return { kind, notes, image, audio, current, city };
+  return { kind, notes, image, audio, tour, current, city };
 }
 
 /** Shared handling of the HTTP layer: both providers use the same codes. */
@@ -238,7 +285,7 @@ type AnthropicResponse = {
 
 async function anthropicRequest(apiKey: string, body: Body, withFallbacks: boolean) {
   const content: Array<Record<string, unknown>> = [];
-  for (const data of [body.image]) {
+  for (const data of [body.image, ...(body.tour?.frames ?? [])]) {
     if (data) {
       content.push({
         type: "image",
@@ -330,7 +377,7 @@ type GeminiResponse = {
 
 async function draftWithGemini(apiKey: string, body: Body): Promise<string> {
   const input: Array<Record<string, string>> = [];
-  for (const data of [body.image]) {
+  for (const data of [body.image, ...(body.tour?.frames ?? [])]) {
     if (data) input.push({ type: "image", data, mime_type: "image/jpeg" });
   }
   input.push({ type: "text", text: userText(body) });
@@ -468,7 +515,7 @@ export async function POST(request: Request) {
     // provider, whether a photo was sent, how many questions came back, and
     // how long it took. No member data.
     console.info(
-      `[listing draft] ok provider=${chosen.provider} kind=${body.kind} photo=${body.image ? "yes" : "no"} refill=${body.current ? "yes" : "no"} audio=${body.audio ? "yes" : "no"} questions=${draft.questions.length} ms=${Date.now() - startedAt}`,
+      `[listing draft] ok provider=${chosen.provider} kind=${body.kind} photo=${body.image ? "yes" : "no"} tour=${body.tour ? `${body.tour.kind}:${body.tour.frames.length}` : "no"} refill=${body.current ? "yes" : "no"} audio=${body.audio ? "yes" : "no"} questions=${draft.questions.length} ms=${Date.now() - startedAt}`,
     );
 
     return Response.json(

@@ -76,8 +76,9 @@ export type ListingDraft = {
   /** What the model still needs before it can fill the blanks. Empty when nothing is missing. */
   questions: string[];
   /**
-   * Plain facts the model says it can see in the owner's photo. Shown back
-   * so a wrong "fact" is caught before it reaches the description.
+   * Plain facts the model says it can see in the owner's photo and in the
+   * frames of their walkthrough video. Shown back so a wrong "fact" is caught
+   * before it reaches the description.
    */
   photo_observations: string[];
 };
@@ -140,7 +141,7 @@ const LONG_MAX = 2000;
 const PRICE_MIN = 2;
 const PRICE_MAX = 100_000;
 const QUESTIONS_MAX = 5;
-const OBSERVATIONS_MAX = 6;
+const OBSERVATIONS_MAX = 8;
 
 function text(value: unknown, max: number) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
