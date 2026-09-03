@@ -126,18 +126,53 @@ const INVENTORY_TYPES = [
  * The rule below picks the newest listing of the right kind, which is the
  * right default and keeps working as listings come and go. This is the
  * exception for when a particular listing is simply the better shop window -
- * here, a car with a real listing photo and a title that says what it is,
- * rather than a newer one called "My car" illustrated with its owner's profile
+ * a car with a real listing photo and a title that says what it is, rather
+ * than a newer one called "My car" illustrated with its owner's profile
  * picture.
  *
+ * Each tab holds an ORDERED list, not a single id: the front page should show
+ * the best example of a kind, and the best example has a runner-up. The first
+ * pin that is actually available wins, so a listing going paused or deleted
+ * quietly promotes the next one instead of dropping the tab back to whatever
+ * happens to be newest.
+ *
  * Keyed by tab label so it reads as an editorial choice rather than a rule.
- * A pin is resolved inside the same filtered set as everything else, so it can
- * never reintroduce a brief, and it falls back to the rule the moment the
- * listing stops being available - deleted, deactivated, or simply pushed out
- * of the rows the page fetches. Removing an entry restores the default.
+ * A pin is resolved against every bookable listing, NOT only the ones whose
+ * channel matches its tab: the listing we want to introduce a category with
+ * does not always carry the channel the matcher would guess, and a human
+ * naming a specific id has already made that call. Demand briefs stay
+ * excluded either way - the front page never presents someone asking for
+ * space as someone offering it. The list falls back to the channel rule the
+ * moment none of its entries are available - deleted, deactivated, or simply
+ * pushed out of the rows the page fetches. Emptying an entry restores the
+ * default.
  */
-const HERO_PINS: Record<string, string> = {
-  Vehicle: "3aeba0db-3bf1-4acc-a51a-eba0f1417f64",
+const HERO_PINS: Record<string, string[]> = {
+  // A placement on an actual street, described in plain words, which is what
+  // this tab promises ("a real window on a real street"). The dorm door is
+  // the runner-up: it is the more detailed listing and carries its owner's
+  // own photo, but it is an interior door rather than a street.
+  Storefront: [
+    "e54988cb-24b6-4ed0-80da-96163b053929", // Dylan Nguyen - yard sign on a Yorba Linda street
+    "de1b07a4-7cb0-46c6-a692-b30ea460a59d", // Kausthubh Veldanda - dorm room door, floor 4 corner
+  ],
+  // Creators with a real audience, a real listing photo, and an offer a
+  // business can picture. These two are how we want the marketplace
+  // introduced, so the tab shows them rather than the newest creator to
+  // have published.
+  Creator: [
+    "265650f5-0f1e-4ee6-966c-aa5df6e22edd", // Dylan Nguyen - 30-second YouTube segment
+    "86b8e144-4952-45d8-8b5d-807932a4810c", // Aidan Chen - Instagram story for local businesses
+  ],
+  Vehicle: ["3aeba0db-3bf1-4acc-a51a-eba0f1417f64"],
+  // A local occasion you can actually buy, and the one we want to lead with.
+  // Its channel is "Other", so only a pin can put it here - the tab's matcher
+  // would never find it. Troy Physics Club's sponsor whiteboard sits behind
+  // it as the conventional sponsorship example.
+  Event: [
+    "7f32be7a-1f79-4c37-9fdc-73968d00ea23", // Aiden Guan - run across campus with your flag
+    "8af17b87-b816-4edf-901c-750bd4f03938", // Troy Physics Club - whiteboard for sponsors
+  ],
 };
 
 /**
@@ -160,9 +195,11 @@ function pickInventory(listings: PublicListing[]) {
     const matches = bookable.filter((listing) =>
       type.match.test(listing.channel),
     );
-    const pinned = HERO_PINS[type.label];
+    const pinned = (HERO_PINS[type.label] ?? [])
+      .map((id) => bookable.find((listing) => listing.id === id))
+      .find(Boolean);
     return (
-      (pinned && matches.find((listing) => listing.id === pinned)) ||
+      pinned ||
       matches.find((listing) => !listing.owner.is_demo) ||
       matches[0]
     );
