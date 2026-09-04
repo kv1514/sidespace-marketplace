@@ -797,6 +797,7 @@ const CATEGORY_CHIPS = [
   "Home",
   "Pets",
   "Auto",
+  "Other",
 ];
 
 /** Creator: which socialPlatforms keys are offered, and their offer examples. */
@@ -1052,6 +1053,7 @@ const BRIEF_PHYSICAL_CHIPS = [
   "A-frame signs",
   "Event booths",
   "Local teams & events",
+  "Other",
 ];
 
 /** Social platforms a brief can target. Only shown for virtual/both. */
@@ -1065,6 +1067,7 @@ const BRIEF_PLATFORM_CHIPS = [
   "Podcast",
   "Twitch",
   "LinkedIn",
+  "Other",
 ];
 
 /** Budget range presets: [low, high]. A range beats one number for a brief. */
