@@ -1749,6 +1749,16 @@ h2 em {
   margin: 5px 0 0;
 }
 
+/* Google renders its sign-in button inside an iframe, so it cannot wear
+   .google-button's styling. The slot holds the height while the script
+   arrives, so the dialog does not jump as the button appears. */
+.google-identity {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
 .google-button {
   background: var(--white);
   border: 1px solid var(--line);
