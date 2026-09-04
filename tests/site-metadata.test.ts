@@ -45,6 +45,40 @@ describe("listing social metadata", () => {
     });
   });
 
+  it("does not share a business brief as the stock cover it was seeded with", () => {
+    // Briefs are wanted ads, written before there is anything to photograph.
+    // Publishing used to seed them with this file, so every campaign shared as
+    // a photo of somebody else's market stall. Old rows still carry it.
+    const metadata = createListingSocialMetadata({
+      id: listingId,
+      title: "Looking for a window in Fullerton",
+      channel: "Business brief",
+      imageUrl: "/photos/market-creator.jpg",
+      imageUrls: ["/photos/market-creator.jpg"],
+    });
+
+    expect(metadata.openGraph).toMatchObject({ images: OG_IMAGE });
+    expect(metadata.twitter).toMatchObject({ images: OG_IMAGE });
+  });
+
+  it("still shares a photo the business actually uploaded to its brief", () => {
+    const metadata = createListingSocialMetadata({
+      id: listingId,
+      title: "Looking for a window in Fullerton",
+      channel: "Business brief",
+      imageUrl: "/photos/small-town-coffee.jpg",
+    });
+
+    expect(metadata.openGraph).toMatchObject({
+      images: [
+        {
+          url: "https://sidespace.ad/photos/small-town-coffee.jpg",
+          alt: "Looking for a window in Fullerton on SideSpace",
+        },
+      ],
+    });
+  });
+
   it("keeps the branded fallback when listing images are not usable URLs", () => {
     const metadata = createListingSocialMetadata({
       id: listingId,

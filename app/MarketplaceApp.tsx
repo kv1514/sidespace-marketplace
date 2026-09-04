@@ -385,7 +385,8 @@ type VerificationRequest = {
 
 type BusinessPreferences = {
   categories: string[];
-  goal: string;
+  /** A campaign usually has more than one job to do, so this is a set. */
+  goals: string[];
   briefScope: "" | "physical" | "virtual" | "both";
   placements: string[];
   targetPlatforms: string[];
@@ -1404,7 +1405,7 @@ type OnboardingAnswers = {
   trafficCount: number | null;
   availability: string;
   // Business.
-  goal: string;
+  goals: string[];
   placements: string[];
   deliverables: string;
   artwork: "" | "supply" | "help";
@@ -2502,7 +2503,7 @@ function emptyAnswers(): OnboardingAnswers {
     traffic: "",
     trafficCount: null,
     availability: "",
-    goal: "",
+    goals: [],
     placements: [],
     deliverables: "",
     artwork: "",
@@ -3136,7 +3137,11 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
       .join(" ");
   }
   if (role === "business") {
-    const goal = BUSINESS_GOAL_CHIPS.find((item) => item.label === answers.goal);
+    const goalSentences = BUSINESS_GOAL_CHIPS.filter((item) =>
+      answers.goals.includes(item.label),
+    )
+      .map((item) => item.sentence)
+      .join(" ");
     const artwork =
       answers.artwork === "supply"
         ? "We'll supply the artwork."
@@ -3147,7 +3152,7 @@ function composeDescription(role: Role, answers: OnboardingAnswers): string {
       answers.promoting.trim()
         ? `We're promoting ${answers.promoting.trim()}.`
         : "",
-      goal?.sentence ?? "",
+      goalSentences,
       bio,
       // Where they want SPACE, not where they happen to be - a Brea business
       // can be briefing for a window in Long Beach - and only when the brief
@@ -3734,7 +3739,7 @@ function creatorOfferIsReady(
 function emptyBusinessPreferences(): BusinessPreferences {
   return {
     categories: [],
-    goal: "",
+    goals: [],
     briefScope: "",
     placements: [],
     targetPlatforms: [],
@@ -3755,7 +3760,7 @@ function normalizeBusinessPreferences(
 ): BusinessPreferences {
   const source =
     raw && typeof raw === "object"
-      ? (raw as Partial<BusinessPreferences>)
+      ? (raw as Partial<BusinessPreferences> & { goal?: unknown })
       : {};
   const briefScope =
     source.briefScope === "physical" ||
@@ -3768,7 +3773,13 @@ function normalizeBusinessPreferences(
     categories: stringArray(source.categories).length
       ? stringArray(source.categories)
       : [...fallbackCategories],
-    goal: typeof source.goal === "string" ? source.goal : "",
+    // Written as `goals` since multi-select; rows saved before that carry a
+    // single `goal` string, so read either and never lose what someone chose.
+    goals: stringArray(source.goals).length
+      ? stringArray(source.goals)
+      : typeof source.goal === "string" && source.goal
+        ? [source.goal as string]
+        : [],
     briefScope,
     placements: stringArray(source.placements),
     targetPlatforms: stringArray(source.targetPlatforms),
@@ -3782,7 +3793,7 @@ function businessPreferencesFromAnswers(
 ): BusinessPreferences {
   return {
     categories: [...answers.categories],
-    goal: answers.goal,
+    goals: [...answers.goals],
     briefScope: answers.briefScope,
     placements: [...answers.placements],
     targetPlatforms: [...answers.targetPlatforms],
@@ -3858,7 +3869,7 @@ function creatorPostRecommendations(
   const preferences = businessPreferencesForProfile(profile, ownListings);
   const targetPlatforms = preferences.targetPlatforms.map(lower);
   const wantedArea = lower(preferences.wantedArea || profile.city);
-  const goalText = lower(preferences.goal);
+  const goalText = lower(preferences.goals.join(" "));
   const goalWords = goalText
     .split(/[^a-z0-9]+/)
     .filter((word) => word.length > 3);
@@ -4322,6 +4333,62 @@ function listingImages(listing: Listing) {
   return listing.image_urls?.length
     ? listing.image_urls
     : [listing.image_url].filter(Boolean);
+}
+
+/**
+ * The photos a listing actually shows.
+ *
+ * A business brief is a wanted ad - "here is the campaign, who has the space"
+ * - and businesses write them without a photo of anything, because there is
+ * nothing yet to photograph. Publishing seeded those with the stock cover, so
+ * every brief arrived carrying a picture of somebody else's market stall and
+ * presented it as the campaign. A brief now shows a photo only when the
+ * business uploaded one.
+ *
+ * The seed already sitting in the column on older briefs is read as no photo
+ * here rather than migrated away: no row has to be rewritten, and a business
+ * that uploads later simply replaces it. Only briefs are filtered - the
+ * default is still a sensible cover for space that exists and was listed
+ * without a picture of it.
+ */
+function listingPhotos(listing: Listing) {
+  const images = listingImages(listing);
+  return isBrief(listing)
+    ? images.filter((url) => url !== DEFAULT_LISTING_IMAGE)
+    : images;
+}
+
+/** A listing's cover photo, or "" when a brief has none of its own. */
+function listingCover(listing: Listing) {
+  const photos = listingPhotos(listing);
+  if (photos[0]) return photos[0];
+  return isBrief(listing) ? "" : DEFAULT_LISTING_IMAGE;
+}
+
+/**
+ * A listing's cover, or the quiet panel that stands in for one.
+ *
+ * Not an <img> with an empty src: a browser treats that as a broken image and
+ * draws the torn-page icon, which reads as a fault rather than as a brief that
+ * simply has no photo. The panel carries no words - it sits at 52px on a
+ * dashboard row and at full width on a card, and any label would be clipped at
+ * one of those sizes.
+ */
+function ListingCover({
+  listing,
+  alt = "",
+}: {
+  listing: Listing;
+  alt?: string;
+}) {
+  const cover = listingCover(listing);
+  if (!cover) {
+    return <span className="listing-cover-blank" aria-hidden="true" />;
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={cover} alt={alt} loading="lazy" decoding="async" />
+  );
 }
 
 /** Newest messages fetched per thread. See loadMessages for why this is bounded. */
@@ -5243,6 +5310,24 @@ export default function MarketplaceApp({
   const igSyncedUrlRef = useRef("");
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
+  // The photos the open listing shows, and whether its media column holds
+  // anything at all. A brief with no photo, no Street View and no walkthrough
+  // has an empty left column, and the layout closes it up rather than leaving
+  // a 520px hole beside the copy.
+  const detailPhotos = selectedListing ? listingPhotos(selectedListing) : [];
+  const detailHasMedia = Boolean(
+    selectedListing &&
+      (detailPhotos.length ||
+        selectedListing.street_view_captured ||
+        selectedListing.tour_url),
+  );
+  // Opening your own listing used to offer you the buyer's controls - book it,
+  // offer on it, message yourself - which all dead-end, while the controls that
+  // do apply to it (edit, pause, delete) lived only on the dashboard. Owning it
+  // swaps the whole action block.
+  const viewingOwnListing = Boolean(
+    selectedListing && profile && selectedListing.owner.id === profile.id,
+  );
   const [inboxOpen, setInboxOpen] = useState(false);
   // Distinguishes still-fetching and failed from genuinely empty, so the
   // drawer stops asserting a member has no conversations before it knows,
@@ -5272,6 +5357,15 @@ export default function MarketplaceApp({
     useState<CreatorPortfolioItem[]>([]);
   const [selectedCreatorReviews, setSelectedCreatorReviews] =
     useState<CreatorReview[]>([]);
+  /**
+   * The seller whose profile is open over a listing, and everything they have
+   * live. Fetched rather than filtered out of `listings`: that array holds
+   * only the most recent rows the grid asked for, so a member with an older
+   * listing would have looked like they had fewer than they do.
+   */
+  const [selectedOwner, setSelectedOwner] = useState<Profile | null>(null);
+  const [ownerListings, setOwnerListings] = useState<Listing[]>([]);
+  const [ownerListingsLoading, setOwnerListingsLoading] = useState(false);
   const [stripeAccountStatus, setStripeAccountStatus] =
     useState<StripeAccountStatus | null>(null);
   const [campaignListing, setCampaignListing] = useState<Listing | null>(null);
@@ -7001,6 +7095,50 @@ export default function MarketplaceApp({
     window.history.replaceState(null, "", url);
   }
 
+  /**
+   * The seller's profile, opened from the listing you are reading.
+   *
+   * A listing is one thing someone offers; the question a buyer asks next is
+   * "what else have they got?". This answers it without leaving the listing -
+   * the profile opens over it, and closing comes straight back.
+   */
+  async function openOwnerProfile(owner: Profile) {
+    setSelectedOwner(owner);
+    setOwnerListings([]);
+    if (!supabase) return;
+    setOwnerListingsLoading(true);
+    const { data, error } = await supabase
+      .from("listings")
+      .select(
+        `${PUBLIC_LISTING_COLUMNS}, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
+      )
+      .eq("owner_profile_id", owner.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    // A profile that cannot list its listings is still worth showing, so a
+    // failure leaves the header and an empty state rather than an error.
+    if (error) console.error("[owner profile] listings fetch failed", error);
+    setOwnerListings(error ? [] : safeListings(data));
+    setOwnerListingsLoading(false);
+  }
+
+  function closeOwnerProfile() {
+    setSelectedOwner(null);
+    setOwnerListings([]);
+    setOwnerListingsLoading(false);
+  }
+
+  /**
+   * Following a listing from the profile replaces the profile rather than
+   * stacking on it: two dialogs deep, Escape stops meaning what a reader
+   * expects it to mean.
+   */
+  function openListingFromProfile(listing: Listing) {
+    closeOwnerProfile();
+    openListing(listing);
+  }
+
   async function handleAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase) return;
@@ -7265,7 +7403,7 @@ export default function MarketplaceApp({
         "Say what you're promoting — a few words is enough.",
         "promoting",
       );
-      need(!answers.goal, "Pick what the campaign should do.", "goal");
+      need(!answers.goals.length, "Pick what the campaign should do.", "goals");
       need(
         !answers.briefScope,
         "Pick whether you want physical space, social, or both.",
@@ -7356,7 +7494,7 @@ export default function MarketplaceApp({
         "businessSetupPath",
         "promoting",
         "categories",
-        "goal",
+        "goals",
         "briefScope",
         "placements",
         "targetPlatforms",
@@ -7964,11 +8102,17 @@ export default function MarketplaceApp({
           // listings that share a URL with a deleted gallery photo, re-pointing
           // them at the default cover; double-writing would make that the
           // guaranteed fate of every listing this flow creates.
+          //
+          // A business publishes a brief - a wanted ad, usually written before
+          // there is anything to photograph - and the chain ends there for
+          // them. Their own logo still stands in, because a brief under the
+          // business's mark reads as theirs; the stock cover never did, and
+          // gave every campaign a photo of somebody else's market stall.
           const cover =
             listingUploads[0] ||
             payload.avatar_url ||
             payload.gallery_urls[0] ||
-            DEFAULT_LISTING_IMAGE;
+            (role === "business" ? "" : DEFAULT_LISTING_IMAGE);
           // Captured before the map: narrowing on the outer binding does not
           // survive into a closure, and this is the only reference inside one.
           const ownerId = savedProfile.id;
@@ -7984,7 +8128,11 @@ export default function MarketplaceApp({
                 } : {}),
                 owner_profile_id: ownerId,
                 image_url: cover,
-                image_urls: listingUploads.length ? listingUploads : [cover],
+                image_urls: listingUploads.length
+                  ? listingUploads
+                  : cover
+                    ? [cover]
+                    : [],
                 status: "active",
                 provenance_status: "owner_attested",
                 availability_confirmed_at: new Date().toISOString(),
@@ -8669,11 +8817,20 @@ export default function MarketplaceApp({
     setBusy(true);
     try {
       const remaining = listingImages(listing).filter((item) => item !== url);
+      // Taking the last photo off a brief can leave it with none, which is how
+      // most briefs are written anyway. Anything else is a listing of real
+      // space, where a stock cover beats an empty frame.
       const cover =
-        remaining[0] || profile.gallery_urls?.[0] || profile.avatar_url || DEFAULT_LISTING_IMAGE;
+        remaining[0] ||
+        profile.gallery_urls?.[0] ||
+        profile.avatar_url ||
+        (isBrief(listing) ? "" : DEFAULT_LISTING_IMAGE);
       const { data, error } = await supabase
         .from("listings")
-        .update({ image_url: cover, image_urls: remaining.length ? remaining : [cover] })
+        .update({
+          image_url: cover,
+          image_urls: remaining.length ? remaining : cover ? [cover] : [],
+        })
         .eq("id", listing.id)
         .eq("owner_profile_id", profile.id)
         .select(PUBLIC_LISTING_COLUMNS)
@@ -8759,11 +8916,14 @@ export default function MarketplaceApp({
     };
     const values = new FormData(listingForm);
     const selectedListingFiles = listingFilesRef.current.filter((file) => file.size > 0);
+    // A brief published with nothing keeps nothing rather than picking up the
+    // stock cover. (Only the insert path reads this; an edit leaves the image
+    // columns alone unless photos were chosen.)
     const fallbackImage =
       editingListing?.image_url ||
       profile.gallery_urls?.[0] ||
       profile.avatar_url ||
-      DEFAULT_LISTING_IMAGE;
+      (editingListingIsBrief ? "" : DEFAULT_LISTING_IMAGE);
     setListingFeedback("");
     setBusy(true);
     try {
@@ -8913,7 +9073,7 @@ export default function MarketplaceApp({
               ...fields,
               owner_profile_id: profile.id,
               image_url: fallbackImage,
-              image_urls: [fallbackImage],
+              image_urls: fallbackImage ? [fallbackImage] : [],
               status: "active",
             })
             .select(PUBLIC_LISTING_COLUMNS)
@@ -9953,6 +10113,14 @@ export default function MarketplaceApp({
       return;
     }
     setToast(nextStatus === "active" ? "Listing is live again." : "Listing paused.");
+    // The listing page can be the thing that was just paused, and it holds its
+    // own copy of the row - without this it keeps offering "Pause listing"
+    // after the pause went through.
+    setSelectedListing((current) =>
+      current && current.id === listing.id
+        ? { ...current, status: nextStatus }
+        : current,
+    );
     await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
   }
 
@@ -10615,12 +10783,9 @@ export default function MarketplaceApp({
           <div className="my-listings-grid">
             {ownListings.map((listing) => (
               <article className="my-listing-card" key={listing.id}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={listing.image_url || DEFAULT_LISTING_IMAGE}
+                <ListingCover
+                  listing={listing}
                   alt={`${listing.title} listing`}
-                  loading="lazy"
-                  decoding="async"
                 />
                 <div>
                   <span className={`listing-status status-${listing.status}`}>
@@ -11371,12 +11536,7 @@ export default function MarketplaceApp({
                 <div className="dashboard-listing-list">
                   {ownListings.slice(0, 4).map((listing) => (
                     <article className="dashboard-listing-row" key={listing.id}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={listing.image_url || DEFAULT_LISTING_IMAGE}
-                        alt=""
-                        loading="lazy"
-                      />
+                      <ListingCover listing={listing} />
                       <div className="dashboard-listing-copy">
                         <div>
                           <span
@@ -11396,6 +11556,13 @@ export default function MarketplaceApp({
                       <div className="dashboard-row-actions">
                         <button onClick={() => openListing(listing)}>View</button>
                         <button onClick={() => openListingEdit(listing)}>Edit</button>
+                        <button
+                          className="is-danger"
+                          disabled={busy}
+                          onClick={() => setDeleteListingTarget(listing)}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </article>
                   ))}
@@ -11591,15 +11758,7 @@ export default function MarketplaceApp({
                       className="dashboard-recommendation-card"
                       key={recommendation.listing.id}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={
-                          recommendation.listing.image_url ||
-                          DEFAULT_LISTING_IMAGE
-                        }
-                        alt=""
-                        loading="lazy"
-                      />
+                      <ListingCover listing={recommendation.listing} />
                       <div className="dashboard-recommendation-body">
                         <div className="dashboard-recommendation-meta">
                           <span>{recommendation.listing.channel}</span>
@@ -12054,19 +12213,20 @@ export default function MarketplaceApp({
           {visibleListings.map((listing) => (
             <article className="listing-card" key={listing.id}>
               <button
-                className="listing-image"
+                className={`listing-image${
+                  listingCover(listing) ? "" : " is-blank"
+                }`}
                 onClick={() => openListing(listing)}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={listing.image_url} alt="" loading="lazy" decoding="async" />
+                <ListingCover listing={listing} />
                 <span
                   className={`listing-channel ${isBrief(listing) ? "is-brief" : ""}`}
                 >
                   {isBrief(listing) ? "Wanted" : listing.channel}
                 </span>
-                {listingImages(listing).length > 1 && (
+                {listingPhotos(listing).length > 1 && (
                   <span className="photo-count">
-                    {listingImages(listing).length} photos
+                    {listingPhotos(listing).length} photos
                   </span>
                 )}
                 {listing.tour_kind && (
@@ -12784,11 +12944,14 @@ export default function MarketplaceApp({
                         label,
                         value: label,
                       }))}
-                      selected={businessPreferencesDraft.goal}
+                      multi
+                      selected={businessPreferencesDraft.goals}
                       onPick={(value) =>
                         setBusinessPreferencesDraft((current) => ({
                           ...current,
-                          goal: current.goal === value ? "" : value,
+                          goals: current.goals.includes(value)
+                            ? current.goals.filter((item) => item !== value)
+                            : [...current.goals, value],
                         }))
                       }
                     />
@@ -14498,12 +14661,18 @@ export default function MarketplaceApp({
                           <h4>What should this campaign do?</h4>
                         </div>
                         <ChipRow
-                          field="goal"
+                          field="goals"
                           label="What it should do"
+                          multi
                           options={BUSINESS_GOAL_CHIPS.map((item) => item.label)}
-                          selected={answers.goal ? [answers.goal] : []}
+                          selected={answers.goals}
                           onPick={(value) =>
-                            setAnswers((current) => ({ ...current, goal: value }))
+                            setAnswers((current) => ({
+                              ...current,
+                              goals: current.goals.includes(value)
+                                ? current.goals.filter((item) => item !== value)
+                                : [...current.goals, value],
+                            }))
                           }
                         />
                         {/* The fork. Everything below reshapes around it: pick
@@ -16124,19 +16293,22 @@ export default function MarketplaceApp({
 
       {selectedListing && (
         <Modal label={selectedListing.title} onClose={closeListing} wide>
-          <div className="detail-layout">
+          <div className={`detail-layout${detailHasMedia ? "" : " has-no-media"}`}>
+            {detailHasMedia && (
             <div className="detail-media">
+              {detailPhotos.length > 0 && (
               <figure>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={listingImages(selectedListing)[selectedPhotoIndex] || selectedListing.image_url}
+                  src={detailPhotos[selectedPhotoIndex] || detailPhotos[0]}
                   alt={`${selectedListing.title} photo ${selectedPhotoIndex + 1}`}
                 />
                 <span className="listing-channel">{selectedListing.channel}</span>
               </figure>
-              {listingImages(selectedListing).length > 1 && (
+              )}
+              {detailPhotos.length > 1 && (
                 <div className="detail-thumbnails" aria-label="Listing photos">
-                  {listingImages(selectedListing).map((url, index) => (
+                  {detailPhotos.map((url, index) => (
                     <button
                       key={`${url}-${index}`}
                       className={selectedPhotoIndex === index ? "active" : ""}
@@ -16199,21 +16371,32 @@ export default function MarketplaceApp({
               )}
               <ListingTour listing={selectedListing} />
             </div>
+            )}
             <div className="detail-copy">
               <div className="owner-line">
-                <Avatar profile={selectedListing.owner} />
-                <div>
-                  <strong>
-                    {selectedListing.owner.display_name}
-                    {selectedListing.owner.verified && (
-                      <span className="verified">✓</span>
-                    )}
-                  </strong>
-                  <small>
-                    {rolesLabel(selectedListing.owner)} ·{" "}
-                    {selectedListing.owner.city}
-                  </small>
-                </div>
+                {/* The whole identity is the control, the way a marketplace
+                    seller's name is: avatar, name and role all lead to the
+                    same place, so nobody has to hunt for the small link. */}
+                <button
+                  type="button"
+                  className="owner-line-link"
+                  onClick={() => void openOwnerProfile(selectedListing.owner)}
+                  aria-label={`See ${selectedListing.owner.display_name}'s profile and other listings`}
+                >
+                  <Avatar profile={selectedListing.owner} />
+                  <div>
+                    <strong>
+                      {selectedListing.owner.display_name}
+                      {selectedListing.owner.verified && (
+                        <span className="verified">✓</span>
+                      )}
+                    </strong>
+                    <small>
+                      {rolesLabel(selectedListing.owner)} ·{" "}
+                      {selectedListing.owner.city}
+                    </small>
+                  </div>
+                </button>
                 <span
                   className={`owner-trust-badge ${
                     selectedListing.owner.verified ? "verified-owner" : ""
@@ -16327,14 +16510,60 @@ export default function MarketplaceApp({
                 {selectedListing.minimum_booking && <p>{selectedListing.minimum_booking}</p>}
                 <p><strong>Cancellation: </strong>{selectedListing.cancellation_policy || "Agree with the owner before payment."}</p>
               </details>
-              {isListingRequestable(selectedListing) && !isBrief(selectedListing) && selectedListing.instant_booking_enabled && selectedListing.price_cents > 0 && (
+              {!viewingOwnListing && isListingRequestable(selectedListing) && !isBrief(selectedListing) && selectedListing.instant_booking_enabled && selectedListing.price_cents > 0 && (
                 <InstantBookingPanel key={selectedListing.id} listing={selectedListing} busy={busy}
                   onCheckout={(start, end) => startInstantCheckout(selectedListing, start, end)} />
               )}
-              {isListingRequestable(selectedListing) && !isBrief(selectedListing) && <div className="detail-primary-actions">
+              {!viewingOwnListing && isListingRequestable(selectedListing) && !isBrief(selectedListing) && <div className="detail-primary-actions">
                 {!selectedListing.instant_booking_enabled && isFixedPriceListing(selectedListing) && <button className="button button-coral" onClick={() => openCampaignFlow(selectedListing,"buy_now")}>Request a booking</button>}
                 <button className={`button ${!selectedListing.instant_booking_enabled && !isFixedPriceListing(selectedListing) ? "button-coral" : "button-ghost"}`} onClick={() => openCampaignFlow(selectedListing,"offer")}>Make a custom offer</button>
               </div>}
+              {viewingOwnListing ? (
+                <div className="detail-owner-actions">
+                  <p>
+                    This is your listing.
+                    {selectedListing.status === "active"
+                      ? " It is live in the marketplace."
+                      : " It is paused, so nobody can see it."}
+                  </p>
+                  <div className="detail-primary-actions">
+                    <button
+                      className="button button-coral"
+                      onClick={() => {
+                        // Both of these open another dialog, so this one closes
+                        // first: the confirm and the editor render earlier in
+                        // the tree and would otherwise be painted over by the
+                        // listing page still sitting on top of them.
+                        const listing = selectedListing;
+                        closeListing();
+                        openListingEdit(listing);
+                      }}
+                    >
+                      Edit listing
+                    </button>
+                    <button
+                      className="button button-ghost"
+                      disabled={busy}
+                      onClick={() => void updateListingStatus(selectedListing)}
+                    >
+                      {selectedListing.status === "active"
+                        ? "Pause listing"
+                        : "Make it live again"}
+                    </button>
+                    <button
+                      className="button button-ghost is-danger"
+                      disabled={busy}
+                      onClick={() => {
+                        const listing = selectedListing;
+                        closeListing();
+                        setDeleteListingTarget(listing);
+                      }}
+                    >
+                      Delete listing
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="detail-primary-actions">
                 {(!isListingRequestable(selectedListing) || isBrief(selectedListing)) && (
                   <button
@@ -16359,6 +16588,7 @@ export default function MarketplaceApp({
                   Message owner
                 </button>
               </div>
+              )}
               <div className="detail-safety-actions">
                 <button
                   onClick={() => {
@@ -16416,6 +16646,133 @@ export default function MarketplaceApp({
                 )}
               </div>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {selectedOwner && (
+        <Modal
+          label={`${selectedOwner.display_name}'s profile`}
+          onClose={closeOwnerProfile}
+          wide
+        >
+          <div className="seller-profile">
+            <header className="seller-profile-head">
+              <Avatar profile={selectedOwner} size="large" />
+              <div>
+                <h2>
+                  {selectedOwner.display_name}
+                  {selectedOwner.verified && <span className="verified">✓</span>}
+                </h2>
+                <p className="seller-profile-meta">
+                  {rolesLabel(selectedOwner)}
+                  {selectedOwner.city ? ` · ${selectedOwner.city}` : ""}
+                  {displayHandle(selectedOwner.handle ?? "")
+                    ? ` · ${displayHandle(selectedOwner.handle ?? "")}`
+                    : ""}
+                </p>
+                <span
+                  className={`owner-trust-badge ${
+                    selectedOwner.verified ? "verified-owner" : ""
+                  }`}
+                >
+                  {selectedOwner.is_demo
+                    ? "Demo profile"
+                    : selectedOwner.verified
+                      ? "Verified by SideSpace"
+                      : "Unverified profile"}
+                </span>
+              </div>
+            </header>
+
+            {selectedOwner.bio && <p className="seller-profile-bio">{selectedOwner.bio}</p>}
+            <SocialLinks profile={selectedOwner} />
+
+            {/* Same rule as the person card: a row of zeroes says less than
+                no row at all, so it only appears when there is a number. */}
+            {Boolean(
+              selectedOwner.followers ||
+                selectedOwner.avg_views ||
+                selectedOwner.audience_age,
+            ) && (
+              <div className="person-stats seller-profile-stats">
+                {Boolean(selectedOwner.followers || selectedOwner.avg_views) && (
+                  <span>
+                    <b>
+                      {compactNumber(
+                        selectedOwner.followers || selectedOwner.avg_views,
+                      )}
+                    </b>
+                    {selectedOwner.followers
+                      ? " followers"
+                      : ` ${selectedOwner.reach_unit || "weekly looks"}`}
+                  </span>
+                )}
+                {Boolean(selectedOwner.audience_age) && (
+                  <span>{selectedOwner.audience_age}</span>
+                )}
+              </div>
+            )}
+
+            <div className="seller-profile-listings">
+              <div className="seller-profile-listings-head">
+                <strong>
+                  {ownerListingsLoading
+                    ? "Everything they have live"
+                    : ownerListings.length === 1
+                      ? "1 listing live"
+                      : `${ownerListings.length} listings live`}
+                </strong>
+              </div>
+              {ownerListingsLoading ? (
+                <p className="seller-profile-empty">Loading their listings…</p>
+              ) : ownerListings.length ? (
+                <div className="seller-listing-grid">
+                  {ownerListings.map((listing) => (
+                    <button
+                      type="button"
+                      className="seller-listing"
+                      key={listing.id}
+                      onClick={() => openListingFromProfile(listing)}
+                      aria-current={
+                        listing.id === selectedListing?.id ? "true" : undefined
+                      }
+                    >
+                      <ListingCover listing={listing} />
+                      <span className="seller-listing-body">
+                        <span className="seller-listing-channel">
+                          {listing.channel}
+                        </span>
+                        <strong>{listing.title}</strong>
+                        <span className="seller-listing-price">
+                          {priceLabel(listing)} / {listing.price_unit}
+                        </span>
+                        {listing.id === selectedListing?.id && (
+                          <span className="seller-listing-current">
+                            The one you were reading
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="seller-profile-empty">
+                  Nothing live right now.
+                </p>
+              )}
+            </div>
+
+            {profile?.id !== selectedOwner.id && (
+              <button
+                className="button button-dark"
+                onClick={() =>
+                  requireAccount(() => void startConversation(selectedOwner))
+                }
+              >
+                Message {selectedOwner.display_name} <span>↗</span>
+              </button>
+            )}
           </div>
         </Modal>
       )}
