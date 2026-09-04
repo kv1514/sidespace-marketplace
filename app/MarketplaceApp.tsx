@@ -57,6 +57,17 @@ import {
   comparePopularListings,
   normalizeLikeCount,
 } from "@/lib/listings/popularity";
+import {
+  recommendListings,
+  type CooccurrenceIndex,
+} from "@/lib/listings/recommend";
+import {
+  affinityEvents,
+  trackClick,
+  trackLike,
+  trackOffer,
+  watchListingImpressions,
+} from "@/lib/listings/track";
 import type { ListingDraft } from "@/lib/listings/draft";
 import {
   DashboardGate,
@@ -161,6 +172,22 @@ type IgStats = {
 
 /** How a listing's walkthrough shows: a flat video, or one of the two 360 kinds the panorama viewer takes. */
 type TourKind = "video" | "video360" | "photo360";
+
+/**
+ * One row of public.my_listing_analytics: the four numbers an owner is allowed
+ * to see about their own listing, and never anything about who produced them.
+ */
+type ListingAnalytics = {
+  listing_id: string;
+  title: string | null;
+  status: string | null;
+  impressions: number;
+  clicks: number;
+  impressions_7d: number;
+  clicks_7d: number;
+  like_count: number;
+  offers: number;
+};
 
 type Listing = BookingSchedule & {
   id: string;
@@ -5118,6 +5145,10 @@ export default function MarketplaceApp({
   const [listings, setListings] = useState<Listing[]>(seededListings);
   const [ownListings, setOwnListings] = useState<Listing[]>([]);
   const [ownListingsLoading, setOwnListingsLoading] = useState(false);
+  const [listingAnalytics, setListingAnalytics] = useState<ListingAnalytics[]>([]);
+  // Co-visit counts for the listings this browser has shown interest in. Empty
+  // until the site has real traffic, which is exactly when it starts to matter.
+  const [cooccurrence, setCooccurrence] = useState<CooccurrenceIndex | null>(null);
   const [likedListingIds, setLikedListingIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -5656,6 +5687,28 @@ export default function MarketplaceApp({
   );
 
   /**
+   * How many people met each of the member's own listings.
+   *
+   * Reads the security-invoker view, so "own" is decided by the listings
+   * policy rather than by a filter written here. Fails soft on purpose: a
+   * dashboard that cannot show a number is worth more than one that shows an
+   * error, and the same instinct governs the like counts on the public grid.
+   */
+  const loadListingAnalytics = useCallback(async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from("my_listing_analytics")
+      .select(
+        "listing_id, title, status, impressions, clicks, impressions_7d, clicks_7d, like_count, offers",
+      );
+    if (error) {
+      console.error("[analytics] own listing analytics unavailable:", error);
+      return;
+    }
+    setListingAnalytics((data as ListingAnalytics[] | null) ?? []);
+  }, [supabase]);
+
+  /**
    * Unread count for the badge, scoped to the same conversations the inbox
    * actually shows. Relying on RLS alone counted messages from blocked members
    * whose threads loadInbox filters out, so the badge could never reach zero.
@@ -5914,6 +5967,7 @@ export default function MarketplaceApp({
         await Promise.all([
           loadOwnListings(own),
           loadAccountMarketplaceState(own),
+          loadListingAnalytics(),
         ]);
       } else {
         setOwnListings([]);
@@ -5928,7 +5982,13 @@ export default function MarketplaceApp({
         setBlockedLoaded(true);
       }
     },
-    [loadAccountMarketplaceState, loadOwnListings, setToast, supabase],
+    [
+      loadAccountMarketplaceState,
+      loadListingAnalytics,
+      loadOwnListings,
+      setToast,
+      supabase,
+    ],
   );
 
   useEffect(() => {
@@ -6422,6 +6482,102 @@ export default function MarketplaceApp({
     () => visibleListings.filter((listing) => isListingRequestable(listing)).length,
     [visibleListings],
   );
+
+  /**
+   * Count a listing as seen only once somebody actually reached it.
+   *
+   * Re-attached whenever the grid changes, because filtering swaps the cards
+   * out underneath. Every card is unobserved the moment it counts, so this
+   * stays cheap however long the page gets.
+   */
+  useEffect(() => {
+    if (route !== "marketplace") return;
+    return watchListingImpressions(document);
+  }, [route, visibleListings]);
+
+  /**
+   * What this browser has looked at lately, read once per marketplace visit.
+   *
+   * Deliberately not reactive: re-reading on every render would re-rank the row
+   * under the member's cursor as they browsed, which is worse than a row that
+   * settles when the page loads.
+   */
+  const [visitorAffinity, setVisitorAffinity] = useState<
+    ReturnType<typeof affinityEvents>
+  >([]);
+  useEffect(() => {
+    if (route !== "marketplace") return;
+    // Deferred rather than set synchronously: localStorage cannot be read
+    // while rendering without the server and the client disagreeing about the
+    // first paint, and setting state straight from an effect makes React
+    // render twice for nothing. The startup effect defers the same way.
+    const timer = window.setTimeout(() => setVisitorAffinity(affinityEvents()), 0);
+    return () => window.clearTimeout(timer);
+  }, [route]);
+
+  /**
+   * "People who looked at that looked at this", fetched for the handful of
+   * listings this visitor has shown interest in.
+   *
+   * Returns nothing until the site has traffic, and the recommender is written
+   * to expect that - so this is a no-op today and an upgrade later, with no
+   * further change here.
+   */
+  useEffect(() => {
+    if (!supabase || route !== "marketplace" || !visitorAffinity.length) return;
+    let cancelled = false;
+    const seeds = [...new Set(visitorAffinity.map((event) => event.listingId))].slice(0, 20);
+    void (async () => {
+      const { data, error } = await supabase.rpc("listing_cooccurrence", {
+        seed_ids: seeds,
+      });
+      if (cancelled || error || !Array.isArray(data)) return;
+      const index: CooccurrenceIndex = new Map();
+      for (const row of data as Array<{
+        listing_id: string;
+        paired_listing_id: string;
+        visitors: number;
+      }>) {
+        const inner = index.get(row.listing_id) ?? new Map<string, number>();
+        inner.set(row.paired_listing_id, Number(row.visitors) || 0);
+        index.set(row.listing_id, inner);
+      }
+      setCooccurrence(index);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [route, supabase, visitorAffinity]);
+
+  /**
+   * The row above the grid.
+   *
+   * Scored over the listings already in memory rather than through a server
+   * ranking call - with a catalogue this size that is both simpler and faster.
+   * Past a few hundred listings it would need to move behind an RPC.
+   */
+  const forYou = useMemo(() => {
+    if (route !== "marketplace" || blocksPending || !listings.length) {
+      return { items: [], personalised: false };
+    }
+    return recommendListings({
+      candidates: listings,
+      events: visitorAffinity,
+      nowMs: Date.now(),
+      viewerProfileId: profile?.id ?? null,
+      blockedProfileIds: new Set(blockedProfileIds),
+      cooccurrence,
+      limit: 4,
+    });
+  }, [
+    blockedProfileIds,
+    blocksPending,
+    cooccurrence,
+    listings,
+    profile?.id,
+    route,
+    visitorAffinity,
+  ]);
 
   const creatorRecommendations = useMemo(
     () =>
@@ -7267,6 +7423,8 @@ export default function MarketplaceApp({
             { onConflict: "listing_id,user_id", ignoreDuplicates: true },
           );
       if (result.error) throw result.error;
+      // Only a like teaches the row anything; taking one back should not.
+      if (!wasLiked) trackLike(listingId);
       await refreshListingLikeCount(listingId);
     } catch (error) {
       if (lastAuthUserIdRef.current === currentUser.id) {
@@ -7298,6 +7456,10 @@ export default function MarketplaceApp({
   }
 
   function openListing(listing: Listing) {
+    // The one place every detail open passes through - card, dashboard,
+    // recommendation row, seller profile - so it is the one place a click has
+    // to be recorded.
+    trackClick(listing.id);
     setSelectedPhotoIndex(0);
     setStreetPanoOpen(false);
     setSelectedCreatorPortfolio([]);
@@ -9731,6 +9893,9 @@ export default function MarketplaceApp({
         );
         return;
       }
+      // Opening the offer form is the strongest thing somebody does short of
+      // paying, so it is weighted heaviest in what we show them next.
+      trackOffer(listing.id);
       closeListing();
       setCampaignFeedback("");
       setCampaignRequestMode(mode);
@@ -11089,6 +11254,148 @@ export default function MarketplaceApp({
     return "Nothing needs your attention right now.";
   }
 
+  /**
+   * One listing's figures, or an honest sentence when there are none.
+   *
+   * Four zeroes tell an owner nothing and read like a fault. The same
+   * judgement is already made for the follower row on a person card: it only
+   * appears when there is a number in it.
+   */
+  function renderListingFigures(listingId: string) {
+    const row = listingAnalytics.find((entry) => entry.listing_id === listingId);
+    if (!row) return null;
+    if (!row.impressions && !row.clicks && !row.like_count && !row.offers) {
+      return (
+        <p className="listing-figures-empty">
+          Nobody has reached this one yet.
+        </p>
+      );
+    }
+    return (
+      <div className="listing-figures">
+        <span>
+          <small>Seen by</small>
+          <b>{compactNumber(row.impressions)}</b>
+        </span>
+        <span>
+          <small>Opened</small>
+          <b>{compactNumber(row.clicks)}</b>
+        </span>
+        <span>
+          <small>Likes</small>
+          <b>{compactNumber(row.like_count)}</b>
+        </span>
+        <span>
+          <small>Offers</small>
+          <b>{compactNumber(row.offers)}</b>
+        </span>
+      </div>
+    );
+  }
+
+  /**
+   * Everything the member's listings did, added up.
+   *
+   * "Seen by" is people, not paint count: one row per person per day, so
+   * scrolling a card past twenty times is one. That is why the label says
+   * people rather than views - the number would be a lie the other way round.
+   */
+  function renderDashboardAnalytics() {
+    if (!ownListings.length) return null;
+    const totals = listingAnalytics.reduce(
+      (sum, row) => ({
+        impressions: sum.impressions + row.impressions,
+        clicks: sum.clicks + row.clicks,
+        likes: sum.likes + row.like_count,
+        offers: sum.offers + row.offers,
+        impressions7d: sum.impressions7d + row.impressions_7d,
+      }),
+      { impressions: 0, clicks: 0, likes: 0, offers: 0, impressions7d: 0 },
+    );
+    const anything =
+      totals.impressions || totals.clicks || totals.likes || totals.offers;
+
+    return (
+      <section
+        className="account-section dashboard-work-section"
+        id="dashboard-analytics"
+        data-reveal
+      >
+        <div className="account-section-heading">
+          <div>
+            <p className="eyebrow">Analytics</p>
+            <h3>How your listings are doing.</h3>
+            <p className="account-section-lede">
+              Counted per person per day, so one member scrolling past your card
+              twice is one. Your own visits are never counted.
+            </p>
+          </div>
+        </div>
+
+        {anything ? (
+          <>
+            <div className="dashboard-grid">
+              <div className="dashboard-stat">
+                <div className="dashboard-stat-top">
+                  <span className="dashboard-stat-icon">◉</span>
+                </div>
+                <strong>{compactNumber(totals.impressions)}</strong>
+                <span className="dashboard-stat-caption">
+                  {totals.impressions === 1 ? "person saw" : "people saw"} your listings
+                  {totals.impressions7d
+                    ? ` · ${compactNumber(totals.impressions7d)} this week`
+                    : ""}
+                </span>
+              </div>
+              <div className="dashboard-stat">
+                <div className="dashboard-stat-top">
+                  <span className="dashboard-stat-icon">→</span>
+                </div>
+                <strong>{compactNumber(totals.clicks)}</strong>
+                <span className="dashboard-stat-caption">
+                  opened one
+                  {totals.impressions
+                    ? ` · ${Math.round((totals.clicks / totals.impressions) * 100)}% of those who saw`
+                    : ""}
+                </span>
+              </div>
+              <div className="dashboard-stat">
+                <div className="dashboard-stat-top">
+                  <span className="dashboard-stat-icon">♥</span>
+                </div>
+                <strong>{compactNumber(totals.likes)}</strong>
+                <span className="dashboard-stat-caption">
+                  {totals.likes === 1 ? "like" : "likes"}
+                </span>
+              </div>
+              <div className="dashboard-stat">
+                <div className="dashboard-stat-top">
+                  <span className="dashboard-stat-icon">✉</span>
+                </div>
+                <strong>{compactNumber(totals.offers)}</strong>
+                <span className="dashboard-stat-caption">
+                  {totals.offers === 1 ? "offer" : "offers"} received
+                </span>
+              </div>
+            </div>
+            <p className="account-section-lede dashboard-analytics-note">
+              Per-listing figures are on each card under Listings below.
+            </p>
+          </>
+        ) : (
+          <div className="dashboard-panel-empty">
+            <strong>Nothing to count yet.</strong>
+            <p>
+              We started counting the moment your listing went live. Come back
+              once people have browsed and you will see how many reached it, how
+              many opened it, and where they stopped.
+            </p>
+          </div>
+        )}
+      </section>
+    );
+  }
+
   function renderDashboardListings() {
     if (!profile) return null;
     return (
@@ -11142,6 +11449,7 @@ export default function MarketplaceApp({
                       </p>
                     );
                   })()}
+                  {renderListingFigures(listing.id)}
                   <div className="my-listing-actions">
                     <button onClick={() => openListing(listing)}>View</button>
                     <button onClick={() => openListingEdit(listing)}>Edit</button>
@@ -11724,6 +12032,7 @@ export default function MarketplaceApp({
 
           <nav className="dashboard-map" aria-label="Dashboard areas">
             <span>Work lives here</span>
+            <a href="#dashboard-analytics">Analytics</a>
             <a href="#dashboard-listings-all">Listings</a>
             <a href="#dashboard-campaigns-all">Campaigns</a>
             {paymentTransactions.length > 0 && (
@@ -12216,6 +12525,7 @@ export default function MarketplaceApp({
           </ol>
 
           <div className="dashboard-work-sections">
+            {renderDashboardAnalytics()}
             {renderDashboardListings()}
             {renderDashboardCampaigns()}
             {renderDashboardPayments()}
@@ -12544,13 +12854,65 @@ export default function MarketplaceApp({
           )}
         </div>
 
+        {forYou.items.length >= 3 && (
+          <section className="listing-foryou" aria-labelledby="listing-foryou-heading">
+            <div className="listing-foryou-head">
+              <span className="eyebrow">
+                {forYou.personalised ? "Picked for you" : "Popular right now"}
+              </span>
+              <h3 id="listing-foryou-heading">
+                {forYou.personalised
+                  ? "Based on what you have been looking at"
+                  : "What people are opening most"}
+              </h3>
+            </div>
+            <div className="listing-foryou-row">
+              {forYou.items.map(({ listing, reasons }) => (
+                <article
+                  className="listing-foryou-card"
+                  key={listing.id}
+                  data-listing-id={listing.id}
+                >
+                  <button
+                    type="button"
+                    className="listing-foryou-image"
+                    onClick={() => openListing(listing)}
+                    aria-label={`Open ${listing.title}`}
+                  >
+                    <ListingCover listing={listing} />
+                  </button>
+                  <div className="listing-foryou-body">
+                    <button
+                      type="button"
+                      className="listing-foryou-title"
+                      onClick={() => openListing(listing)}
+                    >
+                      {listing.title}
+                    </button>
+                    <small>
+                      {listing.owner.display_name} · {listingCity(listing)}
+                    </small>
+                    {reasons.length > 0 && (
+                      <p className="listing-foryou-reason">{reasons.join(" · ")}</p>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
         <div className="listing-grid">
           {blocksPending &&
             Array.from({ length: 6 }, (_, index) => (
               <div className="listing-skeleton" key={`skeleton-${index}`} />
             ))}
           {visibleListings.map((listing) => (
-            <article className="listing-card" key={listing.id}>
+            <article
+              className="listing-card"
+              key={listing.id}
+              data-listing-id={listing.id}
+            >
               <button
                 className={`listing-image${
                   listingCover(listing) ? "" : " is-blank"
@@ -16937,6 +17299,7 @@ export default function MarketplaceApp({
                       ? " It is live in the marketplace."
                       : " It is paused, so nobody can see it."}
                   </p>
+                  {renderListingFigures(selectedListing.id)}
                   <div className="detail-primary-actions">
                     <button
                       className="button button-coral"
