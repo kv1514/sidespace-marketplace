@@ -19,7 +19,12 @@ const HELP = [
   "`/sidespace user person@example.com` — account, listings, campaigns, credits, and payout ledger totals",
   "`/sidespace credit person@example.com 25 Launch recovery` — grant $25 in non-withdrawable ad credit",
   "`/sidespace referral 10` — create a new one-time-per-email $10 referral link",
-  "All replies are ephemeral. Credit and referral changes are audit-logged and safe to retry.",
+  "`/sidespace suspend person@example.com Obscene listings` — hide their profile and listings, and stop them posting",
+  "`/sidespace restore person@example.com` — lift a suspension",
+  '`/sidespace block "jerkspace" Banned brand` — refuse that pattern in any listing title or description',
+  '`/sidespace unblock "jerkspace"` — remove a blocked pattern',
+  "`/sidespace blocklist` — show every blocked pattern",
+  "All replies are ephemeral. Every change is audit-logged and safe to retry.",
 ].join("\n");
 
 function slackReply(text: string, status = 200) {
@@ -146,8 +151,16 @@ function safeRpcMessage(error: unknown) {
     "No SideSpace profile exists for that authenticated email.",
     "Advertising credits can only be granted to a Business profile.",
     "The Slack action key was already used for another operation.",
+    "Internal SideSpace accounts cannot be suspended.",
+    "A blocklist pattern must be 4 to 200 characters, with a reason.",
+    "That is not a valid search pattern.",
+    "That pattern matches every listing. Use something more specific.",
   ];
-  return allowed.includes(message) ? message : null;
+  if (allowed.includes(message)) return message;
+  // The collateral-damage refusal names the listings it would have blocked, so
+  // it cannot be matched exactly. It is safe to surface: titles are already
+  // public, and the whole point is that the founder sees what they nearly hit.
+  return message.startsWith("That pattern would block ") ? message : null;
 }
 
 function referralCode() {
@@ -207,6 +220,80 @@ async function runCommand(input: {
       `New available balance: *${money(result.balance_cents)}*`,
       `_Reason: ${escapeSlack(command.reason)} · audit ID ${input.actionKey.slice(0, 12)}_`,
     ].join("\n");
+  }
+
+  if (command.type === "suspend" || command.type === "restore") {
+    const suspend = command.type === "suspend";
+    const { data, error } = await admin.rpc("set_member_suspension_by_email", {
+      target_email: command.email,
+      suspend,
+      suspend_reason: suspend ? command.reason : null,
+      admin_action_key: input.actionKey,
+      slack_user_id: input.slackUserId,
+    });
+    if (error) {
+      const message = safeRpcMessage(error);
+      if (message) throw new SlackCommandError(message);
+      throw error;
+    }
+    const result = asRecord(data);
+    const who = `*${escapeSlack(result.display_name) || "Unnamed member"}* (${escapeSlack(result.email)})`;
+    return suspend
+      ? [
+          `Suspended ${who}.`,
+          `Their profile and *${safeNumber(result.affected_listings)}* active listing(s) are hidden, and they cannot publish again.`,
+          `_Reason: ${escapeSlack(command.reason)} · audit ID ${input.actionKey.slice(0, 12)}_`,
+        ].join("\n")
+      : [
+          `Restored ${who}.`,
+          `Their profile and *${safeNumber(result.affected_listings)}* active listing(s) are public again.`,
+          `_Audit ID ${input.actionKey.slice(0, 12)}_`,
+        ].join("\n");
+  }
+
+  if (command.type === "blocklist") {
+    const { data, error } = await admin.rpc("get_listing_blocklist");
+    if (error) throw error;
+    const entries = asRecords(data);
+    if (!entries.length) return "No listing patterns are blocked.";
+    return [
+      `*Blocked listing patterns (${entries.length})*`,
+      ...entries.map((entry) => `• \`${escapeSlack(entry.pattern)}\` — ${escapeSlack(entry.reason)}`),
+    ].join("\n");
+  }
+
+  if (command.type === "block" || command.type === "unblock") {
+    const block = command.type === "block";
+    const { data, error } = await admin.rpc("set_listing_blocklist_pattern", {
+      target_pattern: command.pattern,
+      block,
+      pattern_reason: block ? command.reason : null,
+      admin_action_key: input.actionKey,
+      slack_user_id: input.slackUserId,
+    });
+    if (error) {
+      const message = safeRpcMessage(error);
+      if (message) throw new SlackCommandError(message);
+      throw error;
+    }
+    const result = asRecord(data);
+    return block
+      ? [
+          `Blocked \`${escapeSlack(result.pattern)}\` from listing titles and descriptions.`,
+          `*${safeNumber(result.total_patterns)}* pattern(s) now blocked.`,
+          `_Reason: ${escapeSlack(command.reason)} · audit ID ${input.actionKey.slice(0, 12)}_`,
+        ].join("\n")
+      : [
+          `Unblocked \`${escapeSlack(result.pattern)}\`.`,
+          `*${safeNumber(result.total_patterns)}* pattern(s) still blocked.`,
+          `_Audit ID ${input.actionKey.slice(0, 12)}_`,
+        ].join("\n");
+  }
+
+  // Referral is last and explicit, so a future command type cannot fall
+  // through into creating a credit code.
+  if (command.type !== "referral") {
+    throw new SlackCommandError("Unknown command. Run `/sidespace help`.");
   }
 
   let data: unknown = null;
