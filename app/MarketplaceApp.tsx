@@ -1941,14 +1941,18 @@ function countWords(value: string) {
   return value.trim() ? value.trim().split(/\s+/).length : 0;
 }
 
+function usesWordBasedBioRequirement(role: Role | null) {
+  return role === "business" || role === "creator";
+}
+
 function bioMeetsRequirement(value: string, role: Role | null) {
-  return role === "business"
+  return usesWordBasedBioRequirement(role)
     ? countWords(value) >= BUSINESS_BIO_MIN_WORDS
     : value.trim().length >= BIO_MIN_CHARACTERS;
 }
 
 function getBioRequirementHint(value: string, role: Role | null) {
-  if (role === "business") {
+  if (usesWordBasedBioRequirement(role)) {
     const remaining = Math.max(0, BUSINESS_BIO_MIN_WORDS - countWords(value));
 
     if (remaining === 0) {
@@ -1975,6 +1979,7 @@ function ChipRow({
   field,
   label,
   optional = false,
+  hideLabel = false,
 }: {
   options: string[];
   selected: string[];
@@ -1983,6 +1988,7 @@ function ChipRow({
   field: string;
   label: string;
   optional?: boolean;
+  hideLabel?: boolean;
 }) {
   // The label used to live only in aria-label, so a sighted member met several
   // required chip rows as unheaded rows of pills - "pick what kind of business
@@ -1991,16 +1997,19 @@ function ChipRow({
   const labelId = `chip-label-${field}`;
   return (
     <>
-      <span className="chip-label" id={labelId}>
-        {label}
-        {" "}
-        {optional && <span className="optional">optional</span>}
-      </span>
+      {!hideLabel && (
+        <span className="chip-label" id={labelId}>
+          {label}
+          {" "}
+          {optional && <span className="optional">optional</span>}
+        </span>
+      )}
       <div
         className="filter-row onboarding-chips"
         data-field={field}
         role="group"
-        aria-labelledby={labelId}
+        aria-label={hideLabel ? label : undefined}
+        aria-labelledby={hideLabel ? undefined : labelId}
         tabIndex={-1}
       >
         {options.map((option) => {
@@ -4853,52 +4862,74 @@ function CreatorOfferSwitcher({
 }) {
   const offers = selectedCreatorOffers(answers);
   if (!offers.length) return null;
+  const isSingleOffer = offers.length === 1;
+  const activeOffer = offers[0];
+  const activeOfferReady = isOfferComplete
+    ? isOfferComplete(activeOffer)
+    : creatorOfferIsReady(answers, activeOffer);
   return (
-    <div className="creator-offer-workspace field-wide">
+    <div
+      className={
+        "creator-offer-workspace field-wide" +
+        (isSingleOffer ? " is-single" : "")
+      }
+    >
       <div className="creator-offer-workspace-heading">
         <div>
-          <span>Selected offers</span>
-          <strong>Fill in each one before you publish.</strong>
+          <span>{isSingleOffer ? "Current listing" : "Selected offers"}</span>
+          <strong>
+            {isSingleOffer
+              ? creatorOfferLabel(activeOffer)
+              : "Fill in each one before you publish."}
+          </strong>
         </div>
         <small>
-          {offers.length} listing{offers.length === 1 ? "" : "s"} planned
+          {isSingleOffer
+            ? activeOfferReady
+              ? "Complete"
+              : "Needs details"
+            : `${offers.length} listings planned`}
         </small>
       </div>
-      <div
-        className="creator-offer-tabs"
-        role="tablist"
-        aria-label="Choose which offer to edit"
-      >
-        {offers.map((offer) => {
-          const active = answers.creatorOffer === offer;
-          const ready = isOfferComplete
-            ? isOfferComplete(offer)
-            : creatorOfferIsReady(answers, offer);
-          return (
-            <button
-              key={offer}
-              type="button"
-              className={
-                "creator-offer-tab" +
-                (active ? " active" : "") +
-                (ready ? " is-complete" : "")
-              }
-              role="tab"
-              aria-selected={active}
-              onClick={() => onSelect(offer)}
-            >
-              <span>{creatorOfferLabel(offer)}</span>
-              <small>{ready ? "Complete" : "Needs details"}</small>
-            </button>
-          );
-        })}
-      </div>
-      <p className="creator-offer-workspace-note">
-        You are editing{" "}
-        <b>{creatorOfferLabel(answers.creatorOffer || offers[0])}</b>. Each
-        selected path gets its own listing, and you can come back to edit any
-        of them later.
-      </p>
+      {!isSingleOffer && (
+        <>
+          <div
+            className="creator-offer-tabs"
+            role="tablist"
+            aria-label="Choose which offer to edit"
+          >
+            {offers.map((offer) => {
+              const active = answers.creatorOffer === offer;
+              const ready = isOfferComplete
+                ? isOfferComplete(offer)
+                : creatorOfferIsReady(answers, offer);
+              return (
+                <button
+                  key={offer}
+                  type="button"
+                  className={
+                    "creator-offer-tab" +
+                    (active ? " active" : "") +
+                    (ready ? " is-complete" : "")
+                  }
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => onSelect(offer)}
+                >
+                  <span>{creatorOfferLabel(offer)}</span>
+                  <small>{ready ? "Complete" : "Needs details"}</small>
+                </button>
+              );
+            })}
+          </div>
+          <p className="creator-offer-workspace-note">
+            You are editing{" "}
+            <b>{creatorOfferLabel(answers.creatorOffer || offers[0])}</b>. Each
+            selected path gets its own listing, and you can come back to edit any
+            of them later.
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -7406,6 +7437,8 @@ export default function MarketplaceApp({
       !bioMeetsRequirement(answers.bio, role),
       role === "business"
         ? "Describe your business in at least five words."
+        : role === "creator"
+          ? "Describe what you do in at least five words."
         : "Add one line about you — at least a few words.",
       "bio",
     );
@@ -14104,7 +14137,9 @@ export default function MarketplaceApp({
                     <small>
                       {selectedRole === "business"
                         ? "Describe what you do in at least five words. This sits under your name on the brief."
-                        : "One sentence. It sits under your name on every card."}
+                        : selectedRole === "creator"
+                          ? "Describe what you do in at least five words. It sits under your name on every card."
+                          : "One sentence. It sits under your name on every card."}
                       {" "}
                       <span
                         className="field-character-count"
@@ -14543,22 +14578,37 @@ export default function MarketplaceApp({
                             </p>
                           )}
                         </div>
-                        <ChipRow
-                          field="categories"
-                          label="What kind of work"
-                          optional
-                          multi
-                          options={CATEGORY_CHIPS}
-                          selected={answers.categories}
-                          onPick={(value) =>
-                            setAnswers((current) => ({
-                              ...current,
-                              categories: current.categories.includes(value)
-                                ? current.categories.filter((item) => item !== value)
-                                : [...current.categories, value],
-                            }))
-                          }
-                        />
+                        <details className="onboarding-optional-disclosure field-wide">
+                          <summary>
+                            <span>
+                              What kind of work{" "}
+                              <span className="optional">optional</span>
+                            </span>
+                            <small>
+                              {answers.categories.length
+                                ? `${answers.categories.length} selected`
+                                : "Add categories"}
+                            </small>
+                          </summary>
+                          <div className="onboarding-optional-disclosure-body">
+                            <ChipRow
+                              field="categories"
+                              label="What kind of work"
+                              multi
+                              hideLabel
+                              options={CATEGORY_CHIPS}
+                              selected={answers.categories}
+                              onPick={(value) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  categories: current.categories.includes(value)
+                                    ? current.categories.filter((item) => item !== value)
+                                    : [...current.categories, value],
+                                }))
+                              }
+                            />
+                          </div>
+                        </details>
                         <div className="field-grid">
                           <label className="field-wide media-upload-field">
                             <OptionalFieldLabel>

@@ -11680,3 +11680,191 @@ label:has(.city-autocomplete-list),
     animation: none;
   }
 }
+
+/* ===== Onboarding step 4 polish ==========================================
+   Step 4 is a writing moment, not a dashboard. The one-offer state used to
+   spend a full card on navigation, then repeat the same context in a note
+   below it. Keep the multi-offer workspace intact, but let a single offer sit
+   in the document as a quiet status line. Optional choices stay available
+   without making the first view feel like a wall of controls. */
+
+.onboarding-form .creator-offer-workspace.is-single {
+  background: transparent;
+  border-bottom: 1px solid var(--line-soft);
+  border-left: 0;
+  border-radius: 0;
+  border-right: 0;
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding: 12px 0;
+}
+
+.onboarding-form .creator-offer-workspace.is-single
+  .creator-offer-workspace-heading {
+  align-items: center;
+}
+
+.onboarding-form .creator-offer-workspace.is-single
+  .creator-offer-workspace-heading strong {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.onboarding-form .creator-offer-workspace.is-single
+  .creator-offer-workspace-heading > small {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.onboarding-form .form-subsection {
+  margin-top: 38px;
+}
+
+.onboarding-form .form-subsection:first-of-type {
+  margin-top: 10px;
+}
+
+/* Suggestions are links in the flow, not a second set of choice pills. */
+.onboarding-form .offer-examples {
+  column-gap: 18px;
+  margin-top: 4px;
+  row-gap: 4px;
+}
+
+.onboarding-form .offer-examples button {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--ink-soft);
+  min-height: 32px;
+  padding: 5px 0;
+}
+
+.onboarding-form .offer-examples button:hover {
+  border-bottom-color: var(--coral);
+  color: var(--ink);
+}
+
+/* Keep the focus signal, but make it one quiet halo instead of a double amber
+   frame that competes with the active offer state. */
+.onboarding-form .field-grid input:focus,
+.onboarding-form .field-grid textarea:focus,
+.onboarding-form .field-grid select:focus {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink) 13%, transparent);
+}
+
+/* The optional marker remains easy to spot, but no longer adds another round
+   accent shape to every field label. */
+.onboarding-form .optional {
+  background: var(--paper-2);
+  border-color: var(--line);
+  border-radius: 4px;
+  color: var(--ink-soft);
+  padding: 3px 5px;
+}
+
+.onboarding-form .onboarding-optional-disclosure {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 30px;
+  padding-top: 1px;
+}
+
+.onboarding-form .onboarding-optional-disclosure summary {
+  align-items: center;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 12px;
+  gap: 14px;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 44px;
+  padding: 8px 0;
+}
+
+.onboarding-form .onboarding-optional-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.onboarding-form .onboarding-optional-disclosure summary > span:first-child {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.onboarding-form .onboarding-optional-disclosure summary > small {
+  color: var(--ink-soft);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.onboarding-form .onboarding-optional-disclosure summary::after {
+  color: var(--ink-soft);
+  content: "+";
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1;
+  width: 12px;
+}
+
+.onboarding-form .onboarding-optional-disclosure[open] summary::after {
+  content: "−";
+}
+
+.onboarding-form .onboarding-optional-disclosure summary:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.onboarding-form .onboarding-optional-disclosure-body {
+  padding: 2px 0 4px;
+}
+
+.onboarding-form .onboarding-optional-disclosure-body .onboarding-chips {
+  margin-top: 8px;
+}
+
+.onboarding-form .media-upload-field {
+  background: var(--white);
+  border-color: var(--line);
+  padding: 14px 16px;
+}
+
+.onboarding-form .media-upload-field:hover {
+  border-color: var(--ink);
+}
+
+.onboarding-form .media-upload-field input[type="file"] {
+  background: transparent;
+  border: 0;
+  min-height: 44px;
+  padding: 8px 0 0;
+}
+
+.modal-card:has(.onboarding-form) .preview-mode-notice {
+  background: var(--paper-2);
+  border-color: var(--line-soft);
+}
+
+@media (hover: none), (max-width: 720px) {
+  .onboarding-form .offer-examples button {
+    min-height: 44px;
+    padding: 10px 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .onboarding-form .creator-offer-workspace.is-single
+    .creator-offer-workspace-heading {
+    flex-direction: row;
+  }
+
+  .onboarding-form .creator-offer-workspace.is-single
+    .creator-offer-workspace-heading > small {
+    text-align: right;
+  }
+}
