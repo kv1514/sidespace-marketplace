@@ -154,6 +154,12 @@ export default function PublicSiteApp({
   }, [configured]);
 
   function openAuth(mode: "signin" | "signup") {
+    // A signed-in member already has an account, so a public "create profile"
+    // CTA should return them to their workspace instead of opening signup.
+    if (mode === "signup" && viewer) {
+      router.push("/dashboard");
+      return;
+    }
     const query = new URLSearchParams();
     if (inviteToken) query.set("p", inviteToken);
     if (referralCode) query.set("ref", referralCode);

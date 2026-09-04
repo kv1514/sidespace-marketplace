@@ -48,6 +48,14 @@ import {
   isListingRequestable,
   type ListingProvenanceStatus,
 } from "@/lib/listings/provenance";
+import {
+  LISTING_LIKE_COUNT_COLUMNS,
+  mergeListingLikeCounts,
+} from "@/lib/listings/likes";
+import {
+  comparePopularListings,
+  normalizeLikeCount,
+} from "@/lib/listings/popularity";
 import type { ListingDraft } from "@/lib/listings/draft";
 import {
   DashboardGate,
@@ -83,6 +91,7 @@ type Role =
   | "space_owner"
   | "sponsor_host";
 type RoleFilter = "all" | "supply" | "business" | "creator";
+type ListingSort = "latest" | "popular";
 type CreatorOfferType = "social" | "physical" | "sponsorship";
 type LocationPoint = {
   latitude: number;
@@ -197,6 +206,7 @@ type Listing = BookingSchedule & {
   status: "active" | "paused" | "booked";
   provenance_status?: ListingProvenanceStatus | null;
   availability_confirmed_at?: string | null;
+  like_count?: number | string | null;
   created_at?: string;
   updated_at?: string;
   owner: Profile;
@@ -677,6 +687,22 @@ const TOUR_FRAME_EDGE = 960;
  */
 const STREET_VIEW_EMBED_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY ?? "";
 
+/**
+ * The Google client the sign-in button identifies itself as.
+ *
+ * Public by nature - it travels in the URL of every OAuth round trip already -
+ * so it is a NEXT_PUBLIC var rather than a secret. Set it and Google's account
+ * chooser names sidespace.ad; leave it unset and sign-in keeps taking the
+ * redirect through Supabase, which names Supabase.
+ */
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
+
+/** Google's script is fetched only on the screen that offers Google sign-in. */
+const GoogleSignInButton = dynamic(
+  () => import("./components/GoogleSignInButton"),
+  { ssr: false },
+);
+
 /** three.js and the viewer arrive only on a listing that has a 360 walkthrough. */
 const PanoramaViewer = dynamic(() => import("./components/PanoramaViewer"), {
   ssr: false,
@@ -798,6 +824,7 @@ const CATEGORY_CHIPS = [
   "Home",
   "Pets",
   "Auto",
+  "Other",
 ];
 
 /** Creator: which socialPlatforms keys are offered, and their offer examples. */
@@ -1053,6 +1080,7 @@ const BRIEF_PHYSICAL_CHIPS = [
   "A-frame signs",
   "Event booths",
   "Local teams & events",
+  "Other",
 ];
 
 /** Social platforms a brief can target. Only shown for virtual/both. */
@@ -1066,6 +1094,7 @@ const BRIEF_PLATFORM_CHIPS = [
   "Podcast",
   "Twitch",
   "LinkedIn",
+  "Other",
 ];
 
 /** Budget range presets: [low, high]. A range beats one number for a brief. */
@@ -4454,16 +4483,18 @@ function safeProfiles(value: unknown): Profile[] {
 
 function safeListings(value: unknown): Listing[] {
   if (!Array.isArray(value)) return [];
-  return (value as Array<Omit<Listing, "owner"> & { owner: Profile | Profile[] }>)
+  const normalized = (value as Array<Omit<Listing, "owner"> & { owner: Profile | Profile[] }>)
     .map((listing) => ({
       ...listing,
       owner: Array.isArray(listing.owner) ? listing.owner[0] : listing.owner,
+      like_count: normalizeLikeCount(listing.like_count),
     }))
     // The owner embed is a left join, so a listing whose owner row is hidden by
     // RLS (or absent) arrives with owner null while the type asserts it is a
     // Profile. Every consumer then dereferences owner.display_name unguarded
     // and takes the whole grid down with it. Drop those rows here instead.
-    .filter((listing): listing is Listing => Boolean(listing.owner));
+    .filter((listing) => Boolean(listing.owner));
+  return normalized as Listing[];
 }
 
 function Avatar({
@@ -4482,6 +4513,58 @@ function Avatar({
         initials(profile.display_name)
       )}
     </span>
+  );
+}
+
+function ListingLikeButton({
+  title,
+  likeCount,
+  liked,
+  isAuthenticated,
+  canLike,
+  disabledReason,
+  disabled,
+  placement,
+  onToggle,
+}: {
+  title: string;
+  likeCount?: number | string | null;
+  liked: boolean;
+  isAuthenticated: boolean;
+  canLike: boolean;
+  disabledReason?: string;
+  disabled?: boolean;
+  placement: "card" | "detail";
+  onToggle: () => void;
+}) {
+  const count = normalizeLikeCount(likeCount);
+  const countLabel = `${count} ${count === 1 ? "like" : "likes"}`;
+  const actionLabel = !canLike
+    ? disabledReason || "You cannot like this listing"
+    : isAuthenticated
+      ? `${liked ? "Unlike" : "Like"} ${title}`
+      : `Sign in to like ${title}`;
+
+  return (
+    <button
+      type="button"
+      className={`listing-like-button listing-like-button-${placement}${liked ? " is-liked" : ""}`}
+      aria-label={`${actionLabel}. ${countLabel}.`}
+      aria-pressed={canLike ? liked : undefined}
+      disabled={disabled || !canLike}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+    >
+      <span className="listing-heart" aria-hidden="true">
+        {liked ? "♥" : "♡"}
+      </span>
+      <span className="listing-like-number" aria-hidden="true">
+        {compactNumber(count)}
+      </span>
+      <span className="sr-only">{countLabel}</span>
+    </button>
   );
 }
 
@@ -4520,8 +4603,11 @@ function SocialLinks({ profile, compact = false }: { profile: Profile; compact?:
   );
 }
 
+// `iframe` is in here for Google's sign-in button, which renders inside one:
+// without it the dialog's Tab cycle stepped straight over the first control on
+// the sign-in screen and a keyboard user could not reach it at all.
 const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])';
 
 /**
  * A dialog cannot read which control opened it: by the time it mounts the
@@ -4549,6 +4635,58 @@ if (typeof document !== "undefined") {
 // own card and hauled it back, and Escape closed the parent out from under the
 // child. Only the dialog on top of this stack reacts to keys.
 const openModals: HTMLElement[] = [];
+
+/**
+ * The page behind an open overlay must not scroll.
+ *
+ * Nothing stopped it. Reading a listing and spinning the wheel past the end of
+ * the dialog scrolled the marketplace underneath it, so closing the dialog left
+ * you somewhere else in the grid than where you opened it - 600px further down,
+ * hunting for the card you had just been looking at. The same happened behind
+ * the messages drawer. It also pins the small jump the browser makes when it
+ * scrolls the clicked card fully into view as it takes focus.
+ *
+ * Counted, because overlays stack: a listing, then the seller's profile over
+ * it. Only the first lock records the position and only the last unlock
+ * restores it, so closing the inner one does not release the outer one's hold.
+ *
+ * position: fixed rather than overflow: hidden, which iOS Safari ignores for
+ * the body. The scrollbar's width is handed back as padding, so the page does
+ * not jump sideways at the moment the scrollbar disappears.
+ */
+let scrollLocks = 0;
+let lockedScrollY = 0;
+
+function lockPageScroll() {
+  if (scrollLocks++ > 0) return;
+  lockedScrollY = window.scrollY;
+  const gutter = window.innerWidth - document.documentElement.clientWidth;
+  const style = document.body.style;
+  style.position = "fixed";
+  style.top = `-${lockedScrollY}px`;
+  style.left = "0";
+  style.right = "0";
+  style.width = "100%";
+  if (gutter > 0) style.paddingRight = `${gutter}px`;
+}
+
+function unlockPageScroll() {
+  if (scrollLocks === 0 || --scrollLocks > 0) return;
+  const style = document.body.style;
+  style.position = "";
+  style.top = "";
+  style.left = "";
+  style.right = "";
+  style.width = "";
+  style.paddingRight = "";
+  // The stylesheet asks for smooth scrolling, which would animate the page
+  // back to where it already was. Put it there outright.
+  const root = document.documentElement;
+  const previous = root.style.scrollBehavior;
+  root.style.scrollBehavior = "auto";
+  window.scrollTo(0, lockedScrollY);
+  root.style.scrollBehavior = previous;
+}
 
 function Modal({
   children,
@@ -4582,6 +4720,7 @@ function Modal({
     const card = cardRef.current;
     if (!card) return;
     openModals.push(card);
+    lockPageScroll();
     const isTopmost = () => openModals[openModals.length - 1] === card;
     const active = document.activeElement as HTMLElement | null;
     const opener =
@@ -4642,6 +4781,7 @@ function Modal({
       document.removeEventListener("keydown", onKeyDown, true);
       const at = openModals.indexOf(card);
       if (at !== -1) openModals.splice(at, 1);
+      unlockPageScroll();
       // Send focus back where it came from so the page does not lose place.
       if (opener && document.contains(opener)) {
         opener.focus({ preventScroll: true });
@@ -4879,6 +5019,7 @@ export default function MarketplaceApp({
   initialQuery = "",
   initialRoleFilter = "all",
   initialChannel = "All",
+  initialSort = "latest",
   referralCode = "",
   referralCreditCents = null,
   openProfile = false,
@@ -4902,6 +5043,7 @@ export default function MarketplaceApp({
   initialQuery?: string;
   initialRoleFilter?: RoleFilter;
   initialChannel?: string;
+  initialSort?: ListingSort;
 } = {}) {
   const seededProfiles = useMemo(() => {
     const loaded = safeProfiles(initialProfiles);
@@ -4929,6 +5071,14 @@ export default function MarketplaceApp({
   const [listings, setListings] = useState<Listing[]>(seededListings);
   const [ownListings, setOwnListings] = useState<Listing[]>([]);
   const [ownListingsLoading, setOwnListingsLoading] = useState(false);
+  const [likedListingIds, setLikedListingIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [likesLoading, setLikesLoading] = useState(false);
+  const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const likeRequestsRef = useRef(new Set<string>());
   const [loading, setLoading] = useState(configured);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
@@ -5329,9 +5479,13 @@ export default function MarketplaceApp({
   const [query, setQuery] = useState(initialQuery);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>(initialRoleFilter);
   const [channelFilter, setChannelFilter] = useState(initialChannel);
+  const [listingSort, setListingSort] = useState<ListingSort>(initialSort);
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [googleOAuthEnabled, setGoogleOAuthEnabled] = useState(false);
+  // Set once the on-domain token exchange has been refused, so the redirect
+  // fallback can never re-enter itself.
+  const googleFallbackRef = useRef(false);
 
   const loadMarketplace = useCallback(async () => {
     if (!supabase) return;
@@ -5341,7 +5495,7 @@ export default function MarketplaceApp({
     const profileLimit = route === "marketplace" ? 60 : 12;
     const listingLimit = route === "marketplace" ? 200 : 12;
 
-    const [profilesResult, listingsResult] = await Promise.all([
+    const [profilesResult, listingsResult, likeCountsResult] = await Promise.all([
       supabase
         .from("marketplace_profiles")
         .select(PUBLIC_PROFILE_COLUMNS)
@@ -5361,6 +5515,7 @@ export default function MarketplaceApp({
         .eq("status", "active")
         .order("created_at", { ascending: false })
         .limit(listingLimit),
+      supabase.from("listing_like_counts").select(LISTING_LIKE_COUNT_COLUMNS),
     ]);
 
     if (!profilesResult.error) {
@@ -5368,10 +5523,51 @@ export default function MarketplaceApp({
       setProfiles(loaded.length ? loaded : demoProfiles);
     }
     if (!listingsResult.error) {
-      const loaded = safeListings(listingsResult.data);
+      const loaded = safeListings(
+        mergeListingLikeCounts(
+          listingsResult.data,
+          likeCountsResult.error ? null : likeCountsResult.data,
+        ),
+      );
       setListings(loaded.length ? loaded : demoListings);
     }
+    // Count loading is intentionally best-effort. The listing payload and
+    // existing browse experience remain usable if the aggregate view is
+    // temporarily unavailable during a rollout.
   }, [route, supabase]);
+
+  const loadLikedListings = useCallback(
+    async (currentUser: User) => {
+      if (!supabase) {
+        setLikedListingIds(new Set());
+        setLikesLoading(false);
+        return;
+      }
+
+      // Clear a previous account's optimistic state before the new account's
+      // relationship query returns.
+      setLikedListingIds(new Set());
+      setLikesLoading(true);
+      const { data, error } = await supabase
+        .from("listing_likes")
+        .select("listing_id")
+        .eq("user_id", currentUser.id);
+
+      // A member can sign out while this read is in flight. Do not let the
+      // old account's likes leak into the next session.
+      if (lastAuthUserIdRef.current !== currentUser.id) return;
+      if (!error) {
+        const rows = (data ?? []) as Array<{ listing_id?: unknown }>;
+        const ids = new Set<string>();
+        for (const row of rows) {
+          if (typeof row.listing_id === "string") ids.add(row.listing_id);
+        }
+        setLikedListingIds(ids);
+      }
+      setLikesLoading(false);
+    },
+    [supabase],
+  );
 
   const loadOwnListings = useCallback(
     async (ownProfile: Profile) => {
@@ -5695,6 +5891,7 @@ export default function MarketplaceApp({
           setUser(currentUser);
           if (currentUser) {
             lastAuthUserIdRef.current = currentUser.id;
+            void loadLikedListings(currentUser);
             void loadOwnProfile(currentUser);
           }
           setSessionResolved(true);
@@ -5718,6 +5915,9 @@ export default function MarketplaceApp({
         // the signed-in user actually changes or their account was updated.
         const isDifferentUser = lastAuthUserIdRef.current !== currentUser.id;
         lastAuthUserIdRef.current = currentUser.id;
+        if (isDifferentUser) {
+          void loadLikedListings(currentUser);
+        }
         if (
           isDifferentUser ||
           event === "USER_UPDATED" ||
@@ -5745,7 +5945,7 @@ export default function MarketplaceApp({
       window.clearTimeout(startup);
       subscription.unsubscribe();
     };
-  }, [loadMarketplace, loadOwnProfile, route, supabase]);
+  }, [loadLikedListings, loadMarketplace, loadOwnProfile, route, supabase]);
 
   useEffect(() => {
     if (!configured) return;
@@ -6083,6 +6283,7 @@ export default function MarketplaceApp({
     // rather than as an empty marketplace.
     if (blocksPending) return [];
     const normalized = query.trim().toLowerCase();
+    const popularityNow = listingSort === "popular" ? Date.now() : 0;
     return listings.filter((listing) => {
       if (blockedProfileIds.includes(listing.owner.id)) return false;
       // A test account's listings must not appear in the marketplace, the
@@ -6131,10 +6332,21 @@ export default function MarketplaceApp({
       // rather than newest-first so one fresh post cannot dominate the top.
       .sort(
         (a, b) =>
+          (listingSort === "popular"
+            ? comparePopularListings(a, b, popularityNow)
+            : 0) ||
           listingRank(a) - listingRank(b) ||
           shuffleKey(a.id) - shuffleKey(b.id),
       );
-  }, [activeChannel, blocksPending, blockedProfileIds, listings, query, roleFilter]);
+  }, [
+    activeChannel,
+    blocksPending,
+    blockedProfileIds,
+    listingSort,
+    listings,
+    query,
+    roleFilter,
+  ]);
   const requestableListingCount = useMemo(
     () => visibleListings.filter((listing) => isListingRequestable(listing)).length,
     [visibleListings],
@@ -6291,18 +6503,25 @@ export default function MarketplaceApp({
   // Consume the one-shot intent here, then remove it so refresh/back never
   // reopens a dialog the visitor already dismissed.
   useEffect(() => {
-    if (route !== "dashboard" || typeof window === "undefined") return;
+    if (
+      route !== "dashboard" ||
+      !sessionResolved ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
     const url = new URL(window.location.href);
     const requestedMode = url.searchParams.get("auth");
     if (requestedMode !== "signin" && requestedMode !== "signup") return;
     url.searchParams.delete("auth");
     window.history.replaceState({}, "", url.toString());
+    if (requestedMode === "signup" && user) return;
     const timer = window.setTimeout(() => {
       setAuthMode(requestedMode);
       setAuthOpen(true);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [route]);
+  }, [route, sessionResolved, user]);
 
   useEffect(() => {
     if (route !== "dashboard" || !profile || typeof window === "undefined") return;
@@ -6369,18 +6588,30 @@ export default function MarketplaceApp({
     let cancelled = false;
     void (async () => {
       if (supabase) {
-        const { data } = await supabase
-          .from("listings")
-          // A deep link, so anyone with the URL gets this row - narrowed for
-          // the same reason as the grid.
-          .select(
-            `${PUBLIC_LISTING_COLUMNS}, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
-          )
-          .eq("id", listingId)
-          .eq("status", "active")
-          .maybeSingle();
+        const [listingResult, likeCountsResult] = await Promise.all([
+          supabase
+            .from("listings")
+            // A deep link, so anyone with the URL gets this row - narrowed for
+            // the same reason as the grid.
+            .select(
+              `${PUBLIC_LISTING_COLUMNS}, owner:profiles!listings_owner_profile_id_fkey(${PUBLIC_PROFILE_COLUMNS})`,
+            )
+            .eq("id", listingId)
+            .eq("status", "active")
+            .maybeSingle(),
+          supabase
+            .from("listing_like_counts")
+            .select(LISTING_LIKE_COUNT_COLUMNS)
+            .eq("listing_id", listingId)
+            .maybeSingle(),
+        ]);
         if (cancelled) return;
-        const [resolved] = safeListings(data ? [data] : []);
+        const [resolved] = safeListings(
+          mergeListingLikeCounts(
+            listingResult.data ? [listingResult.data] : [],
+            likeCountsResult.error ? null : likeCountsResult.data ? [likeCountsResult.data] : [],
+          ),
+        );
         if (resolved && !blockedProfileIds.includes(resolved.owner.id)) {
           setSelectedPhotoIndex(0);
           setSelectedListing(resolved);
@@ -6527,6 +6758,15 @@ export default function MarketplaceApp({
       );
       void loadOwnListings(profile);
     }
+  }
+
+  function openSignupOrDashboard() {
+    if (user) {
+      if (route !== "dashboard") window.location.assign("/dashboard");
+      return;
+    }
+    setAuthMode("signup");
+    setAuthOpen(true);
   }
 
   // Public pages send profile intent through the lightweight dashboard route.
@@ -6808,6 +7048,108 @@ export default function MarketplaceApp({
       throw error;
     }
     return uploaded;
+  }
+
+  function patchListingLikeCount(listingId: string, likeCount: number) {
+    setListings((current) =>
+      current.map((listing) =>
+        listing.id === listingId ? { ...listing, like_count: likeCount } : listing,
+      ),
+    );
+    setOwnListings((current) =>
+      current.map((listing) =>
+        listing.id === listingId ? { ...listing, like_count: likeCount } : listing,
+      ),
+    );
+    setSelectedListing((current) =>
+      current?.id === listingId ? { ...current, like_count: likeCount } : current,
+    );
+  }
+
+  async function refreshListingLikeCount(listingId: string) {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from("listing_like_counts")
+      .select(LISTING_LIKE_COUNT_COLUMNS)
+      .eq("listing_id", listingId)
+      .maybeSingle();
+    if (!error && data) {
+      patchListingLikeCount(listingId, normalizeLikeCount(data.like_count));
+    }
+  }
+
+  async function toggleListingLike(listing: Listing) {
+    const listingId = listing.id;
+    if (likeRequestsRef.current.has(listingId)) return;
+    if (!supabase) {
+      setToast("Sign in to like listings.");
+      return;
+    }
+    if (!user) {
+      setAuthMode("signin");
+      setAuthOpen(true);
+      setToast("Sign in to like listings.");
+      return;
+    }
+    if (listing.owner.is_demo || profile?.id === listing.owner.id) {
+      setToast("You cannot like your own listing.");
+      return;
+    }
+
+    const currentUser = user;
+    const wasLiked = likedListingIds.has(listingId);
+    const previousCount = normalizeLikeCount(listing.like_count);
+    const optimisticCount = Math.max(0, previousCount + (wasLiked ? -1 : 1));
+    likeRequestsRef.current.add(listingId);
+    setPendingLikeIds((current) => new Set(current).add(listingId));
+    setLikedListingIds((current) => {
+      const next = new Set(current);
+      if (wasLiked) next.delete(listingId);
+      else next.add(listingId);
+      return next;
+    });
+    patchListingLikeCount(listingId, optimisticCount);
+
+    try {
+      const result = wasLiked
+        ? await supabase
+            .from("listing_likes")
+            .delete()
+            .eq("listing_id", listingId)
+            .eq("user_id", currentUser.id)
+        : await supabase.from("listing_likes").upsert(
+            { listing_id: listingId, user_id: currentUser.id },
+            { onConflict: "listing_id,user_id", ignoreDuplicates: true },
+          );
+      if (result.error) throw result.error;
+      await refreshListingLikeCount(listingId);
+    } catch (error) {
+      if (lastAuthUserIdRef.current === currentUser.id) {
+        setLikedListingIds((current) => {
+          const next = new Set(current);
+          if (wasLiked) next.add(listingId);
+          else next.delete(listingId);
+          return next;
+        });
+        patchListingLikeCount(listingId, previousCount);
+        setToast(friendlyDbError(error));
+      }
+    } finally {
+      likeRequestsRef.current.delete(listingId);
+      setPendingLikeIds((current) => {
+        const next = new Set(current);
+        next.delete(listingId);
+        return next;
+      });
+    }
+  }
+
+  function setListingSortAndUrl(next: ListingSort) {
+    setListingSort(next);
+    const url = new URL(window.location.href);
+    if (next === "popular") url.searchParams.set("sort", next);
+    else url.searchParams.delete("sort");
+    window.history.replaceState(null, "", url);
   }
 
   function openListing(listing: Listing) {
@@ -7465,6 +7807,43 @@ export default function MarketplaceApp({
       },
     });
     if (error) setToast(friendlyDbError(error));
+  }
+
+  /**
+   * Finish a Google sign-in that happened on our own domain.
+   *
+   * The ID token buys the same session the redirect would have: same client
+   * id, so the same Google account is the same existing user. There is no
+   * round trip through /auth/callback to carry the invite and referral
+   * parameters, so this lands on the path that callback would have chosen.
+   *
+   * A refused token is not a dead end. It means the exchange is not configured
+   * (the client id has to be listed on Supabase's Google provider for ID
+   * tokens to be accepted), and the redirect flow still works - so it takes
+   * over. Once, guarded: a fallback that could re-enter itself would bounce
+   * somebody between two sign-in screens.
+   */
+  async function completeGoogleSignIn(token: string, nonce: string) {
+    if (!supabase || googleFallbackRef.current) return;
+    setBusy(true);
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: "google",
+      token,
+      nonce,
+    });
+    setBusy(false);
+    if (error) {
+      googleFallbackRef.current = true;
+      console.error(
+        "[google sign-in] token refused, falling back to the redirect flow:",
+        error,
+      );
+      void signInWithGoogle();
+      return;
+    }
+    setUser(data.user);
+    setAuthOpen(false);
+    window.location.assign(authNextPath(referralCode));
   }
 
   /**
@@ -9926,6 +10305,10 @@ export default function MarketplaceApp({
     setProfile(null);
     setProfileChecked(false);
     setOwnListings([]);
+    setLikedListingIds(new Set());
+    setLikesLoading(false);
+    setPendingLikeIds(new Set());
+    likeRequestsRef.current.clear();
     setCampaignRequests([]);
     setPaymentTransactions([]);
     setAdCreditBalanceCents(0);
@@ -10325,6 +10708,7 @@ export default function MarketplaceApp({
     const card = inboxCardRef.current;
     if (!card) return;
     const opener = document.activeElement as HTMLElement | null;
+    lockPageScroll();
     card.focus({ preventScroll: true });
 
     function onKeyDown(event: KeyboardEvent) {
@@ -10358,6 +10742,7 @@ export default function MarketplaceApp({
     document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
+      unlockPageScroll();
       if (opener && document.contains(opener)) {
         opener.focus({ preventScroll: true });
       }
@@ -11068,10 +11453,7 @@ export default function MarketplaceApp({
           setAuthMode("signin");
           setAuthOpen(true);
         }}
-        onJoin={() => {
-          setAuthMode("signup");
-          setAuthOpen(true);
-        }}
+        onJoin={openSignupOrDashboard}
         onAccount={openAccountPanel}
       />
 
@@ -11621,20 +12003,14 @@ export default function MarketplaceApp({
             setAuthMode("signin");
             setAuthOpen(true);
           }}
-          onJoin={() => {
-            setAuthMode("signup");
-            setAuthOpen(true);
-          }}
+          onJoin={openSignupOrDashboard}
         />
       ))}
 
       {route === "home" && (
         <LandingPage
           listings={heroListings}
-          onJoin={() => {
-            setAuthMode("signup");
-            setAuthOpen(true);
-          }}
+          onJoin={openSignupOrDashboard}
           onList={openListingEditor}
         />
       )}
@@ -11809,7 +12185,9 @@ export default function MarketplaceApp({
       {route === "marketplace" && (<div className="ss-marketplace-page" id="main-content"><section className="market-section" id="market">
         <div className="section-top">
           <div>
-            <p className="section-label">Marketplace</p>
+            <p className="section-label">
+              {listingSort === "popular" ? "Popular listings" : "Marketplace"}
+            </p>
             <h1>Find the right audience or <em>spot.</em></h1>
           </div>
           <p>
@@ -11914,6 +12292,34 @@ export default function MarketplaceApp({
           </span>
         </div>
 
+        <div className="listing-discovery-toolbar">
+          <div className="listing-sort" role="group" aria-label="Order listings">
+            <span className="listing-sort-label">Browse by</span>
+            <button
+              type="button"
+              className={listingSort === "popular" ? "active" : ""}
+              aria-pressed={listingSort === "popular"}
+              onClick={() => setListingSortAndUrl("popular")}
+            >
+              Popular now
+            </button>
+            <button
+              type="button"
+              className={listingSort === "latest" ? "active" : ""}
+              aria-pressed={listingSort === "latest"}
+              onClick={() => setListingSortAndUrl("latest")}
+            >
+              Latest
+            </button>
+          </div>
+          {listingSort === "popular" && (
+            <p className="listing-sort-note">
+              Popularity blends likes, freshness, and listing detail so new
+              opportunities can still break through.
+            </p>
+          )}
+        </div>
+
         <div className="listing-grid">
           {blocksPending &&
             Array.from({ length: 6 }, (_, index) => (
@@ -11950,9 +12356,34 @@ export default function MarketplaceApp({
                     clicked is worse than no control. Restore it alongside a
                     real favorites feature, not before. */}
                 <span className="image-hint" aria-hidden="true">
-                  Click to view <b>→</b>
+                  Click to view{" "}
+                  <b aria-hidden="true" className="ss-icon-arrow ss-icon-east">
+                    →
+                  </b>
                 </span>
               </button>
+              <ListingLikeButton
+                placement="card"
+                title={listing.title}
+                likeCount={listing.like_count}
+                liked={likedListingIds.has(listing.id)}
+                isAuthenticated={Boolean(user)}
+                canLike={
+                  !listing.owner.is_demo && profile?.id !== listing.owner.id
+                }
+                disabledReason={
+                  listing.owner.is_demo
+                    ? "Likes are unavailable on sample listings"
+                    : profile?.id === listing.owner.id
+                      ? "You cannot like your own listing"
+                      : undefined
+                }
+                disabled={
+                  pendingLikeIds.has(listing.id) ||
+                  (Boolean(user) && likesLoading)
+                }
+                onToggle={() => void toggleListingLike(listing)}
+              />
               <div className="listing-body">
                 <div className="owner-line">
                   <Avatar profile={listing.owner} size="small" />
@@ -11988,7 +12419,10 @@ export default function MarketplaceApp({
                   className="listing-more"
                   onClick={() => openListing(listing)}
                 >
-                  Learn more <span>→</span>
+                  Learn more{" "}
+                  <span aria-hidden="true" className="ss-icon-arrow ss-icon-east">
+                    →
+                  </span>
                 </button>
                 <footer>
                   <div>
@@ -12018,7 +12452,9 @@ export default function MarketplaceApp({
                         ? "Offer my space"
                         : listing.instant_booking_enabled ? "Choose dates" : "View booking options"
                       : "View only"}{" "}
-                    <span>↗</span>
+                    <span aria-hidden="true" className="ss-icon-arrow">
+                      ↗
+                    </span>
                   </button>
                 </footer>
               </div>
@@ -12362,10 +12798,7 @@ export default function MarketplaceApp({
       </footer>)}
 
       <SiteFooter
-        onJoin={() => {
-          setAuthMode("signup");
-          setAuthOpen(true);
-        }}
+        onJoin={openSignupOrDashboard}
       />
 
       {authOpen && (
@@ -12439,12 +12872,23 @@ export default function MarketplaceApp({
             <>
               {googleOAuthEnabled && (
                 <>
-                  <button
-                    className="google-button"
-                    onClick={signInWithGoogle}
-                  >
-                    <b>G</b> Continue with Google
-                  </button>
+                  {/* Google's own button, on our domain, so its account
+                      chooser says SideSpace. Falls back to the redirect
+                      button whenever that path is unavailable. */}
+                  <GoogleSignInButton
+                    clientId={GOOGLE_CLIENT_ID}
+                    onCredential={(token, nonce) => {
+                      void completeGoogleSignIn(token, nonce);
+                    }}
+                    fallback={
+                      <button
+                        className="google-button"
+                        onClick={signInWithGoogle}
+                      >
+                        <b>G</b> Continue with Google
+                      </button>
+                    }
+                  />
                   <div className="form-divider">
                     <span>or use email</span>
                   </div>
@@ -16151,7 +16595,32 @@ export default function MarketplaceApp({
                   )}
                 </div>
               )}
-              <h2>{selectedListing.title}</h2>
+              <div className="detail-title-row">
+                <h2>{selectedListing.title}</h2>
+                <ListingLikeButton
+                  placement="detail"
+                  title={selectedListing.title}
+                  likeCount={selectedListing.like_count}
+                  liked={likedListingIds.has(selectedListing.id)}
+                  isAuthenticated={Boolean(user)}
+                  canLike={
+                    !selectedListing.owner.is_demo &&
+                    profile?.id !== selectedListing.owner.id
+                  }
+                  disabledReason={
+                    selectedListing.owner.is_demo
+                      ? "Likes are unavailable on sample listings"
+                      : profile?.id === selectedListing.owner.id
+                        ? "You cannot like your own listing"
+                        : undefined
+                  }
+                  disabled={
+                    pendingLikeIds.has(selectedListing.id) ||
+                    (Boolean(user) && likesLoading)
+                  }
+                  onToggle={() => void toggleListingLike(selectedListing)}
+                />
+              </div>
               <p className="listing-included">{selectedListing.deliverables || selectedListing.format}</p>
               <div className="detail-price"><strong>{priceLabel(selectedListing)}</strong><span> / {pricingLabel(selectedListing)}</span></div>
               <div className="detail-facts">
@@ -16239,7 +16708,9 @@ export default function MarketplaceApp({
                     {isListingRequestable(selectedListing)
                       ? "Offer my space"
                       : "View only"}{" "}
-                    <span>↗</span>
+                    <span aria-hidden="true" className="ss-icon-arrow">
+                      ↗
+                    </span>
                   </button>
                 )}
                 <button
@@ -16250,7 +16721,10 @@ export default function MarketplaceApp({
                     openListingChat(listing);
                   }}
                 >
-                  Message owner
+                  Message owner{" "}
+                  <span aria-hidden="true" className="ss-icon-arrow">
+                    ↗
+                  </span>
                 </button>
               </div>
               )}

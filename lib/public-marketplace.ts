@@ -6,6 +6,10 @@ import {
 } from "@/lib/supabase/public";
 import { localListingSeeds, localProfiles } from "@/app/localMarketplaceData";
 import type { ListingSocialPreview } from "@/lib/site-metadata";
+import {
+  LISTING_LIKE_COUNT_COLUMNS,
+  mergeListingLikeCounts,
+} from "@/lib/listings/likes";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -160,7 +164,7 @@ export async function loadMarketplaceSnapshot({
 
   try {
     const supabase = createPublicClient();
-    const [profilesResult, listingsResult] = await Promise.all([
+    const [profilesResult, listingsResult, likeCountsResult] = await Promise.all([
       supabase
         .from("marketplace_profiles")
         .select(PUBLIC_PROFILE_COLUMNS)
@@ -176,6 +180,7 @@ export async function loadMarketplaceSnapshot({
         .eq("status", "active")
         .order("created_at", { ascending: false })
         .limit(listingLimit),
+      supabase.from("listing_like_counts").select(LISTING_LIKE_COUNT_COLUMNS),
     ]);
 
     if (profilesResult.error) {
@@ -184,8 +189,21 @@ export async function loadMarketplaceSnapshot({
     if (listingsResult.error) {
       console.error(`[${label}] listings fetch failed:`, listingsResult.error);
     }
+    if (likeCountsResult.error) {
+      // Likes are an enhancement to discovery; a count-view failure must not
+      // make the public marketplace disappear.
+      console.error(
+        `[${label}] listing like counts fetch failed:`,
+        likeCountsResult.error,
+      );
+    }
     profiles = profilesResult.error ? null : profilesResult.data;
-    listings = listingsResult.error ? null : listingsResult.data;
+    listings = listingsResult.error
+      ? null
+      : mergeListingLikeCounts(
+          listingsResult.data,
+          likeCountsResult.error ? null : likeCountsResult.data,
+        );
   } catch (error) {
     // Local visual review intentionally works without production credentials.
     // MarketplaceApp uses the existing, clearly-labelled demo fallback.

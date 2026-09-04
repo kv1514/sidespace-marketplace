@@ -39,6 +39,28 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const params = await searchParams;
   const listingId = typeof params.listing === "string" ? params.listing : "";
+  if (!listingId && params.sort === "popular") {
+    return {
+      ...MARKETPLACE_METADATA,
+      alternates: { canonical: "/marketplace?sort=popular" },
+      title: "Popular listings | SideSpace",
+      description:
+        "See the SideSpace listings the community is noticing, with freshness and listing quality helping new opportunities break through.",
+      openGraph: {
+        ...MARKETPLACE_METADATA.openGraph,
+        url: "/marketplace?sort=popular",
+        title: "Popular listings on SideSpace",
+        description:
+          "See the SideSpace listings the community is noticing, with freshness and listing quality helping new opportunities break through.",
+      },
+      twitter: {
+        ...MARKETPLACE_METADATA.twitter,
+        title: "Popular listings on SideSpace",
+        description:
+          "See the SideSpace listings the community is noticing, with freshness and listing quality helping new opportunities break through.",
+      },
+    };
+  }
   if (!listingId) return MARKETPLACE_METADATA;
 
   const listing = await loadPublicListing(listingId);
@@ -80,6 +102,7 @@ export default async function Marketplace({
               ? params.role
               : "all"
           : "all";
+  const initialSort = params.sort === "popular" ? "popular" : "latest";
 
   return (
     <MarketplaceApp
@@ -95,6 +118,7 @@ export default async function Marketplace({
         | "supply"
         | "business"
         | "creator"}
+      initialSort={initialSort}
     />
   );
 }

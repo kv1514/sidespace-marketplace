@@ -1628,7 +1628,6 @@ export function CreatorsPage({
           ["Placements", "Windows, walls, vehicles, counters, rooms, and boards people already pass."],
           ["Teams", "Season, event, jersey, banner, and community sponsorship opportunities."],
           ["Events", "Gatherings, markets, showcases, and recurring local occasions."],
-          ["Organizations", "Clubs, causes, and community groups with meaningful local reach."],
           ["Podcasts", "Host-read mentions, sponsored segments, and trusted recommendations for local listeners."],
         ].map(([title, copy], index) => <article key={title}><span>{String(index + 1).padStart(2, "0")}</span><h2>{title}</h2><p>{copy}</p></article>)}
       </section>
