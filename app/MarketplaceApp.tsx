@@ -11160,6 +11160,18 @@ export default function MarketplaceApp({
     if (unreadCount) {
       parts.push(`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`);
     }
+    // A listing with gaps is sorted below complete ones and says so on its own
+    // card. Leaving it out of the status line meant the dashboard could open
+    // with "nothing needs your attention" directly above a listing telling the
+    // member it needs a longer title.
+    const unfinished = ownListings.filter(
+      (listing) => listingGaps(listing).length > 0,
+    ).length;
+    if (unfinished) {
+      parts.push(
+        `${unfinished} listing${unfinished === 1 ? "" : "s"} to finish`,
+      );
+    }
     if (parts.length) return `You have ${parts.join(" and ")}.`;
     if (profile.role !== "consumer" && !ownListings.length) {
       return "Nothing is listed yet. Add your first space or audience to start getting requests.";
@@ -11180,7 +11192,7 @@ export default function MarketplaceApp({
         <div className="account-section-heading">
           <div>
             <p className="eyebrow">Listings</p>
-            <h3>Manage what you have published.</h3>
+            <h2>Manage what you have published.</h2>
             <p className="account-section-lede">
               Keep your audience, placement, or sponsorship offer clear and bookable.
             </p>
@@ -11296,7 +11308,7 @@ export default function MarketplaceApp({
         <div className="account-section-heading">
           <div>
             <p className="eyebrow">Offers &amp; bookings</p>
-            <h3>Review every offer and next step.</h3>
+            <h2>Review every offer and next step.</h2>
             <p className="account-section-lede">
               Accept, counter, pay, and keep active work moving from one place.
             </p>
@@ -11574,7 +11586,7 @@ export default function MarketplaceApp({
         <div className="account-section-heading">
           <div>
             <p className="eyebrow">Payments</p>
-            <h3>Track money in motion.</h3>
+            <h2>Track money in motion.</h2>
             <p className="account-section-lede">
               Payment, delivery, review, refund, and payout status stay together here.
             </p>
@@ -11844,8 +11856,8 @@ export default function MarketplaceApp({
             <div>
               <p className="eyebrow">{rolesLabel(profile)} · {profile.city || "Add your city"}</p>
               <h1 className="dashboard-title">
-                {greeting()},{" "}
-                <em>{profile.display_name.split(" ")[0] || "there"}.</em>
+                <em>{greeting()},</em>{" "}
+                {profile.display_name.split(" ")[0] || "there"}.
               </h1>
               <p className="dashboard-sub">{dashboardStatus()}</p>
             </div>
@@ -11874,26 +11886,47 @@ export default function MarketplaceApp({
             </div>
           </div>
 
-          <div className="dashboard-paths" data-reveal>
-            <a
-              className="dashboard-path"
-              href="/marketplace?role=business"
-            >
-              <span>I&rsquo;m a creator or host</span>
-              <strong>Find business briefs</strong>
-              <p>See local campaigns that need your audience or space.</p>
-              <b>Browse briefs →</b>
-            </a>
-            <a
-              className="dashboard-path"
-              href="/marketplace?role=supply"
-            >
-              <span>I&rsquo;m a business</span>
-              <strong>Book local reach</strong>
-              <p>Choose a creator or space, pick an open date, and check out.</p>
-              <b>Browse creators and spaces →</b>
-            </a>
-          </div>
+          {(() => {
+            const supplyPath = (
+              <a
+                className="dashboard-path"
+                href="/marketplace?role=business"
+                key="supply"
+              >
+                <span>I&rsquo;m a creator or host</span>
+                <strong>Find business briefs</strong>
+                <p>See local campaigns that need your audience or space.</p>
+                <b>Browse briefs →</b>
+              </a>
+            );
+            const demandPath = (
+              <a
+                className="dashboard-path"
+                href="/marketplace?role=supply"
+                key="demand"
+              >
+                <span>I&rsquo;m a business</span>
+                <strong>Book local reach</strong>
+                <p>Choose a creator or space, pick an open date, and check out.</p>
+                <b>Browse creators and spaces →</b>
+              </a>
+            );
+            // Both stay: a creator books other creators often enough that
+            // hiding one would be wrong. But leading with the side the member
+            // is not on made half the biggest block on the page address
+            // somebody else.
+            const ownSideFirst =
+              profileHasRole(profile, "creator") ||
+              profileHasRole(profile, "space_owner") ||
+              profileHasRole(profile, "sponsor_host");
+            return (
+              <div className="dashboard-paths" data-reveal>
+                {ownSideFirst
+                  ? [supplyPath, demandPath]
+                  : [demandPath, supplyPath]}
+              </div>
+            );
+          })()}
 
           <div className="dashboard-grid">
             {(() => {
@@ -12117,6 +12150,15 @@ export default function MarketplaceApp({
             </section>
           )}
 
+          {(() => {
+            const setUp =
+              profile.onboarding_complete && Boolean(profile.avatar_url);
+            const listed =
+              profile.role === "consumer" ? true : ownListings.length > 0;
+            // A finished checklist is not a record of achievement, it is a
+            // block of struck-through text where working controls used to be.
+            if (setUp && listed) return null;
+            return (
           <ol className="dashboard-checklist" data-reveal>
             <li className={profile.onboarding_complete ? "done" : ""}>
               <span>{profile.onboarding_complete ? "✓" : "1"}</span>
@@ -12190,6 +12232,8 @@ export default function MarketplaceApp({
               </li>
             )}
           </ol>
+            );
+          })()}
 
           <div className="dashboard-work-sections">
             {renderDashboardListings()}

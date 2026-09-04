@@ -1973,7 +1973,7 @@ h2 em {
   margin-bottom: 17px;
 }
 
-.account-section-heading h3 {
+.account-section-heading :is(h2, h3) {
   font-size: 25px;
   letter-spacing: -0.04em;
   margin: 3px 0 0;
@@ -4513,6 +4513,8 @@ textarea::placeholder {
   margin: 10px 0 8px;
 }
 
+/* The <em> is on the greeting, so the member's own name is the part set in
+   full ink. It had been the other way round. */
 .dashboard-title em {
   color: var(--ink-soft);
   font-style: normal;
@@ -4719,9 +4721,11 @@ h2 {
     transform 150ms var(--ease-out);
 }
 
-.dashboard-path:hover {
-  border-color: var(--ink);
-  transform: translateY(-2px);
+@media (hover: hover) and (pointer: fine) {
+  .dashboard-path:hover {
+    border-color: var(--ink);
+    transform: translateY(-2px);
+  }
 }
 
 /* After :hover, or an equal-specificity hover transform would win the press
@@ -5362,6 +5366,7 @@ html.reveal-ready [data-reveal] {
 html.reveal-ready [data-reveal].is-visible {
   opacity: 1;
   transform: none;
+  will-change: auto;
 }
 
 /* How-it-works steps behave like a live widget: the active card lifts, its
@@ -7538,7 +7543,7 @@ html.reveal-ready [data-reveal].is-visible {
   line-height: 1.05;
 }
 
-.account-section-heading h3 {
+.account-section-heading :is(h2, h3) {
   font-weight: 300;
   letter-spacing: -0.025em;
   line-height: 1.15;
@@ -7608,7 +7613,7 @@ html.reveal-ready [data-reveal].is-visible {
   align-items: end;
 }
 
-.dashboard-work-section .account-section-heading h3 {
+.dashboard-work-section .account-section-heading :is(h2, h3) {
   max-width: 620px;
 }
 
@@ -10753,7 +10758,6 @@ html.reveal-ready [data-reveal].is-visible {
 @media (hover: none) {
   .listing-card:hover,
   .person-card:hover,
-  .dashboard-path:hover,
   .listing-preview:hover .listing-image img,
   .ss-listing-preview:hover .ss-listing-preview-image img {
     transform: none;
