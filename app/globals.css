@@ -1721,21 +1721,15 @@ h2 em {
    field it is about. */
 .modal-card .form-feedback {
   position: sticky;
-  top: 0;
+  top: 12px;
   z-index: 4;
 }
 
-/* The pane's own padding sits above the banner once it sticks, and the form
-   scrolls up through that gutter - a sliver of whatever field is passing
-   behind appears to float above the error. This paints the gutter out. */
+/* Keep the sticky banner self-contained. An upward-painted pseudo-element here
+   used to cover the bottom of the yellow setup notice, making the two boxes
+   look clipped together when validation first appeared. */
 .modal-card .form-feedback::before {
-  background: var(--white);
-  bottom: 100%;
-  content: "";
-  height: 56px;
-  left: -4px;
-  position: absolute;
-  right: -4px;
+  display: none;
 }
 
 .form-feedback strong {
