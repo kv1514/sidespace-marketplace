@@ -17,6 +17,7 @@ import {
 } from "react";
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { toastTone, type ToastTone } from "@/lib/toast-tone";
 import {
   loadProfileContacts,
   saveProfileContacts,
@@ -4084,17 +4085,6 @@ function friendlyDbError(error: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-// Toasts carry both good news and bad, and a green tick on "Add your city
-// before continuing" reads as if it worked. Every message is authored in this
-// file, so matching our own failure vocabulary is reliable; an unmatched
-// message just keeps the old tick rather than claiming something false.
-const PROBLEM_TOAST =
-  /\b(could not|cannot|can't|failed|unable|must|before continuing|at least|invalid|not available|already|too (large|many|big|long|short)|expired|try again|sorry|no longer|denied|wrong|missing|did not|needs?|add your|enter a|pick a|choose a|keep it|limit|reached|not enough)\b/i;
-
-function toastIsProblem(message: string) {
-  return PROBLEM_TOAST.test(message);
-}
-
 function compactNumber(value: number) {
   return Intl.NumberFormat("en", {
     notation: "compact",
@@ -5480,7 +5470,21 @@ export default function MarketplaceApp({
   const [roleFilter, setRoleFilter] = useState<RoleFilter>(initialRoleFilter);
   const [channelFilter, setChannelFilter] = useState(initialChannel);
   const [listingSort, setListingSort] = useState<ListingSort>(initialSort);
-  const [toast, setToast] = useState("");
+  const [toast, setToastState] = useState<{
+    text: string;
+    tone: ToastTone;
+  } | null>(null);
+  /**
+   * Show a toast, and say what kind it is when the words do not.
+   *
+   * The second argument exists for the failures our failure vocabulary does
+   * not recognise - "No microphone was found on this device" has none of it -
+   * which were being announced with a green tick, as if they had worked.
+   * Passing "" clears the toast.
+   */
+  const setToast = useCallback((text: string, tone?: ToastTone) => {
+    setToastState(text ? { text, tone: toastTone(text, tone) } : null);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [googleOAuthEnabled, setGoogleOAuthEnabled] = useState(false);
   // Set once the on-domain token exchange has been refused, so the redirect
@@ -5587,7 +5591,7 @@ export default function MarketplaceApp({
       }
       setOwnListingsLoading(false);
     },
-    [supabase],
+    [setToast, supabase],
   );
 
   /**
@@ -5864,7 +5868,7 @@ export default function MarketplaceApp({
         }
       }
     },
-    [loadAccountMarketplaceState, loadOwnListings, supabase],
+    [loadAccountMarketplaceState, loadOwnListings, setToast, supabase],
   );
 
   useEffect(() => {
@@ -5945,7 +5949,14 @@ export default function MarketplaceApp({
       window.clearTimeout(startup);
       subscription.unsubscribe();
     };
-  }, [loadLikedListings, loadMarketplace, loadOwnProfile, route, supabase]);
+  }, [
+    loadLikedListings,
+    loadMarketplace,
+    loadOwnProfile,
+    route,
+    setToast,
+    supabase,
+  ]);
 
   useEffect(() => {
     if (!configured) return;
@@ -5978,7 +5989,7 @@ export default function MarketplaceApp({
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 3600);
     return () => window.clearTimeout(timer);
-  }, [toast]);
+  }, [setToast, toast]);
 
   // Badge updates whether or not the inbox is open. RLS scopes the stream to
   // conversations this member belongs to.
@@ -6475,7 +6486,7 @@ export default function MarketplaceApp({
       setToast("Choose a new password below.");
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [user]);
+  }, [setToast, user]);
 
   // The auth callback redirects here with ?authError=callback when the code
   // exchange fails. Without this the member lands back on the signed-out page
@@ -6496,7 +6507,7 @@ export default function MarketplaceApp({
       setAuthOpen(true);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [setToast]);
 
   // Lightweight public pages hand account actions to the dedicated dashboard
   // instead of shipping this entire marketplace engine in their first bundle.
@@ -6547,7 +6558,7 @@ export default function MarketplaceApp({
       void loadAccountMarketplaceState(profile);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadAccountMarketplaceState, profile, route]);
+  }, [loadAccountMarketplaceState, profile, route, setToast]);
 
   useEffect(() => {
     if (selectedListing || typeof window === "undefined") return;
@@ -6634,6 +6645,7 @@ export default function MarketplaceApp({
     loading,
     selectedListing,
     sessionResolved,
+    setToast,
     supabase,
     user,
   ]);
@@ -6862,7 +6874,7 @@ export default function MarketplaceApp({
   ) {
     event.preventDefault();
     if (!supabase || !profile) {
-      setToast("Sign in to save campaign preferences.");
+      setToast("Sign in to save campaign preferences.", "problem");
       return;
     }
     setPreferencesSaving(true);
@@ -6954,7 +6966,10 @@ export default function MarketplaceApp({
       return;
     }
     if (!configured) {
-      setToast("Connect Supabase to enable public accounts and messaging.");
+      setToast(
+        "Connect Supabase to enable public accounts and messaging.",
+        "problem",
+      );
       return;
     }
     // Every overlay shares one z-index and the listing detail is a later
@@ -7082,13 +7097,13 @@ export default function MarketplaceApp({
     const listingId = listing.id;
     if (likeRequestsRef.current.has(listingId)) return;
     if (!supabase) {
-      setToast("Sign in to like listings.");
+      setToast("Sign in to like listings.", "problem");
       return;
     }
     if (!user) {
       setAuthMode("signin");
       setAuthOpen(true);
-      setToast("Sign in to like listings.");
+      setToast("Sign in to like listings.", "problem");
       return;
     }
     if (listing.owner.is_demo || profile?.id === listing.owner.id) {
@@ -8488,13 +8503,18 @@ export default function MarketplaceApp({
       if (code === "not-allowed") {
         setToast(
           "The microphone (or speech recognition) is blocked for this site. Allow it - the lock or mic icon in the address bar, or Settings > Safari > Microphone on an iPhone - then tap Speak again.",
+          "problem",
         );
       } else if (code === "no-speech") {
         setToast(
           "Didn't hear anything. Check that the mic isn't muted, tap Speak, and start talking straight away.",
+          "problem",
         );
       } else if (code === "audio-capture") {
-        setToast("No microphone was found on this device. Type a few words instead.");
+        setToast(
+          "No microphone was found on this device. Type a few words instead.",
+          "problem",
+        );
       } else if (code !== "aborted") {
         // network, service-not-allowed, language-not-supported: the
         // recogniser is the problem, not the mic. Record instead, now and
@@ -8537,7 +8557,10 @@ export default function MarketplaceApp({
   async function startRecording(field: HTMLTextAreaElement, afterSpeechFailed: boolean) {
     const type = recordingMimeType();
     if (type === null || !navigator.mediaDevices?.getUserMedia) {
-      setToast("Voice input isn't available in this browser. Type a few words instead.");
+      setToast(
+        "Voice input isn't available in this browser. Type a few words instead.",
+        "problem",
+      );
       return;
     }
     let stream: MediaStream;
@@ -8561,7 +8584,10 @@ export default function MarketplaceApp({
       recorder = type ? new MediaRecorder(stream, { mimeType: type }) : new MediaRecorder(stream);
     } catch {
       stream.getTracks().forEach((track) => track.stop());
-      setToast("Recording isn't available in this browser. Type a few words instead.");
+      setToast(
+        "Recording isn't available in this browser. Type a few words instead.",
+        "problem",
+      );
       return;
     }
     const chunks: Blob[] = [];
@@ -8650,7 +8676,10 @@ export default function MarketplaceApp({
     const address =
       addressField instanceof HTMLInputElement ? addressField.value.trim() : "";
     if (address.length < 5) {
-      setToast("Type the exact street address first, then try Street View again.");
+      setToast(
+        "Type the exact street address first, then try Street View again.",
+        "problem",
+      );
       return;
     }
     setStreetViewLoading(true);
@@ -8707,7 +8736,10 @@ export default function MarketplaceApp({
         ? { kind: editingListing.tour_kind, source: editingListing.tour_url }
         : null;
     if (!file && !notes && !audio && !tourSource) {
-      setToast("Add a photo, a walkthrough, or a few words first, then press Fill with AI.");
+      setToast(
+        "Add a photo, a walkthrough, or a few words first, then press Fill with AI.",
+        "problem",
+      );
       return;
     }
     // Whatever is in the form now - a first draft the owner edited, or
@@ -8820,7 +8852,10 @@ export default function MarketplaceApp({
     }
     if (![...TOUR_VIDEO_TYPES, ...TOUR_PHOTO_TYPES].includes(file.type)) {
       setTourPick(null);
-      setToast("A walkthrough is an MP4, WebM, or .mov video, or a JPG, PNG, or WebP 360° photo.");
+      setToast(
+        "A walkthrough is an MP4, WebM, or .mov video, or a JPG, PNG, or WebP 360° photo.",
+        "problem",
+      );
       return;
     }
     if (file.size > TOUR_MAX_BYTES) {
@@ -9503,16 +9538,25 @@ export default function MarketplaceApp({
       return;
     }
     if (mode === "buy_now" && isBrief(listing)) {
-      setToast("Business briefs use Make an offer so you can propose the right fit.");
+      setToast(
+        "Business briefs use Make an offer so you can propose the right fit.",
+        "problem",
+      );
       return;
     }
     if (mode === "buy_now" && !isFixedPriceListing(listing)) {
-      setToast("This listing has a price range. Make an offer to agree on the exact terms.");
+      setToast(
+        "This listing has a price range. Make an offer to agree on the exact terms.",
+        "problem",
+      );
       return;
     }
     requireAccount(() => {
       if (listing.owner.id === profile?.id) {
-        setToast("This is your listing. Manage incoming requests in Dashboard.");
+        setToast(
+          "This is your listing. Manage incoming requests in Dashboard.",
+          "problem",
+        );
         return;
       }
       closeListing();
@@ -9775,7 +9819,10 @@ export default function MarketplaceApp({
   function startInstantCheckout(listing: Listing, bookingDate: string, bookingEndDate: string) {
     requireAccount(() => {
       if (listing.owner_profile_id === profile?.id) {
-        setToast("This is your listing. Manage its available dates in Dashboard.");
+        setToast(
+          "This is your listing. Manage its available dates in Dashboard.",
+          "problem",
+        );
         return;
       }
       void (async () => {
@@ -10151,11 +10198,11 @@ export default function MarketplaceApp({
       return;
     }
     if (password !== confirmation) {
-      setToast("The two passwords do not match.");
+      setToast("The two passwords do not match.", "problem");
       return;
     }
     if (!currentPassword) {
-      setToast("Enter your current password to confirm the change.");
+      setToast("Enter your current password to confirm the change.", "problem");
       return;
     }
 
@@ -10176,7 +10223,7 @@ export default function MarketplaceApp({
     });
     if (reauthError) {
       setBusy(false);
-      setToast("That current password is not right.");
+      setToast("That current password is not right.", "problem");
       return;
     }
 
@@ -10194,7 +10241,10 @@ export default function MarketplaceApp({
     if (!supabase) return;
     const address = (explicitEmail ?? user?.email ?? "").trim();
     if (!address) {
-      setToast("Enter your email address first, then choose Forgot password.");
+      setToast(
+        "Enter your email address first, then choose Forgot password.",
+        "problem",
+      );
       return;
     }
     setBusy(true);
@@ -10766,6 +10816,7 @@ export default function MarketplaceApp({
       if (profile?.role === "consumer") {
         setToast(
           "Finish your Business or Creator profile before publishing a listing.",
+          "problem",
         );
         return;
       }
@@ -17254,9 +17305,13 @@ export default function MarketplaceApp({
           only honoured on a region that already exists in the DOM. */}
       <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">
         {toast && (
-          <div className={`toast ${toastIsProblem(toast) ? "toast-problem" : ""}`}>
-            <span aria-hidden="true">{toastIsProblem(toast) ? "!" : "✓"}</span>
-            {toast}
+          <div
+            className={`toast ${toast.tone === "problem" ? "toast-problem" : ""}`}
+          >
+            <span aria-hidden="true">
+              {toast.tone === "problem" ? "!" : "✓"}
+            </span>
+            {toast.text}
           </div>
         )}
       </div>
