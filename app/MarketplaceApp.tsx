@@ -4274,6 +4274,15 @@ const LISTING_READY_MIN = { title: 8, format: 10, description: 60 };
  * What a listing is still missing, phrased for the person who has to fix it.
  * An empty list means the grid treats it as complete.
  */
+/**
+ * The offer statuses that still need somebody to do something.
+ *
+ * A countered request is still open: the other side can accept, decline or
+ * revise it. Anything else - accepted, confirmed, completed, declined,
+ * cancelled, refunded - is history.
+ */
+const OPEN_REQUEST_STATUSES = ["pending", "countered"];
+
 function listingGaps(
   listing: Pick<Listing, "title" | "format" | "description"> & Partial<Pick<Listing, "timing_kind" | "deliverables">>,
 ) {
@@ -5550,6 +5559,17 @@ export default function MarketplaceApp({
    */
   const [campaignSide, setCampaignSide] =
     useState<"all" | "incoming" | "outgoing">("all");
+  /**
+   * Whether the offers section is narrowed to work that is still open.
+   *
+   * The stat tiles count only pending and countered offers - that is what
+   * "waiting on your reply" means. The section they navigate to listed every
+   * offer ever made, so a member with two open offers and fifteen finished
+   * bookings clicked "2" and landed on a list of seventeen. The tiles set this
+   * so the number they clicked is the number they arrive at; it renders as a
+   * pill the member can clear to see the rest.
+   */
+  const [campaignOpenOnly, setCampaignOpenOnly] = useState(false);
   const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransaction[]>([]);
   const [adCreditBalanceCents, setAdCreditBalanceCents] = useState(0);
   const [creatorPortfolio, setCreatorPortfolio] = useState<CreatorPortfolioItem[]>([]);
@@ -6687,9 +6707,45 @@ export default function MarketplaceApp({
     const failsafe = window.setTimeout(() => {
       targets.forEach((element) => element.classList.add("is-visible"));
     }, 3000);
+
+    /*
+     * Sections that mount later still get observed.
+     *
+     * `reveal-ready` holds every [data-reveal] at opacity 0 until the observer
+     * says otherwise, and the observer only ever sees the elements that
+     * existed when this effect last ran. A section gated on data that arrives
+     * afterwards - payments on a Stripe round-trip, analytics on the member's
+     * own listings - therefore mounts into a document that hides it and never
+     * looks at it again, and stays invisible for the life of the page.
+     *
+     * That has now happened three times, each time fixed by adding one more
+     * dependency, which only ever fixes the section somebody already noticed.
+     * Watching the tree instead closes the whole class: whatever mounts, gets
+     * observed, gets revealed.
+     */
+    const watchLateArrivals = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          const late = node.matches("[data-reveal]")
+            ? [node]
+            : Array.from(node.querySelectorAll<HTMLElement>("[data-reveal]"));
+          for (const element of late) {
+            if (element.classList.contains("is-visible")) continue;
+            observer.observe(element);
+            // The original failsafe's list was captured before this element
+            // existed, so it needs its own.
+            window.setTimeout(() => element.classList.add("is-visible"), 3000);
+          }
+        }
+      }
+    });
+    watchLateArrivals.observe(document.body, { childList: true, subtree: true });
+
     return () => {
       window.clearTimeout(failsafe);
       observer.disconnect();
+      watchLateArrivals.disconnect();
     };
   }, [listings, user, profile, paymentTransactions.length]);
 
@@ -11314,7 +11370,7 @@ export default function MarketplaceApp({
     const incoming = campaignRequests.filter(
       (request) =>
         request.owner_profile_id === profile.id &&
-        ["pending", "countered"].includes(request.status),
+        OPEN_REQUEST_STATUSES.includes(request.status),
     ).length;
     // A counteroffer sits with the REQUESTER: they are the only party who can
     // accept it. Counting only owner-side rows meant the dashboard told them
@@ -11343,7 +11399,11 @@ export default function MarketplaceApp({
     // with "nothing needs your attention" directly above a listing telling the
     // member it needs a longer title.
     const unfinished = ownListings.filter(
-      (listing) => listingGaps(listing).length > 0,
+      (listing) =>
+        // Business briefs are excluded: listingGaps measures `format`, which
+        // the brief form derives rather than asks for, so a brief could be
+        // reported unfinished with nothing the member could do about it.
+        listing.channel !== "Business brief" && listingGaps(listing).length > 0,
     ).length;
     if (unfinished) {
       parts.push(
@@ -11611,25 +11671,27 @@ export default function MarketplaceApp({
 
   function renderDashboardCampaigns() {
     if (!profile) return null;
+    const matches = (request: CampaignRequest, side: typeof campaignSide) => {
+      const sideOk =
+        side === "all"
+          ? true
+          : side === "incoming"
+            ? request.owner_profile_id === profile.id
+            : request.requester_profile_id === profile.id;
+      return (
+        sideOk &&
+        (!campaignOpenOnly || OPEN_REQUEST_STATUSES.includes(request.status))
+      );
+    };
     const sides = [
       { key: "all" as const, label: "All" },
       { key: "incoming" as const, label: "To you" },
       { key: "outgoing" as const, label: "You sent" },
     ];
     const sideCount = (key: (typeof sides)[number]["key"]) =>
-      campaignRequests.filter((request) =>
-        key === "all"
-          ? true
-          : key === "incoming"
-            ? request.owner_profile_id === profile.id
-            : request.requester_profile_id === profile.id,
-      ).length;
+      campaignRequests.filter((request) => matches(request, key)).length;
     const visibleRequests = campaignRequests.filter((request) =>
-      campaignSide === "all"
-        ? true
-        : campaignSide === "incoming"
-          ? request.owner_profile_id === profile.id
-          : request.requester_profile_id === profile.id,
+      matches(request, campaignSide),
     );
     return (
       <section
@@ -11647,19 +11709,53 @@ export default function MarketplaceApp({
               Accept, counter, pay, and keep active work moving from one place.
             </p>
           </div>
-          <div className="segmented" role="group" aria-label="Filter offers">
-            {sides.map((side) => (
+          <div className="segmented-row">
+          {campaignOpenOnly && (
+            <button
+              type="button"
+              className="filter-pill"
+              onClick={() => setCampaignOpenOnly(false)}
+            >
+              Open only
+              <span aria-hidden="true">×</span>
+              <span className="sr-only">, clear this filter</span>
+            </button>
+          )}
+          <div className="segmented" role="radiogroup" aria-label="Filter offers">
+            {sides.map((side, index) => (
               <button
                 key={side.key}
                 type="button"
+                role="radio"
                 className="segmented-option"
-                aria-pressed={campaignSide === side.key}
+                aria-checked={campaignSide === side.key}
+                // Only the selected option is tabbable, and the arrows move
+                // between them: the roving-tabindex half of the radio pattern,
+                // without which a radiogroup is a worse lie than the toggles.
+                tabIndex={campaignSide === side.key ? 0 : -1}
+                onKeyDown={(event) => {
+                  const step =
+                    event.key === "ArrowRight" || event.key === "ArrowDown"
+                      ? 1
+                      : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                        ? -1
+                        : 0;
+                  if (!step) return;
+                  event.preventDefault();
+                  const next = sides[(index + step + sides.length) % sides.length];
+                  setCampaignSide(next.key);
+                  const group = event.currentTarget.parentElement;
+                  const buttons = group?.querySelectorAll("button");
+                  const target = buttons?.[sides.indexOf(next)];
+                  if (target instanceof HTMLElement) target.focus();
+                }}
                 onClick={() => setCampaignSide(side.key)}
               >
                 {side.label}
                 <b>{sideCount(side.key)}</b>
               </button>
             ))}
+          </div>
           </div>
         </div>
 
@@ -11811,12 +11907,12 @@ export default function MarketplaceApp({
                     )}
                     {incoming &&
                       request.purchase_mode !== "buy_now" &&
-                      ["pending", "countered"].includes(request.status) && (
+                      OPEN_REQUEST_STATUSES.includes(request.status) && (
                         <button onClick={() => setCounteringRequest(request)}>
                           {request.status === "countered" ? "Revise counteroffer" : "Counteroffer"}
                         </button>
                       )}
-                    {incoming && ["pending", "countered"].includes(request.status) && (
+                    {incoming && OPEN_REQUEST_STATUSES.includes(request.status) && (
                       <button
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "declined")}
@@ -11833,7 +11929,7 @@ export default function MarketplaceApp({
                         Accept counteroffer
                       </button>
                     )}
-                    {!incoming && ["pending", "countered"].includes(request.status) && (
+                    {!incoming && OPEN_REQUEST_STATUSES.includes(request.status) && (
                       <button
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "cancelled")}
@@ -11878,18 +11974,23 @@ export default function MarketplaceApp({
         ) : campaignRequests.length ? (
           <div className="account-empty">
             <strong>
-              {campaignSide === "incoming"
-                ? "No offers waiting on you."
-                : "You have not sent any offers."}
+              {campaignOpenOnly
+                ? "Nothing here needs you right now."
+                : campaignSide === "incoming"
+                  ? "No offers waiting on you."
+                  : "You have not sent any offers."}
             </strong>
             <p>
-              You have {campaignRequests.length} on the other side of this
-              filter.
+              You have {campaignRequests.length} offer
+              {campaignRequests.length === 1 ? "" : "s"} outside this filter.
             </p>
             <button
               className="button button-ghost button-small"
               type="button"
-              onClick={() => setCampaignSide("all")}
+              onClick={() => {
+                setCampaignSide("all");
+                setCampaignOpenOnly(false);
+              }}
             >
               Show all offers <span>→</span>
             </button>
@@ -12273,13 +12374,12 @@ export default function MarketplaceApp({
               const incoming = campaignRequests.filter(
                 (request) =>
                   request.owner_profile_id === profile.id &&
-                  ["pending", "countered"].includes(request.status),
+                  OPEN_REQUEST_STATUSES.includes(request.status),
               ).length;
               const outgoing = campaignRequests.filter(
                 (request) =>
                   request.requester_profile_id === profile.id &&
-                  (request.status === "pending" ||
-                    request.status === "countered"),
+                  OPEN_REQUEST_STATUSES.includes(request.status),
               ).length;
               // Every tile is a way in, not a readout. A number with nowhere
               // to click is the thing that made this dashboard feel inert:
@@ -12314,6 +12414,9 @@ export default function MarketplaceApp({
                   action: "Review offers",
                   go: () => {
                     setCampaignSide("incoming");
+                    // The tile counted open work only; the section has to
+                    // agree, or the number just clicked is nowhere on screen.
+                    setCampaignOpenOnly(true);
                     goToDashboardSection("dashboard-campaigns-all");
                   },
                 },
@@ -12326,6 +12429,9 @@ export default function MarketplaceApp({
                   action: "Track your offers",
                   go: () => {
                     setCampaignSide("outgoing");
+                    // The tile counted open work only; the section has to
+                    // agree, or the number just clicked is nowhere on screen.
+                    setCampaignOpenOnly(true);
                     goToDashboardSection("dashboard-campaigns-all");
                   },
                 },
@@ -12371,6 +12477,7 @@ export default function MarketplaceApp({
                   type="button"
                   key={card.label}
                   onClick={card.go}
+                  aria-label={`${card.action}. ${card.label}: ${card.value}, ${card.caption}.`}
                 >
                   <span className="dashboard-stat-top">
                     <small>{card.label}</small>
@@ -12507,8 +12614,12 @@ export default function MarketplaceApp({
             // A finished checklist is not a record of achievement, it is a
             // block of struck-through text where working controls used to be.
             if (setUp && listed) return null;
+            // ownListings starts empty and fills in a later tick, so a member
+            // with six listings briefly looked like a member with none - the
+            // checklist flashed "Publish your first listing" and vanished.
+            if (setUp && ownListingsLoading) return null;
             return (
-          <ol className="dashboard-checklist" data-reveal>
+          <ol className="dashboard-checklist">
             <li className={profile.onboarding_complete ? "done" : ""}>
               <span>{profile.onboarding_complete ? "✓" : "1"}</span>
               <div>
