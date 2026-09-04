@@ -142,8 +142,13 @@ export async function POST(request: Request) {
         onConflict: "listing_id,kind,visitor_key,day",
         ignoreDuplicates: true,
       });
-  } catch {
-    // RULE TWO. Nothing that happens here is the member's problem.
+  } catch (error) {
+    // RULE TWO holds: the member never sees this. But it is not allowed to be
+    // invisible to US - a missing service key or a refused upsert here means
+    // every impression on the site is being quietly dropped, and the only way
+    // anyone finds out is a dashboard full of zeroes. Log it where Vercel
+    // keeps it.
+    console.error("[listing events] batch not recorded:", error);
   }
   return accepted();
 }
