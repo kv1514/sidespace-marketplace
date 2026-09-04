@@ -677,6 +677,22 @@ const TOUR_FRAME_EDGE = 960;
  */
 const STREET_VIEW_EMBED_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY ?? "";
 
+/**
+ * The Google client the sign-in button identifies itself as.
+ *
+ * Public by nature - it travels in the URL of every OAuth round trip already -
+ * so it is a NEXT_PUBLIC var rather than a secret. Set it and Google's account
+ * chooser names sidespace.ad; leave it unset and sign-in keeps taking the
+ * redirect through Supabase, which names Supabase.
+ */
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
+
+/** Google's script is fetched only on the screen that offers Google sign-in. */
+const GoogleSignInButton = dynamic(
+  () => import("./components/GoogleSignInButton"),
+  { ssr: false },
+);
+
 /** three.js and the viewer arrive only on a listing that has a 360 walkthrough. */
 const PanoramaViewer = dynamic(() => import("./components/PanoramaViewer"), {
   ssr: false,
@@ -4520,8 +4536,11 @@ function SocialLinks({ profile, compact = false }: { profile: Profile; compact?:
   );
 }
 
+// `iframe` is in here for Google's sign-in button, which renders inside one:
+// without it the dialog's Tab cycle stepped straight over the first control on
+// the sign-in screen and a keyboard user could not reach it at all.
 const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])';
 
 /**
  * A dialog cannot read which control opened it: by the time it mounts the
@@ -5386,6 +5405,9 @@ export default function MarketplaceApp({
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [googleOAuthEnabled, setGoogleOAuthEnabled] = useState(false);
+  // Set once the on-domain token exchange has been refused, so the redirect
+  // fallback can never re-enter itself.
+  const googleFallbackRef = useRef(false);
 
   const loadMarketplace = useCallback(async () => {
     if (!supabase) return;
@@ -7519,6 +7541,43 @@ export default function MarketplaceApp({
       },
     });
     if (error) setToast(friendlyDbError(error));
+  }
+
+  /**
+   * Finish a Google sign-in that happened on our own domain.
+   *
+   * The ID token buys the same session the redirect would have: same client
+   * id, so the same Google account is the same existing user. There is no
+   * round trip through /auth/callback to carry the invite and referral
+   * parameters, so this lands on the path that callback would have chosen.
+   *
+   * A refused token is not a dead end. It means the exchange is not configured
+   * (the client id has to be listed on Supabase's Google provider for ID
+   * tokens to be accepted), and the redirect flow still works - so it takes
+   * over. Once, guarded: a fallback that could re-enter itself would bounce
+   * somebody between two sign-in screens.
+   */
+  async function completeGoogleSignIn(token: string, nonce: string) {
+    if (!supabase || googleFallbackRef.current) return;
+    setBusy(true);
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: "google",
+      token,
+      nonce,
+    });
+    setBusy(false);
+    if (error) {
+      googleFallbackRef.current = true;
+      console.error(
+        "[google sign-in] token refused, falling back to the redirect flow:",
+        error,
+      );
+      void signInWithGoogle();
+      return;
+    }
+    setUser(data.user);
+    setAuthOpen(false);
+    window.location.assign(authNextPath(referralCode));
   }
 
   /**
@@ -12495,12 +12554,23 @@ export default function MarketplaceApp({
             <>
               {googleOAuthEnabled && (
                 <>
-                  <button
-                    className="google-button"
-                    onClick={signInWithGoogle}
-                  >
-                    <b>G</b> Continue with Google
-                  </button>
+                  {/* Google's own button, on our domain, so its account
+                      chooser says SideSpace. Falls back to the redirect
+                      button whenever that path is unavailable. */}
+                  <GoogleSignInButton
+                    clientId={GOOGLE_CLIENT_ID}
+                    onCredential={(token, nonce) => {
+                      void completeGoogleSignIn(token, nonce);
+                    }}
+                    fallback={
+                      <button
+                        className="google-button"
+                        onClick={signInWithGoogle}
+                      >
+                        <b>G</b> Continue with Google
+                      </button>
+                    }
+                  />
                   <div className="form-divider">
                     <span>or use email</span>
                   </div>
