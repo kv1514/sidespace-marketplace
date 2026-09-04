@@ -20,11 +20,26 @@
   --line-soft: rgba(22, 20, 14, 0.08);
   --lime: #f3b44a;
   --coral: #c77e0a;
+  /* --coral is a fill colour: 2.79:1 on --paper-2, which text cannot use.
+     This is the same accent at a weight that clears 4.5:1. */
+  --coral-text: #9a5c05;
   --blue: #e9e3d2;
   --lavender: #e6dcc8;
   --display: "Google Sans Flex", "Geist", sans-serif;
   --serif: "Google Sans Flex", "Geist", sans-serif;
   --mono: "Google Sans Code", "Geist Mono", monospace;
+
+  /*
+   * Motion tokens.
+   *
+   * `--ease-out` was already being referenced with a fallback in a few places
+   * and had never been declared, so those transitions were quietly running on
+   * the browser's weak built-in curve. Declaring them here also settles which
+   * curve is the house one: the file had drifted into two near-identical
+   * ease-outs used interchangeably.
+   */
+  --ease-out: var(--ss-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+  --ease-in-out: var(--ss-ease-in-out, cubic-bezier(0.77, 0, 0.175, 1));
 }
 
 * {
@@ -200,15 +215,6 @@ img {
   justify-content: space-between;
   min-height: 52px;
   padding: 0 21px;
-  transition:
-    transform 180ms ease,
-    box-shadow 180ms ease,
-    background 180ms ease;
-}
-
-.button:hover {
-  box-shadow: 0 9px 0 rgba(10, 10, 10, 0.12);
-  transform: translateY(-3px);
 }
 
 .button:disabled {
@@ -1721,21 +1727,15 @@ h2 em {
    field it is about. */
 .modal-card .form-feedback {
   position: sticky;
-  top: 0;
+  top: 12px;
   z-index: 4;
 }
 
-/* The pane's own padding sits above the banner once it sticks, and the form
-   scrolls up through that gutter - a sliver of whatever field is passing
-   behind appears to float above the error. This paints the gutter out. */
+/* Keep the sticky banner self-contained. An upward-painted pseudo-element here
+   used to cover the bottom of the yellow setup notice, making the two boxes
+   look clipped together when validation first appeared. */
 .modal-card .form-feedback::before {
-  background: var(--white);
-  bottom: 100%;
-  content: "";
-  height: 56px;
-  left: -4px;
-  position: absolute;
-  right: -4px;
+  display: none;
 }
 
 .form-feedback strong {
@@ -1967,7 +1967,7 @@ h2 em {
   margin-bottom: 17px;
 }
 
-.account-section-heading h3 {
+.account-section-heading :is(h2, h3) {
   font-size: 25px;
   letter-spacing: -0.04em;
   margin: 3px 0 0;
@@ -1982,6 +1982,75 @@ h2 em {
   font-weight: 750;
   padding: 8px 11px;
   white-space: nowrap;
+}
+
+/*
+ * Segmented control - the offers section's "to you / you sent" switch.
+ *
+ * Both dashboard stat tiles for offers land here, so the filter has to be able
+ * to arrive pre-set and still read as something you can change.
+ */
+.segmented {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+}
+
+.segmented-option {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  transition:
+    background-color 160ms var(--ease-out),
+    color 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+  white-space: nowrap;
+}
+
+.segmented-option b {
+  color: var(--ink-mute);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  transition: color 160ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .segmented-option:hover {
+    color: var(--ink);
+  }
+}
+
+.segmented-option:active {
+  transform: scale(0.97);
+  transition-duration: 100ms;
+}
+
+.segmented-option:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.segmented-option[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--white);
+}
+
+.segmented-option[aria-pressed="true"] b {
+  color: var(--lime);
 }
 
 .campaign-request-list {
@@ -4217,20 +4286,38 @@ h3 em {
 .button {
   border: 1px solid transparent;
   font-weight: 450;
-  transition: all 0.15s ease-out;
+  transition:
+    background-color 150ms var(--ease-out),
+    border-color 150ms var(--ease-out),
+    color 150ms var(--ease-out),
+    transform 120ms var(--ease-out);
 }
 
-.button:hover {
-  box-shadow: none;
-  transform: none;
+/* A button has to answer the press itself, or the interface reads as not
+   listening. Everything else here is colour; this is the one bit of travel. */
+.button:active {
+  transform: scale(0.97);
 }
 
 .button span {
-  transition: transform 0.15s ease-out;
+  transition: transform 0.15s var(--ease-out);
 }
 
-.button:hover span {
-  transform: translate(2px, -2px);
+/* Ungated, this stuck the glyph two pixels out of place after a tap and left
+   it there, because a touch device has no way to leave :hover. */
+@media (hover: hover) and (pointer: fine) {
+  .button:hover span {
+    transform: translate(2px, -2px);
+  }
+}
+
+/* An icon in a button is a drawing, not a glyph: full contrast, correct size,
+   and no diagonal nudge - a plus sign travelling up and to the right was
+   saying something the button does not do. */
+.button > svg {
+  flex: none;
+  height: 15px;
+  width: 15px;
 }
 
 .button-dark {
@@ -4415,11 +4502,13 @@ textarea::placeholder {
 .dashboard-title {
   font-size: clamp(32px, 3.6vw, 52px);
   font-weight: 450;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.035em;
   line-height: 1.05;
   margin: 10px 0 8px;
 }
 
+/* The <em> is on the greeting, so the member's own name is the part set in
+   full ink. It had been the other way round. */
 .dashboard-title em {
   color: var(--ink-soft);
   font-style: normal;
@@ -4441,26 +4530,9 @@ textarea::placeholder {
 .dashboard-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.dashboard-stat {
-  background: var(--paper-2);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 18px 20px;
-}
-
-.dashboard-stat strong {
-  display: block;
-  font-size: 30px;
-  font-weight: 450;
-  letter-spacing: -0.02em;
-}
-
-.dashboard-stat small {
-  color: var(--ink-soft);
-  font-size: 12.5px;
+  /* Payments joins the row only for members who have any, so the track count
+     has to follow the content rather than being hardcoded to four. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 185px), 1fr));
 }
 
 .dashboard-checklist {
@@ -4638,19 +4710,33 @@ h2 {
   display: grid;
   gap: 6px;
   padding: 22px 24px;
-  transition: border-color 0.15s ease-out, transform 0.15s ease-out;
+  transition:
+    border-color 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
 }
 
-.dashboard-path:hover {
-  border-color: var(--ink);
-  transform: translateY(-2px);
+@media (hover: hover) and (pointer: fine) {
+  .dashboard-path:hover {
+    border-color: var(--ink);
+    transform: translateY(-2px);
+  }
 }
 
+/* After :hover, or an equal-specificity hover transform would win the press
+   on a pointer device - which is every device where you can see both. */
+.dashboard-path:active {
+  transform: scale(0.98);
+  transition-duration: 100ms;
+}
+
+/* Matches .eyebrow, which sits directly above it. Two all-caps micro-label
+   systems on one screen read as two passes nobody reconciled. */
 .dashboard-path > span {
   color: var(--ink-soft);
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.12em;
+  font-weight: 400;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
@@ -4668,7 +4754,7 @@ h2 {
 }
 
 .dashboard-path b {
-  color: var(--coral);
+  color: var(--coral-text);
   font-size: 13.5px;
   font-weight: 500;
   margin-top: 6px;
@@ -4722,6 +4808,17 @@ select {
 a:focus-visible {
   outline: 2px solid var(--coral);
   outline-offset: 2px;
+}
+
+/* One focus treatment for the whole dashboard. --coral is 3.05:1 on --paper
+   and 2.79:1 on --paper-2, at or under the floor a focus indicator needs;
+   --ink is 15.7:1 on both and is what the stat tiles already use. Bare
+   <button>s here matched no rule at all and fell back to the browser ring. */
+.dashboard a:focus-visible,
+.dashboard button:focus-visible,
+.dashboard .button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
 }
 
 .close-button:hover {
@@ -5079,9 +5176,55 @@ html {
 }
 
 /* Dashboard stat cards in the Tally style */
+/*
+ * A stat tile is a way in, not a readout, so it is a real button: pressable,
+ * focusable, and announced as one. Everything below is the affordance that
+ * makes that legible before the click.
+ */
 .dashboard-stat {
+  appearance: none;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  color: inherit;
+  cursor: pointer;
   display: grid;
+  font: inherit;
   gap: 2px;
+  padding: 18px 20px;
+  text-align: left;
+  transition:
+    transform 160ms var(--ease-out),
+    border-color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out);
+}
+
+/* Hover is a pointer idea. On touch it fires on tap and sticks. */
+@media (hover: hover) and (pointer: fine) {
+  .dashboard-stat:hover {
+    background: var(--white);
+    border-color: var(--ink);
+    transform: translateY(-2px);
+  }
+
+  .dashboard-stat:hover .dashboard-stat-action {
+    color: var(--ink);
+  }
+
+  .dashboard-stat:hover .dashboard-stat-action svg {
+    transform: translateX(2px);
+  }
+}
+
+/* Instant feedback on press: the tile has to feel like it heard you. */
+.dashboard-stat:active {
+  transform: scale(0.98);
+  transition-duration: 100ms;
+}
+
+.dashboard-stat:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
 }
 
 .dashboard-stat-top {
@@ -5089,6 +5232,42 @@ html {
   display: flex;
   justify-content: space-between;
   margin-bottom: 10px;
+}
+
+/* The named destination. Present at rest so the tile reads as clickable
+   without hovering - hover only firms it up. */
+.dashboard-stat-action {
+  align-items: center;
+  /* --ink-mute lands near 3.3:1 on this surface, which 12px text cannot
+     carry. --ink-soft is the same idea one step darker. */
+  color: var(--ink-soft);
+  display: flex;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 5px;
+  margin-top: 12px;
+  transition: color 160ms var(--ease-out);
+}
+
+.dashboard-stat-action svg {
+  height: 13px;
+  transition: transform 160ms var(--ease-out);
+  width: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-stat,
+  .dashboard-stat-action svg,
+  .segmented-option {
+    transition-property: background-color, border-color, color;
+  }
+
+  .dashboard-stat:hover,
+  .dashboard-stat:active,
+  .segmented-option:active,
+  .dashboard-stat:hover .dashboard-stat-action svg {
+    transform: none;
+  }
 }
 
 .dashboard-stat-top small {
@@ -5102,17 +5281,22 @@ html {
   background: var(--paper);
   border: 1px solid var(--line-soft);
   border-radius: 10px;
+  color: var(--ink-soft);
   display: inline-flex;
-  font-size: 14px;
   height: 32px;
   justify-content: center;
   width: 32px;
 }
 
+.dashboard-stat-icon svg {
+  height: 16px;
+  width: 16px;
+}
+
 .dashboard-stat-icon.alert {
   background: color-mix(in srgb, var(--coral) 12%, var(--paper));
   border-color: color-mix(in srgb, var(--coral) 35%, transparent);
-  color: #b3410a;
+  color: var(--ss-amber-deep, #a96608);
 }
 
 .dashboard-stat-icon.muted {
@@ -5120,13 +5304,17 @@ html {
 }
 
 .dashboard-stat strong {
+  display: block;
   font-size: 34px;
+  font-weight: 450;
+  /* Large numerals read too loose at default tracking. */
+  letter-spacing: -0.02em;
   line-height: 1.05;
 }
 
 .dashboard-stat-caption {
   color: var(--ink-soft);
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 /* Header settings + log out */
@@ -5162,16 +5350,17 @@ html {
 
 html.reveal-ready [data-reveal] {
   opacity: 0;
-  transform: translateY(26px);
+  transform: translateY(14px);
   transition:
-    opacity 620ms cubic-bezier(0.19, 1, 0.22, 1) var(--reveal-delay, 0ms),
-    transform 620ms cubic-bezier(0.19, 1, 0.22, 1) var(--reveal-delay, 0ms);
+    opacity 420ms var(--ease-out) var(--reveal-delay, 0ms),
+    transform 420ms var(--ease-out) var(--reveal-delay, 0ms);
   will-change: opacity, transform;
 }
 
 html.reveal-ready [data-reveal].is-visible {
   opacity: 1;
   transform: none;
+  will-change: auto;
 }
 
 /* How-it-works steps behave like a live widget: the active card lifts, its
@@ -7348,7 +7537,7 @@ html.reveal-ready [data-reveal].is-visible {
   line-height: 1.05;
 }
 
-.account-section-heading h3 {
+.account-section-heading :is(h2, h3) {
   font-weight: 300;
   letter-spacing: -0.025em;
   line-height: 1.15;
@@ -7398,68 +7587,27 @@ html.reveal-ready [data-reveal].is-visible {
   max-width: 1440px;
 }
 
-.dashboard-map {
-  align-items: center;
-  background: var(--ink);
-  border-radius: 16px;
-  color: var(--white);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px;
-}
-
-.dashboard-map > span:first-child {
-  color: var(--lime);
-  flex: 0 0 auto;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  padding: 0 8px 0 4px;
-  text-transform: uppercase;
-}
-
-.dashboard-map a,
-.dashboard-map button {
-  background: transparent;
-  border: 1px solid rgba(255, 253, 243, 0.25);
-  border-radius: 999px;
-  color: var(--white);
-  font-size: 12px;
-  font-weight: 600;
-  min-height: 36px;
-  padding: 0 13px;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
-}
-
-.dashboard-map a:hover,
-.dashboard-map button:hover {
-  background: rgba(255, 253, 243, 0.12);
-  border-color: rgba(255, 253, 243, 0.6);
-  transform: translateY(-1px);
-}
-
-.dashboard-map-note {
-  color: rgba(255, 253, 243, 0.66);
-  font-size: 11px;
-  margin-left: auto;
-  padding: 0 8px;
-}
-
 .dashboard-work-sections {
   display: grid;
   gap: clamp(38px, 5vw, 68px);
 }
 
 .dashboard-work-section {
-  scroll-margin-top: 28px;
+  /*
+   * The site header is sticky and translucent, so a jump that stops 28px from
+   * the top parked the section heading underneath it. The tiles now navigate
+   * here, which turned a cosmetic offset into the thing you land on.
+   */
+  scroll-margin-top: calc(
+    var(--ss-header-height, 76px) + env(safe-area-inset-top, 0px) + 16px
+  );
 }
 
 .dashboard-work-section .account-section-heading {
   align-items: end;
 }
 
-.dashboard-work-section .account-section-heading h3 {
+.dashboard-work-section .account-section-heading :is(h2, h3) {
   max-width: 620px;
 }
 
@@ -7534,12 +7682,6 @@ html.reveal-ready [data-reveal].is-visible {
 }
 
 @media (max-width: 820px) {
-  .dashboard-map-note {
-    flex-basis: 100%;
-    margin-left: 0;
-    padding: 4px 8px 0;
-  }
-
   .profile-action-panel {
     align-items: start;
     grid-template-columns: 1fr;
@@ -7553,17 +7695,6 @@ html.reveal-ready [data-reveal].is-visible {
 @media (max-width: 620px) {
   .dashboard-work-section .account-section-heading {
     align-items: start;
-  }
-
-  .dashboard-map > span:first-child {
-    flex-basis: 100%;
-    padding: 2px 8px 4px;
-  }
-
-  .dashboard-map a,
-  .dashboard-map button {
-    flex: 1 1 auto;
-    text-align: center;
   }
 
   .profile-section-nav .profile-dashboard-link {
@@ -10119,12 +10250,6 @@ html.reveal-ready [data-reveal].is-visible {
   padding-bottom: 4px;
 }
 
-.dashboard-workspace {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
-}
-
 .dashboard-panel {
   background: color-mix(in srgb, var(--white) 72%, var(--paper));
   border: 1px solid var(--line);
@@ -10147,7 +10272,7 @@ html.reveal-ready [data-reveal].is-visible {
 
 .dashboard-panel-heading h2 {
   font-size: clamp(22px, 2.4vw, 30px);
-  letter-spacing: -0.045em;
+  letter-spacing: -0.025em;
   margin: 4px 0;
 }
 
@@ -10191,136 +10316,16 @@ html.reveal-ready [data-reveal].is-visible {
   max-width: 52ch;
 }
 
-.dashboard-listing-list,
-.dashboard-request-list {
-  display: grid;
-  gap: 8px;
-}
-
-.dashboard-listing-row,
-.dashboard-request-row {
-  align-items: center;
-  background: var(--paper);
-  border: 1px solid var(--line-soft);
-  border-radius: 13px;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: 52px minmax(0, 1fr) auto;
-  padding: 9px;
-}
-
-.dashboard-listing-row > img,
-.dashboard-listing-row > .listing-cover-blank {
-  aspect-ratio: 1;
-  border-radius: 9px;
-  object-fit: cover;
-  width: 52px;
-}
-
-.dashboard-listing-copy,
-.dashboard-request-copy {
-  min-width: 0;
-}
-
-.dashboard-listing-copy > div,
-.dashboard-request-copy > div {
-  align-items: center;
-  display: flex;
-  gap: 7px;
-}
-
-.dashboard-listing-copy > div > small,
-.dashboard-request-copy > div > small {
-  color: var(--ink-soft);
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.04em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.dashboard-listing-copy > strong,
-.dashboard-request-copy > strong {
-  display: block;
-  font-size: 13px;
-  margin-top: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dashboard-listing-copy > p,
-.dashboard-request-copy > p {
-  color: var(--ink-soft);
-  font-size: 11px;
-  margin: 3px 0 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dashboard-request-row {
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  padding: 10px;
-}
-
-.dashboard-request-avatar {
-  align-items: center;
-  background: var(--paper-2);
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  display: inline-flex;
-  font-family: var(--mono);
-  font-size: 10px;
-  height: 34px;
-  justify-content: center;
-  width: 34px;
-}
-
-.dashboard-request-copy > div {
-  justify-content: space-between;
-}
-
-.dashboard-request-copy > div > b {
-  color: var(--coral);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.dashboard-row-actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: end;
-}
-
-.dashboard-row-actions button {
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  font-size: 10px;
-  padding: 7px 9px;
-  white-space: nowrap;
-}
-
-.dashboard-row-actions button:hover,
-.dashboard-row-actions .dashboard-row-primary {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--white);
-}
-
 .dashboard-text-action {
   background: none;
   border: 0;
   color: var(--ink-soft);
+  cursor: pointer;
   font-size: 11px;
   padding: 4px 0;
   text-decoration: underline;
   text-underline-offset: 3px;
+  transition: color 150ms var(--ease-out);
 }
 
 .dashboard-text-action:hover {
@@ -10581,10 +10586,6 @@ html.reveal-ready [data-reveal].is-visible {
 }
 
 @media (max-width: 900px) {
-  .dashboard-workspace {
-    grid-template-columns: 1fr;
-  }
-
   .preferences-grid,
   .preferences-input-grid {
     grid-template-columns: 1fr;
@@ -10607,26 +10608,6 @@ html.reveal-ready [data-reveal].is-visible {
 
   .onboarding-preview-heading > small {
     text-align: left;
-  }
-
-  .dashboard-listing-row {
-    grid-template-columns: 44px minmax(0, 1fr);
-  }
-
-  .dashboard-listing-row > img,
-  .dashboard-listing-row > .listing-cover-blank {
-    width: 44px;
-  }
-
-  .dashboard-listing-row .dashboard-row-actions,
-  .dashboard-request-row .dashboard-row-actions {
-    grid-column: 1 / -1;
-    justify-content: start;
-  }
-
-  .dashboard-request-row {
-    align-items: start;
-    grid-template-columns: 34px minmax(0, 1fr);
   }
 
   .ad-credit-panel {
@@ -10762,12 +10743,15 @@ html.reveal-ready [data-reveal].is-visible {
   .dashboard-stat strong {
     font-size: 24px;
   }
+
+  .dashboard-stat-action {
+    margin-top: 8px;
+  }
 }
 
 @media (hover: none) {
   .listing-card:hover,
   .person-card:hover,
-  .dashboard-path:hover,
   .listing-preview:hover .listing-image img,
   .ss-listing-preview:hover .ss-listing-preview-image img {
     transform: none;
@@ -10785,17 +10769,15 @@ html.reveal-ready [data-reveal].is-visible {
 }
 
 /* Delete, wherever you meet your own listing: quiet until hovered, then
-   unmistakable. The same treatment on the account card, the dashboard row and
-   the listing page, so it reads as one control in three places. */
+   unmistakable. The same treatment on the account card and the listing page,
+   so it reads as one control in both places. */
 .my-listing-actions button.is-danger,
-.dashboard-row-actions button.is-danger,
 .detail-owner-actions .button.is-danger {
   border-color: rgba(212, 61, 0, 0.45);
   color: #d43d00;
 }
 
 .my-listing-actions button.is-danger:hover,
-.dashboard-row-actions button.is-danger:hover,
 .detail-owner-actions .button.is-danger:hover {
   background: #d43d00;
   border-color: #d43d00;
@@ -10870,15 +10852,6 @@ html.reveal-ready [data-reveal].is-visible {
 }
 
 /* Calendar booking: calm, direct actions with consistent optical alignment. */
-.dashboard-map a,
-.dashboard-map button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  text-align: center;
-  text-decoration: none;
-}
 .detail-action-option .button,
 .detail-primary-actions .button,
 .instant-booking-summary > .button {
@@ -10940,9 +10913,7 @@ html.reveal-ready [data-reveal].is-visible {
 }
 .availability-calendar-grid button[aria-pressed="true"] { background: var(--ink); color: var(--lime); }
 .availability-calendar button:disabled { background: transparent; color: #a3a69d; cursor: default; opacity: 0.6; }
-.availability-calendar button:focus-visible,
-.dashboard-map a:focus-visible,
-.dashboard-map button:focus-visible { outline: 2px solid var(--coral); outline-offset: 3px; }
+.availability-calendar button:focus-visible { outline: 2px solid var(--coral); outline-offset: 3px; }
 .availability-calendar-shortcuts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .availability-calendar-shortcuts button { background: transparent; border: 1px solid var(--line, #dcdccf); border-radius: 999px; padding: 8px 12px; min-height: 36px; font-size: 11px; }
 .calendar-legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: #6d7068; }
@@ -10974,8 +10945,8 @@ html.reveal-ready [data-reveal].is-visible {
   .instant-booking-heading h3 { font-size: 21px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .availability-calendar button, .dashboard-map a, .dashboard-map button { transition: none; }
-  .availability-calendar button:active, .dashboard-map a:hover, .dashboard-map button:hover { transform: none; }
+  .availability-calendar button { transition: none; }
+  .availability-calendar button:active { transform: none; }
 }
 @media (min-width: 901px) {
   .detail-media { align-self: start; position: sticky; top: 0; }
@@ -12024,4 +11995,11 @@ label:has(.city-autocomplete-list),
   .listing-figures {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* Inside the analytics section the tiles are readouts, not the way in: the
+   summary tiles above them navigate, these only report. Same shape so a number
+   means the same thing everywhere, minus the affordance. */
+.dashboard-stat.dashboard-stat-readout {
+  cursor: default;
 }

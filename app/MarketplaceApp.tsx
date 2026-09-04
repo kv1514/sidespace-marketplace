@@ -5082,6 +5082,42 @@ function OnboardingPreviewCards({
   );
 }
 
+/**
+ * The dashboard stat icons.
+ *
+ * Drawn on the same 16px grid at the same 1.5 stroke as the arrow in the
+ * tile's action row, so a tile reads as one drawing rather than a font
+ * character next to an SVG.
+ */
+const DASHBOARD_STAT_ICONS = {
+  listings: "M2.75 4.5h10.5M2.75 8h10.5M2.75 11.5h6.5",
+  incoming: "M8 2.75v6.5M5.25 6.5 8 9.25l2.75-2.75M2.75 11.25v1a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1v-1",
+  outgoing: "M8 13.25v-6.5M5.25 9.5 8 6.75l2.75 2.75M2.75 4.75v-1a1 1 0 0 1 1-1h8.5a1 1 0 0 1 1 1v1",
+  messages: "M13.25 8.5c0 2.6-2.35 4.75-5.25 4.75a6 6 0 0 1-1.9-.3l-3.35 1 1-2.75A4.5 4.5 0 0 1 2.75 8.5c0-2.6 2.35-4.75 5.25-4.75s5.25 2.15 5.25 4.75Z",
+  payments: "M2.75 6.25h10.5M3.75 3.75h8.5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-8.5a1 1 0 0 1-1-1v-6.5a1 1 0 0 1 1-1ZM5 9.75h2",
+  analytics: "M3 13V9.5M6.33 13V6M9.67 13V8.25M13 13V3.5",
+  likes: "M8 13.25S2.75 9.9 2.75 6.2a2.7 2.7 0 0 1 5.25-.9 2.7 2.7 0 0 1 5.25.9c0 3.7-5.25 7.05-5.25 7.05Z",
+} as const;
+
+function DashboardStatIcon({
+  name,
+}: {
+  name: keyof typeof DASHBOARD_STAT_ICONS;
+}) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        d={DASHBOARD_STAT_ICONS[name]}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function MarketplaceApp({
   initialProfiles = null,
   initialListings = null,
@@ -5504,6 +5540,16 @@ export default function MarketplaceApp({
   const [activeContact, setActiveContact] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [campaignRequests, setCampaignRequests] = useState<CampaignRequest[]>([]);
+  /**
+   * Which side of the offer table the campaigns section is showing.
+   *
+   * The dashboard stat tiles count incoming and outgoing offers separately, so
+   * they need to land somewhere that shows that side alone - otherwise both
+   * tiles scroll to the same undifferentiated list and the count you clicked
+   * is nowhere on screen.
+   */
+  const [campaignSide, setCampaignSide] =
+    useState<"all" | "incoming" | "outgoing">("all");
   const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransaction[]>([]);
   const [adCreditBalanceCents, setAdCreditBalanceCents] = useState(0);
   const [creatorPortfolio, setCreatorPortfolio] = useState<CreatorPortfolioItem[]>([]);
@@ -6612,9 +6658,23 @@ export default function MarketplaceApp({
     document.documentElement.classList.add("reveal-ready");
     const observer = new IntersectionObserver(
       (entries) => {
+        // Elements that cross the line in the same callback are one group, so
+        // they get a short stagger and arrive as a sequence rather than a
+        // single slab. `--reveal-delay` had been read by the stylesheet and
+        // never written by anything, which is why every reveal until now
+        // fired in unison.
+        let inBatch = 0;
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            entry.target.classList.add("is-visible");
+            const element = entry.target as HTMLElement;
+            if (inBatch > 0) {
+              element.style.setProperty(
+                "--reveal-delay",
+                `${Math.min(inBatch, 4) * 55}ms`,
+              );
+            }
+            inBatch += 1;
+            element.classList.add("is-visible");
             observer.unobserve(entry.target);
           }
         });
@@ -6631,7 +6691,7 @@ export default function MarketplaceApp({
       window.clearTimeout(failsafe);
       observer.disconnect();
     };
-  }, [listings, user, profile]);
+  }, [listings, user, profile, paymentTransactions.length]);
 
   // The cycle used to start on mount and never stop, so by the time anyone
   // scrolled this far the band was mid-story - you would arrive at step 02 or
@@ -7985,6 +8045,17 @@ export default function MarketplaceApp({
       onboardingMode === "edit" || onboardingStep === 2;
     return missingAnswers().length === 0 &&
       (!identityStepVisible || !avatarCropPending);
+  }
+
+  /**
+   * Keep short onboarding slides quiet until their answers are complete. A
+   * visible early action is useful when there are several required details to
+   * work through, but it adds noise to a one- or two-answer slide.
+   */
+  function shouldShowOnboardingPrimaryAction() {
+    return (
+      isCurrentOnboardingStepComplete() || missingAnswers().length > 2
+    );
   }
 
   /** What the current slide blocks on: the first thing missing, or nothing. */
@@ -11085,6 +11156,26 @@ export default function MarketplaceApp({
     });
   }
 
+  /**
+   * Move the page to a dashboard section and leave the keyboard there too.
+   *
+   * `scrollIntoView` alone moves the viewport but not focus, so a keyboard or
+   * screen-reader user who activates one of these lands visually on the
+   * section while their next Tab continues from the control they left. The
+   * `tabindex="-1"` on the section headers makes it focusable without adding
+   * it to the tab order.
+   */
+  function goToDashboardSection(id: string) {
+    const target = document.getElementById(id);
+    if (!target) return;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({
+      behavior: still ? "auto" : "smooth",
+      block: "start",
+    });
+    target.focus({ preventScroll: true });
+  }
+
   // The inbox is a full-screen overlay but was the one surface not built on
   // Modal, so it had no dialog role, no focus entry, no Escape and no focus
   // trap: a keyboard user who opened Messages had to tab through the whole
@@ -11247,6 +11338,18 @@ export default function MarketplaceApp({
     if (unreadCount) {
       parts.push(`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`);
     }
+    // A listing with gaps is sorted below complete ones and says so on its own
+    // card. Leaving it out of the status line meant the dashboard could open
+    // with "nothing needs your attention" directly above a listing telling the
+    // member it needs a longer title.
+    const unfinished = ownListings.filter(
+      (listing) => listingGaps(listing).length > 0,
+    ).length;
+    if (unfinished) {
+      parts.push(
+        `${unfinished} listing${unfinished === 1 ? "" : "s"} to finish`,
+      );
+    }
     if (parts.length) return `You have ${parts.join(" and ")}.`;
     if (profile.role !== "consumer" && !ownListings.length) {
       return "Nothing is listed yet. Add your first space or audience to start getting requests.";
@@ -11319,6 +11422,8 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-analytics"
+        aria-label="Analytics"
+        tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
@@ -11335,43 +11440,54 @@ export default function MarketplaceApp({
         {anything ? (
           <>
             <div className="dashboard-grid">
-              <div className="dashboard-stat">
-                <div className="dashboard-stat-top">
-                  <span className="dashboard-stat-icon">◉</span>
-                </div>
+              <div className="dashboard-stat dashboard-stat-readout">
+                <span className="dashboard-stat-top">
+                  <small>Seen by</small>
+                  <span className="dashboard-stat-icon">
+                    <DashboardStatIcon name="analytics" />
+                  </span>
+                </span>
                 <strong>{compactNumber(totals.impressions)}</strong>
                 <span className="dashboard-stat-caption">
-                  {totals.impressions === 1 ? "person saw" : "people saw"} your listings
+                  {totals.impressions === 1 ? "person" : "people"}
                   {totals.impressions7d
                     ? ` · ${compactNumber(totals.impressions7d)} this week`
                     : ""}
                 </span>
               </div>
-              <div className="dashboard-stat">
-                <div className="dashboard-stat-top">
-                  <span className="dashboard-stat-icon">→</span>
-                </div>
+              <div className="dashboard-stat dashboard-stat-readout">
+                <span className="dashboard-stat-top">
+                  <small>Opened</small>
+                  <span className="dashboard-stat-icon">
+                    <DashboardStatIcon name="outgoing" />
+                  </span>
+                </span>
                 <strong>{compactNumber(totals.clicks)}</strong>
                 <span className="dashboard-stat-caption">
-                  opened one
                   {totals.impressions
-                    ? ` · ${Math.round((totals.clicks / totals.impressions) * 100)}% of those who saw`
-                    : ""}
+                    ? `${Math.round((totals.clicks / totals.impressions) * 100)}% of those who saw`
+                    : "Nobody yet"}
                 </span>
               </div>
-              <div className="dashboard-stat">
-                <div className="dashboard-stat-top">
-                  <span className="dashboard-stat-icon">♥</span>
-                </div>
+              <div className="dashboard-stat dashboard-stat-readout">
+                <span className="dashboard-stat-top">
+                  <small>Likes</small>
+                  <span className="dashboard-stat-icon">
+                    <DashboardStatIcon name="likes" />
+                  </span>
+                </span>
                 <strong>{compactNumber(totals.likes)}</strong>
                 <span className="dashboard-stat-caption">
-                  {totals.likes === 1 ? "like" : "likes"}
+                  {totals.likes === 1 ? "member" : "members"} liked one
                 </span>
               </div>
-              <div className="dashboard-stat">
-                <div className="dashboard-stat-top">
-                  <span className="dashboard-stat-icon">✉</span>
-                </div>
+              <div className="dashboard-stat dashboard-stat-readout">
+                <span className="dashboard-stat-top">
+                  <small>Offers</small>
+                  <span className="dashboard-stat-icon">
+                    <DashboardStatIcon name="incoming" />
+                  </span>
+                </span>
                 <strong>{compactNumber(totals.offers)}</strong>
                 <span className="dashboard-stat-caption">
                   {totals.offers === 1 ? "offer" : "offers"} received
@@ -11402,12 +11518,14 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-listings-all"
+        aria-label="Listings"
+        tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
             <p className="eyebrow">Listings</p>
-            <h3>Manage what you have published.</h3>
+            <h2>Manage what you have published.</h2>
             <p className="account-section-lede">
               Keep your audience, placement, or sponsorship offer clear and bookable.
             </p>
@@ -11493,26 +11611,61 @@ export default function MarketplaceApp({
 
   function renderDashboardCampaigns() {
     if (!profile) return null;
+    const sides = [
+      { key: "all" as const, label: "All" },
+      { key: "incoming" as const, label: "To you" },
+      { key: "outgoing" as const, label: "You sent" },
+    ];
+    const sideCount = (key: (typeof sides)[number]["key"]) =>
+      campaignRequests.filter((request) =>
+        key === "all"
+          ? true
+          : key === "incoming"
+            ? request.owner_profile_id === profile.id
+            : request.requester_profile_id === profile.id,
+      ).length;
+    const visibleRequests = campaignRequests.filter((request) =>
+      campaignSide === "all"
+        ? true
+        : campaignSide === "incoming"
+          ? request.owner_profile_id === profile.id
+          : request.requester_profile_id === profile.id,
+    );
     return (
       <section
         className="account-section dashboard-work-section"
         id="dashboard-campaigns-all"
+        aria-label="Offers and bookings"
+        tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
             <p className="eyebrow">Offers &amp; bookings</p>
-            <h3>Review every offer and next step.</h3>
+            <h2>Review every offer and next step.</h2>
             <p className="account-section-lede">
               Accept, counter, pay, and keep active work moving from one place.
             </p>
           </div>
-          <span className="section-count">{campaignRequests.length} total</span>
+          <div className="segmented" role="group" aria-label="Filter offers">
+            {sides.map((side) => (
+              <button
+                key={side.key}
+                type="button"
+                className="segmented-option"
+                aria-pressed={campaignSide === side.key}
+                onClick={() => setCampaignSide(side.key)}
+              >
+                {side.label}
+                <b>{sideCount(side.key)}</b>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {campaignRequests.length ? (
+        {visibleRequests.length ? (
           <div className="campaign-request-list">
-            {campaignRequests.map((request) => {
+            {visibleRequests.map((request) => {
               const incoming = request.owner_profile_id === profile.id;
               const other = incoming ? request.requester : request.owner;
               const payment = paymentTransactions.find(
@@ -11722,6 +11875,25 @@ export default function MarketplaceApp({
               );
             })}
           </div>
+        ) : campaignRequests.length ? (
+          <div className="account-empty">
+            <strong>
+              {campaignSide === "incoming"
+                ? "No offers waiting on you."
+                : "You have not sent any offers."}
+            </strong>
+            <p>
+              You have {campaignRequests.length} on the other side of this
+              filter.
+            </p>
+            <button
+              className="button button-ghost button-small"
+              type="button"
+              onClick={() => setCampaignSide("all")}
+            >
+              Show all offers <span>→</span>
+            </button>
+          </div>
         ) : (
           <div className="account-empty">
             <strong>No offers or bookings yet.</strong>
@@ -11741,12 +11913,14 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-payments"
+        aria-label="Payments"
+        tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
             <p className="eyebrow">Payments</p>
-            <h3>Track money in motion.</h3>
+            <h2>Track money in motion.</h2>
             <p className="account-section-lede">
               Payment, delivery, review, refund, and payout status stay together here.
             </p>
@@ -11989,7 +12163,12 @@ export default function MarketplaceApp({
       />
 
       {route === "dashboard" && (loading || (user && !profile && !profileChecked) ? (
-        <section className="dashboard" aria-label="Loading your dashboard">
+        <section
+          className="dashboard"
+          id="main-content"
+          tabIndex={-1}
+          aria-label="Loading your dashboard"
+        >
           <div className="dashboard-head">
             <div>
               <p className="eyebrow">Your dashboard</p>
@@ -12001,71 +12180,87 @@ export default function MarketplaceApp({
           </div>
         </section>
       ) : user && profile ? (
-        <section className="dashboard" aria-label="Your SideSpace dashboard">
+        <section
+          className="dashboard"
+          id="main-content"
+          tabIndex={-1}
+          aria-label="Your SideSpace dashboard"
+        >
           <div className="dashboard-head">
             <div>
               <p className="eyebrow">{rolesLabel(profile)} · {profile.city || "Add your city"}</p>
               <h1 className="dashboard-title">
-                {greeting()},{" "}
-                <em>{profile.display_name.split(" ")[0] || "there"}.</em>
+                <em>{greeting()},</em>{" "}
+                {profile.display_name.split(" ")[0] || "there"}.
               </h1>
               <p className="dashboard-sub">{dashboardStatus()}</p>
             </div>
+            {/*
+              * Messages and Profile both live in the sticky site header, which
+              * is on screen at every scroll position and already carries the
+              * unread badge. Repeating them here gave the same number three
+              * formats within one viewport. Only the action you cannot start
+              * from the header stays.
+              */}
             <div className="dashboard-actions">
               {profile.role !== "consumer" && (
                 <button className="button button-dark" onClick={openListingEditor}>
-                  New listing <span>＋</span>
+                  New listing
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path
+                      d="M8 3.5v9M3.5 8h9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
                 </button>
               )}
-              <button className="button button-ghost" onClick={openInbox}>
-                Messages
-                {unreadCount > 0 ? ` (${unreadCount})` : ""} <span>→</span>
-              </button>
-              <button
-                className="button button-ghost"
-                onClick={openAccountPanel}
-              >
-                Profile <span>↗</span>
-              </button>
             </div>
           </div>
 
-          <nav className="dashboard-map" aria-label="Dashboard areas">
-            <span>Work lives here</span>
-            <a href="#dashboard-analytics">Analytics</a>
-            <a href="#dashboard-listings-all">Listings</a>
-            <a href="#dashboard-campaigns-all">Campaigns</a>
-            {paymentTransactions.length > 0 && (
-              <a href="#dashboard-payments">Payments</a>
-            )}
-            <button type="button" onClick={openInbox}>
-              Messages{unreadCount > 0 ? ` · ${unreadCount} new` : ""}
-            </button>
-            <span className="dashboard-map-note">
-              Profile holds your public details and settings.
-            </span>
-          </nav>
-
-          <div className="dashboard-paths" data-reveal>
-            <a
-              className="dashboard-path"
-              href="/marketplace?role=business"
-            >
-              <span>I&rsquo;m a creator or host</span>
-              <strong>Find business briefs</strong>
-              <p>See local campaigns that need your audience or space.</p>
-              <b>Browse briefs →</b>
-            </a>
-            <a
-              className="dashboard-path"
-              href="/marketplace?role=supply"
-            >
-              <span>I&rsquo;m a business</span>
-              <strong>Book local reach</strong>
-              <p>Choose a creator or space, pick an open date, and check out.</p>
-              <b>Browse creators and spaces →</b>
-            </a>
-          </div>
+          {(() => {
+            const supplyPath = (
+              <a
+                className="dashboard-path"
+                href="/marketplace?role=business"
+                key="supply"
+              >
+                <span>I&rsquo;m a creator or host</span>
+                <strong>Find business briefs</strong>
+                <p>See local campaigns that need your audience or space.</p>
+                <b>Browse briefs →</b>
+              </a>
+            );
+            const demandPath = (
+              <a
+                className="dashboard-path"
+                href="/marketplace?role=supply"
+                key="demand"
+              >
+                <span>I&rsquo;m a business</span>
+                <strong>Book local reach</strong>
+                <p>Choose a creator or space, pick an open date, and check out.</p>
+                <b>Browse creators and spaces →</b>
+              </a>
+            );
+            // Both stay: a creator books other creators often enough that
+            // hiding one would be wrong. But leading with the side the member
+            // is not on made half the biggest block on the page address
+            // somebody else.
+            const ownSideFirst =
+              profileHasRole(profile, "creator") ||
+              profileHasRole(profile, "space_owner") ||
+              profileHasRole(profile, "sponsor_host");
+            return (
+              <div className="dashboard-paths" data-reveal>
+                {ownSideFirst
+                  ? [supplyPath, demandPath]
+                  : [demandPath, supplyPath]}
+              </div>
+            );
+          })()}
 
           <div className="dashboard-grid">
             {(() => {
@@ -12086,49 +12281,123 @@ export default function MarketplaceApp({
                   (request.status === "pending" ||
                     request.status === "countered"),
               ).length;
-              const cards = [
+              // Every tile is a way in, not a readout. A number with nowhere
+              // to click is the thing that made this dashboard feel inert:
+              // you could see that three people were waiting on you and still
+              // had to go hunting for them.
+              const cards: Array<{
+                label: string;
+                value: number;
+                caption: string;
+                icon: keyof typeof DASHBOARD_STAT_ICONS;
+                tone: string;
+                action: string;
+                go: () => void;
+              }> = [
                 {
                   label: "Live listings",
                   value: active,
                   caption: paused
                     ? `${paused} paused`
                     : "Visible in the marketplace",
-                  icon: "▤",
+                  icon: "listings" as const,
                   tone: active ? "" : "muted",
+                  action: "Manage listings",
+                  go: () => goToDashboardSection("dashboard-listings-all"),
                 },
                 {
                   label: "Offers to you",
                   value: incoming,
                   caption: incoming ? "Waiting on your reply" : "Nothing pending",
-                  icon: "✉",
+                  icon: "incoming" as const,
                   tone: incoming ? "alert" : "muted",
+                  action: "Review offers",
+                  go: () => {
+                    setCampaignSide("incoming");
+                    goToDashboardSection("dashboard-campaigns-all");
+                  },
                 },
                 {
                   label: "Offers you sent",
                   value: outgoing,
                   caption: outgoing ? "Awaiting a reply" : "None open",
-                  icon: "↗",
-                  tone: "muted",
+                  icon: "outgoing" as const,
+                  tone: outgoing ? "" : "muted",
+                  action: "Track your offers",
+                  go: () => {
+                    setCampaignSide("outgoing");
+                    goToDashboardSection("dashboard-campaigns-all");
+                  },
                 },
                 {
                   label: "Unread messages",
                   value: unreadCount,
                   caption: unreadCount ? "In your inbox" : "All caught up",
-                  icon: "◍",
+                  icon: "messages" as const,
                   tone: unreadCount ? "alert" : "muted",
+                  action: "Open inbox",
+                  go: openInbox,
                 },
               ];
+              if (ownListings.length) {
+                const reached = listingAnalytics.reduce(
+                  (sum, row) => sum + row.impressions,
+                  0,
+                );
+                cards.push({
+                  label: "People reached",
+                  value: reached,
+                  caption: reached ? "Across your listings" : "Counting from now",
+                  icon: "analytics" as const,
+                  tone: reached ? "" : "muted",
+                  action: "See analytics",
+                  go: () => goToDashboardSection("dashboard-analytics"),
+                });
+              }
+              if (paymentTransactions.length) {
+                cards.push({
+                  label: "Payments",
+                  value: paymentTransactions.length,
+                  caption: "Money in motion",
+                  icon: "payments" as const,
+                  tone: "muted",
+                  action: "See payment status",
+                  go: () => goToDashboardSection("dashboard-payments"),
+                });
+              }
               return cards.map((card) => (
-                <div className="dashboard-stat" data-reveal key={card.label}>
-                  <div className="dashboard-stat-top">
+                <button
+                  className="dashboard-stat"
+                  type="button"
+                  key={card.label}
+                  onClick={card.go}
+                >
+                  <span className="dashboard-stat-top">
                     <small>{card.label}</small>
                     <span className={`dashboard-stat-icon ${card.tone}`}>
-                      {card.icon}
+                      <DashboardStatIcon name={card.icon} />
                     </span>
-                  </div>
+                  </span>
                   <strong>{card.value}</strong>
                   <span className="dashboard-stat-caption">{card.caption}</span>
-                </div>
+                  <span className="dashboard-stat-action">
+                    {card.action}
+                    <svg
+                      viewBox="0 0 16 16"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </button>
               ));
             })()}
           </div>
@@ -12155,226 +12424,6 @@ export default function MarketplaceApp({
             }}
             renderDialog={(content, close) => <Modal label="Your balance" onClose={close}>{content}</Modal>}
           />
-
-          <div className="dashboard-workspace">
-            <section
-              className="dashboard-panel dashboard-inventory-panel"
-              id="dashboard-listings"
-              data-reveal
-            >
-              <header className="dashboard-panel-heading">
-                <div>
-                  <p className="eyebrow">Your inventory</p>
-                  <h2>What people can book.</h2>
-                  <p>Keep your live offers clear, current, and easy to reach.</p>
-                </div>
-                {profile.role !== "consumer" && (
-                  <button
-                    className="button button-dark button-small"
-                    onClick={openListingEditor}
-                  >
-                    New listing <span>＋</span>
-                  </button>
-                )}
-              </header>
-              {ownListingsLoading ? (
-                <div className="dashboard-panel-empty">Loading your listings…</div>
-              ) : ownListings.length ? (
-                <div className="dashboard-listing-list">
-                  {ownListings.slice(0, 4).map((listing) => (
-                    <article className="dashboard-listing-row" key={listing.id}>
-                      <ListingCover listing={listing} />
-                      <div className="dashboard-listing-copy">
-                        <div>
-                          <span
-                            className={
-                              "listing-status status-" + listing.status
-                            }
-                          >
-                            {listing.status}
-                          </span>
-                          <small>{listing.channel}</small>
-                        </div>
-                        <strong>{listing.title}</strong>
-                        <p>
-                          {priceLabel(listing)} / {pricingLabel(listing)}
-                        </p>
-                      </div>
-                      <div className="dashboard-row-actions">
-                        <button onClick={() => openListing(listing)}>View</button>
-                        <button onClick={() => openListingEdit(listing)}>Edit</button>
-                        <button
-                          className="is-danger"
-                          disabled={busy}
-                          onClick={() => setDeleteListingTarget(listing)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                  {ownListings.length > 4 && (
-                    <button
-                      className="dashboard-text-action"
-                      onClick={() =>
-                        document
-                          .getElementById("dashboard-listings-all")
-                          ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                      }
-                    >
-                      View all {ownListings.length} listings →
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="dashboard-panel-empty">
-                  <strong>Your first listing belongs here.</strong>
-                  <p>Put your audience, space, or campaign brief in front of the marketplace.</p>
-                  {profile.role !== "consumer" && (
-                    <button
-                      className="button button-coral button-small"
-                      onClick={openListingEditor}
-                    >
-                      Create a listing <span>↗</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </section>
-
-            <section
-              className="dashboard-panel dashboard-campaigns-panel"
-              id="dashboard-campaigns"
-              data-reveal
-            >
-              {(() => {
-                const activeRequests = campaignRequests
-                  .filter((request) =>
-                    ["pending", "countered", "accepted", "confirmed"].includes(
-                      request.status,
-                    ),
-                  )
-                  .slice(0, 4);
-                return (
-                  <>
-                    <header className="dashboard-panel-heading">
-                      <div>
-                        <p className="eyebrow">Campaigns</p>
-                        <h2>Work in motion.</h2>
-                        <p>Offers, bookings, replies, and next actions in one place.</p>
-                      </div>
-                      <button
-                        className="dashboard-text-action"
-                        onClick={() =>
-                          document
-                            .getElementById("dashboard-campaigns-all")
-                            ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                        }
-                      >
-                        View all →
-                      </button>
-                    </header>
-                    {activeRequests.length ? (
-                      <div className="dashboard-request-list">
-                        {activeRequests.map((request) => {
-                          const incoming =
-                            request.owner_profile_id === profile.id;
-                          const other = incoming
-                            ? request.requester
-                            : request.owner;
-                          return (
-                            <article
-                              className="dashboard-request-row"
-                              key={request.id}
-                            >
-                              <span className="dashboard-request-avatar">
-                                {initials(other.display_name)}
-                              </span>
-                              <div className="dashboard-request-copy">
-                                <div>
-                                  <small>
-                                    {incoming ? "Incoming" : "You sent"} ·{" "}
-                                    {request.instant_booking
-                                      ? "Instant booking · "
-                                      : request.purchase_mode === "buy_now"
-                                      ? "Book as listed · "
-                                      : "Offer · "}
-                                    {request.status}
-                                  </small>
-                                  <b>{formatCents(request.budget_cents)}</b>
-                                </div>
-                                <strong>{request.campaign_name}</strong>
-                                <small>{bookingDateLabel(request.timing_kind,request.start_date,request.end_date)}</small>
-                                <p>
-                                  {request.listing?.title ?? "Listing"} ·{" "}
-                                  {other.display_name}
-                                </p>
-                              </div>
-                              <div className="dashboard-row-actions">
-                                {incoming && request.status === "pending" && (
-                                  <button
-                                    className="dashboard-row-primary"
-                                    disabled={busy}
-                                    onClick={() =>
-                                      void respondToCampaignRequest(
-                                        request,
-                                        "accepted",
-                                      )
-                                    }
-                                  >
-                                    Accept
-                                  </button>
-                                )}
-                                {incoming &&
-                                  request.purchase_mode !== "buy_now" &&
-                                  ["pending", "countered"].includes(
-                                    request.status,
-                                  ) && (
-                                    <button
-                                      onClick={() => setCounteringRequest(request)}
-                                    >
-                                      Counteroffer
-                                    </button>
-                                  )}
-                                {!incoming && request.status === "countered" && (
-                                  <button
-                                    className="dashboard-row-primary"
-                                    disabled={busy}
-                                    onClick={() =>
-                                      void respondToCampaignRequest(
-                                        request,
-                                        "accepted",
-                                      )
-                                    }
-                                  >
-                                    Accept counter
-                                  </button>
-                                )}
-                              </div>
-                            </article>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="dashboard-panel-empty">
-                        <strong>No active campaigns yet.</strong>
-                        <p>
-                          Browse the marketplace, or publish an offer so the
-                          right partner can find you.
-                        </p>
-                        <a
-                          className="button button-ghost button-small"
-                          href="/marketplace"
-                        >
-                          Browse marketplace <span>↗</span>
-                        </a>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </section>
-          </div>
 
           {profile.role === "business" && (
             <section
@@ -12450,6 +12499,15 @@ export default function MarketplaceApp({
             </section>
           )}
 
+          {(() => {
+            const setUp =
+              profile.onboarding_complete && Boolean(profile.avatar_url);
+            const listed =
+              profile.role === "consumer" ? true : ownListings.length > 0;
+            // A finished checklist is not a record of achievement, it is a
+            // block of struck-through text where working controls used to be.
+            if (setUp && listed) return null;
+            return (
           <ol className="dashboard-checklist" data-reveal>
             <li className={profile.onboarding_complete ? "done" : ""}>
               <span>{profile.onboarding_complete ? "✓" : "1"}</span>
@@ -12523,6 +12581,8 @@ export default function MarketplaceApp({
               </li>
             )}
           </ol>
+            );
+          })()}
 
           <div className="dashboard-work-sections">
             {renderDashboardAnalytics()}
@@ -14453,6 +14513,11 @@ export default function MarketplaceApp({
                           setDescriptionTouched(false);
                           setAnswers(answersForNewRole);
                         }
+                        if (onboardingMode === "setup") {
+                          window.requestAnimationFrame(() =>
+                            goToOnboardingStep(2),
+                          );
+                        }
                       }}
                     >
                       <span>{roleCopy[role].icon}</span>
@@ -14659,54 +14724,56 @@ export default function MarketplaceApp({
                 </div>
                 )}
 
-                <>
-                <div
-                  className="onboarding-actions"
-                  data-ready={isCurrentOnboardingStepComplete() ? "true" : "false"}
-                >
-                  {onboardingMode === "setup" && onboardingStep === 2 ? (
-                    <button
-                      type="button"
-                      onClick={() => goToOnboardingStep(1)}
-                    >
-                      ← Back
-                    </button>
-                  ) : (
-                    <span />
-                  )}
-                  <span className="onboarding-primary-action-enter">
-                    <span
-                      className="onboarding-required-status"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {missingAnswers().length
-                        ? `${missingAnswers().length} required ${
-                            missingAnswers().length === 1
-                              ? "detail"
-                              : "details"
-                          } left`
-                        : "Ready to continue"}
-                    </span>
-                    <button
-                      type="button"
-                      className="button button-dark"
-                      onClick={advanceOnboarding}
-                    >
-                      {onboardingStep === 1
-                        ? onboardingMode === "edit"
-                          ? "Next: your details"
-                          : "Continue"
-                        : selectedRole === "business"
-                          ? "Continue"
-                          : selectedRole === "creator"
-                            ? "Next: what you have to advertise"
-                            : "Next"}{" "}
-                      <span>→</span>
-                    </button>
-                  </span>
-                </div>
-                </>
+                {(onboardingMode !== "setup" || onboardingStep !== 1) && (
+                  <div
+                    className="onboarding-actions"
+                    data-ready={isCurrentOnboardingStepComplete() ? "true" : "false"}
+                  >
+                    {onboardingMode === "setup" && onboardingStep === 2 ? (
+                      <button
+                        type="button"
+                        onClick={() => goToOnboardingStep(1)}
+                      >
+                        ← Back
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    {shouldShowOnboardingPrimaryAction() && (
+                      <span className="onboarding-primary-action-enter">
+                        <span
+                          className="onboarding-required-status"
+                          role="status"
+                          aria-live="polite"
+                        >
+                          {missingAnswers().length
+                            ? `${missingAnswers().length} required ${
+                                missingAnswers().length === 1
+                                  ? "detail"
+                                  : "details"
+                              } left`
+                            : "Ready to continue"}
+                        </span>
+                        <button
+                          type="button"
+                          className="button button-dark"
+                          onClick={advanceOnboarding}
+                        >
+                          {onboardingStep === 1
+                            ? onboardingMode === "edit"
+                              ? "Next: your details"
+                              : "Continue"
+                            : selectedRole === "business"
+                              ? "Continue"
+                              : selectedRole === "creator"
+                                ? "Next: what you have to advertise"
+                                : "Next"}{" "}
+                          <span>→</span>
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -14929,7 +14996,6 @@ export default function MarketplaceApp({
                         {onboardingStep === 4 && answers.creatorOffer === "social" && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>Your first offer</span>
                           <h4>What does a brand actually get?</h4>
                         </div>
                         {/* Only when there are any: an empty flex row still
@@ -16708,59 +16774,61 @@ export default function MarketplaceApp({
                   >
                     ← Back
                   </button>
-                  <span className="onboarding-primary-action-enter">
-                    <span
-                      className="onboarding-required-status"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {missingAnswers().length
-                        ? `${missingAnswers().length} required ${
-                            missingAnswers().length === 1
-                              ? "detail"
-                              : "details"
-                          } left`
-                        : "Ready to continue"}
+                  {shouldShowOnboardingPrimaryAction() && (
+                    <span className="onboarding-primary-action-enter">
+                      <span
+                        className="onboarding-required-status"
+                        role="status"
+                        aria-live="polite"
+                      >
+                        {missingAnswers().length
+                          ? `${missingAnswers().length} required ${
+                              missingAnswers().length === 1
+                                ? "detail"
+                                : "details"
+                            } left`
+                          : "Ready to continue"}
+                      </span>
+                      {onboardingMode === "setup" &&
+                      (onboardingStep < 5 || Boolean(nextSelectedCreatorOffer())) ? (
+                        <button
+                          type="button"
+                          className="button button-dark"
+                          onClick={advanceOnboarding}
+                        >
+                          {selectedRole === "creator"
+                            ? nextSelectedCreatorOffer()
+                              ? "Next Section"
+                              : "Next"
+                            : onboardingStep === 3
+                              ? "Next: the details"
+                              : "Next: review"}{" "}
+                          <span>→</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          className="button button-coral"
+                          // Also gated on the Instagram lookup: publishOnboarding
+                          // snapshots `answers` before it awaits that promise, so a
+                          // follower count the lookup fills in afterwards would be
+                          // saved as 0 while the member reads "Found @you - 18.4K".
+                          disabled={busy || igAvatarBusy}
+                        >
+                          {busy
+                            ? "Publishing…"
+                            : onboardingPreview
+                              ? "Finish preview"
+                              : onboardingMode === "edit"
+                                ? "Save changes"
+                                : selectedRole === "business"
+                                  ? "Post my brief"
+                                  : "Publish and finish"}{" "}
+                          <span>✓</span>
+                        </button>
+                      )}
                     </span>
-                    {onboardingMode === "setup" &&
-                    (onboardingStep < 5 || Boolean(nextSelectedCreatorOffer())) ? (
-                      <button
-                        type="button"
-                        className="button button-dark"
-                        onClick={advanceOnboarding}
-                      >
-                        {selectedRole === "creator"
-                          ? nextSelectedCreatorOffer()
-                            ? "Next Section"
-                            : "Next"
-                          : onboardingStep === 3
-                            ? "Next: the details"
-                            : "Next: review"}{" "}
-                        <span>→</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="submit"
-                        className="button button-coral"
-                        // Also gated on the Instagram lookup: publishOnboarding
-                        // snapshots `answers` before it awaits that promise, so a
-                        // follower count the lookup fills in afterwards would be
-                        // saved as 0 while the member reads "Found @you - 18.4K".
-                        disabled={busy || igAvatarBusy}
-                      >
-                        {busy
-                          ? "Publishing…"
-                          : onboardingPreview
-                            ? "Finish preview"
-                            : onboardingMode === "edit"
-                              ? "Save changes"
-                              : selectedRole === "business"
-                                ? "Post my brief"
-                                : "Publish and finish"}{" "}
-                        <span>✓</span>
-                      </button>
-                    )}
-                  </span>
+                  )}
                 </div>
               </div>
             )}
