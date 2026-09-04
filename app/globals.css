@@ -11839,3 +11839,167 @@ label:has(.city-autocomplete-list),
     text-align: right;
   }
 }
+
+/* Recommendations and owner analytics.
+   ---------------------------------------------------------------------------
+   The "for you" row sits above the grid and has to read as a suggestion rather
+   than as more inventory, so the cards are shorter than a listing card and the
+   reason line carries the weight - a row of pictures with no explanation is
+   just a second grid. The figure rows reuse the label-over-number shape the
+   campaign and detail panels already use, so a number means the same thing
+   wherever it appears. */
+
+.listing-foryou {
+  border-bottom: 1px solid var(--line-soft);
+  margin: 0 0 clamp(20px, 3vw, 34px);
+  padding: 0 0 clamp(18px, 2.4vw, 26px);
+}
+
+.listing-foryou-head {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.listing-foryou-head h3 {
+  font-family: var(--display);
+  font-size: clamp(19px, 2.1vw, 25px);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.listing-foryou-row {
+  display: grid;
+  gap: clamp(12px, 1.6vw, 18px);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.listing-foryou-card {
+  background: color-mix(in srgb, var(--white) 72%, var(--paper));
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.listing-foryou-image {
+  aspect-ratio: 16 / 10;
+  background: var(--paper-2);
+  border: 0;
+  cursor: pointer;
+  display: block;
+  overflow: hidden;
+  padding: 0;
+  width: 100%;
+}
+
+.listing-foryou-image img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.listing-foryou-body {
+  display: grid;
+  gap: 3px;
+  padding: 11px 13px 13px;
+}
+
+.listing-foryou-body small {
+  color: var(--ink-mute);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listing-foryou-title {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  display: -webkit-box;
+  font-family: var(--serif);
+  font-size: 14.5px;
+  line-height: 1.3;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.listing-foryou-title:hover {
+  text-decoration: underline;
+}
+
+/* The reason is the point of the row: it is what separates a recommendation
+   from a shuffle. */
+.listing-foryou-reason {
+  color: var(--coral);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  margin: 4px 0 0;
+  text-transform: uppercase;
+}
+
+.listing-figures {
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 10px;
+  padding-top: 9px;
+}
+
+.listing-figures span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.listing-figures small {
+  color: var(--ink-mute);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.listing-figures b {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.listing-figures-empty {
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink-mute);
+  font-size: 12px;
+  margin: 10px 0 0;
+  padding-top: 9px;
+}
+
+.dashboard-analytics-note {
+  margin-top: 14px;
+}
+
+@media (max-width: 900px) {
+  .listing-foryou-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .listing-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Inside the analytics section the tiles are readouts, not the way in: the
+   summary tiles above them navigate, these only report. Same shape so a number
+   means the same thing everywhere, minus the affordance. */
+.dashboard-stat.dashboard-stat-readout {
+  cursor: default;
+}
