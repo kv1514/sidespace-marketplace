@@ -1934,8 +1934,31 @@ function ProfilePhotoField({
   );
 }
 
-function getBioRequirementHint(value: string) {
-  const remaining = Math.max(0, 10 - value.trim().length);
+const BUSINESS_BIO_MIN_WORDS = 5;
+const BIO_MIN_CHARACTERS = 10;
+
+function countWords(value: string) {
+  return value.trim() ? value.trim().split(/\s+/).length : 0;
+}
+
+function bioMeetsRequirement(value: string, role: Role | null) {
+  return role === "business"
+    ? countWords(value) >= BUSINESS_BIO_MIN_WORDS
+    : value.trim().length >= BIO_MIN_CHARACTERS;
+}
+
+function getBioRequirementHint(value: string, role: Role | null) {
+  if (role === "business") {
+    const remaining = Math.max(0, BUSINESS_BIO_MIN_WORDS - countWords(value));
+
+    if (remaining === 0) {
+      return "Minimum reached";
+    }
+
+    return `${remaining} more ${remaining === 1 ? "word" : "words"} needed`;
+  }
+
+  const remaining = Math.max(0, BIO_MIN_CHARACTERS - value.trim().length);
 
   if (remaining === 0) {
     return "Minimum reached";
@@ -5023,6 +5046,7 @@ export default function MarketplaceApp({
   referralCode = "",
   referralCreditCents = null,
   openProfile = false,
+  openOnboarding = false,
 }: {
   /** Server-rendered marketplace, so crawlers and link previews see real
    *  members instead of the seeded demo set. Null when Supabase was
@@ -5037,6 +5061,8 @@ export default function MarketplaceApp({
   referralCreditCents?: number | null;
   /** One-shot intent from the public header to open profile settings. */
   openProfile?: boolean;
+  /** One-shot intent from a signed-in public CTA to resume incomplete onboarding. */
+  openOnboarding?: boolean;
   /** Public information architecture route. The marketplace/auth engine stays
    * mounted so every route keeps the same dialogs, sessions, and handlers. */
   route?: SideSpaceRoute;
@@ -5168,6 +5194,10 @@ export default function MarketplaceApp({
     "setup",
   );
   const [onboardingError, setOnboardingError] = useState("");
+  // Keep the primary action available before a step is complete. When a
+  // member presses it early, this names and highlights the first answer still
+  // needed instead of making the action disappear and leaving them to guess.
+  const [onboardingInvalidField, setOnboardingInvalidField] = useState("");
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [answers, setAnswers] = useState<OnboardingAnswers>(() =>
@@ -5821,6 +5851,29 @@ export default function MarketplaceApp({
       // returning member was shown 'Join SideSpace' and a marketing page
       // until those finished.
       setProfile(own);
+      // Seed the onboarding state before marking the profile ready. The
+      // public CTA can ask the dashboard to reopen setup as soon as this read
+      // completes, and it must see the saved answers rather than blank state.
+      // Background auth events still leave an active onboarding session alone.
+      if (!onboardingOpenRef.current) {
+        const stored = own?.role ? canonicalRole(own.role) : null;
+        const pickable =
+          stored && PICKABLE_ROLES.includes(stored) ? stored : null;
+        setSelectedRole(pickable);
+        setRoleTouched(Boolean(pickable));
+        setExtraRoles(
+          ((own?.extra_roles as Role[] | undefined) ?? []).filter((role) =>
+            EXTRA_ROLE_OPTIONS.includes(role),
+          ),
+        );
+        setAnswers(answersFromProfile((own as Profile | null) ?? null));
+        if (!own?.onboarding_complete) {
+          setOnboardingMode("setup");
+          setOnboardingStep(1);
+          setOnboardingInvalidField("");
+          setOnboardingOpen(true);
+        }
+      }
       setProfileChecked(true);
       if (own) {
         await Promise.all([
@@ -5838,30 +5891,6 @@ export default function MarketplaceApp({
         setBlockedProfileIds([]);
         setBlockedProfiles([]);
         setBlockedLoaded(true);
-      }
-      // This reload runs on every auth event, and Supabase fires those in the
-      // background (token refresh, tab refocus). If the member is mid-way
-      // through onboarding, resetting the step or the role picker here
-      // unmounts the very fields they are typing into and throws their input
-      // away - which is exactly what "it kicked me out while typing" was.
-      // Only seed the picker and open the modal when it is not already open.
-      if (!onboardingOpenRef.current) {
-        const stored = own?.role ? canonicalRole(own.role) : null;
-        const pickable =
-          stored && PICKABLE_ROLES.includes(stored) ? stored : null;
-        setSelectedRole(pickable);
-        setRoleTouched(Boolean(pickable));
-        setExtraRoles(
-          ((own?.extra_roles as Role[] | undefined) ?? []).filter((role) =>
-            EXTRA_ROLE_OPTIONS.includes(role),
-          ),
-        );
-        setAnswers(answersFromProfile((own as Profile | null) ?? null));
-        if (!own?.onboarding_complete) {
-          setOnboardingMode("setup");
-          setOnboardingStep(1);
-          setOnboardingOpen(true);
-        }
       }
     },
     [loadAccountMarketplaceState, loadOwnListings, supabase],
@@ -6762,6 +6791,28 @@ export default function MarketplaceApp({
 
   function openSignupOrDashboard() {
     if (user) {
+      if (!profile?.onboarding_complete) {
+        if (profileLoadFailedRef.current) {
+          setToast(
+            "We could not load your saved profile. Please refresh and try again.",
+          );
+          return;
+        }
+        // Let the profile load finish before opening setup, otherwise a
+        // partially completed profile can be replaced by blank initial state.
+        if (!profileChecked) {
+          if (route !== "dashboard") {
+            window.location.assign("/dashboard?onboarding=1");
+          }
+          return;
+        }
+        setAuthOpen(false);
+        setOnboardingMode("setup");
+        setOnboardingStep(1);
+        setOnboardingInvalidField("");
+        setOnboardingOpen(true);
+        return;
+      }
       if (route !== "dashboard") window.location.assign("/dashboard");
       return;
     }
@@ -6773,6 +6824,9 @@ export default function MarketplaceApp({
   // Consume it once after the member profile is ready so the header opens the
   // same Profile surface no matter where a signed-in member started.
   const profileIntentHandledRef = useRef(false);
+  // Public pages use this one-shot intent to reopen setup for an account that
+  // exists but has not completed onboarding yet.
+  const onboardingIntentHandledRef = useRef(false);
   useEffect(() => {
     if (
       !openProfile ||
@@ -6791,6 +6845,47 @@ export default function MarketplaceApp({
     // dependency: its closure is refreshed with the profile above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openProfile, profile]);
+
+  // Public pages cannot ship the full onboarding engine, so an incomplete
+  // signed-in member arrives here with a one-shot intent. Wait for the owner
+  // profile read before opening so Google accounts with no profile row and
+  // accounts with partially saved data both resume safely.
+  useEffect(() => {
+    if (
+      !openOnboarding ||
+      route !== "dashboard" ||
+      !sessionResolved ||
+      onboardingIntentHandledRef.current ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+    if (!user) {
+      onboardingIntentHandledRef.current = true;
+      const url = new URL(window.location.href);
+      url.searchParams.delete("onboarding");
+      window.history.replaceState({}, "", url.toString());
+      return;
+    }
+    if (!profileChecked) return;
+
+    onboardingIntentHandledRef.current = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("onboarding");
+    window.history.replaceState({}, "", url.toString());
+    if (
+      profileLoadFailedRef.current ||
+      profile?.onboarding_complete ||
+      onboardingOpenRef.current
+    ) {
+      return;
+    }
+    setAuthOpen(false);
+    setOnboardingMode("setup");
+    setOnboardingStep(1);
+    setOnboardingInvalidField("");
+    setOnboardingOpen(true);
+  }, [openOnboarding, profile, profileChecked, route, sessionResolved, user]);
 
   function updateCreatorOfferSelection(
     offer: CreatorOfferType,
@@ -6921,6 +7016,7 @@ export default function MarketplaceApp({
     }
     setOnboardingMode("setup");
     setOnboardingStep(5);
+    setOnboardingInvalidField("");
     setOnboardingOpen(true);
   }
 
@@ -6930,6 +7026,7 @@ export default function MarketplaceApp({
     setOnboardingPreview(false);
     setOnboardingMode("edit");
     setOnboardingStep(step);
+    setOnboardingInvalidField("");
     setOnboardingOpen(true);
   }
 
@@ -6944,6 +7041,7 @@ export default function MarketplaceApp({
     setOnboardingPreview(true);
     setOnboardingMode("setup");
     setOnboardingStep(1);
+    setOnboardingInvalidField("");
     setAuthOpen(false);
     setOnboardingOpen(true);
   }
@@ -6975,6 +7073,7 @@ export default function MarketplaceApp({
       // hand them the editor and no way to publish anything.
       setOnboardingMode("setup");
       setOnboardingStep(1);
+      setOnboardingInvalidField("");
       setOnboardingOpen(true);
       return;
     }
@@ -7243,6 +7342,7 @@ export default function MarketplaceApp({
         setUser(data.user);
         setOnboardingMode("setup");
         setOnboardingStep(1);
+        setOnboardingInvalidField("");
         setOnboardingOpen(true);
       } else {
         setToast("Check your email to confirm your SideSpace account.");
@@ -7303,8 +7403,10 @@ export default function MarketplaceApp({
       "city",
     );
     need(
-      answers.bio.trim().length < 10,
-      "Add one line about you — at least a few words.",
+      !bioMeetsRequirement(answers.bio, role),
+      role === "business"
+        ? "Describe your business in at least five words."
+        : "Add one line about you — at least a few words.",
       "bio",
     );
     // Only a MALFORMED address is a problem; leaving it blank is allowed.
@@ -7688,6 +7790,7 @@ export default function MarketplaceApp({
     const next = Math.max(1, Math.min(onboardingStepCount(), step));
     setOnboardingDirection(next >= onboardingStep ? 1 : -1);
     setOnboardingError("");
+    setOnboardingInvalidField("");
     setOnboardingStep(next);
     window.requestAnimationFrame(() => {
       onboardingFormRef.current
@@ -7728,13 +7831,47 @@ export default function MarketplaceApp({
       form?.elements.namedItem(field);
     if (target instanceof HTMLElement) {
       revealInvalidField(target);
-      target.scrollIntoView({ block: "center", behavior: "auto" });
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement
-      ) {
-        target.focus();
+      target.setAttribute("aria-invalid", "true");
+      const describedBy = (target.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .filter(Boolean);
+      if (!describedBy.includes("onboarding-error")) {
+        target.setAttribute(
+          "aria-describedby",
+          [...describedBy, "onboarding-error"].join(" "),
+        );
       }
+      target.scrollIntoView({ block: "center", behavior: "auto" });
+      const focusTarget =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLButtonElement
+          ? target
+          : target.querySelector<HTMLElement>(
+              "input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled])",
+            ) ?? target;
+      focusTarget.focus();
+    }
+  }
+
+  function clearOnboardingInvalidField(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) return;
+    const field =
+      target.closest<HTMLElement>("[data-field]") ??
+      target.closest<HTMLElement>(".city-autocomplete")?.querySelector<HTMLElement>(
+        "[data-field]",
+      );
+    if (!field || field.dataset.field !== onboardingInvalidField) return;
+    setOnboardingInvalidField("");
+    field.removeAttribute("aria-invalid");
+    const describedBy = (field.getAttribute("aria-describedby") ?? "")
+      .split(/\s+/)
+      .filter((value) => value && value !== "onboarding-error");
+    if (describedBy.length) {
+      field.setAttribute("aria-describedby", describedBy.join(" "));
+    } else {
+      field.removeAttribute("aria-describedby");
     }
   }
 
@@ -7756,6 +7893,7 @@ export default function MarketplaceApp({
     } else {
       window.requestAnimationFrame(() => scrollToField(fieldName));
     }
+    setOnboardingInvalidField(fieldName);
     setOnboardingError(message);
   }
 
@@ -7769,6 +7907,7 @@ export default function MarketplaceApp({
       reportMissing(problem);
       return;
     }
+    setOnboardingInvalidField("");
     const nextOffer = nextSelectedCreatorOffer();
     if (nextOffer) {
       switchCreatorOffer(nextOffer);
@@ -11931,6 +12070,7 @@ export default function MarketplaceApp({
                   onClick={() => {
                     setOnboardingMode("setup");
                     setOnboardingStep(1);
+                    setOnboardingInvalidField("");
                     setOnboardingOpen(true);
                   }}
                 >
@@ -13712,6 +13852,7 @@ export default function MarketplaceApp({
             setOnboardingPreview(false);
             setOnboardingStep(1);
             setOnboardingError("");
+            setOnboardingInvalidField("");
             setAvatarCropPending(false);
             resetIgAvatarSync();
           }}
@@ -13784,10 +13925,21 @@ export default function MarketplaceApp({
           <form
             ref={onboardingFormRef}
             className="onboarding-form"
+            data-invalid-field={onboardingInvalidField || undefined}
+            onChangeCapture={(event) =>
+              clearOnboardingInvalidField(event.target)
+            }
+            onClickCapture={(event) =>
+              clearOnboardingInvalidField(event.target)
+            }
             onSubmit={publishOnboarding}
           >
             {onboardingError && (
-              <div className="form-feedback" role="alert">
+              <div
+                className="form-feedback"
+                id="onboarding-error"
+                role="alert"
+              >
                 <p>{onboardingError}</p>
               </div>
             )}
@@ -13813,7 +13965,13 @@ export default function MarketplaceApp({
                     : "A few details make the rest of your listing feel personal."}
                 </p>
                 {onboardingStep === 1 && (
-                <div className="role-choice-grid" data-field="role">
+                <div
+                  className="role-choice-grid"
+                  data-field="role"
+                  role="group"
+                  aria-label="Choose how you will use SideSpace"
+                  tabIndex={-1}
+                >
                   {PICKABLE_ROLES.map((role) => (
                     <button
                       key={role}
@@ -13945,17 +14103,19 @@ export default function MarketplaceApp({
                       : "One line about you"}
                     <small>
                       {selectedRole === "business"
-                        ? "What you do, in a sentence. This sits under your name on the brief."
+                        ? "Describe what you do in at least five words. This sits under your name on the brief."
                         : "One sentence. It sits under your name on every card."}
                       {" "}
                       <span
                         className="field-character-count"
                         aria-live="polite"
                         data-complete={
-                          answers.bio.trim().length >= 10 ? "true" : "false"
+                          bioMeetsRequirement(answers.bio, selectedRole)
+                            ? "true"
+                            : "false"
                         }
                       >
-                        {getBioRequirementHint(answers.bio)}
+                        {getBioRequirementHint(answers.bio, selectedRole)}
                       </span>
                     </small>
                     <input
@@ -14051,7 +14211,7 @@ export default function MarketplaceApp({
                 </div>
                 )}
 
-                {(onboardingStep > 1 || isCurrentOnboardingStepComplete()) && (
+                <>
                 <div
                   className="onboarding-actions"
                   data-ready={isCurrentOnboardingStepComplete() ? "true" : "false"}
@@ -14066,28 +14226,39 @@ export default function MarketplaceApp({
                   ) : (
                     <span />
                   )}
-                  {isCurrentOnboardingStepComplete() && (
-                    <span className="onboarding-primary-action-enter">
-                      <button
-                        type="button"
-                        className="button button-dark"
-                        onClick={advanceOnboarding}
-                      >
-                        {onboardingStep === 1
-                          ? onboardingMode === "edit"
-                            ? "Next: your details"
-                            : "Continue"
-                          : selectedRole === "business"
-                            ? "Continue"
-                            : selectedRole === "creator"
-                              ? "Next: what you have to advertise"
-                              : "Next"}{" "}
-                        <span>→</span>
-                      </button>
+                  <span className="onboarding-primary-action-enter">
+                    <span
+                      className="onboarding-required-status"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      {missingAnswers().length
+                        ? `${missingAnswers().length} required ${
+                            missingAnswers().length === 1
+                              ? "detail"
+                              : "details"
+                          } left`
+                        : "Ready to continue"}
                     </span>
-                  )}
+                    <button
+                      type="button"
+                      className="button button-dark"
+                      onClick={advanceOnboarding}
+                    >
+                      {onboardingStep === 1
+                        ? onboardingMode === "edit"
+                          ? "Next: your details"
+                          : "Continue"
+                        : selectedRole === "business"
+                          ? "Continue"
+                          : selectedRole === "creator"
+                            ? "Next: what you have to advertise"
+                            : "Next"}{" "}
+                      <span>→</span>
+                    </button>
+                  </span>
                 </div>
-                )}
+                </>
               </div>
             )}
 
@@ -16074,54 +16245,59 @@ export default function MarketplaceApp({
                   >
                     ← Back
                   </button>
-                  {!(
-                    selectedRole === "business" &&
-                    onboardingMode === "setup" &&
-                    onboardingStep === 3 &&
-                    answers.businessSetupPath !== "campaign"
-                  ) &&
-                    isCurrentOnboardingStepComplete() && (
-                    <span className="onboarding-primary-action-enter">
-                      {onboardingMode === "setup" &&
-                      (onboardingStep < 5 || Boolean(nextSelectedCreatorOffer())) ? (
-                        <button
-                          type="button"
-                          className="button button-dark"
-                          onClick={advanceOnboarding}
-                        >
-                          {selectedRole === "creator"
-                            ? nextSelectedCreatorOffer()
-                              ? "Next Section"
-                              : "Next"
-                            : onboardingStep === 3
-                              ? "Next: the details"
-                              : "Next: review"}{" "}
-                          <span>→</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="submit"
-                          className="button button-coral"
-                          // Also gated on the Instagram lookup: publishOnboarding
-                          // snapshots `answers` before it awaits that promise, so a
-                          // follower count the lookup fills in afterwards would be
-                          // saved as 0 while the member reads "Found @you - 18.4K".
-                          disabled={busy || igAvatarBusy}
-                        >
-                          {busy
-                            ? "Publishing…"
-                            : onboardingPreview
-                              ? "Finish preview"
-                              : onboardingMode === "edit"
-                                ? "Save changes"
-                                : selectedRole === "business"
-                                  ? "Post my brief"
-                                  : "Publish and finish"}{" "}
-                          <span>✓</span>
-                        </button>
-                      )}
+                  <span className="onboarding-primary-action-enter">
+                    <span
+                      className="onboarding-required-status"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      {missingAnswers().length
+                        ? `${missingAnswers().length} required ${
+                            missingAnswers().length === 1
+                              ? "detail"
+                              : "details"
+                          } left`
+                        : "Ready to continue"}
                     </span>
-                  )}
+                    {onboardingMode === "setup" &&
+                    (onboardingStep < 5 || Boolean(nextSelectedCreatorOffer())) ? (
+                      <button
+                        type="button"
+                        className="button button-dark"
+                        onClick={advanceOnboarding}
+                      >
+                        {selectedRole === "creator"
+                          ? nextSelectedCreatorOffer()
+                            ? "Next Section"
+                            : "Next"
+                          : onboardingStep === 3
+                            ? "Next: the details"
+                            : "Next: review"}{" "}
+                        <span>→</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        className="button button-coral"
+                        // Also gated on the Instagram lookup: publishOnboarding
+                        // snapshots `answers` before it awaits that promise, so a
+                        // follower count the lookup fills in afterwards would be
+                        // saved as 0 while the member reads "Found @you - 18.4K".
+                        disabled={busy || igAvatarBusy}
+                      >
+                        {busy
+                          ? "Publishing…"
+                          : onboardingPreview
+                            ? "Finish preview"
+                            : onboardingMode === "edit"
+                              ? "Save changes"
+                              : selectedRole === "business"
+                                ? "Post my brief"
+                                : "Publish and finish"}{" "}
+                        <span>✓</span>
+                      </button>
+                    )}
+                  </span>
                 </div>
               </div>
             )}

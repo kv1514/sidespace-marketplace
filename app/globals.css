@@ -11628,3 +11628,55 @@ label:has(.city-autocomplete-list),
 .listing-image.is-blank {
   height: 132px;
 }
+
+/* The next action stays visible while a member is still answering a step.
+   The count gives the button a little context, and the coral state below
+   makes the destination unmistakable after an early press. */
+.onboarding-form .onboarding-primary-action-enter {
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.onboarding-required-status {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  line-height: 1.35;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+/* `aria-invalid` is applied to the first missing field (or its choice group)
+   after Next is pressed. Inputs get a strong edge; groups get an outline so
+   the treatment works for chips, role cards, and tier choices too. */
+.onboarding-form [data-field][aria-invalid="true"] {
+  outline: 3px solid color-mix(in srgb, var(--coral) 58%, transparent);
+  outline-offset: 4px;
+}
+
+.onboarding-form input[data-field][aria-invalid="true"],
+.onboarding-form textarea[data-field][aria-invalid="true"],
+.onboarding-form select[data-field][aria-invalid="true"] {
+  border-color: var(--coral) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent);
+  outline: none;
+}
+
+@media (max-width: 620px) {
+  .onboarding-form .onboarding-primary-action-enter {
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .onboarding-required-status {
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-form [data-field][aria-invalid="true"] {
+    animation: none;
+  }
+}

@@ -27,6 +27,7 @@ type PublicRoute = Exclude<SideSpaceRoute, "marketplace" | "dashboard">;
 type Viewer = {
   displayName: string;
   avatarUrl?: string;
+  onboardingComplete: boolean;
 };
 
 function safeListings(value: unknown): PublicListing[] {
@@ -114,7 +115,7 @@ export default function PublicSiteApp({
           }
           const { data } = await supabase
             .from("my_profiles")
-            .select("display_name, avatar_url")
+            .select("display_name, avatar_url, onboarding_complete")
             .eq("auth_user_id", user.id)
             .maybeSingle();
           if (!mounted) return;
@@ -129,6 +130,7 @@ export default function PublicSiteApp({
             avatarUrl: String(
               data?.avatar_url || metadata.avatar_url || "",
             ) || undefined,
+            onboardingComplete: Boolean(data?.onboarding_complete),
           });
           setLoadingViewer(false);
         }
@@ -157,7 +159,11 @@ export default function PublicSiteApp({
     // A signed-in member already has an account, so a public "create profile"
     // CTA should return them to their workspace instead of opening signup.
     if (mode === "signup" && viewer) {
-      router.push("/dashboard");
+      router.push(
+        viewer.onboardingComplete
+          ? "/dashboard"
+          : "/dashboard?onboarding=1",
+      );
       return;
     }
     const query = new URLSearchParams();
@@ -173,7 +179,11 @@ export default function PublicSiteApp({
 
   function listAttention() {
     if (viewer) {
-      router.push("/dashboard");
+      router.push(
+        viewer.onboardingComplete
+          ? "/dashboard"
+          : "/dashboard?onboarding=1",
+      );
       return;
     }
     openAuth("signup");
