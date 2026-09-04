@@ -6707,9 +6707,45 @@ export default function MarketplaceApp({
     const failsafe = window.setTimeout(() => {
       targets.forEach((element) => element.classList.add("is-visible"));
     }, 3000);
+
+    /*
+     * Sections that mount later still get observed.
+     *
+     * `reveal-ready` holds every [data-reveal] at opacity 0 until the observer
+     * says otherwise, and the observer only ever sees the elements that
+     * existed when this effect last ran. A section gated on data that arrives
+     * afterwards - payments on a Stripe round-trip, analytics on the member's
+     * own listings - therefore mounts into a document that hides it and never
+     * looks at it again, and stays invisible for the life of the page.
+     *
+     * That has now happened three times, each time fixed by adding one more
+     * dependency, which only ever fixes the section somebody already noticed.
+     * Watching the tree instead closes the whole class: whatever mounts, gets
+     * observed, gets revealed.
+     */
+    const watchLateArrivals = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          const late = node.matches("[data-reveal]")
+            ? [node]
+            : Array.from(node.querySelectorAll<HTMLElement>("[data-reveal]"));
+          for (const element of late) {
+            if (element.classList.contains("is-visible")) continue;
+            observer.observe(element);
+            // The original failsafe's list was captured before this element
+            // existed, so it needs its own.
+            window.setTimeout(() => element.classList.add("is-visible"), 3000);
+          }
+        }
+      }
+    });
+    watchLateArrivals.observe(document.body, { childList: true, subtree: true });
+
     return () => {
       window.clearTimeout(failsafe);
       observer.disconnect();
+      watchLateArrivals.disconnect();
     };
   }, [listings, user, profile, paymentTransactions.length]);
 

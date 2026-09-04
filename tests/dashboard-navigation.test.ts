@@ -65,3 +65,43 @@ describe("dashboard tile navigation", () => {
     expect(publicSite).toContain("--ss-header-height");
   });
 });
+
+// Three sections have now been hidden by the same mechanism: `reveal-ready`
+// pins every [data-reveal] at opacity 0, and the observer only ever sees the
+// elements that existed the last time the effect ran. Payments mounts after a
+// Stripe round-trip, the checklist after its gate resolves, analytics after
+// the member's own listings load - each one arrived late, was never observed,
+// and stayed invisible for the life of the page.
+//
+// Twice this was fixed by adding one more dependency, which only fixes the
+// section somebody already noticed. This asserts the durable fix instead.
+describe("sections that mount after the reveal observer has run", () => {
+  const effect = app.slice(
+    app.indexOf("Reveal widgets as they scroll into view"),
+    app.indexOf("}, [listings, user, profile"),
+  );
+
+  it("are picked up by watching the tree, not by listing every gate as a dep", () => {
+    expect(effect).toContain("MutationObserver");
+    expect(effect).toMatch(/observe\(document\.body,\s*\{[^}]*subtree:\s*true/);
+    // It has to actually hand late arrivals to the IntersectionObserver.
+    expect(effect).toMatch(/addedNodes[\s\S]{0,600}?observer\.observe\(/);
+  });
+
+  it("gives a late arrival its own failsafe", () => {
+    // The original 3s failsafe closes over a list captured before the element
+    // existed, so it can never reveal it.
+    expect(effect).toMatch(
+      /addedNodes[\s\S]{0,900}?setTimeout\([\s\S]{0,80}?is-visible/,
+    );
+  });
+
+  it("disconnects both observers on cleanup", () => {
+    const cleanup = app.slice(
+      app.indexOf("window.clearTimeout(failsafe)"),
+      app.indexOf("}, [listings, user, profile"),
+    );
+    expect(cleanup).toContain("observer.disconnect()");
+    expect(cleanup).toMatch(/watchLateArrivals\.disconnect\(\)/);
+  });
+});
