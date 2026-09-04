@@ -155,3 +155,82 @@ describe("Slack founder admin trust boundary", () => {
     ).toBe(401);
   });
 });
+
+// Moderation commands take a regular expression rather than a dollar amount,
+// which makes parsing the risk: a pattern may legitimately contain spaces and
+// brackets, so `block <pattern> <reason>` only has one reading if the pattern
+// is quoted. The database enforces the rest (valid regex, nothing too broad);
+// these pin the boundary the founder actually types at.
+describe("Slack moderation commands", () => {
+  it("parses suspend and restore, and requires a reason to suspend", () => {
+    expect(parseSlackAdminCommand("suspend Person@Example.com Obscene listings")).toEqual({
+      type: "suspend",
+      email: "person@example.com",
+      reason: "Obscene listings",
+    });
+    expect(parseSlackAdminCommand("ban person@example.com Obscene listings")).toEqual({
+      type: "suspend",
+      email: "person@example.com",
+      reason: "Obscene listings",
+    });
+    expect(parseSlackAdminCommand("restore person@example.com")).toEqual({
+      type: "restore",
+      email: "person@example.com",
+    });
+    expect(parseSlackAdminCommand("unban person@example.com")).toEqual({
+      type: "restore",
+      email: "person@example.com",
+    });
+    // No reason means no audit trail, so it is not a suspend command at all.
+    expect(() => parseSlackAdminCommand("suspend person@example.com")).toThrow(/Unknown command/);
+    expect(() => parseSlackAdminCommand("suspend person@example.com ab")).toThrow(/reason/i);
+  });
+
+  it("takes a quoted pattern so a regex containing spaces still parses", () => {
+    expect(parseSlackAdminCommand('block "jerkspace" Banned brand')).toEqual({
+      type: "block",
+      pattern: "jerkspace",
+      reason: "Banned brand",
+    });
+    // Backticks, because that is what people reach for in Slack.
+    expect(parseSlackAdminCommand("block `jerk[[:space:]]*space` Banned brand")).toEqual({
+      type: "block",
+      pattern: "jerk[[:space:]]*space",
+      reason: "Banned brand",
+    });
+    expect(parseSlackAdminCommand('unblock "jerkspace"')).toEqual({
+      type: "unblock",
+      pattern: "jerkspace",
+    });
+    expect(parseSlackAdminCommand("blocklist")).toEqual({ type: "blocklist" });
+  });
+
+  it("refuses an unquoted pattern rather than guessing where it ends", () => {
+    // "block jerk space Banned brand" has no single reading: the pattern could
+    // be "jerk", "jerk space", or "jerk space Banned". Guessing here is how a
+    // founder blocks something they did not mean to.
+    expect(() => parseSlackAdminCommand("block jerk space Banned brand")).toThrow(/quotes/i);
+  });
+
+  it("refuses a pattern short enough to catch real businesses", () => {
+    // "jerk" alone matches a beef jerky stand and a jerk chicken window, both
+    // of which are exactly the kind of listing this marketplace is for.
+    expect(() => parseSlackAdminCommand('block "ad" Too broad')).toThrow(/4 to 200/);
+    expect(() => parseSlackAdminCommand(`block "${"x".repeat(201)}" Too long`)).toThrow(/4 to 200/);
+  });
+
+  it("still parses the money commands unchanged", () => {
+    expect(parseSlackAdminCommand("credit person@example.com 25 Launch recovery")).toEqual({
+      type: "credit",
+      email: "person@example.com",
+      amountCents: 2_500,
+      reason: "Launch recovery",
+    });
+    expect(parseSlackAdminCommand("referral 10")).toEqual({ type: "referral", amountCents: 1_000 });
+    expect(parseSlackAdminCommand("user person@example.com")).toEqual({
+      type: "user",
+      email: "person@example.com",
+    });
+    expect(parseSlackAdminCommand("")).toEqual({ type: "help" });
+  });
+});
