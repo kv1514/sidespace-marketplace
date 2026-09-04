@@ -7825,6 +7825,17 @@ export default function MarketplaceApp({
       (!identityStepVisible || !avatarCropPending);
   }
 
+  /**
+   * Keep short onboarding slides quiet until their answers are complete. A
+   * visible early action is useful when there are several required details to
+   * work through, but it adds noise to a one- or two-answer slide.
+   */
+  function shouldShowOnboardingPrimaryAction() {
+    return (
+      isCurrentOnboardingStepComplete() || missingAnswers().length > 2
+    );
+  }
+
   /** What the current slide blocks on: the first thing missing, or nothing. */
   function firstMissingAnswer(): [string, string] | null {
     return missingAnswers()[0] ?? null;
@@ -14091,6 +14102,11 @@ export default function MarketplaceApp({
                           setDescriptionTouched(false);
                           setAnswers(answersForNewRole);
                         }
+                        if (onboardingMode === "setup") {
+                          window.requestAnimationFrame(() =>
+                            goToOnboardingStep(2),
+                          );
+                        }
                       }}
                     >
                       <span>{roleCopy[role].icon}</span>
@@ -14297,54 +14313,56 @@ export default function MarketplaceApp({
                 </div>
                 )}
 
-                <>
-                <div
-                  className="onboarding-actions"
-                  data-ready={isCurrentOnboardingStepComplete() ? "true" : "false"}
-                >
-                  {onboardingMode === "setup" && onboardingStep === 2 ? (
-                    <button
-                      type="button"
-                      onClick={() => goToOnboardingStep(1)}
-                    >
-                      ← Back
-                    </button>
-                  ) : (
-                    <span />
-                  )}
-                  <span className="onboarding-primary-action-enter">
-                    <span
-                      className="onboarding-required-status"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {missingAnswers().length
-                        ? `${missingAnswers().length} required ${
-                            missingAnswers().length === 1
-                              ? "detail"
-                              : "details"
-                          } left`
-                        : "Ready to continue"}
-                    </span>
-                    <button
-                      type="button"
-                      className="button button-dark"
-                      onClick={advanceOnboarding}
-                    >
-                      {onboardingStep === 1
-                        ? onboardingMode === "edit"
-                          ? "Next: your details"
-                          : "Continue"
-                        : selectedRole === "business"
-                          ? "Continue"
-                          : selectedRole === "creator"
-                            ? "Next: what you have to advertise"
-                            : "Next"}{" "}
-                      <span>→</span>
-                    </button>
-                  </span>
-                </div>
-                </>
+                {(onboardingMode !== "setup" || onboardingStep !== 1) && (
+                  <div
+                    className="onboarding-actions"
+                    data-ready={isCurrentOnboardingStepComplete() ? "true" : "false"}
+                  >
+                    {onboardingMode === "setup" && onboardingStep === 2 ? (
+                      <button
+                        type="button"
+                        onClick={() => goToOnboardingStep(1)}
+                      >
+                        ← Back
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    {shouldShowOnboardingPrimaryAction() && (
+                      <span className="onboarding-primary-action-enter">
+                        <span
+                          className="onboarding-required-status"
+                          role="status"
+                          aria-live="polite"
+                        >
+                          {missingAnswers().length
+                            ? `${missingAnswers().length} required ${
+                                missingAnswers().length === 1
+                                  ? "detail"
+                                  : "details"
+                              } left`
+                            : "Ready to continue"}
+                        </span>
+                        <button
+                          type="button"
+                          className="button button-dark"
+                          onClick={advanceOnboarding}
+                        >
+                          {onboardingStep === 1
+                            ? onboardingMode === "edit"
+                              ? "Next: your details"
+                              : "Continue"
+                            : selectedRole === "business"
+                              ? "Continue"
+                              : selectedRole === "creator"
+                                ? "Next: what you have to advertise"
+                                : "Next"}{" "}
+                          <span>→</span>
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -14567,7 +14585,6 @@ export default function MarketplaceApp({
                         {onboardingStep === 4 && answers.creatorOffer === "social" && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>Your first offer</span>
                           <h4>What does a brand actually get?</h4>
                         </div>
                         {/* Only when there are any: an empty flex row still
@@ -16346,59 +16363,61 @@ export default function MarketplaceApp({
                   >
                     ← Back
                   </button>
-                  <span className="onboarding-primary-action-enter">
-                    <span
-                      className="onboarding-required-status"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {missingAnswers().length
-                        ? `${missingAnswers().length} required ${
-                            missingAnswers().length === 1
-                              ? "detail"
-                              : "details"
-                          } left`
-                        : "Ready to continue"}
+                  {shouldShowOnboardingPrimaryAction() && (
+                    <span className="onboarding-primary-action-enter">
+                      <span
+                        className="onboarding-required-status"
+                        role="status"
+                        aria-live="polite"
+                      >
+                        {missingAnswers().length
+                          ? `${missingAnswers().length} required ${
+                              missingAnswers().length === 1
+                                ? "detail"
+                                : "details"
+                            } left`
+                          : "Ready to continue"}
+                      </span>
+                      {onboardingMode === "setup" &&
+                      (onboardingStep < 5 || Boolean(nextSelectedCreatorOffer())) ? (
+                        <button
+                          type="button"
+                          className="button button-dark"
+                          onClick={advanceOnboarding}
+                        >
+                          {selectedRole === "creator"
+                            ? nextSelectedCreatorOffer()
+                              ? "Next Section"
+                              : "Next"
+                            : onboardingStep === 3
+                              ? "Next: the details"
+                              : "Next: review"}{" "}
+                          <span>→</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          className="button button-coral"
+                          // Also gated on the Instagram lookup: publishOnboarding
+                          // snapshots `answers` before it awaits that promise, so a
+                          // follower count the lookup fills in afterwards would be
+                          // saved as 0 while the member reads "Found @you - 18.4K".
+                          disabled={busy || igAvatarBusy}
+                        >
+                          {busy
+                            ? "Publishing…"
+                            : onboardingPreview
+                              ? "Finish preview"
+                              : onboardingMode === "edit"
+                                ? "Save changes"
+                                : selectedRole === "business"
+                                  ? "Post my brief"
+                                  : "Publish and finish"}{" "}
+                          <span>✓</span>
+                        </button>
+                      )}
                     </span>
-                    {onboardingMode === "setup" &&
-                    (onboardingStep < 5 || Boolean(nextSelectedCreatorOffer())) ? (
-                      <button
-                        type="button"
-                        className="button button-dark"
-                        onClick={advanceOnboarding}
-                      >
-                        {selectedRole === "creator"
-                          ? nextSelectedCreatorOffer()
-                            ? "Next Section"
-                            : "Next"
-                          : onboardingStep === 3
-                            ? "Next: the details"
-                            : "Next: review"}{" "}
-                        <span>→</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="submit"
-                        className="button button-coral"
-                        // Also gated on the Instagram lookup: publishOnboarding
-                        // snapshots `answers` before it awaits that promise, so a
-                        // follower count the lookup fills in afterwards would be
-                        // saved as 0 while the member reads "Found @you - 18.4K".
-                        disabled={busy || igAvatarBusy}
-                      >
-                        {busy
-                          ? "Publishing…"
-                          : onboardingPreview
-                            ? "Finish preview"
-                            : onboardingMode === "edit"
-                              ? "Save changes"
-                              : selectedRole === "business"
-                                ? "Post my brief"
-                                : "Publish and finish"}{" "}
-                        <span>✓</span>
-                      </button>
-                    )}
-                  </span>
+                  )}
                 </div>
               </div>
             )}
