@@ -22,6 +22,11 @@ const PUBLIC_LINKS: Array<{
   route: SideSpaceRoute;
 }> = [
   { href: "/marketplace", label: "Marketplace", route: "marketplace" },
+  {
+    href: "/marketplace?sort=popular",
+    label: "Popular",
+    route: "marketplace",
+  },
   { href: "/how-it-works", label: "How it works", route: "how-it-works" },
   { href: "/creators", label: "Creators", route: "creators" },
   { href: "/pricing", label: "Pricing", route: "pricing" },
@@ -104,6 +109,11 @@ export function SiteHeader({
     return () => desktopNav.removeEventListener("change", closeOnDesktop);
   }, []);
 
+  const popularActive =
+    route === "marketplace" &&
+    typeof window !== "undefined" &&
+    new URL(window.location.href).searchParams.get("sort") === "popular";
+
   return (
     <>
       <header
@@ -119,7 +129,12 @@ export function SiteHeader({
             <Link
               href={link.href}
               key={link.href}
-              aria-current={route === link.route ? "page" : undefined}
+              aria-current={
+                route === link.route &&
+                (link.href.includes("sort=popular") ? popularActive : !popularActive)
+                  ? "page"
+                  : undefined
+              }
             >
               {link.label}
             </Link>

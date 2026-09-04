@@ -11181,3 +11181,168 @@ html.reveal-ready [data-reveal].is-visible {
   cursor: not-allowed;
   opacity: 0.4;
 }
+
+/* ===== Listing discovery signals ===== */
+
+.listing-discovery-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin: -12px 0 22px;
+}
+
+.listing-sort {
+  align-items: center;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px;
+}
+
+.listing-sort-label {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  padding: 0 8px 0 10px;
+  text-transform: uppercase;
+}
+
+.listing-sort button {
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  padding: 8px 12px;
+}
+
+.listing-sort button:hover,
+.listing-sort button.active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.listing-sort-note {
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.45;
+  margin: 0;
+  max-width: 390px;
+  text-align: right;
+}
+
+.listing-card {
+  position: relative;
+}
+
+.listing-like-button {
+  align-items: center;
+  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--white) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  border-radius: 999px;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 5px;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 10px 0 9px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.listing-like-button-card {
+  position: absolute;
+  right: 13px;
+  top: 13px;
+  z-index: 2;
+}
+
+.listing-like-button:hover:not(:disabled) {
+  background: var(--white);
+  border-color: var(--ink);
+  transform: translateY(-1px);
+}
+
+.listing-like-button.is-liked {
+  background: color-mix(in srgb, var(--coral) 15%, var(--white));
+  border-color: color-mix(in srgb, var(--coral) 62%, var(--line));
+  color: var(--coral);
+}
+
+.listing-like-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.listing-heart {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.listing-like-number {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.listing-like-button-detail {
+  flex: 0 0 auto;
+  margin-top: 32px;
+  min-height: 42px;
+  padding: 0 13px 0 11px;
+}
+
+.detail-title-row {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.detail-title-row h2 {
+  flex: 1;
+  min-width: 0;
+}
+
+.listing-like-button:focus-visible,
+.listing-sort button:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 2px;
+}
+
+@media (max-width: 620px) {
+  .listing-discovery-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-top: -10px;
+  }
+
+  .listing-sort-note {
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .listing-sort-label {
+    display: none;
+  }
+
+  .detail-title-row {
+    gap: 10px;
+  }
+
+  .listing-like-button-detail {
+    margin-top: 32px;
+  }
+}
