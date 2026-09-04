@@ -1453,10 +1453,12 @@ html.lenis {
 }
 
 .ss-process-row article > span {
-  color: rgba(255, 253, 243, 0.54);
+  /* 9px at 54% was the smallest text on the page and the label that says
+     which step you are on. */
+  color: rgba(255, 253, 243, 0.72);
   font-family: var(--ss-mono);
-  font-size: 9px;
-  letter-spacing: 0.13em;
+  font-size: 11px;
+  letter-spacing: 0.12em;
 }
 
 .ss-process-row article h3 {
@@ -1466,9 +1468,9 @@ html.lenis {
 }
 
 .ss-process-row article > p {
-  color: rgba(255, 253, 243, 0.64);
-  font-size: 14px;
-  line-height: 1.5;
+  color: rgba(255, 253, 243, 0.78);
+  font-size: 15.5px;
+  line-height: 1.55;
   margin: 0;
 }
 

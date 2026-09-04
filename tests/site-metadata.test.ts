@@ -91,3 +91,56 @@ describe("listing social metadata", () => {
     expect(metadata.twitter).toMatchObject({ images: OG_IMAGE });
   });
 });
+
+// A listing published without a photo has image_url seeded from the member's
+// avatar. Sharing it put the seller's Google account photo in the preview card
+// - the exact thing the branded card exists to prevent - and it was still
+// happening on a live listing published after the site-wide fix landed.
+describe("a listing image that is really a member's face", () => {
+  const base = {
+    id: "listing-1",
+    title: "Instagram post or story on my account, Berkeley",
+    ownerName: "Bruce",
+    channel: "Instagram",
+    format: "one post",
+    description: "A post to my followers.",
+    locationArea: "Berkeley",
+    ownerCity: "Berkeley",
+    imageUrls: [] as string[],
+  };
+  const ogOf = (meta: ReturnType<typeof createListingSocialMetadata>) => {
+    const images = meta.openGraph?.images;
+    const first = Array.isArray(images) ? images[0] : images;
+    return typeof first === "string" ? first : (first as { url: string })?.url;
+  };
+
+  it.each([
+    ["a Google account photo", "https://lh3.googleusercontent.com/a/ACg8ocITSvR6=s96-c"],
+    ["a googleusercontent subdomain", "https://lh5.googleusercontent.com/a/xyz=s96-c"],
+    ["an uploaded avatar in storage", "https://x.supabase.co/storage/v1/object/public/marketplace-media/uid/profiles/a.jpg"],
+  ])("falls back to the branded card for %s", (_label, avatar) => {
+    const og = ogOf(createListingSocialMetadata({ ...base, imageUrl: avatar }));
+    expect(og).not.toContain("googleusercontent");
+    expect(og).not.toContain("/profiles/");
+    expect(og).toContain("og-sidespace.png");
+  });
+
+  it("still uses a real listing photo", () => {
+    const photo =
+      "https://x.supabase.co/storage/v1/object/public/marketplace-media/uid/listings/9a241a80.jpg";
+    expect(ogOf(createListingSocialMetadata({ ...base, imageUrl: photo }))).toBe(photo);
+  });
+
+  it("skips an avatar and takes the next real photo", () => {
+    const photo =
+      "https://x.supabase.co/storage/v1/object/public/marketplace-media/uid/listings/real.jpg";
+    const og = ogOf(
+      createListingSocialMetadata({
+        ...base,
+        imageUrl: "https://lh3.googleusercontent.com/a/avatar=s96-c",
+        imageUrls: [photo],
+      }),
+    );
+    expect(og).toBe(photo);
+  });
+});

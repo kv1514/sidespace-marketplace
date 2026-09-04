@@ -68,15 +68,44 @@ function truncateMetadata(value: string, maxLength: number) {
  */
 const SEEDED_BRIEF_COVER = "/photos/market-creator.jpg";
 
+/**
+ * Image sources that are a member's face rather than their inventory.
+ *
+ * A listing published without a photo has its `image_url` seeded from the
+ * member's avatar, so sharing that listing put the seller's Google account
+ * photo in the preview card - a 96px headshot cropped square by every scraper
+ * that reads it. That is the whole reason the branded card exists, so an
+ * avatar is not a usable listing image: fall through to the SideSpace card.
+ *
+ * Matched on the host and on the storage path rather than on a full URL, since
+ * the same avatar arrives as an `lh3.googleusercontent.com` link for a Google
+ * sign-in and as a `/profiles/<uuid>.jpg` object for an uploaded one.
+ */
+const AVATAR_IMAGE_HOSTS = [
+  "lh3.googleusercontent.com",
+  "googleusercontent.com",
+  "avatars.githubusercontent.com",
+];
+
+function isAvatarImage(url: URL) {
+  const host = url.hostname.toLowerCase();
+  if (AVATAR_IMAGE_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) {
+    return true;
+  }
+  // Supabase storage keeps avatars under a /profiles/ segment and listing
+  // photos under /listings/.
+  return /\/profiles\//.test(url.pathname);
+}
+
 function metadataImageUrl(value: unknown) {
   const candidate = metadataText(value);
   if (!candidate) return null;
 
   try {
     const url = new URL(candidate, SITE_URL);
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.toString()
-      : null;
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (isAvatarImage(url)) return null;
+    return url.toString();
   } catch {
     return null;
   }

@@ -848,7 +848,18 @@ export function LandingPage({
 }) {
   const [audience, setAudience] = useState<"advertise" | "offer">("advertise");
   const [activeProcess, setActiveProcess] = useState(0);
+  const processRef = useRef<HTMLDivElement | null>(null);
 
+  /**
+   * The three-step band cycles only while it is on screen, and rewinds to 01
+   * every time it comes back.
+   *
+   * It used to run a bare interval from mount, so by the time anyone scrolled
+   * this far the story was mid-way through: you arrived at step 02 or 03 with
+   * no idea you had missed the beginning. Leaving the viewport now parks it,
+   * and returning restarts from the first step, so the first thing anyone sees
+   * is the first step.
+   */
   useEffect(() => {
     if (
       typeof window === "undefined" ||
@@ -856,14 +867,42 @@ export function LandingPage({
     ) {
       return;
     }
+    const band = processRef.current;
+    // Each preview gets one complete 4.6 second widget cycle before the
+    // emphasis moves on.
+    const start = () =>
+      window.setInterval(
+        () => setActiveProcess((current) => (current + 1) % 3),
+        4600,
+      );
 
-    // Restore the original three-step rhythm: each preview gets one complete
-    // 4.6 second widget cycle before the emphasis moves to the next card.
-    const timer = window.setInterval(() => {
-      setActiveProcess((current) => (current + 1) % 3);
-    }, 4600);
+    // No observer: better a band that cycles than one frozen on step 01.
+    if (!band || typeof IntersectionObserver === "undefined") {
+      const timer = start();
+      return () => window.clearInterval(timer);
+    }
 
-    return () => window.clearInterval(timer);
+    let timer: number | undefined;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          if (timer) return;
+          setActiveProcess(0);
+          timer = start();
+        } else if (timer) {
+          window.clearInterval(timer);
+          timer = undefined;
+        }
+      },
+      // A sliver on screen is not "reading it" - wait until a good part of the
+      // band is actually in view before starting the story.
+      { threshold: 0.35 },
+    );
+    observer.observe(band);
+    return () => {
+      if (timer) window.clearInterval(timer);
+      observer.disconnect();
+    };
   }, []);
 
   return (
@@ -1029,9 +1068,10 @@ export function LandingPage({
             </span>
           </Link>
         </header>
-        <div className="ss-process-row">
+        <div className="ss-process-row" ref={processRef}>
           <article
             className={activeProcess === 0 ? "is-active" : undefined}
+            aria-current={activeProcess === 0 ? "step" : undefined}
             onMouseEnter={() => hoverIsFine() && setActiveProcess(0)}
           >
             <span>01 / DISCOVER</span>
@@ -1044,6 +1084,7 @@ export function LandingPage({
           </article>
           <article
             className={activeProcess === 1 ? "is-active" : undefined}
+            aria-current={activeProcess === 1 ? "step" : undefined}
             onMouseEnter={() => hoverIsFine() && setActiveProcess(1)}
           >
             <span>02 / TALK DIRECTLY</span>
@@ -1056,6 +1097,7 @@ export function LandingPage({
           </article>
           <article
             className={activeProcess === 2 ? "is-active" : undefined}
+            aria-current={activeProcess === 2 ? "step" : undefined}
             onMouseEnter={() => hoverIsFine() && setActiveProcess(2)}
           >
             <span>03 / MAKE IT HAPPEN</span>

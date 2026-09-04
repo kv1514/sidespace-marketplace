@@ -2044,6 +2044,14 @@ h2 em {
   outline-offset: 2px;
 }
 
+/* A finger needs 44px. The pill keeps its 32px look on a mouse. */
+@media (pointer: coarse) {
+  .segmented-option {
+    min-height: 44px;
+    padding: 0 14px;
+  }
+}
+
 .segmented-option[aria-pressed="true"] {
   background: var(--ink);
   color: var(--white);
@@ -2051,6 +2059,57 @@ h2 em {
 
 .segmented-option[aria-pressed="true"] b {
   color: var(--lime);
+}
+
+.segmented-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* A filter the member cannot see is indistinguishable from missing data, so
+   the narrowing the stat tiles apply says so and can be cleared in one tap. */
+.filter-pill {
+  align-items: center;
+  appearance: none;
+  background: var(--ink);
+  border: 0;
+  border-radius: 999px;
+  color: var(--white);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 12px;
+  transition: background-color 160ms var(--ease-out);
+  white-space: nowrap;
+}
+
+.filter-pill span[aria-hidden] {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .filter-pill:hover span[aria-hidden] {
+    opacity: 1;
+  }
+}
+
+.filter-pill:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .filter-pill {
+    min-height: 44px;
+  }
 }
 
 .campaign-request-list {
@@ -5262,9 +5321,14 @@ html {
     transition-property: background-color, border-color, color;
   }
 
+  /* The global reduced-motion rule only zeroes transition durations, so a
+     transform applied by :active - which never transitions - slipped past it.
+     Every press-scale in the product is listed here for that reason. */
   .dashboard-stat:hover,
   .dashboard-stat:active,
   .segmented-option:active,
+  .dashboard-path:active,
+  .button:active,
   .dashboard-stat:hover .dashboard-stat-action svg {
     transform: none;
   }
