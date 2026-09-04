@@ -11,6 +11,11 @@ are visible only to the founder who invoked the command.
 /sidespace user person@example.com
 /sidespace credit person@example.com 25 Launch recovery
 /sidespace referral 10
+/sidespace suspend person@example.com Obscene listings
+/sidespace restore person@example.com
+/sidespace block "jerkspace" Banned brand
+/sidespace unblock "jerkspace"
+/sidespace blocklist
 ```
 
 `user` returns profile state, listings, campaign counts, spend-only ad credit,
@@ -29,9 +34,28 @@ constraint. A recipient who completes Business onboarding can redeem it once;
 the permanent normalized-auth-email tombstone prevents account deletion from
 making the promotion reusable.
 
+`suspend` hides a member's profile and every listing they own from the public
+site, and blocks them from publishing again. All three are enforced by RLS, so
+they hold regardless of what the app does. `restore` lifts it. Internal
+SideSpace accounts cannot be suspended. The reason is required and stored.
+
+`block` refuses a pattern anywhere in a listing title or description, so a
+banned brand cannot return under a new account. Patterns are case-insensitive
+regular expressions and must be quoted, because a regex may legitimately
+contain spaces.
+
+**Blocklist patterns are the sharp edge here, and the database refuses the two
+ways they go wrong.** A pattern that does not compile would make the listings
+trigger raise on every publish for every member, so it is compile-checked
+before it can be stored. And a pattern broad enough to match a listing from a
+member in good standing is refused outright, naming the listings it would have
+hit — `jerk` cannot quietly take down a beef jerky stand or a Jamaican jerk
+chicken window, which are exactly the businesses this marketplace is for. To
+remove a specific member's live listing, suspend the member instead.
+
 Slack retries are safe. The signed request becomes a unique action key, and the
-credit/referral mutation plus private audit record commit in one database
-transaction.
+credit/referral/moderation mutation plus its private audit record commit in one
+database transaction. Reusing a key for a different operation is refused.
 
 ## One-time Slack setup
 
@@ -49,7 +73,8 @@ transaction.
    SLACK_ALLOWED_USER_IDS=U_AIDEN,U_KV
    ```
 
-5. Apply `20260902060000_slack_founder_admin.sql`, deploy the matching app
+5. Apply `20260902060000_slack_founder_admin.sql` and
+   `20260904060449_slack_moderation_commands.sql`, deploy the matching app
    commit, then run `/sidespace help` and test with controlled Business and
    non-Business accounts.
 
