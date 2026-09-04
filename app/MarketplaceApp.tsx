@@ -4550,6 +4550,58 @@ if (typeof document !== "undefined") {
 // child. Only the dialog on top of this stack reacts to keys.
 const openModals: HTMLElement[] = [];
 
+/**
+ * The page behind an open overlay must not scroll.
+ *
+ * Nothing stopped it. Reading a listing and spinning the wheel past the end of
+ * the dialog scrolled the marketplace underneath it, so closing the dialog left
+ * you somewhere else in the grid than where you opened it - 600px further down,
+ * hunting for the card you had just been looking at. The same happened behind
+ * the messages drawer. It also pins the small jump the browser makes when it
+ * scrolls the clicked card fully into view as it takes focus.
+ *
+ * Counted, because overlays stack: a listing, then the seller's profile over
+ * it. Only the first lock records the position and only the last unlock
+ * restores it, so closing the inner one does not release the outer one's hold.
+ *
+ * position: fixed rather than overflow: hidden, which iOS Safari ignores for
+ * the body. The scrollbar's width is handed back as padding, so the page does
+ * not jump sideways at the moment the scrollbar disappears.
+ */
+let scrollLocks = 0;
+let lockedScrollY = 0;
+
+function lockPageScroll() {
+  if (scrollLocks++ > 0) return;
+  lockedScrollY = window.scrollY;
+  const gutter = window.innerWidth - document.documentElement.clientWidth;
+  const style = document.body.style;
+  style.position = "fixed";
+  style.top = `-${lockedScrollY}px`;
+  style.left = "0";
+  style.right = "0";
+  style.width = "100%";
+  if (gutter > 0) style.paddingRight = `${gutter}px`;
+}
+
+function unlockPageScroll() {
+  if (scrollLocks === 0 || --scrollLocks > 0) return;
+  const style = document.body.style;
+  style.position = "";
+  style.top = "";
+  style.left = "";
+  style.right = "";
+  style.width = "";
+  style.paddingRight = "";
+  // The stylesheet asks for smooth scrolling, which would animate the page
+  // back to where it already was. Put it there outright.
+  const root = document.documentElement;
+  const previous = root.style.scrollBehavior;
+  root.style.scrollBehavior = "auto";
+  window.scrollTo(0, lockedScrollY);
+  root.style.scrollBehavior = previous;
+}
+
 function Modal({
   children,
   onClose,
@@ -4582,6 +4634,7 @@ function Modal({
     const card = cardRef.current;
     if (!card) return;
     openModals.push(card);
+    lockPageScroll();
     const isTopmost = () => openModals[openModals.length - 1] === card;
     const active = document.activeElement as HTMLElement | null;
     const opener =
@@ -4642,6 +4695,7 @@ function Modal({
       document.removeEventListener("keydown", onKeyDown, true);
       const at = openModals.indexOf(card);
       if (at !== -1) openModals.splice(at, 1);
+      unlockPageScroll();
       // Send focus back where it came from so the page does not lose place.
       if (opener && document.contains(opener)) {
         opener.focus({ preventScroll: true });
@@ -10325,6 +10379,7 @@ export default function MarketplaceApp({
     const card = inboxCardRef.current;
     if (!card) return;
     const opener = document.activeElement as HTMLElement | null;
+    lockPageScroll();
     card.focus({ preventScroll: true });
 
     function onKeyDown(event: KeyboardEvent) {
@@ -10358,6 +10413,7 @@ export default function MarketplaceApp({
     document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
+      unlockPageScroll();
       if (opener && document.contains(opener)) {
         opener.focus({ preventScroll: true });
       }
