@@ -63,10 +63,18 @@ Preview, and Development:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (server-only)
+- `FOUNDER_AUTH_USER_IDS` (server-only; comma-separated immutable Supabase
+  Auth user IDs for the founder KPI dashboard)
+- `ANALYTICS_HASH_SECRET` (server-only; long random secret for deduplicated
+  listing-view hashes)
 - `SLACK_SIGNING_SECRET`, `SLACK_TEAM_ID`, and `SLACK_ALLOWED_USER_IDS`
   (server-only; only when enabling the founder slash command documented in
   `docs/SLACK_ADMIN_BOT.md`)
 - Stripe variables documented in `docs/STRIPE_MARKETPLACE.md`
+
+The founder KPI dashboard is documented in
+[docs/FOUNDER_KPIS.md](docs/FOUNDER_KPIS.md). It is available at `/founder`
+only to the two configured Supabase Auth user IDs.
 
 Deploy, then add the production callback URL to Supabase:
 

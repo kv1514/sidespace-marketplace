@@ -31,7 +31,7 @@ export default function PrivacyPage() {
         ← SideSpace
       </Link>
       <h1>Privacy Policy</h1>
-      <p className="legal-updated">Last updated: September 2, 2026</p>
+      <p className="legal-updated">Last updated: September 4, 2026</p>
 
       <h2>1. What we collect</h2>
       <ul>
@@ -69,8 +69,16 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Usage analytics.</strong> We use Vercel Web Analytics, which
-          collects aggregate, cookie-free page view statistics. We do not run
-          advertising trackers.
+          collects aggregate, cookie-free page view statistics. We also record
+          limited first-party marketplace funnel events, such as listing-detail
+          opens, signups, onboarding completion, requests, accepted campaigns,
+          and fulfilled campaigns, so the SideSpace founders can understand
+          product activity. Listing-detail opens use a random, HTTP-only first-
+          party cookie that is HMAC-hashed on our server; the KPI event does not
+          store your name, email address, or IP address, and counts one browser
+          once per listing per UTC day. We use the server-observed request source
+          only transiently for abuse limiting; it is not written to KPI data.
+          We do not run advertising trackers.
         </li>
       </ul>
 

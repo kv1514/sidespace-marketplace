@@ -5443,6 +5443,22 @@ export default function MarketplaceApp({
   const igSyncedHandleRef = useRef("");
   const igSyncedUrlRef = useRef("");
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const listingViewRequestsRef = useRef(new Set<string>());
+  const recordListingView = useCallback(async (listingId: string) => {
+    if (!configured || listingViewRequestsRef.current.has(listingId)) return;
+    listingViewRequestsRef.current.add(listingId);
+    try {
+      await fetch("/api/analytics/listing-view", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ listingId }),
+        cache: "no-store",
+        keepalive: true,
+      });
+    } catch {
+      // Analytics must never block opening a listing detail view.
+    }
+  }, [configured]);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   // The photos the open listing shows, and whether its media column holds
   // anything at all. A brief with no photo, no Street View and no walkthrough
@@ -6636,6 +6652,7 @@ export default function MarketplaceApp({
       const timer = window.setTimeout(() => {
         setSelectedPhotoIndex(0);
         setSelectedListing(linkedListing);
+        void recordListingView(linkedListing.id);
       }, 0);
       return () => window.clearTimeout(timer);
     }
@@ -6675,6 +6692,7 @@ export default function MarketplaceApp({
         if (resolved && !blockedProfileIds.includes(resolved.owner.id)) {
           setSelectedPhotoIndex(0);
           setSelectedListing(resolved);
+          void recordListingView(resolved.id);
           return;
         }
       }
@@ -6692,6 +6710,7 @@ export default function MarketplaceApp({
     blockedProfileIds,
     listings,
     loading,
+    recordListingView,
     selectedListing,
     sessionResolved,
     supabase,
@@ -7288,6 +7307,7 @@ export default function MarketplaceApp({
     setSelectedCreatorPortfolio([]);
     setSelectedCreatorReviews([]);
     setSelectedListing(listing);
+    void recordListingView(listing.id);
     const url = new URL(window.location.href);
     url.searchParams.set("listing", listing.id);
     window.history.replaceState(null, "", url);
