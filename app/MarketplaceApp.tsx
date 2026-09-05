@@ -84,10 +84,6 @@ import {
   type TranslationKey,
 } from "@/lib/i18n";
 import {
-  localizedListingCopy,
-  type ListingTranslations,
-} from "@/lib/listing-localization";
-import {
   compareLocations,
   locationMatchScore,
 } from "@/lib/listings/location";
@@ -217,7 +213,6 @@ type Listing = BookingSchedule & {
   price_unit: string;
   description: string;
   demographics: string;
-  translations?: ListingTranslations | null;
   image_url: string;
   image_urls?: string[];
   location_area?: string;
@@ -4205,13 +4200,17 @@ function formatOffer(raw: string) {
 function priceLabel(
   listing: Pick<Listing, "price_cents" | "price_max_cents">,
   locale: Locale = "en",
+  formatPrice: ((usdCents: number) => string) | undefined = undefined,
 ) {
+  const format =
+    formatPrice ??
+    ((usdCents: number) => formatLocalizedCurrency(locale, usdCents));
   const low = listing.price_cents;
   const high = listing.price_max_cents;
   if (typeof high === "number" && high > low) {
-    return `${formatLocalizedCurrency(locale, low)}–${formatLocalizedCurrency(locale, high)}`;
+    return `${format(low)}–${format(high)}`;
   }
-  return formatLocalizedCurrency(locale, low);
+  return format(low);
 }
 
 function isBrief(listing: Pick<Listing, "channel">) {
@@ -5195,8 +5194,8 @@ export default function MarketplaceApp({
 } = {}) {
   const {
     locale,
-    translateListings,
     formatNumber: formatLocalizedNumber,
+    formatListingPrice,
     t,
   } = useLocale();
   const seededProfiles = useMemo(() => {
@@ -5566,9 +5565,7 @@ export default function MarketplaceApp({
   // has an empty left column, and the layout closes it up rather than leaving
   // a 520px hole beside the copy.
   const detailPhotos = selectedListing ? listingPhotos(selectedListing) : [];
-  const detailCopy = selectedListing
-    ? localizedListingCopy(selectedListing, locale, translateListings)
-    : null;
+  const detailCopy = selectedListing;
   const detailHasMedia = Boolean(
     selectedListing &&
       (detailPhotos.length ||
@@ -5644,9 +5641,7 @@ export default function MarketplaceApp({
   const [stripeAccountStatus, setStripeAccountStatus] =
     useState<StripeAccountStatus | null>(null);
   const [campaignListing, setCampaignListing] = useState<Listing | null>(null);
-  const campaignListingCopy = campaignListing
-    ? localizedListingCopy(campaignListing, locale, translateListings)
-    : null;
+  const campaignListingCopy = campaignListing;
   const [campaignFeedback, setCampaignFeedback] = useState("");
   const [campaignRequestMode, setCampaignRequestMode] =
     useState<CampaignRequestMode>("offer");
@@ -6576,6 +6571,7 @@ export default function MarketplaceApp({
       const locationMatches =
         !normalizedLocation ||
         locationMatchScore(listingCity(listing), normalizedLocation) > 0;
+      const copy = listing;
       // Includes the listing's own location and offer line: both are shown on
       // the card, so searching "Walnut" or "decal" should find them. Optional
       // fields are coalesced so the literal string "undefined" never becomes
@@ -6588,11 +6584,11 @@ export default function MarketplaceApp({
       // question that changes nothing is a question that should not be asked;
       // making it searchable is the cheaper of the two ways to fix that.
       const text = [
-        listing.title,
+        copy.title,
         listing.channel,
-        listing.description,
-        listing.demographics,
-        listing.format,
+        copy.description,
+        copy.demographics,
+        copy.format,
         listing.location_area ?? "",
         listing.owner.display_name,
         listing.owner.city,
@@ -11715,13 +11711,9 @@ export default function MarketplaceApp({
         {ownListingsLoading ? (
           <div className="account-empty">Loading your saved listings…</div>
         ) : ownListings.length ? (
-          <div className="my-listings-grid">
+            <div className="my-listings-grid">
             {ownListings.map((listing) => {
-              const copy = localizedListingCopy(
-                listing,
-                locale,
-                translateListings,
-              );
+              const copy = listing;
               return (
               <article className="my-listing-card" key={listing.id}>
                 <ListingCover
@@ -11737,7 +11729,7 @@ export default function MarketplaceApp({
                     {isBrief(listing)
                       ? t("market.wanted")
                       : localizeListingChannel(locale, listing.channel)}{" "}
-                    • {priceLabel(listing, locale)}/{localizeListingUnit(locale, pricingLabel(listing))}
+                    • {priceLabel(listing, locale, formatListingPrice)}/{localizeListingUnit(locale, pricingLabel(listing))}
                   </p>
                   {(() => {
                     const gaps = listingGaps(listing);
@@ -12679,11 +12671,7 @@ export default function MarketplaceApp({
               {creatorRecommendations.length ? (
                 <div className="dashboard-recommendation-grid">
                   {creatorRecommendations.map((recommendation) => {
-                    const copy = localizedListingCopy(
-                      recommendation.listing,
-                      locale,
-                      translateListings,
-                    );
+                    const copy = recommendation.listing;
                     return (
                     <article
                       className="dashboard-recommendation-card"
@@ -13235,11 +13223,7 @@ export default function MarketplaceApp({
             </div>
             <div className="listing-foryou-row">
               {forYou.items.map(({ listing, reasons }) => {
-                const copy = localizedListingCopy(
-                  listing,
-                  locale,
-                  translateListings,
-                );
+                const copy = listing;
                 return (
                   <article
                     className="listing-foryou-card"
@@ -13282,11 +13266,7 @@ export default function MarketplaceApp({
               <div className="listing-skeleton" key={`skeleton-${index}`} />
             ))}
           {visibleListings.map((listing) => {
-            const copy = localizedListingCopy(
-              listing,
-              locale,
-              translateListings,
-            );
+            const copy = listing;
             return (
               <article
                 className="listing-card"
@@ -13374,20 +13354,6 @@ export default function MarketplaceApp({
                 >
                   {copy.title}
                 </button>
-                {translateListings && locale !== "en" && (
-                  <span
-                    className={`listing-translation-badge${copy.translated ? "" : " is-original"}`}
-                    title={
-                      copy.translated
-                        ? undefined
-                        : t("market.translationUnavailable")
-                    }
-                  >
-                    {copy.translated
-                      ? t("market.translatedLabel")
-                      : t("market.originalLabel")}
-                  </span>
-                )}
                 <p className="listing-blurb">{copy.description}</p>
                 <div className="listing-offer">
                   <span className="listing-offer-label">
@@ -13413,7 +13379,7 @@ export default function MarketplaceApp({
                     {isBrief(listing) && (
                       <span className="price-lead">{t("market.budget")}</span>
                     )}
-                    <strong>{priceLabel(listing, locale)}</strong>
+                    <strong>{priceLabel(listing, locale, formatListingPrice)}</strong>
                     <small> / {localizeListingUnit(locale, pricingLabel(listing))}</small>
                   </div>
                   <button
@@ -17680,24 +17646,10 @@ export default function MarketplaceApp({
                   onToggle={() => void toggleListingLike(selectedListing)}
                 />
               </div>
-              {translateListings && locale !== "en" && detailCopy && (
-                <span
-                  className={`listing-translation-badge${detailCopy.translated ? "" : " is-original"}`}
-                  title={
-                    detailCopy.translated
-                      ? undefined
-                      : t("market.translationUnavailable")
-                  }
-                >
-                  {detailCopy.translated
-                    ? t("market.translatedLabel")
-                    : t("market.originalLabel")}
-                </span>
-              )}
               <p className="listing-included">
                 {detailCopy?.deliverables || detailCopy?.format}
               </p>
-              <div className="detail-price"><strong>{priceLabel(selectedListing, locale)}</strong><span> / {localizeListingUnit(locale, pricingLabel(selectedListing))}</span></div>
+              <div className="detail-price"><strong>{priceLabel(selectedListing, locale, formatListingPrice)}</strong><span> / {localizeListingUnit(locale, pricingLabel(selectedListing))}</span></div>
               <div className="detail-facts">
                 <div><small>Location</small><strong>{listingCity(selectedListing)}</strong></div>
                 <div><small>Timing</small><strong>{isBrief(selectedListing) ? selectedListing.available_from && selectedListing.available_to ? bookingDateLabel(selectedListing.timing_kind,selectedListing.available_from,selectedListing.available_to) : "Flexible" : selectedListing.timing_kind === "deadline" ? "Choose a delivery deadline" : "Choose your campaign dates"}</strong></div>
@@ -17944,11 +17896,7 @@ export default function MarketplaceApp({
               ) : ownerListings.length ? (
                 <div className="seller-listing-grid">
                   {ownerListings.map((listing) => {
-                    const copy = localizedListingCopy(
-                      listing,
-                      locale,
-                      translateListings,
-                    );
+                    const copy = listing;
                     return (
                       <button
                         type="button"
@@ -17968,7 +17916,7 @@ export default function MarketplaceApp({
                           </span>
                           <strong>{copy.title}</strong>
                           <span className="seller-listing-price">
-                            {priceLabel(listing, locale)} / {localizeListingUnit(locale, pricingLabel(listing))}
+                            {priceLabel(listing, locale, formatListingPrice)} / {localizeListingUnit(locale, pricingLabel(listing))}
                           </span>
                           {listing.id === selectedListing?.id && (
                             <span className="seller-listing-current">

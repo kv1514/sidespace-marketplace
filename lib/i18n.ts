@@ -1,5 +1,4 @@
 export const LOCALE_COOKIE = "sidespace_locale";
-export const LISTING_TRANSLATION_COOKIE = "sidespace_translate_listings";
 export const DEFAULT_LOCALE = "en" as const;
 
 export const LOCALES = [
@@ -34,14 +33,16 @@ const ENGLISH_MESSAGES = {
   "chrome.interfaceLanguage": "Interface language",
   "chrome.languageAndRegion": "Language and region",
   "chrome.currency": "Currency",
-  "chrome.translation": "Translation",
-  "chrome.autoTranslateListings": "Automatically translate listings",
-  "chrome.autoTranslateListingsDescription":
-    "Show available listing titles and descriptions in your chosen language.",
   "chrome.chooseLanguageRegion": "Choose a language and region",
   "chrome.currencyTitle": "Currency",
   "chrome.currencyDescription":
-    "SideSpace currently displays listing prices in US dollars.",
+    "Prices are converted from USD using a daily ECB reference rate.",
+  "chrome.currencyCheckoutNote":
+    "Display only. Checkout currently charges in USD; the final amount is shown in Stripe.",
+  "chrome.currencyRateLoading": "Updating exchange rate…",
+  "chrome.currencyRateUnavailable":
+    "Live rate unavailable. Prices are shown in USD.",
+  "chrome.currencyRate": "1 USD = {rate} {currency}",
   "chrome.currencyUsdOnly": "US dollar · USD",
   "chrome.closeLanguageSettings": "Close language and region settings",
   "chrome.footerTaglineOne": "The marketplace for local attention.",
@@ -383,10 +384,6 @@ const ENGLISH_MESSAGES = {
   "market.locationSort": "Location",
   "market.locationNote": "Showing listings in or near {location}.",
   "market.noLocationMatches": "No listings in {location} yet.",
-  "market.translatedLabel": "Translated",
-  "market.originalLabel": "Original",
-  "market.translationUnavailable":
-    "This listing is shown in its original language until a verified translation is available.",
   "market.channelCafeWindow": "Cafe window",
   "market.channelMainStreet": "Main Street",
   "market.channelFarmStand": "Farm stand",
@@ -572,14 +569,16 @@ const SPANISH_MESSAGES: Messages = {
   "chrome.interfaceLanguage": "Idioma de la interfaz",
   "chrome.languageAndRegion": "Idioma y región",
   "chrome.currency": "Moneda",
-  "chrome.translation": "Traducción",
-  "chrome.autoTranslateListings": "Traducir anuncios automáticamente",
-  "chrome.autoTranslateListingsDescription":
-    "Muestra los títulos y las descripciones disponibles en tu idioma.",
   "chrome.chooseLanguageRegion": "Elige un idioma y una región",
   "chrome.currencyTitle": "Moneda",
   "chrome.currencyDescription":
-    "SideSpace muestra actualmente los precios de los anuncios en dólares estadounidenses.",
+    "Los precios se convierten de USD usando el tipo de referencia diario del BCE.",
+  "chrome.currencyCheckoutNote":
+    "Solo para mostrar. El pago actualmente se cobra en USD; el importe final se muestra en Stripe.",
+  "chrome.currencyRateLoading": "Actualizando el tipo de cambio…",
+  "chrome.currencyRateUnavailable":
+    "El tipo de cambio en vivo no está disponible. Los precios se muestran en USD.",
+  "chrome.currencyRate": "1 USD = {rate} {currency}",
   "chrome.currencyUsdOnly": "Dólar estadounidense · USD",
   "chrome.closeLanguageSettings": "Cerrar los ajustes de idioma y región",
   "chrome.footerTaglineOne": "El marketplace de la atención local.",
@@ -915,10 +914,6 @@ const SPANISH_MESSAGES: Messages = {
   "market.locationSort": "Ubicación",
   "market.locationNote": "Mostrando anuncios en {location} o cerca.",
   "market.noLocationMatches": "Todavía no hay anuncios en {location}.",
-  "market.translatedLabel": "Traducido",
-  "market.originalLabel": "Original",
-  "market.translationUnavailable":
-    "Este anuncio se muestra en su idioma original hasta que haya una traducción verificada.",
   "market.channelCafeWindow": "Escaparate de café",
   "market.channelMainStreet": "Calle principal",
   "market.channelFarmStand": "Puesto agrícola",
@@ -1090,14 +1085,16 @@ const FRENCH_MESSAGES: Messages = {
   "chrome.interfaceLanguage": "Langue de l’interface",
   "chrome.languageAndRegion": "Langue et région",
   "chrome.currency": "Devise",
-  "chrome.translation": "Traduction",
-  "chrome.autoTranslateListings": "Traduire automatiquement les annonces",
-  "chrome.autoTranslateListingsDescription":
-    "Affichez les titres et descriptions disponibles dans votre langue.",
   "chrome.chooseLanguageRegion": "Choisissez une langue et une région",
   "chrome.currencyTitle": "Devise",
   "chrome.currencyDescription":
-    "SideSpace affiche actuellement les prix des annonces en dollars américains.",
+    "Les prix sont convertis depuis l’USD avec le taux de référence quotidien de la BCE.",
+  "chrome.currencyCheckoutNote":
+    "Affichage uniquement. Le paiement est actuellement facturé en USD ; le montant final est affiché dans Stripe.",
+  "chrome.currencyRateLoading": "Actualisation du taux de change…",
+  "chrome.currencyRateUnavailable":
+    "Le taux en direct n’est pas disponible. Les prix sont affichés en USD.",
+  "chrome.currencyRate": "1 USD = {rate} {currency}",
   "chrome.currencyUsdOnly": "Dollar américain · USD",
   "chrome.closeLanguageSettings": "Fermer les réglages de langue et de région",
   "chrome.footerTaglineOne": "Le marketplace de l’attention locale.",
@@ -1433,10 +1430,6 @@ const FRENCH_MESSAGES: Messages = {
   "market.locationSort": "Localisation",
   "market.locationNote": "Annonces dans {location} ou à proximité.",
   "market.noLocationMatches": "Aucune annonce à {location} pour le moment.",
-  "market.translatedLabel": "Traduit",
-  "market.originalLabel": "Original",
-  "market.translationUnavailable":
-    "Cette annonce est affichée dans sa langue d’origine jusqu’à ce qu’une traduction vérifiée soit disponible.",
   "market.channelCafeWindow": "Vitrine de café",
   "market.channelMainStreet": "Rue principale",
   "market.channelFarmStand": "Stand fermier",
@@ -1608,14 +1601,15 @@ const MANDARIN_MESSAGES: Messages = {
   "chrome.interfaceLanguage": "界面语言",
   "chrome.languageAndRegion": "语言和地区",
   "chrome.currency": "货币",
-  "chrome.translation": "翻译",
-  "chrome.autoTranslateListings": "自动翻译资源内容",
-  "chrome.autoTranslateListingsDescription":
-    "用你选择的语言显示已有翻译的资源标题和描述。",
   "chrome.chooseLanguageRegion": "选择语言和地区",
   "chrome.currencyTitle": "货币",
   "chrome.currencyDescription":
-    "SideSpace 目前使用美元显示资源价格。",
+    "价格根据欧洲央行每日参考汇率从 USD 换算。",
+  "chrome.currencyCheckoutNote":
+    "仅用于显示。结账目前以 USD 收取；最终金额会在 Stripe 中显示。",
+  "chrome.currencyRateLoading": "正在更新汇率…",
+  "chrome.currencyRateUnavailable": "实时汇率暂不可用。价格将以 USD 显示。",
+  "chrome.currencyRate": "1 USD = {rate} {currency}",
   "chrome.currencyUsdOnly": "美元 · USD",
   "chrome.closeLanguageSettings": "关闭语言和地区设置",
   "chrome.footerTaglineOne": "本地注意力的市场。",
@@ -1951,10 +1945,6 @@ const MANDARIN_MESSAGES: Messages = {
   "market.locationSort": "地点",
   "market.locationNote": "正在显示 {location} 及附近的资源。",
   "market.noLocationMatches": "{location} 暂时没有资源。",
-  "market.translatedLabel": "已翻译",
-  "market.originalLabel": "原文",
-  "market.translationUnavailable":
-    "此资源暂以原语言显示，经过验证的翻译版本尚未提供。",
   "market.channelCafeWindow": "咖啡馆橱窗",
   "market.channelMainStreet": "主街",
   "market.channelFarmStand": "农场摊位",

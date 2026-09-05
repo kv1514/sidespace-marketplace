@@ -11,7 +11,13 @@ import {
   parseLocale,
   translate,
 } from "../lib/i18n";
-import { localizedListingCopy } from "../lib/listing-localization";
+import {
+  convertUsdCents,
+  currencyFromRequest,
+  formatMinorCurrency,
+  parseCurrency,
+  regionFromAcceptLanguage,
+} from "../lib/currency";
 import {
   compareLocations,
   locationMatchScore,
@@ -72,33 +78,30 @@ describe("SideSpace locale resolution", () => {
     expect(compareLocations("Åre, SE", "Austin, TX", "en-US")).toBeLessThan(0);
   });
 
-  it("uses verified seeded listing copy and preserves unknown live copy", () => {
-    const seeded = localizedListingCopy(
-      {
-        id: "a1111111-1111-4111-8111-111111111111",
-        title: "Local story + saved highlight",
-        format: "3 frames - 48 hr highlight",
-        description: "Original description",
-        demographics: "Original audience",
-      },
-      "zh",
-      true,
+  it("uses a saved currency first, then trusted country and language hints", () => {
+    expect(currencyFromRequest({ country: "CN", locale: "en" })).toBe("CNY");
+    expect(currencyFromRequest({ country: "SG", locale: "en" })).toBe("SGD");
+    expect(
+      currencyFromRequest({
+        cookie: "EUR",
+        country: "CN",
+        acceptLanguage: "zh-CN",
+        locale: "zh",
+      }),
+    ).toBe("EUR");
+    expect(currencyFromRequest({ acceptLanguage: "en-SG,en;q=0.8" })).toBe(
+      "SGD",
     );
-    expect(seeded.translated).toBe(true);
-    expect(seeded.title).toBe("本地故事 + 已保存精选");
-    expect(seeded.description).not.toBe("Original description");
-
-    const live = localizedListingCopy(
-      {
-        id: "live-listing",
-        title: "Owner-written title",
-        format: "Custom format",
-        description: "Owner-written description",
-      },
-      "zh",
-      true,
-    );
-    expect(live.translated).toBe(false);
-    expect(live.title).toBe("Owner-written title");
+    expect(currencyFromRequest({ locale: "zh" })).toBe("CNY");
+    expect(regionFromAcceptLanguage("ja, zh-CN;q=0.9")).toBe("CN");
+    expect(parseCurrency("cny")).toBe("CNY");
+    expect(parseCurrency("not-a-currency")).toBeNull();
   });
+
+  it("converts USD cents using target minor units and formats the result", () => {
+    expect(convertUsdCents(10000, "CNY", 7.2)).toBe(72000);
+    expect(convertUsdCents(1000, "JPY", 150)).toBe(1500);
+    expect(formatMinorCurrency("zh", 72000, "CNY")).toContain("720.00");
+  });
+
 });

@@ -5056,26 +5056,6 @@ html {
 
 /* ===== Compact listing cards + dual-role picker ===== */
 
-.listing-translation-badge {
-  background: color-mix(in srgb, var(--lime) 48%, var(--white));
-  border: 1px solid color-mix(in srgb, var(--lime) 75%, var(--line));
-  border-radius: 999px;
-  color: var(--ink);
-  display: inline-block;
-  font-family: var(--mono);
-  font-size: 8px;
-  letter-spacing: 0.08em;
-  margin-top: 9px;
-  padding: 4px 7px;
-  text-transform: uppercase;
-}
-
-.listing-translation-badge.is-original {
-  background: var(--paper-2);
-  border-color: var(--line);
-  color: var(--ink-soft);
-}
-
 .listing-blurb {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;

@@ -11,23 +11,39 @@ import {
 } from "react";
 import {
   DEFAULT_LOCALE,
+  type Locale,
   LOCALE_COOKIE,
-  LISTING_TRANSLATION_COOKIE,
   LOCALES,
   formatCurrency,
   formatDate,
   formatNumber,
   localeTag,
   translate,
-  type Locale,
   type TranslationKey,
 } from "@/lib/i18n";
+import {
+  CURRENCIES,
+  CURRENCY_COOKIE,
+  convertUsdCents,
+  DEFAULT_CURRENCY,
+  formatMinorCurrency,
+  type Currency,
+} from "@/lib/currency";
+
+type CurrencyRateStatus = "base" | "loading" | "ready" | "unavailable";
+type CurrencyRateState = {
+  currency: Currency;
+  rate: number | null;
+  status: CurrencyRateStatus;
+};
 
 type LocaleContextValue = {
   locale: Locale;
   setLocale: (locale: Locale) => void;
-  translateListings: boolean;
-  setTranslateListings: (enabled: boolean) => void;
+  currency: Currency;
+  setCurrency: (currency: Currency) => void;
+  currencyRate: number | null;
+  currencyRateStatus: CurrencyRateStatus;
   t: (
     key: TranslationKey,
     variables?: Record<string, string | number>,
@@ -37,6 +53,7 @@ type LocaleContextValue = {
     options?: Intl.NumberFormatOptions,
   ) => string;
   formatCurrency: (cents: number, currency?: string) => string;
+  formatListingPrice: (usdCents: number) => string;
   formatDate: (
     value: Date | number | string,
     options?: Intl.DateTimeFormatOptions,
@@ -53,26 +70,29 @@ function persistLocale(locale: Locale) {
   document.documentElement.dataset.locale = locale;
 }
 
-function persistListingTranslationPreference(enabled: boolean) {
+function persistCurrency(currency: Currency) {
   if (typeof document === "undefined") return;
-  document.cookie = `${LISTING_TRANSLATION_COOKIE}=${enabled ? "1" : "0"}; Path=/; Max-Age=31536000; SameSite=Lax`;
-  document.documentElement.dataset.translateListings = enabled ? "true" : "false";
+  document.cookie = `${CURRENCY_COOKIE}=${encodeURIComponent(currency)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+  document.documentElement.dataset.currency = currency;
 }
 
 export default function LocaleProvider({
   initialLocale = DEFAULT_LOCALE,
-  initialTranslateListings = true,
+  initialCurrency = DEFAULT_CURRENCY,
   children,
 }: {
   initialLocale?: Locale;
-  initialTranslateListings?: boolean;
+  initialCurrency?: Currency;
   children: ReactNode;
 }) {
   const [locale, setLocale] = useState<Locale>(initialLocale);
-  const [translateListings, setTranslateListings] = useState(
-    initialTranslateListings,
-  );
-
+  const [currency, setCurrency] = useState<Currency>(initialCurrency);
+  const [currencyRateState, setCurrencyRateState] =
+    useState<CurrencyRateState>({
+      currency: initialCurrency,
+      rate: initialCurrency === DEFAULT_CURRENCY ? 1 : null,
+      status: initialCurrency === DEFAULT_CURRENCY ? "base" : "loading",
+    });
   useEffect(() => {
     // The server resolves the request cookie/header before hydration. From
     // here on, the select is authoritative and this effect only synchronizes
@@ -81,24 +101,101 @@ export default function LocaleProvider({
   }, [locale]);
 
   useEffect(() => {
-    persistListingTranslationPreference(translateListings);
-  }, [translateListings]);
+    persistCurrency(currency);
+    const controller = new AbortController();
+    if (currency === DEFAULT_CURRENCY) {
+      return () => controller.abort();
+    }
+
+    const targetCurrency = currency;
+    void fetch(`/api/currency/rates?to=${encodeURIComponent(currency)}`, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Currency rate unavailable.");
+        return (await response.json()) as {
+          currency?: unknown;
+          rate?: unknown;
+        };
+      })
+      .then((payload) => {
+        if (payload.currency !== targetCurrency) {
+          throw new Error("Currency response mismatch.");
+        }
+        const rate = Number(payload.rate);
+        if (!Number.isFinite(rate) || rate <= 0) {
+          throw new Error("Currency response was invalid.");
+        }
+        if (controller.signal.aborted) return;
+        setCurrencyRateState({
+          currency: targetCurrency,
+          rate,
+          status: "ready",
+        });
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setCurrencyRateState({
+          currency: targetCurrency,
+          rate: null,
+          status: "unavailable",
+        });
+      });
+
+    return () => controller.abort();
+  }, [currency]);
+
+  const currencyRate =
+    currency === DEFAULT_CURRENCY
+      ? 1
+      : currencyRateState.currency === currency
+        ? currencyRateState.rate
+        : null;
+  const currencyRateStatus: CurrencyRateStatus =
+    currency === DEFAULT_CURRENCY
+      ? "base"
+      : currencyRateState.currency === currency
+        ? currencyRateState.status
+        : "loading";
 
   const value = useMemo<LocaleContextValue>(
     () => ({
       locale,
       setLocale,
-      translateListings,
-      setTranslateListings,
+      currency,
+      setCurrency,
+      currencyRate,
+      currencyRateStatus,
       t: (key, variables) => translate(locale, key, variables),
       formatNumber: (valueToFormat, options) =>
         formatNumber(locale, valueToFormat, options),
       formatCurrency: (cents, currency) =>
         formatCurrency(locale, cents, currency),
+      formatListingPrice: (usdCents) => {
+        if (
+          currency !== DEFAULT_CURRENCY &&
+          currencyRateStatus === "ready" &&
+          currencyRate
+        ) {
+          try {
+            return formatMinorCurrency(
+              locale,
+              convertUsdCents(usdCents, currency, currencyRate),
+              currency,
+            );
+          } catch {
+            // A malformed listing should never take the marketplace down. It
+            // falls back to the authoritative USD display for this one value.
+          }
+        }
+        return formatCurrency(locale, usdCents, DEFAULT_CURRENCY);
+      },
       formatDate: (valueToFormat, options) =>
         formatDate(locale, valueToFormat, options),
     }),
-    [locale, translateListings],
+    [currency, currencyRate, currencyRateStatus, locale],
   );
 
   return (
@@ -118,10 +215,13 @@ export function useLocale(): LocaleContextValue {
 
 export function LanguageSwitcher() {
   const {
+    currency,
+    currencyRate,
+    currencyRateStatus,
     locale,
     setLocale,
-    translateListings,
-    setTranslateListings,
+    setCurrency,
+    formatNumber,
     t,
   } = useLocale();
   const [open, setOpen] = useState(false);
@@ -204,20 +304,6 @@ export function LanguageSwitcher() {
           </div>
           {panel === "language" ? (
             <div role="tabpanel" className="ss-language-panel-body">
-              <label className="ss-translation-toggle">
-                <span>
-                  <strong>{t("chrome.translation")}</strong>
-                  <small>{t("chrome.autoTranslateListingsDescription")}</small>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={translateListings}
-                  onChange={(event) =>
-                    setTranslateListings(event.currentTarget.checked)
-                  }
-                  aria-label={t("chrome.autoTranslateListings")}
-                />
-              </label>
               <h2>{t("chrome.chooseLanguageRegion")}</h2>
               <div className="ss-language-options">
                 {LOCALES.map((option) => (
@@ -240,10 +326,40 @@ export function LanguageSwitcher() {
             <div role="tabpanel" className="ss-language-panel-body ss-currency-panel">
               <h2>{t("chrome.currencyTitle")}</h2>
               <p>{t("chrome.currencyDescription")}</p>
-              <div className="ss-currency-option">
-                <strong>{t("chrome.currencyUsdOnly")}</strong>
-                <span>✓</span>
+              <div className="ss-currency-options">
+                {CURRENCIES.map((option) => (
+                  <button
+                    type="button"
+                    key={option.code}
+                    className={option.code === currency ? "is-selected" : ""}
+                    aria-pressed={option.code === currency}
+                    onClick={() => setCurrency(option.code)}
+                  >
+                    <span>
+                      <strong>{option.symbol} {option.code}</strong>
+                      <small>{option.name}</small>
+                    </span>
+                    {option.code === currency && <b aria-hidden="true">✓</b>}
+                  </button>
+                ))}
               </div>
+              <p className="ss-currency-status" role="status" aria-live="polite">
+                {currency === DEFAULT_CURRENCY
+                  ? t("chrome.currencyRate", { rate: "1", currency })
+                  : currencyRateStatus === "loading"
+                    ? t("chrome.currencyRateLoading")
+                    : currencyRateStatus === "ready" && currencyRate
+                      ? t("chrome.currencyRate", {
+                          rate: formatNumber(currencyRate, {
+                            maximumFractionDigits: 6,
+                          }),
+                          currency,
+                        })
+                      : t("chrome.currencyRateUnavailable")}
+              </p>
+              <p className="ss-currency-checkout-note">
+                {t("chrome.currencyCheckoutNote")}
+              </p>
             </div>
           )}
         </div>

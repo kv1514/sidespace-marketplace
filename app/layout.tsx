@@ -6,9 +6,9 @@ import "lenis/dist/lenis.css";
 import "./public-site.css";
 import { OG_IMAGE, SITE_URL } from "@/lib/site-metadata";
 import LocaleProvider from "@/app/components/LocaleProvider";
+import { CURRENCY_COOKIE, currencyFromRequest } from "@/lib/currency";
 import {
   LOCALE_COOKIE,
-  LISTING_TRANSLATION_COOKIE,
   localeFromAcceptLanguage,
   localeTag,
   parseLocale,
@@ -68,8 +68,18 @@ export default async function RootLayout({
   const initialLocale =
     parseLocale(requestCookies.get(LOCALE_COOKIE)?.value) ??
     localeFromAcceptLanguage(requestHeaders.get("accept-language"));
-  const initialTranslateListings =
-    requestCookies.get(LISTING_TRANSLATION_COOKIE)?.value !== "0";
+  const initialCurrency = currencyFromRequest({
+    cookie: requestCookies.get(CURRENCY_COOKIE)?.value,
+    // These headers are supplied by the hosting edge. Do not use a browser
+    // supplied country field: it would make automatic currency selection easy
+    // to spoof and would be surprising when a saved currency exists.
+    country:
+      requestHeaders.get("x-vercel-ip-country") ??
+      requestHeaders.get("cf-ipcountry") ??
+      requestHeaders.get("x-country-code"),
+    acceptLanguage: requestHeaders.get("accept-language"),
+    locale: initialLocale,
+  });
 
   return (
     <html lang={localeTag(initialLocale)}>
@@ -88,7 +98,7 @@ export default async function RootLayout({
       <body>
         <LocaleProvider
           initialLocale={initialLocale}
-          initialTranslateListings={initialTranslateListings}
+          initialCurrency={initialCurrency}
         >
           {children}
         </LocaleProvider>

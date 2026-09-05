@@ -8,16 +8,10 @@ import Link from "next/link";
 import NextImage from "next/image";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
-  formatCurrency as formatLocalizedCurrency,
   localizeListingChannel,
   localizeListingUnit,
-  type Locale,
   type TranslationKey,
 } from "@/lib/i18n";
-import {
-  localizedListingCopy,
-  type ListingTranslations,
-} from "@/lib/listing-localization";
 import {
   isListingRequestable,
   type ListingProvenanceStatus,
@@ -44,7 +38,6 @@ export type PublicListing = {
   price_unit: string;
   description: string;
   demographics?: string | null;
-  translations?: ListingTranslations | null;
   image_url: string;
   location_area?: string | null;
   provenance_status?: ListingProvenanceStatus | null;
@@ -64,12 +57,15 @@ function listingCity(listing: PublicListing) {
   return listing.location_area || listing.owner.city;
 }
 
-function price(listing: PublicListing, locale: Locale) {
+function price(
+  listing: PublicListing,
+  formatListingPrice: (usdCents: number) => string,
+) {
   const low = Number(listing.price_cents || 0);
   const high = Number(listing.price_max_cents || 0);
   return high > low
-    ? `${formatLocalizedCurrency(locale, low)}–${formatLocalizedCurrency(locale, high)}`
-    : formatLocalizedCurrency(locale, low);
+    ? `${formatListingPrice(low)}–${formatListingPrice(high)}`
+    : formatListingPrice(low);
 }
 
 /**
@@ -502,15 +498,14 @@ function ListingPreviewCard({
   listing: PublicListing;
   onOpen: (listingId: string) => void;
 }) {
-  const { locale, translateListings, t } = useLocale();
-  const copy = localizedListingCopy(listing, locale, translateListings);
+  const { locale, formatListingPrice, t } = useLocale();
 
   return (
     <article className="ss-listing-preview">
       <button
         className="ss-listing-preview-image"
         onClick={() => onOpen(listing.id)}
-        aria-label={t("market.openListing", { title: copy.title })}
+        aria-label={t("market.openListing", { title: listing.title })}
       >
         <img
           src={listing.image_url || "/photos/market-creator.jpg"}
@@ -529,13 +524,13 @@ function ListingPreviewCard({
             <span className="ss-demo-label">{t("chrome.demo")}</span>
           )}
         </p>
-        <button onClick={() => onOpen(listing.id)}>{copy.title}</button>
+        <button onClick={() => onOpen(listing.id)}>{listing.title}</button>
         <footer>
-          <strong>{price(listing, locale)}</strong>
+          <strong>{price(listing, formatListingPrice)}</strong>
           <span>/ {localizeListingUnit(locale, listing.price_unit)}</span>
           <button
             onClick={() => onOpen(listing.id)}
-            aria-label={t("market.openListing", { title: copy.title })}
+            aria-label={t("market.openListing", { title: listing.title })}
           >
             <span className="ss-icon-arrow" aria-hidden="true">
               ↗
@@ -548,7 +543,7 @@ function ListingPreviewCard({
 }
 
 function HeroInventory({ listings }: { listings: PublicListing[] }) {
-  const { locale, translateListings, t } = useLocale();
+  const { locale, formatListingPrice, t } = useLocale();
   const picks = useMemo(() => pickInventory(listings), [listings]);
   const [active, setActive] = useState(0);
   const [onScreen, setOnScreen] = useState(true);
@@ -682,9 +677,6 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
   }, [active, onScreen, positionedFor, reduceMotion, tabVisible]);
 
   const listing = picks[active];
-  const copy = listing
-    ? localizedListingCopy(listing, locale, translateListings)
-    : null;
   const inventory = INVENTORY_TYPES[active];
   const fallbackImage = HERO_FALLBACK_IMAGES[active];
   return (
@@ -816,9 +808,9 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
                     ? localizeListingChannel(locale, listing.channel)
                     : t(inventory.labelKey)}
               </span>
-              <strong>{copy?.title}</strong>
+              <strong>{listing.title}</strong>
               <p>{listing.owner.display_name} · {listingCity(listing)}</p>
-              <b>{price(listing, locale)} / {localizeListingUnit(locale, listing.price_unit)}</b>
+              <b>{price(listing, formatListingPrice)} / {localizeListingUnit(locale, listing.price_unit)}</b>
               {!isListingRequestable(listing) && (
                 <small>{t("home.inventoryViewOnlyUntil")}</small>
               )}
