@@ -4653,13 +4653,16 @@ function ListingLikeButton({
   placement: "card" | "detail";
   onToggle: () => void;
 }) {
+  const { t } = useLocale();
   const count = normalizeLikeCount(likeCount);
-  const countLabel = `${count} ${count === 1 ? "like" : "likes"}`;
+  const countLabel = count === 1 ? t("app.oneLike") : t("app.countLikes", { count });
   const actionLabel = !canLike
-    ? disabledReason || "You cannot like this listing"
+    ? disabledReason || t("app.youCannotLikeThisListing")
     : isAuthenticated
-      ? `${liked ? "Unlike" : "Like"} ${title}`
-      : `Sign in to like ${title}`;
+      ? liked
+        ? t("app.unlikeTitle", { title })
+        : t("app.likeTitle", { title })
+      : t("app.signInToLikeTitle", { title });
 
   return (
     <button
@@ -13352,9 +13355,9 @@ export default function MarketplaceApp({
                 }
                 disabledReason={
                   listing.owner.is_demo
-                    ? "Likes are unavailable on sample listings"
+                    ? t("app.likesUnavailableOnSampleListings")
                     : profile?.id === listing.owner.id
-                      ? "You cannot like your own listing"
+                      ? t("app.youCannotLikeYourOwnListing")
                       : undefined
                 }
                 disabled={
@@ -17591,9 +17594,9 @@ export default function MarketplaceApp({
                   }
                   disabledReason={
                     selectedListing.owner.is_demo
-                      ? "Likes are unavailable on sample listings"
+                      ? t("app.likesUnavailableOnSampleListings")
                       : profile?.id === selectedListing.owner.id
-                        ? "You cannot like your own listing"
+                        ? t("app.youCannotLikeYourOwnListing")
                         : undefined
                   }
                   disabled={
