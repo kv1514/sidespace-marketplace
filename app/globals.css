@@ -12447,16 +12447,6 @@ label:has(.city-autocomplete-list),
   text-decoration: underline;
 }
 
-/* The reason is the point of the row: it is what separates a recommendation
-   from a shuffle. */
-.listing-foryou-reason {
-  color: var(--coral);
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  margin: 4px 0 0;
-  text-transform: uppercase;
-}
-
 .listing-figures {
   border-top: 1px solid var(--line-soft);
   display: grid;

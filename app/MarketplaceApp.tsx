@@ -53,11 +53,14 @@ import {
   LISTING_LIKE_COUNT_COLUMNS,
   mergeListingLikeCounts,
 } from "@/lib/listings/likes";
+import { LISTING_REACH_RPC, mergeListingReach } from "@/lib/listings/reach";
 import {
   comparePopularListings,
   normalizeLikeCount,
 } from "@/lib/listings/popularity";
 import {
+  buildTasteProfile,
+  comparePersonal,
   recommendListings,
   type CooccurrenceIndex,
 } from "@/lib/listings/recommend";
@@ -249,6 +252,9 @@ type Listing = BookingSchedule & {
   provenance_status?: ListingProvenanceStatus | null;
   availability_confirmed_at?: string | null;
   like_count?: number | string | null;
+  /** Seven-day reach, merged in from listing_reach(); absent when it did not load. */
+  impressions_7d?: number | string | null;
+  clicks_7d?: number | string | null;
   created_at?: string;
   updated_at?: string;
   owner: Profile;
@@ -5710,7 +5716,7 @@ export default function MarketplaceApp({
     const profileLimit = route === "marketplace" ? 60 : 12;
     const listingLimit = route === "marketplace" ? 200 : 12;
 
-    const [profilesResult, listingsResult, likeCountsResult] = await Promise.all([
+    const [profilesResult, listingsResult, likeCountsResult, reachResult] = await Promise.all([
       supabase
         .from("marketplace_profiles")
         .select(PUBLIC_PROFILE_COLUMNS)
@@ -5731,6 +5737,9 @@ export default function MarketplaceApp({
         .order("created_at", { ascending: false })
         .limit(listingLimit),
       supabase.from("listing_like_counts").select(LISTING_LIKE_COUNT_COLUMNS),
+      // Seven-day reach, for ranking. Best-effort like the like counts: a
+      // failure here costs one signal, never the grid.
+      supabase.rpc(LISTING_REACH_RPC),
     ]);
 
     if (!profilesResult.error) {
@@ -5739,9 +5748,12 @@ export default function MarketplaceApp({
     }
     if (!listingsResult.error) {
       const loaded = safeListings(
-        mergeListingLikeCounts(
-          listingsResult.data,
-          likeCountsResult.error ? null : likeCountsResult.data,
+        mergeListingReach(
+          mergeListingLikeCounts(
+            listingsResult.data,
+            likeCountsResult.error ? null : likeCountsResult.data,
+          ),
+          reachResult.error ? null : reachResult.data,
         ),
       );
       setListings(loaded.length ? loaded : demoListings);
@@ -6542,6 +6554,39 @@ export default function MarketplaceApp({
     [blockedProfileIds, threads],
   );
 
+  /**
+   * What this browser has looked at lately, read once per marketplace visit.
+   *
+   * Deliberately not reactive: re-reading on every render would re-rank the row
+   * under the member's cursor as they browsed, which is worse than a row that
+   * settles when the page loads.
+   */
+  const [visitorAffinity, setVisitorAffinity] = useState<
+    ReturnType<typeof affinityEvents>
+  >([]);
+  useEffect(() => {
+    if (route !== "marketplace") return;
+    // Deferred rather than set synchronously: localStorage cannot be read
+    // while rendering without the server and the client disagreeing about the
+    // first paint, and setting state straight from an effect makes React
+    // render twice for nothing. The startup effect defers the same way.
+    const timer = window.setTimeout(() => setVisitorAffinity(affinityEvents()), 0);
+    return () => window.clearTimeout(timer);
+  }, [route]);
+
+  /**
+   * What this browser keeps coming back to, as a share per channel and city.
+   *
+   * Built from the same private affinity log as the row above the grid, so
+   * personalising the grid costs no round trip and no data leaves the device.
+   * A stranger gets an empty profile, and an empty profile scores every
+   * listing 0, which is how a first visit still sees the mixed order below.
+   */
+  const visitorTaste = useMemo(
+    () => buildTasteProfile(visitorAffinity, listings, Date.now()),
+    [listings, visitorAffinity],
+  );
+
   const visibleListings = useMemo(() => {
     // Show nothing rather than something they asked never to see again.
     // The grid renders a skeleton for this case, so it reads as loading
@@ -6549,7 +6594,8 @@ export default function MarketplaceApp({
     if (blocksPending) return [];
     const normalized = query.trim().toLowerCase();
     const normalizedLocation = locationQuery.trim();
-    const popularityNow = listingSort === "popular" ? Date.now() : 0;
+    const rankingNow = Date.now();
+    const popularityNow = listingSort === "popular" ? rankingNow : 0;
     return listings.filter((listing) => {
       if (blockedProfileIds.includes(listing.owner.id)) return false;
       // A test account's listings must not appear in the marketplace, the
@@ -6603,8 +6649,12 @@ export default function MarketplaceApp({
         (!normalized || text.includes(normalized))
       );
     })
-      // Members first, samples last; within each band the order is mixed
-      // rather than newest-first so one fresh post cannot dominate the top.
+      // Members first, samples last. Within each band the default order is
+      // personal: the channels and cities this visitor keeps opening come
+      // first, then likes, reach and freshness. With no history every score
+      // is 0 and the order falls through to the stable shuffle, so a first
+      // visit is mixed rather than newest-first and one fresh post cannot
+      // dominate the top. A sort the visitor chose by hand is left alone.
       .sort(
         (a, b) =>
           (listingSort === "location"
@@ -6615,6 +6665,7 @@ export default function MarketplaceApp({
               ? comparePopularListings(a, b, popularityNow)
               : 0) ||
           listingRank(a) - listingRank(b) ||
+          (listingSort === "latest" ? comparePersonal(a, b, visitorTaste, rankingNow) : 0) ||
           shuffleKey(a.id) - shuffleKey(b.id),
       );
   }, [
@@ -6627,6 +6678,7 @@ export default function MarketplaceApp({
     locationQuery,
     query,
     roleFilter,
+    visitorTaste,
   ]);
   const requestableListingCount = useMemo(
     () => visibleListings.filter((listing) => isListingRequestable(listing)).length,
@@ -6644,26 +6696,6 @@ export default function MarketplaceApp({
     if (route !== "marketplace") return;
     return watchListingImpressions(document);
   }, [route, visibleListings]);
-
-  /**
-   * What this browser has looked at lately, read once per marketplace visit.
-   *
-   * Deliberately not reactive: re-reading on every render would re-rank the row
-   * under the member's cursor as they browsed, which is worse than a row that
-   * settles when the page loads.
-   */
-  const [visitorAffinity, setVisitorAffinity] = useState<
-    ReturnType<typeof affinityEvents>
-  >([]);
-  useEffect(() => {
-    if (route !== "marketplace") return;
-    // Deferred rather than set synchronously: localStorage cannot be read
-    // while rendering without the server and the client disagreeing about the
-    // first paint, and setting state straight from an effect makes React
-    // render twice for nothing. The startup effect defers the same way.
-    const timer = window.setTimeout(() => setVisitorAffinity(affinityEvents()), 0);
-    return () => window.clearTimeout(timer);
-  }, [route]);
 
   /**
    * "People who looked at that looked at this", fetched for the handful of
@@ -13209,20 +13241,19 @@ export default function MarketplaceApp({
 
         {forYou.items.length >= 3 && (
           <section className="listing-foryou" aria-labelledby="listing-foryou-heading">
+            {/* The picks are personal; the heading does not say so. A line
+                like "based on what you have been looking at" tells a
+                visitor they are being watched, and the model works exactly
+                as well without announcing itself. */}
             <div className="listing-foryou-head">
-              <span className="eyebrow">
+              <h3 id="listing-foryou-heading">
                 {forYou.personalised
                   ? t("market.pickedForYou")
                   : t("market.popularRightNow")}
-              </span>
-              <h3 id="listing-foryou-heading">
-                {forYou.personalised
-                  ? t("market.basedOnLooking")
-                  : t("market.openingMost")}
               </h3>
             </div>
             <div className="listing-foryou-row">
-              {forYou.items.map(({ listing, reasons }) => {
+              {forYou.items.map(({ listing }) => {
                 const copy = listing;
                 return (
                   <article
@@ -13249,9 +13280,6 @@ export default function MarketplaceApp({
                       <small>
                         {listing.owner.display_name} · {listingCity(listing)}
                       </small>
-                      {reasons.length > 0 && (
-                        <p className="listing-foryou-reason">{reasons.join(" · ")}</p>
-                      )}
                     </div>
                   </article>
                 );

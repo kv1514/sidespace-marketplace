@@ -322,3 +322,245 @@ describe("the collaborative-filtering term", () => {
     ).toContain("People who looked at that looked at this");
   });
 });
+
+import {
+  TASTE_CONFIDENCE,
+  buildTasteProfile,
+  comparePersonal,
+  personalScore,
+  tasteConfidence,
+  tasteFit,
+} from "../lib/listings/recommend";
+
+// The grid is ranked from a taste profile: a share per channel and city built
+// from what this browser has opened. These pin the behaviour the founders
+// asked for in words - "if they click more Instagram, show more Instagram" -
+// and the one invariant that keeps it safe: a stranger sees the grid unchanged.
+describe("taste profile", () => {
+  it("is a share per channel, so three Instagram clicks and one YouTube is 75/25", () => {
+    const taste = buildTasteProfile(
+      [
+        { listingId: "ig-1", kind: "click", at: now },
+        { listingId: "ig-2", kind: "click", at: now },
+        { listingId: "ig-1", kind: "impression", at: now - DAY },
+        { listingId: "yt-1", kind: "click", at: now },
+      ],
+      catalogue(),
+      now,
+    );
+    const instagram = taste.channels.get("instagram") ?? 0;
+    const youtube = taste.channels.get("youtube") ?? 0;
+    expect(instagram).toBeGreaterThan(youtube);
+    expect(instagram + youtube).toBeCloseTo(1, 10);
+    // Two clicks plus an impression against one click.
+    expect(instagram).toBeGreaterThan(0.65);
+  });
+
+  it("keeps cities in the picture", () => {
+    const taste = buildTasteProfile(
+      [{ listingId: "car-1", kind: "click", at: now }],
+      catalogue(),
+      now,
+    );
+    expect(taste.cities.get("brea")).toBeCloseTo(1, 10);
+    expect(taste.cities.has("berkeley")).toBe(false);
+  });
+
+  it("ignores a listing that has left the catalogue rather than guessing its channel", () => {
+    const taste = buildTasteProfile(
+      [{ listingId: "gone", kind: "like", at: now }],
+      catalogue(),
+      now,
+    );
+    expect(taste.strength).toBe(0);
+    expect(taste.channels.size).toBe(0);
+  });
+
+  it("does not count in full until there is two clicks' worth of interest", () => {
+    const glance = buildTasteProfile(
+      [{ listingId: "ig-1", kind: "impression", at: now }],
+      catalogue(),
+      now,
+    );
+    const settled = buildTasteProfile(
+      [
+        { listingId: "ig-1", kind: "click", at: now },
+        { listingId: "ig-2", kind: "click", at: now },
+      ],
+      catalogue(),
+      now,
+    );
+    expect(tasteConfidence(glance)).toBeLessThan(0.3);
+    expect(tasteConfidence(settled)).toBe(1);
+    expect(settled.strength).toBeGreaterThanOrEqual(TASTE_CONFIDENCE);
+  });
+});
+
+describe("the personal grid order", () => {
+  it("scores every listing exactly 0 for a stranger, so the grid falls through to its old order", () => {
+    const taste = buildTasteProfile([], catalogue(), now);
+    for (const candidate of catalogue()) {
+      expect(personalScore(candidate, taste, now)).toBe(0);
+    }
+    expect(comparePersonal(catalogue()[0], catalogue()[4], taste, now)).toBe(0);
+  });
+
+  it("puts the channel they keep opening ahead of the rest", () => {
+    const taste = buildTasteProfile(
+      [
+        { listingId: "ig-1", kind: "click", at: now },
+        { listingId: "ig-2", kind: "click", at: now },
+      ],
+      catalogue(),
+      now,
+    );
+    const order = catalogue()
+      .sort((a, b) => comparePersonal(a, b, taste, now))
+      .map((entry) => entry.id);
+    // Both Instagram listings before the mural, the car and the YouTube read.
+    expect(order.indexOf("ig-1")).toBeLessThan(order.indexOf("wall-1"));
+    expect(order.indexOf("ig-2")).toBeLessThan(order.indexOf("yt-1"));
+  });
+
+  it("gives Kausthubh and Dylan different orders when they open different things", () => {
+    const instagramFan = buildTasteProfile(
+      [
+        { listingId: "ig-1", kind: "click", at: now },
+        { listingId: "ig-2", kind: "click", at: now },
+      ],
+      catalogue(),
+      now,
+    );
+    const videoFan = buildTasteProfile(
+      [
+        { listingId: "yt-1", kind: "click", at: now },
+        { listingId: "yt-1", kind: "like", at: now },
+      ],
+      catalogue(),
+      now,
+    );
+    const first = catalogue().sort((a, b) => comparePersonal(a, b, instagramFan, now))[0].id;
+    const second = catalogue().sort((a, b) => comparePersonal(a, b, videoFan, now))[0].id;
+    expect(first).not.toBe(second);
+    expect(second).toBe("yt-1");
+  });
+
+  it("ranks within a channel by likes and reach, not by accident", () => {
+    const taste = buildTasteProfile(
+      [{ listingId: "ig-1", kind: "click", at: now }, { listingId: "ig-2", kind: "click", at: now }],
+      catalogue(),
+      now,
+    );
+    const quiet = listing({ id: "ig-quiet", like_count: 0 });
+    const loved = listing({ id: "ig-loved", like_count: 6, clicks_7d: 9, impressions_7d: 40 });
+    expect(personalScore(loved, taste, now)).toBeGreaterThan(personalScore(quiet, taste, now));
+  });
+
+  it("leans harder the more lopsided the interest is", () => {
+    const mixed = buildTasteProfile(
+      [{ listingId: "ig-1", kind: "click", at: now }, { listingId: "yt-1", kind: "click", at: now }],
+      catalogue(),
+      now,
+    );
+    const devoted = buildTasteProfile(
+      [{ listingId: "ig-1", kind: "click", at: now }, { listingId: "ig-2", kind: "click", at: now }],
+      catalogue(),
+      now,
+    );
+    expect(tasteFit(catalogue()[0], devoted)).toBeGreaterThan(tasteFit(catalogue()[0], mixed));
+  });
+
+  it("fades, so what they opened a month ago no longer runs the grid", () => {
+    const stale = buildTasteProfile(
+      [{ listingId: "yt-1", kind: "click", at: now - 45 * DAY }],
+      catalogue(),
+      now,
+    );
+    expect(tasteConfidence(stale)).toBeLessThan(0.1);
+  });
+});
+
+describe("the row and the grid agree", () => {
+  it("lets the row lean on channel taste too, not only on resemblance to a seed", () => {
+    const events = [
+      { listingId: "ig-1" as const, kind: "click" as const, at: now },
+      { listingId: "ig-2" as const, kind: "click" as const, at: now },
+    ];
+    const withTaste = recommendListings({ candidates: catalogue(), events, nowMs: now, limit: 5 });
+    const top = withTaste.items[0].listing.id;
+    // ig-1 and ig-2 are demoted as already seen; the next Instagram-shaped
+    // thing still comes before the YouTube read, because the taste term
+    // carries channel interest past the seeds themselves.
+    expect(withTaste.items.map((entry) => entry.listing.id).indexOf("yt-1")).toBeGreaterThan(
+      withTaste.items.map((entry) => entry.listing.id).indexOf(top),
+    );
+  });
+});
+
+describe("popularity orders within taste, and never overrides it", () => {
+  // The case that came out of the live catalogue: somebody who opens walls and
+  // a car window, in a town where one Instagram listing is the most looked-at
+  // thing on the site. They asked for walls.
+  const physical = () =>
+    buildTasteProfile(
+      [
+        { listingId: "wall-1", kind: "click", at: now },
+        { listingId: "wall-1", kind: "click", at: now - DAY },
+        { listingId: "car-1", kind: "click", at: now },
+      ],
+      catalogue(),
+      now,
+    );
+  const hotInstagramNextDoor = listing({
+    id: "ig-hot",
+    like_count: 6,
+    clicks_7d: 20,
+    impressions_7d: 200,
+    created_at: "2026-09-03T12:00:00.000Z",
+    owner: { id: "owner-hot", categories: ["Local"], verified: true, is_demo: false },
+  });
+  const quietWallFarAway = listing({
+    id: "wall-quiet",
+    title: "Wall or mural in Fresno",
+    channel: "Wall / mural",
+    format: "6x7 wall or mural for a week",
+    description: "A brick wall facing a quiet street, painted or postered.",
+    location_area: "Fresno, CA",
+    created_at: "2026-06-01T12:00:00.000Z",
+    owner: { id: "owner-quiet", categories: ["Art"], is_demo: false },
+  });
+
+  it("keeps the channel they keep opening above a hotter listing on one they never open", () => {
+    const taste = physical();
+    expect(personalScore(quietWallFarAway, taste, now)).toBeGreaterThan(
+      personalScore(hotInstagramNextDoor, taste, now),
+    );
+  });
+
+  it("scores a listing on a channel and in a place they never opened exactly 0, as for a stranger", () => {
+    const taste = physical();
+    const unknown = listing({ id: "yt-far", channel: "YouTube", location_area: "Fresno, CA" });
+    expect(personalScore(unknown, taste, now)).toBe(0);
+  });
+
+  it("lets likes and reach decide when interest is split evenly", () => {
+    const even = buildTasteProfile(
+      [
+        { listingId: "ig-1", kind: "click", at: now },
+        { listingId: "yt-1", kind: "click", at: now },
+      ],
+      catalogue(),
+      now,
+    );
+    const lovedVideo = listing({
+      id: "yt-loved",
+      channel: "YouTube",
+      location_area: "Yorba Linda, CA",
+      like_count: 6,
+      clicks_7d: 9,
+      impressions_7d: 40,
+    });
+    const quietPost = listing({ id: "ig-quiet", like_count: 0 });
+    expect(personalScore(lovedVideo, even, now)).toBeGreaterThan(personalScore(quietPost, even, now));
+  });
+});

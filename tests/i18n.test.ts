@@ -105,3 +105,18 @@ describe("SideSpace locale resolution", () => {
   });
 
 });
+
+// The row above the grid is personal, and it must never say so. A heading
+// like "based on what you have been looking at" tells a visitor they are being
+// watched; the ranking works exactly as well without announcing itself. The
+// locale-parity test above cannot catch this key coming back, because the
+// translations are built from the English catalogue - so this one does.
+describe("the marketplace never announces that it is watching", () => {
+  it("has no copy that tells a visitor their browsing steers the page", () => {
+    expect(Object.keys(MESSAGES.en)).not.toContain("market.basedOnLooking");
+    const watching = /been looking|what you (have )?(been )?(looking|view)|based on (what|your)/i;
+    for (const [key, text] of Object.entries(MESSAGES.en)) {
+      expect(`${key}: ${text}`).not.toMatch(watching);
+    }
+  });
+});
