@@ -359,8 +359,6 @@ export const VIETNAMESE_MESSAGES: Messages = {
   "market.popularityNote": "Độ phổ biến kết hợp lượt thích, độ mới và mức độ chi tiết của tin đăng để cơ hội mới vẫn có thể nổi bật.",
   "market.pickedForYou": "Chọn riêng cho bạn",
   "market.popularRightNow": "Phổ biến ngay lúc này",
-  "market.basedOnLooking": "Dựa trên những gì bạn đã xem",
-  "market.openingMost": "Những gì mọi người mở nhiều nhất",
   "market.openListing": "Mở {title}",
   "market.wanted": "Cần tìm",
   "market.photos": "ảnh",

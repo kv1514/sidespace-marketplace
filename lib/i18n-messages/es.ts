@@ -359,8 +359,6 @@ export const SPANISH_MESSAGES: Messages = {
   "market.popularityNote": "La popularidad combina Me gusta, actualidad y detalle del anuncio para que las nuevas oportunidades también destaquen.",
   "market.pickedForYou": "Elegido para ti",
   "market.popularRightNow": "Popular ahora",
-  "market.basedOnLooking": "Según lo que has estado viendo",
-  "market.openingMost": "Lo que más está abriendo la gente",
   "market.openListing": "Abrir {title}",
   "market.wanted": "Se busca",
   "market.photos": "fotos",

@@ -1,5 +1,9 @@
 export type PopularityListing = {
   like_count?: number | string | null;
+  /** Distinct visitors who reached the card in the last seven days. */
+  impressions_7d?: number | string | null;
+  /** Of those, how many opened it. */
+  clicks_7d?: number | string | null;
   created_at?: string | null;
   title?: string | null;
   format?: string | null;
@@ -40,8 +44,16 @@ export function popularityScore(listing: PopularityListing, nowMs = Date.now()) 
     (textLength(listing.format) >= 10 ? 1.5 : 0) +
     (textLength(listing.description) >= 60 ? 1.5 : 0);
   const trustScore = listing.owner?.verified ? 2 : 0;
+  // Reach, dampened twice: a log so a viral week cannot bury everything else
+  // for good, and a seven-day window so it has to keep happening. A click is
+  // intent and counts for more than a card scrolled past. One like (8.3) still
+  // outweighs one click (3.5) or ten impressions (3.6): people say more with a
+  // heart than with a scroll.
+  const reachScore =
+    Math.log1p(normalizeLikeCount(listing.clicks_7d)) * 5 +
+    Math.log1p(normalizeLikeCount(listing.impressions_7d)) * 1.5;
 
-  return freshnessScore + likeScore + completenessScore + trustScore;
+  return freshnessScore + likeScore + completenessScore + trustScore + reachScore;
 }
 
 export function comparePopularListings(

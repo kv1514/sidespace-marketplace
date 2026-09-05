@@ -358,8 +358,6 @@ export const ENGLISH_MESSAGES = {
   "market.popularityNote": "Popularity blends likes, freshness, and listing detail so new opportunities can still break through.",
   "market.pickedForYou": "Picked for you",
   "market.popularRightNow": "Popular right now",
-  "market.basedOnLooking": "Based on what you have been looking at",
-  "market.openingMost": "What people are opening most",
   "market.openListing": "Open {title}",
   "market.wanted": "Wanted",
   "market.photos": "photos",

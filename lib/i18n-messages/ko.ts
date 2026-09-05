@@ -359,8 +359,6 @@ export const KOREAN_MESSAGES: Messages = {
   "market.popularityNote": "인기도는 좋아요, 최신성, 광고 지면의 상세함을 종합하므로 새로운 기회도 충분히 눈에 띌 수 있습니다.",
   "market.pickedForYou": "맞춤 추천",
   "market.popularRightNow": "지금 인기 있는 항목",
-  "market.basedOnLooking": "최근 본 항목을 바탕으로",
-  "market.openingMost": "사람들이 가장 많이 열어보는 것",
   "market.openListing": "{title} 열기",
   "market.wanted": "구함",
   "market.photos": "장의 사진",

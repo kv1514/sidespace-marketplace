@@ -359,8 +359,6 @@ export const FRENCH_MESSAGES: Messages = {
   "market.popularityNote": "La popularité combine les likes, la fraîcheur et le niveau de détail afin que les nouvelles opportunités puissent aussi émerger.",
   "market.pickedForYou": "Choisi pour vous",
   "market.popularRightNow": "Populaires maintenant",
-  "market.basedOnLooking": "Selon ce que vous avez consulté",
-  "market.openingMost": "Ce que les gens ouvrent le plus",
   "market.openListing": "Ouvrir {title}",
   "market.wanted": "Recherché",
   "market.photos": "photos",

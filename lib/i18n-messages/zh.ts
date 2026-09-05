@@ -359,8 +359,6 @@ export const MANDARIN_MESSAGES: Messages = {
   "market.popularityNote": "热门程度综合考虑点赞、新鲜度和资源详情，让新机会也能脱颖而出。",
   "market.pickedForYou": "为你挑选",
   "market.popularRightNow": "当前热门",
-  "market.basedOnLooking": "根据你最近浏览的内容",
-  "market.openingMost": "人们最常打开的内容",
   "market.openListing": "打开 {title}",
   "market.wanted": "求资源",
   "market.photos": "张照片",
