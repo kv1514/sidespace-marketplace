@@ -89,3 +89,41 @@ describe("listing popularity", () => {
     expect(mergeListingLikeCounts(rows, null)).toEqual(rows);
   });
 });
+
+describe("views in the popularity prior", () => {
+  it("lifts a listing people keep reaching this week", () => {
+    expect(
+      popularityScore(listing({ impressions_7d: 40, clicks_7d: 9 }), now),
+    ).toBeGreaterThan(popularityScore(listing(), now));
+  });
+
+  it("counts an open as more than a scroll past", () => {
+    const opened = popularityScore(listing({ clicks_7d: 5 }), now);
+    const passed = popularityScore(listing({ impressions_7d: 5 }), now);
+    expect(opened).toBeGreaterThan(passed);
+  });
+
+  it("still lets one like outweigh a click or a handful of impressions", () => {
+    const base = popularityScore(listing(), now);
+    const oneLike = popularityScore(listing({ like_count: 1 }), now) - base;
+    const oneClick = popularityScore(listing({ clicks_7d: 1 }), now) - base;
+    const tenViews = popularityScore(listing({ impressions_7d: 10 }), now) - base;
+    expect(oneLike).toBeGreaterThan(oneClick);
+    expect(oneLike).toBeGreaterThan(tenViews);
+  });
+
+  it("dampens reach so a viral week cannot bury everything else for good", () => {
+    const base = popularityScore(listing(), now);
+    const first = popularityScore(listing({ impressions_7d: 10 }), now) - base;
+    const thousandth =
+      popularityScore(listing({ impressions_7d: 1010 }), now) -
+      popularityScore(listing({ impressions_7d: 1000 }), now);
+    expect(first).toBeGreaterThan(thousandth * 20);
+  });
+
+  it("treats missing reach as zero rather than as a number", () => {
+    expect(popularityScore(listing({ impressions_7d: null, clicks_7d: undefined }), now)).toBe(
+      popularityScore(listing(), now),
+    );
+  });
+});

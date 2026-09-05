@@ -56,6 +56,9 @@ export type RecommendListing = {
   price_max_cents?: number | string | null;
   status?: string | null;
   like_count?: number | string | null;
+  /** Seven-day reach, when the aggregate loaded. Read by the popularity prior. */
+  impressions_7d?: number | string | null;
+  clicks_7d?: number | string | null;
   created_at?: string | null;
   owner?: RecommendOwner | null;
 };
@@ -84,7 +87,7 @@ const DECAY_DAYS = 14;
  */
 export const COOCCURRENCE_CONFIDENCE = 5;
 
-const TOP_LEVEL_WEIGHTS = { content: 62, cooccurrence: 40, quality: 18 };
+const TOP_LEVEL_WEIGHTS = { content: 62, cooccurrence: 40, quality: 18, taste: 25 };
 
 /** Penalty applied to a candidate for resembling something already picked. */
 const DIVERSITY_LAMBDA = 0.35;
@@ -313,6 +316,129 @@ function cooccurrenceScore(
   return cosine * confidence;
 }
 
+/* ------------------------------------------------------------------ taste */
+
+/**
+ * What kind of thing this visitor keeps coming back to.
+ *
+ * The affinity log remembers listings; the market is organised by channel.
+ * Somebody who opened three Instagram listings has said something about
+ * Instagram, not only about those three - and the listing they would like most
+ * may be one they have never seen. So the per-listing weights are folded up
+ * into a share per channel and per city, and the grid ranks from the shares.
+ *
+ * Shares, not totals: three Instagram clicks and one YouTube click is 75/25,
+ * whatever the absolute numbers, so the lean scales with how lopsided the
+ * interest is rather than with how much browsing there has been.
+ *
+ * `strength` is the total decayed weight behind the profile. One glance is not
+ * a taste; callers ramp personalisation in with it via `tasteConfidence`.
+ */
+export type TasteProfile = {
+  channels: Map<string, number>;
+  cities: Map<string, number>;
+  strength: number;
+};
+
+/** Decayed interest it takes before a profile counts in full: two clicks' worth. */
+export const TASTE_CONFIDENCE = 2 * KIND_WEIGHT.click;
+
+function toShares(totals: Map<string, number>) {
+  let sum = 0;
+  for (const value of totals.values()) sum += value;
+  if (!sum) return totals;
+  for (const [key, value] of totals) totals.set(key, value / sum);
+  return totals;
+}
+
+export function buildTasteProfile(
+  events: AffinityEvent[],
+  candidates: RecommendListing[],
+  nowMs: number,
+): TasteProfile {
+  const byId = new Map(candidates.map((listing) => [listing.id, listing]));
+  const channels = new Map<string, number>();
+  const cities = new Map<string, number>();
+  let strength = 0;
+  for (const [listingId, weight] of buildAffinity(events, nowMs)) {
+    // A listing that has left the catalogue cannot tell us its channel.
+    const listing = byId.get(listingId);
+    if (!listing) continue;
+    strength += weight;
+    const channel = normalizeTerm(listing.channel);
+    if (channel) channels.set(channel, (channels.get(channel) ?? 0) + weight);
+    const city = normalizeCity(listing.location_area);
+    if (city) cities.set(city, (cities.get(city) ?? 0) + weight);
+  }
+  return { channels: toShares(channels), cities: toShares(cities), strength };
+}
+
+/** 0 for a stranger, 1 once there is two clicks' worth of decayed interest. */
+export function tasteConfidence(taste: TasteProfile) {
+  return Math.min(1, taste.strength / TASTE_CONFIDENCE);
+}
+
+/** How well one listing fits a taste, 0..1. Channel carries most of it; city keeps the map honest. */
+export function tasteFit(listing: RecommendListing, taste: TasteProfile) {
+  const channel = taste.channels.get(normalizeTerm(listing.channel)) ?? 0;
+  const city = taste.cities.get(normalizeCity(listing.location_area)) ?? 0;
+  return 0.7 * channel + 0.3 * city;
+}
+
+/** popularityScore has no ceiling; 45 is a comfortably strong score. */
+const PRIOR_CEILING = 45;
+
+/**
+ * How far likes, reach and freshness can lift a listing that already fits: at
+ * most double. The prior multiplies fit instead of adding to it. That way it
+ * orders the Instagram listings for an Instagram person - the loved one first,
+ * the thinnest last - but cannot lift a wall above any of them, however many
+ * people scrolled past the wall this week. Fit is what they told us;
+ * popularity only says which of the fitting listings to lead with. Where
+ * interest is split evenly, fit ties and popularity decides.
+ *
+ * An additive blend was tried first and failed on the live catalogue: one
+ * well-read Instagram post in the visitor's own town outscored the walls they
+ * had actually been opening.
+ */
+const PRIOR_LIFT = 1;
+
+/**
+ * One listing's standing for one visitor.
+ *
+ * Exactly 0 when nothing is known about them, so a caller can fall through to
+ * whatever order it used before - a first-time visitor sees the same grid they
+ * always did, and the lean arrives only as they browse. Also 0 for a listing
+ * on a channel and in a place they have never opened, for the same reason:
+ * nothing known, nothing moved.
+ */
+export function personalScore(
+  listing: RecommendListing,
+  taste: TasteProfile,
+  nowMs: number,
+) {
+  const confidence = tasteConfidence(taste);
+  if (!confidence) return 0;
+  const fit = tasteFit(listing, taste);
+  if (!fit) return 0;
+  const prior = Math.min(1, popularityScore(listing, nowMs) / PRIOR_CEILING);
+  return confidence * fit * (1 + PRIOR_LIFT * prior);
+}
+
+/**
+ * Sort comparator for the marketplace grid: what fits this visitor first.
+ * Ties (including every pair when the visitor is unknown) return 0 so the
+ * caller's own tie-break still decides.
+ */
+export function comparePersonal(
+  first: RecommendListing,
+  second: RecommendListing,
+  taste: TasteProfile,
+  nowMs: number,
+) {
+  return personalScore(second, taste, nowMs) - personalScore(first, taste, nowMs);
+}
+
 export type RecommendInput<T extends RecommendListing> = {
   candidates: T[];
   events: AffinityEvent[];
@@ -354,6 +480,8 @@ export function recommendListings<T extends RecommendListing>({
 
   const idf = buildIdf(candidates);
   const affinity = buildAffinity(events, nowMs);
+  const taste = buildTasteProfile(events, candidates, nowMs);
+  const confidence = tasteConfidence(taste);
   const byId = new Map(candidates.map((listing) => [listing.id, listing]));
 
   // Only seeds still in the catalogue can be compared against.
@@ -393,10 +521,15 @@ export function recommendListings<T extends RecommendListing>({
       reasons.add("Popular right now");
     }
 
+    // The channel and city this visitor keeps returning to, independent of
+    // whether any single seed resembles this listing.
+    const tasteTerm = confidence * tasteFit(listing, taste);
+
     let score =
       TOP_LEVEL_WEIGHTS.content * contentTerm +
       TOP_LEVEL_WEIGHTS.cooccurrence * cooccurrenceTerm +
-      TOP_LEVEL_WEIGHTS.quality * quality;
+      TOP_LEVEL_WEIGHTS.quality * quality +
+      TOP_LEVEL_WEIGHTS.taste * tasteTerm;
 
     // Already seen it: still worth offering, just not first.
     if (affinity.has(listing.id)) score *= SEEN_DEMOTION;
