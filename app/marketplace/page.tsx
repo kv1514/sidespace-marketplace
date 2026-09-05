@@ -8,29 +8,36 @@ import {
   createListingSocialMetadata,
   OG_IMAGE,
 } from "@/lib/site-metadata";
+import { getTranslator } from "@/lib/i18n/server";
+import type { Translate } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
-const MARKETPLACE_METADATA: Metadata = {
-  alternates: { canonical: "/marketplace" },
-  title: "Marketplace",
-  description:
-    "Browse creator listings for social audiences, physical placements, sponsorships, and business campaign briefs on SideSpace.",
-  openGraph: {
-    images: OG_IMAGE,
-    url: "/marketplace",
-    title: "Browse the SideSpace marketplace",
-    description:
-      "Search real local attention from creators: storefronts, vehicles, sponsorships, and more.",
-  },
-  twitter: {
-    card: "summary_large_image",
-    images: OG_IMAGE,
-    title: "Browse the SideSpace marketplace",
-    description:
-      "Search real local attention from creators: storefronts, vehicles, sponsorships, and more.",
-  },
-};
+function marketplaceMetadata(t: Translate): Metadata {
+  return {
+    alternates: { canonical: "/marketplace" },
+    title: t("Marketplace"),
+    description: t(
+      "Browse creator listings for social audiences, physical placements, sponsorships, and business campaign briefs on SideSpace.",
+    ),
+    openGraph: {
+      images: OG_IMAGE,
+      url: "/marketplace",
+      title: t("Browse the SideSpace marketplace"),
+      description: t(
+        "Search real local attention from creators: storefronts, vehicles, sponsorships, and more.",
+      ),
+    },
+    twitter: {
+      card: "summary_large_image",
+      images: OG_IMAGE,
+      title: t("Browse the SideSpace marketplace"),
+      description: t(
+        "Search real local attention from creators: storefronts, vehicles, sponsorships, and more.",
+      ),
+    },
+  };
+}
 
 export async function generateMetadata({
   searchParams,
@@ -38,35 +45,37 @@ export async function generateMetadata({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<Metadata> {
   const params = await searchParams;
+  const t = await getTranslator();
+  const base = marketplaceMetadata(t);
   const listingId = typeof params.listing === "string" ? params.listing : "";
   if (!listingId && params.sort === "popular") {
+    const popular = t(
+      "See the SideSpace listings the community is noticing, with freshness and listing quality helping new opportunities break through.",
+    );
     return {
-      ...MARKETPLACE_METADATA,
+      ...base,
       alternates: { canonical: "/marketplace?sort=popular" },
-      title: "Popular listings | SideSpace",
-      description:
-        "See the SideSpace listings the community is noticing, with freshness and listing quality helping new opportunities break through.",
+      title: t("Popular listings | SideSpace"),
+      description: popular,
       openGraph: {
-        ...MARKETPLACE_METADATA.openGraph,
+        ...base.openGraph,
         url: "/marketplace?sort=popular",
-        title: "Popular listings on SideSpace",
-        description:
-          "See the SideSpace listings the community is noticing, with freshness and listing quality helping new opportunities break through.",
+        title: t("Popular listings on SideSpace"),
+        description: popular,
       },
       twitter: {
-        ...MARKETPLACE_METADATA.twitter,
-        title: "Popular listings on SideSpace",
-        description:
-          "See the SideSpace listings the community is noticing, with freshness and listing quality helping new opportunities break through.",
+        ...base.twitter,
+        title: t("Popular listings on SideSpace"),
+        description: popular,
       },
     };
   }
-  if (!listingId) return MARKETPLACE_METADATA;
+  if (!listingId) return base;
 
   const listing = await loadPublicListing(listingId);
   return listing
     ? createListingSocialMetadata(listing)
-    : MARKETPLACE_METADATA;
+    : base;
 }
 
 const ROLE_FILTERS = new Set([

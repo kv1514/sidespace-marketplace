@@ -22,6 +22,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { useT } from "@/lib/i18n/client";
+import { msg } from "@/lib/i18n";
 
 export type PublicListing = {
   id: string;
@@ -95,27 +97,27 @@ function hoverIsFine() {
  */
 const INVENTORY_TYPES = [
   {
-    label: "Storefront",
-    short: "WINDOW / 01",
-    detail: "A real window on a real street",
+    label: msg("Storefront"),
+    short: msg("WINDOW / 01"),
+    detail: msg("A real window on a real street"),
     match: /storefront|window|wall|mural|room|interior|board|counter|main street|farm stand|cafe|bakery/i,
   },
   {
-    label: "Creator",
-    short: "AUDIENCE / 02",
-    detail: "A trusted voice people already follow",
+    label: msg("Creator"),
+    short: msg("AUDIENCE / 02"),
+    detail: msg("A trusted voice people already follow"),
     match: /instagram|tiktok|youtube|newsletter|podcast|twitch|website/i,
   },
   {
-    label: "Vehicle",
-    short: "ROUTE / 03",
-    detail: "A moving placement with a local routine",
+    label: msg("Vehicle"),
+    short: msg("ROUTE / 03"),
+    detail: msg("A moving placement with a local routine"),
     match: /vehicle/i,
   },
   {
-    label: "Event",
-    short: "CROWD / 04",
-    detail: "A team, gathering, or local occasion",
+    label: msg("Event"),
+    short: msg("CROWD / 04"),
+    detail: msg("A team, gathering, or local occasion"),
     match: /sponsorship|event/i,
   },
 ];
@@ -216,58 +218,59 @@ const HERO_FALLBACK_IMAGES = [
 const HERO_ROTATION_MS = 4300;
 
 const CATEGORY_REEL = [
-  ["Instagram Story", "Instagram", "01"],
-  ["TikTok", "TikTok", "02"],
-  ["Newsletter", "Newsletter", "03"],
-  ["Storefront window", "Storefront", "04"],
-  ["Cafe counter", "Storefront", "05"],
-  ["Vehicle", "Vehicle", "06"],
-  ["Community board", "Community board", "07"],
-  ["Wall", "Wall / mural", "08"],
-  ["Event sponsorship", "Sponsorship", "09"],
-  ["Team sponsorship", "Sponsorship", "10"],
+  [msg("Instagram Story"), msg("Instagram"), "01"],
+  [msg("TikTok"), msg("TikTok"), "02"],
+  [msg("Newsletter"), msg("Newsletter"), "03"],
+  [msg("Storefront window"), msg("Storefront"), "04"],
+  [msg("Cafe counter"), msg("Storefront"), "05"],
+  [msg("Vehicle"), msg("Vehicle"), "06"],
+  [msg("Community board"), msg("Community board"), "07"],
+  [msg("Wall"), msg("Wall / mural"), "08"],
+  [msg("Event sponsorship"), msg("Sponsorship"), "09"],
+  [msg("Team sponsorship"), msg("Sponsorship"), "10"],
 ] as const;
 
 const PLACEMENT_EXAMPLES = [
   {
     number: "01",
-    type: "MOVING PLACEMENT",
-    title: "A daily route, turned into mobile reach.",
+    type: msg("MOVING PLACEMENT"),
+    title: msg("A daily route, turned into mobile reach."),
     before: "/photos/sidespace-placements/car-before.jpg",
     after: "/photos/sidespace-placements/car-after.jpg",
-    beforeAlt: "Plain white car parked on a neighborhood street",
-    afterAlt: "The same white car with a cream, amber, and charcoal SideSpace wrap",
+    beforeAlt: msg("Plain white car parked on a neighborhood street"),
+    afterAlt: msg("The same white car with a cream, amber, and charcoal SideSpace wrap"),
   },
   {
     number: "02",
-    type: "STREET-FACING GLASS",
-    title: "Dinner traffic, captured at eye level.",
+    type: msg("STREET-FACING GLASS"),
+    title: msg("Dinner traffic, captured at eye level."),
     before: "/photos/sidespace-placements/restaurant-window-before.jpg",
     after: "/photos/sidespace-placements/restaurant-window-after.jpg",
-    beforeAlt: "Restaurant facade with a clear street-facing picture window",
-    afterAlt: "The same restaurant window with a translucent amber SideSpace vinyl",
+    beforeAlt: msg("Restaurant facade with a clear street-facing picture window"),
+    afterAlt: msg("The same restaurant window with a translucent amber SideSpace vinyl"),
   },
   {
     number: "03",
-    type: "COMMUNITY SURFACE",
-    title: "Local attention, courtside.",
+    type: msg("COMMUNITY SURFACE"),
+    title: msg("Local attention, courtside."),
     before: "/photos/sidespace-placements/court-fence-before.jpg",
     after: "/photos/sidespace-placements/court-fence-after.jpg",
-    beforeAlt: "Neighborhood basketball court with an empty chain-link fence",
-    afterAlt: "The same basketball-court fence with an amber SideSpace sponsor banner",
+    beforeAlt: msg("Neighborhood basketball court with an empty chain-link fence"),
+    afterAlt: msg("The same basketball-court fence with an amber SideSpace sponsor banner"),
   },
   {
     number: "04",
-    type: "LARGE FORMAT",
-    title: "A blank wall, transformed into a landmark.",
+    type: msg("LARGE FORMAT"),
+    title: msg("A blank wall, transformed into a landmark."),
     before: "/photos/sidespace-placements/wall-before.jpg",
     after: "/photos/sidespace-placements/wall-after.jpg",
-    beforeAlt: "Blank cream side wall on a neighborhood corner building",
-    afterAlt: "The same wall painted with a large amber and charcoal SideSpace mural",
+    beforeAlt: msg("Blank cream side wall on a neighborhood corner building"),
+    afterAlt: msg("The same wall painted with a large amber and charcoal SideSpace mural"),
   },
 ] as const;
 
 function CategoryReel() {
+  const t = useT();
   function renderCards(isClone = false) {
     return (
       <div
@@ -295,7 +298,7 @@ function CategoryReel() {
     <div
       className="ss-category-reel"
       role="region"
-      aria-label="SideSpace inventory categories"
+      aria-label={t("SideSpace inventory categories")}
       onPointerCancel={(event) => {
         event.currentTarget.classList.remove("is-paused");
       }}
@@ -324,6 +327,7 @@ function PlacementComparison({
   example: (typeof PLACEMENT_EXAMPLES)[number];
   index: number;
 }) {
+  const t = useT();
   const reduceMotion = useReducedMotion() ?? false;
   const [manual, setManual] = useState(false);
   const [position, setPosition] = useState(50);
@@ -357,7 +361,7 @@ function PlacementComparison({
       style={style}
     >
       <NextImage
-        alt={example.beforeAlt}
+        alt={t(example.beforeAlt)}
         className="ss-placement-before"
         decoding="async"
         height={1024}
@@ -369,7 +373,7 @@ function PlacementComparison({
       />
       <div className="ss-placement-after">
         <NextImage
-          alt={example.afterAlt}
+          alt={t(example.afterAlt)}
           decoding="async"
           height={1024}
           loading={index === 0 ? "eager" : "lazy"}
@@ -379,13 +383,13 @@ function PlacementComparison({
           width={1536}
         />
       </div>
-      <span className="ss-placement-state is-before">Before</span>
-      <span className="ss-placement-state is-after">With SideSpace</span>
+      <span className="ss-placement-state is-before">{t("Before")}</span>
+      <span className="ss-placement-state is-after">{t("With SideSpace")}</span>
       <div className="ss-placement-divider" ref={dividerRef} aria-hidden="true">
         <i>↔</i>
       </div>
       <input
-        aria-label={`Compare ${example.title} before and after SideSpace advertising`}
+        aria-label={t("Compare {title} before and after SideSpace advertising", { title: example.title })}
         max="88"
         min="12"
         onChange={(event) => {
@@ -403,13 +407,14 @@ function PlacementComparison({
 }
 
 function PlacementGallery() {
+  const t = useT();
   return (
     <div className="ss-placement-gallery">
       {PLACEMENT_EXAMPLES.map((example, index) => (
         <article className="ss-placement-example" key={example.number}>
           <header>
-            <span>{example.number} / {example.type}</span>
-            <h3>{example.title}</h3>
+            <span>{example.number} / {t(example.type)}</span>
+            <h3>{t(example.title)}</h3>
           </header>
           <PlacementComparison example={example} index={index} />
         </article>
@@ -425,12 +430,13 @@ function ListingPreviewCard({
   listing: PublicListing;
   onOpen: (listingId: string) => void;
 }) {
+  const t = useT();
   return (
     <article className="ss-listing-preview">
       <button
         className="ss-listing-preview-image"
         onClick={() => onOpen(listing.id)}
-        aria-label={`View ${listing.title}`}
+        aria-label={t("View {title}", { title: listing.title })}
       >
         <img
           src={listing.image_url || "/photos/market-creator.jpg"}
@@ -443,17 +449,17 @@ function ListingPreviewCard({
       <div>
         <p>
           {listing.owner.display_name}
-          {listing.owner.verified && <b aria-label="Verified">✓</b>}
+          {listing.owner.verified && <b aria-label={t("Verified")}>✓</b>}
           {listingCity(listing) && ` · ${listingCity(listing)}`}
           {listing.owner.is_demo && (
-            <span className="ss-demo-label">Demo</span>
+            <span className="ss-demo-label">{t("Demo")}</span>
           )}
         </p>
         <button onClick={() => onOpen(listing.id)}>{listing.title}</button>
         <footer>
           <strong>{price(listing)}</strong>
           <span>/ {listing.price_unit}</span>
-          <button onClick={() => onOpen(listing.id)} aria-label={`Open ${listing.title}`}>
+          <button onClick={() => onOpen(listing.id)} aria-label={t("Open {title}", { title: listing.title })}>
             <span className="ss-icon-arrow" aria-hidden="true">
               ↗
             </span>
@@ -465,6 +471,7 @@ function ListingPreviewCard({
 }
 
 function HeroInventory({ listings }: { listings: PublicListing[] }) {
+  const t = useT();
   const picks = useMemo(() => pickInventory(listings), [listings]);
   const [active, setActive] = useState(0);
   const [onScreen, setOnScreen] = useState(true);
@@ -654,7 +661,7 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
         data-ss-parallax="0.045"
         data-ss-parallax-max="20"
         role="group"
-        aria-label="Kinds of local attention"
+        aria-label={t("Kinds of local attention")}
       >
         {INVENTORY_TYPES.map((item, index) => (
           <button
@@ -662,8 +669,8 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
             aria-pressed={active === index}
             onClick={() => setActive(index)}
           >
-            <span>{item.short}</span>
-            <b>{item.label}</b>
+            <span>{t(item.short)}</span>
+            <b>{t(item.label)}</b>
           </button>
         ))}
       </div>
@@ -673,10 +680,10 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
         key={`source-${active}`}
         ref={sourceRef}
       >
-        <span>{inventory.short}</span>
-        <strong>{inventory.label}</strong>
+        <span>{t(inventory.short)}</span>
+        <strong>{t(inventory.label)}</strong>
         <p>{inventory.detail}</p>
-        <i aria-hidden="true">LOCAL ATTENTION</i>
+        <i aria-hidden="true">{t("LOCAL ATTENTION")}</i>
       </div>
       <div
         className={`ss-transform-line${
@@ -693,7 +700,7 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
         style={connectorStyle}
         aria-hidden="true"
       >
-        <span>LIST</span>
+        <span>{t("LIST")}</span>
         <i>
           <span
             className="ss-transform-progress"
@@ -724,10 +731,10 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
       >
         <div className="ss-bookable-top">
           <span>
-            SIDESPACE / {listing ? "MARKETPLACE" : "MARKETPLACE EXAMPLE"} INVENTORY
+            {t("SIDESPACE /")}{" "}{listing ? t("MARKETPLACE") : t("MARKETPLACE EXAMPLE")}{" "}{t("INVENTORY")}
           </span>
           {(!listing || !isListingRequestable(listing)) && (
-            <b>● {listing ? "VIEW ONLY" : "EXAMPLE"}</b>
+            <b>● {listing ? t("VIEW ONLY") : t("EXAMPLE")}</b>
           )}
         </div>
         {listing ? (
@@ -749,7 +756,7 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
               <p>{listing.owner.display_name} · {listingCity(listing)}</p>
               <b>{price(listing)} / {listing.price_unit}</b>
               {!isListingRequestable(listing) && (
-                <small>View-only until the owner confirms it is still available.</small>
+                <small>{t("View-only until the owner confirms it is still available.")}</small>
               )}
             </div>
           </>
@@ -762,10 +769,10 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
               src={fallbackImage}
             />
             <div className="ss-bookable-body">
-              <span>{inventory.label}</span>
-              <strong>Local attention, ready to book</strong>
-              <p>Owner sets the details and the price</p>
-              <b>Direct conversation</b>
+              <span>{t(inventory.label)}</span>
+              <strong>{t("Local attention, ready to book")}</strong>
+              <p>{t("Owner sets the details and the price")}</p>
+              <b>{t("Direct conversation")}</b>
             </div>
           </>
         )}
@@ -776,6 +783,7 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
 }
 
 function FinalCall({ onList }: { onList: () => void }) {
+  const t = useT();
   const sectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -809,28 +817,28 @@ function FinalCall({ onList }: { onList: () => void }) {
 
   return (
     <section className="ss-final-call" ref={sectionRef}>
-      <p className="ss-kicker">THE SPACE BETWEEN A BUSINESS AND ITS NEXT CUSTOMER</p>
+      <p className="ss-kicker">{t("THE SPACE BETWEEN A BUSINESS AND ITS NEXT CUSTOMER")}</p>
       <h2 data-ss-parallax="0.045" data-ss-parallax-max="28">
-        Attention is already
+        {t("Attention is already")}
         <br className="ss-everywhere-break" />{" "}
         <span className="ss-everywhere-highlight">
-          <span className="ss-everywhere-highlight__base">everywhere.</span>
+          <span className="ss-everywhere-highlight__base">{t("everywhere.")}</span>
           <span
             aria-hidden="true"
             className="ss-everywhere-highlight__reveal"
           >
-            everywhere.
+            {t("everywhere.")}
           </span>
         </span>
         <br />
-        <em>SideSpace makes it bookable.</em>
+        <em>{t("SideSpace makes it bookable.")}</em>
       </h2>
       <div>
         <Link className="ss-button is-dark" href="/marketplace">
-          Browse marketplace <span aria-hidden="true" className="ss-icon-arrow">↗</span>
+          {t("Browse marketplace")}{" "}<span aria-hidden="true" className="ss-icon-arrow">↗</span>
         </Link>
         <button className="ss-button is-light" onClick={onList}>
-          List what you have <span aria-hidden="true" className="ss-icon-plus">＋</span>
+          {t("List what you have")}{" "}<span aria-hidden="true" className="ss-icon-plus">＋</span>
         </button>
       </div>
     </section>
@@ -846,6 +854,7 @@ export function LandingPage({
   onJoin: () => void;
   onList: () => void;
 }) {
+  const t = useT();
   const [audience, setAudience] = useState<"advertise" | "offer">("advertise");
   const [activeProcess, setActiveProcess] = useState(0);
   const processRef = useRef<HTMLDivElement | null>(null);
@@ -913,28 +922,27 @@ export function LandingPage({
           data-ss-parallax="0.045"
           data-ss-parallax-max="28"
         >
-          <p className="ss-kicker">THE MARKETPLACE FOR LOCAL ATTENTION</p>
+          <p className="ss-kicker">{t("THE MARKETPLACE FOR LOCAL ATTENTION")}</p>
           <h1>
-            Local attention,
+            {t("Local attention,")}
             <br />
-            <em>now bookable.</em>
+            <em>{t("now bookable.")}</em>
           </h1>
           <p className="ss-hero-deck">
-            Book creators offering social, physical, and sponsorship inventory—or
-            list the way you can advertise.
+            {t("Book creators offering social, physical, and sponsorship inventory—or list the way you can advertise.")}
           </p>
           <div className="ss-hero-actions">
             <Link className="ss-button is-dark" href="/marketplace">
-              Browse the marketplace <span aria-hidden="true" className="ss-icon-arrow">↗</span>
+              {t("Browse the marketplace")}{" "}<span aria-hidden="true" className="ss-icon-arrow">↗</span>
             </Link>
             <button className="ss-button is-light" onClick={onList}>
-              List what you have to advertise <span aria-hidden="true" className="ss-icon-plus">＋</span>
+              {t("List what you have to advertise")}{" "}<span aria-hidden="true" className="ss-icon-plus">＋</span>
             </button>
           </div>
-          <ul className="ss-proof-row" aria-label="SideSpace benefits">
-            <li>Free to join</li>
-            <li>Direct messaging</li>
-            <li>Owners set the price</li>
+          <ul className="ss-proof-row" aria-label={t("SideSpace benefits")}>
+            <li>{t("Free to join")}</li>
+            <li>{t("Direct messaging")}</li>
+            <li>{t("Owners set the price")}</li>
           </ul>
         </div>
         <HeroInventory listings={listings} />
@@ -946,26 +954,24 @@ export function LandingPage({
           data-ss-parallax="0.04"
           data-ss-parallax-max="26"
         >
-          <p className="ss-kicker">TWO SIDES, ONE LOCAL MARKET</p>
-          <h2>What brings you here?</h2>
+          <p className="ss-kicker">{t("TWO SIDES, ONE LOCAL MARKET")}</p>
+          <h2>{t("What brings you here?")}</h2>
           <p>
-            SideSpace connects the people looking for attention with the people
-            and places that already have it.
+            {t("SideSpace connects the people looking for attention with the people and places that already have it.")}
           </p>
         </header>
         <div className={`ss-audience-split is-${audience}`}>
-          <div className="ss-audience-controls" role="tablist" aria-label="Choose your SideSpace path">
+          <div className="ss-audience-controls" role="tablist" aria-label={t("Choose your SideSpace path")}>
             <button
               role="tab"
               aria-selected={audience === "advertise"}
               onClick={() => setAudience("advertise")}
               onMouseEnter={() => hoverIsFine() && setAudience("advertise")}
             >
-              <span>01 / ADVERTISERS</span>
-              <strong>I want to advertise</strong>
+              <span>{t("01 / ADVERTISERS")}</span>
+              <strong>{t("I want to advertise")}</strong>
               <p>
-                Find creators and real-world places where your local audience
-                already spends attention.
+                {t("Find creators and real-world places where your local audience already spends attention.")}
               </p>
             </button>
             <button
@@ -974,11 +980,10 @@ export function LandingPage({
               onClick={() => setAudience("offer")}
               onMouseEnter={() => hoverIsFine() && setAudience("offer")}
             >
-              <span>02 / CREATORS &amp; LOCAL OWNERS</span>
-              <strong>I have attention to offer</strong>
+              <span>{t("02 / CREATORS & LOCAL OWNERS")}</span>
+              <strong>{t("I have attention to offer")}</strong>
               <p>
-                List the audience, placement, or sponsorship inventory you
-                control, set your price, and talk directly with businesses.
+                {t("List the audience, placement, or sponsorship inventory you control, set your price, and talk directly with businesses.")}
               </p>
             </button>
           </div>
@@ -1000,28 +1005,28 @@ export function LandingPage({
               <i />
             </div>
             <div className="ss-audience-copy" key={audience}>
-              <span>{audience === "advertise" ? "SEARCH / REQUEST / AGREE" : "LIST / PRICE / TALK"}</span>
+              <span>{audience === "advertise" ? t("SEARCH / REQUEST / AGREE") : t("LIST / PRICE / TALK")}</span>
               <strong>
                 {audience === "advertise"
-                  ? "Choose the exact person or place—not a vague audience segment."
-                  : "Turn what people already notice into inventory you control."}
+                  ? t("Choose the exact person or place—not a vague audience segment.")
+                  : t("Turn what people already notice into inventory you control.")}
               </strong>
               <ul>
                 {(audience === "advertise"
-                  ? ["Creators", "Storefronts", "Vehicles", "Events", "Newsletters"]
-                  : ["Instagram", "Windows", "Walls", "Counters", "Teams", "Newsletters"]
+                  ? [t("Creators"), t("Storefronts"), t("Vehicles"), t("Events"), t("Newsletters")]
+                  : ["Instagram", t("Windows"), t("Walls"), t("Counters"), t("Teams"), t("Newsletters")]
                 ).map((item) => <li key={item}>{item}</li>)}
               </ul>
               {audience === "advertise" ? (
                 <Link href="/marketplace">
-                  Find places to advertise{" "}
+                  {t("Find places to advertise")}{" "}
                   <span aria-hidden="true" className="ss-icon-arrow">
                     ↗
                   </span>
                 </Link>
               ) : (
                 <button onClick={onJoin}>
-                  List my reach{" "}
+                  {t("List my reach")}{" "}
                   <span aria-hidden="true" className="ss-icon-arrow">
                     ↗
                   </span>
@@ -1039,12 +1044,11 @@ export function LandingPage({
           data-ss-parallax-max="26"
         >
           <div>
-            <p className="ss-kicker">WHAT CAN BE LISTED</p>
-            <h2>More than ad space.<br /><em>Anything people notice.</em></h2>
+            <p className="ss-kicker">{t("WHAT CAN BE LISTED")}</p>
+            <h2>{t("More than ad space.")}<br /><em>{t("Anything people notice.")}</em></h2>
           </div>
           <p>
-            Digital audiences, everyday surfaces, and local moments all live in
-            one marketplace.
+            {t("Digital audiences, everyday surfaces, and local moments all live in one marketplace.")}
           </p>
         </header>
         <CategoryReel />
@@ -1058,11 +1062,11 @@ export function LandingPage({
           data-ss-parallax-max="26"
         >
           <div>
-            <p className="ss-kicker">A DIRECT PATH FROM INTEREST TO AGREEMENT</p>
-            <h2>Find it. Talk directly.<br /><em>Make it happen.</em></h2>
+            <p className="ss-kicker">{t("A DIRECT PATH FROM INTEREST TO AGREEMENT")}</p>
+            <h2>{t("Find it. Talk directly.")}<br /><em>{t("Make it happen.")}</em></h2>
           </div>
           <Link href="/how-it-works">
-            See how SideSpace works{" "}
+            {t("See how SideSpace works")}{" "}
             <span aria-hidden="true" className="ss-icon-arrow">
               ↗
             </span>
@@ -1074,12 +1078,12 @@ export function LandingPage({
             aria-current={activeProcess === 0 ? "step" : undefined}
             onMouseEnter={() => hoverIsFine() && setActiveProcess(0)}
           >
-            <span>01 / DISCOVER</span>
+            <span>{t("01 / DISCOVER")}</span>
             <div className="ss-mini-search" aria-hidden="true">
-              <b>⌕</b><span>Storefront near Fullerton</span><i>12</i>
+              <b>⌕</b><span>{t("Storefront near Fullerton")}</span><i>12</i>
             </div>
-            <h3>Find the right attention.</h3>
-            <p>Search a specific creator, audience, placement, or town.</p>
+            <h3>{t("Find the right attention.")}</h3>
+            <p>{t("Search a specific creator, audience, placement, or town.")}</p>
             <i className="ss-process-progress" aria-hidden="true" />
           </article>
           <article
@@ -1087,12 +1091,12 @@ export function LandingPage({
             aria-current={activeProcess === 1 ? "step" : undefined}
             onMouseEnter={() => hoverIsFine() && setActiveProcess(1)}
           >
-            <span>02 / TALK DIRECTLY</span>
+            <span>{t("02 / TALK DIRECTLY")}</span>
             <div className="ss-mini-chat" aria-hidden="true">
-              <p>Could this run next Friday?</p><p>Yes—here are the dimensions.</p>
+              <p>{t("Could this run next Friday?")}</p><p>{t("Yes—here are the dimensions.")}</p>
             </div>
-            <h3>Message the person in control.</h3>
-            <p>No broker between you and the owner, creator, or host.</p>
+            <h3>{t("Message the person in control.")}</h3>
+            <p>{t("No broker between you and the owner, creator, or host.")}</p>
             <i className="ss-process-progress" aria-hidden="true" />
           </article>
           <article
@@ -1100,12 +1104,12 @@ export function LandingPage({
             aria-current={activeProcess === 2 ? "step" : undefined}
             onMouseEnter={() => hoverIsFine() && setActiveProcess(2)}
           >
-            <span>03 / MAKE IT HAPPEN</span>
+            <span>{t("03 / MAKE IT HAPPEN")}</span>
             <div className="ss-mini-deal" aria-hidden="true">
-              <span>CAMPAIGN REQUEST</span><strong>$120 / 2 weeks</strong><b>AGREED ✓</b>
+              <span>{t("CAMPAIGN REQUEST")}</span><strong>{t("$120 / 2 weeks")}</strong><b>{t("AGREED ✓")}</b>
             </div>
-            <h3>Agree on the real details.</h3>
-            <p>Set price, timing, placement, and deliverables together.</p>
+            <h3>{t("Agree on the real details.")}</h3>
+            <p>{t("Set price, timing, placement, and deliverables together.")}</p>
             <i className="ss-process-progress" aria-hidden="true" />
           </article>
         </div>
@@ -1127,63 +1131,63 @@ type JourneyStep = {
 const JOURNEY_STEPS: Record<JourneySide, readonly JourneyStep[]> = {
   advertiser: [
     {
-      eyebrow: "FIND",
-      title: "Browse real offerings.",
-      copy: "Search by place, format, audience, or local market and see exactly who controls each listing.",
+      eyebrow: msg("FIND"),
+      title: msg("Browse real offerings."),
+      copy: msg("Search by place, format, audience, or local market and see exactly who controls each listing."),
     },
     {
-      eyebrow: "COMPARE",
-      title: "Build a focused shortlist.",
-      copy: "Compare the rate, timing, reach, and format before choosing who you want to work with.",
+      eyebrow: msg("COMPARE"),
+      title: msg("Build a focused shortlist."),
+      copy: msg("Compare the rate, timing, reach, and format before choosing who you want to work with."),
     },
     {
-      eyebrow: "REQUEST",
-      title: "Send a clear offer.",
-      copy: "Share the campaign goal, dates, deliverables, and working budget with the creator.",
+      eyebrow: msg("REQUEST"),
+      title: msg("Send a clear offer."),
+      copy: msg("Share the campaign goal, dates, deliverables, and working budget with the creator."),
     },
     {
-      eyebrow: "DISCUSS",
-      title: "Work out the details.",
-      copy: "Message directly, answer questions, and respond when the creator counters your offer.",
+      eyebrow: msg("DISCUSS"),
+      title: msg("Work out the details."),
+      copy: msg("Message directly, answer questions, and respond when the creator counters your offer."),
     },
     {
-      eyebrow: "AGREE",
-      title: "Confirm the right fit.",
-      copy: "Accept the final price and plan together so everyone knows what happens next.",
+      eyebrow: msg("AGREE"),
+      title: msg("Confirm the right fit."),
+      copy: msg("Accept the final price and plan together so everyone knows what happens next."),
     },
   ],
   owner: [
     {
-      eyebrow: "CREATE",
-      title: "Post what you can offer.",
-      copy: "Turn an audience, window, wall, route, team, or event into a specific bookable listing.",
+      eyebrow: msg("CREATE"),
+      title: msg("Post what you can offer."),
+      copy: msg("Turn an audience, window, wall, route, team, or event into a specific bookable listing."),
     },
     {
-      eyebrow: "SET TERMS",
-      title: "Name your price and boundaries.",
-      copy: "Choose the rate, availability, lead time, deliverables, and practical limits you control.",
+      eyebrow: msg("SET TERMS"),
+      title: msg("Name your price and boundaries."),
+      copy: msg("Choose the rate, availability, lead time, deliverables, and practical limits you control."),
     },
     {
-      eyebrow: "REVIEW",
-      title: "Compare incoming offers.",
-      copy: "See each business's budget, dates, campaign idea, and requested deliverables side by side.",
+      eyebrow: msg("REVIEW"),
+      title: msg("Compare incoming offers."),
+      copy: msg("See each business's budget, dates, campaign idea, and requested deliverables side by side."),
     },
     {
-      eyebrow: "RESPOND",
-      title: "Counter or clarify.",
-      copy: "Ask questions, suggest a different price, or decline anything that is not right for you.",
+      eyebrow: msg("RESPOND"),
+      title: msg("Counter or clarify."),
+      copy: msg("Ask questions, suggest a different price, or decline anything that is not right for you."),
     },
     {
-      eyebrow: "CHOOSE",
-      title: "Accept the offer that fits.",
-      copy: "You make the final call. Agree only when the business, timing, and campaign feel right.",
+      eyebrow: msg("CHOOSE"),
+      title: msg("Accept the offer that fits."),
+      copy: msg("You make the final call. Agree only when the business, timing, and campaign feel right."),
     },
   ],
 };
 
 const JOURNEY_OPTIONS: ReadonlyArray<{ side: JourneySide; label: string }> = [
-  { side: "advertiser", label: "I want to advertise" },
-  { side: "owner", label: "I have attention to offer" },
+  { side: "advertiser", label: msg("I want to advertise") },
+  { side: "owner", label: msg("I have attention to offer") },
 ];
 
 const JOURNEY_DEMO_IMAGES = [
@@ -1192,8 +1196,8 @@ const JOURNEY_DEMO_IMAGES = [
 ] as const;
 
 const JOURNEY_CURSOR_LABELS: Record<JourneySide, readonly string[]> = {
-  advertiser: ["OPEN", "COMPARE", "SEND", "ACCEPT", "NEXT"],
-  owner: ["CONTINUE", "PUBLISH", "REVIEW", "COUNTER", "ACCEPT"],
+  advertiser: [msg("OPEN"), msg("COMPARE"), msg("SEND"), msg("ACCEPT"), msg("NEXT")],
+  owner: [msg("CONTINUE"), msg("PUBLISH"), msg("REVIEW"), msg("COUNTER"), msg("ACCEPT")],
 };
 
 function JourneyDemoCursor({ onDemonstrate, side, step }: { onDemonstrate: () => void; side: JourneySide; step: number }) {
@@ -1215,6 +1219,7 @@ function JourneyDemoCursor({ onDemonstrate, side, step }: { onDemonstrate: () =>
 }
 
 function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
+  const t = useT();
   const [selectedItem, setSelectedItem] = useState(0);
   const [actionComplete, setActionComplete] = useState(false);
   const [termsEnabled, setTermsEnabled] = useState([true, true]);
@@ -1238,29 +1243,29 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
     if (step === 0) {
       return withCursor(
         <div className="ss-demo-scene is-searching">
-          <div className="ss-scene-search"><span>⌕</span><strong><i>Creator or storefront near Fullerton</i></strong><kbd>↵</kbd></div>
+          <div className="ss-scene-search"><span>⌕</span><strong><i>{t("Creator or storefront near Fullerton")}</i></strong><kbd>↵</kbd></div>
           <div className="ss-scene-results">
-            <button aria-pressed={selectedItem === 0} className={selectedItem === 0 ? "is-selected" : undefined} onClick={() => setSelectedItem(0)} type="button"><img src="/photos/corner-store.jpg" alt="" /><span><small>STOREFRONT · 0.8 MI</small><strong>Front window placement</strong><em>$240 / 2 weeks</em></span><b>01</b></button>
-            <button aria-pressed={selectedItem === 1} className={selectedItem === 1 ? "is-selected" : undefined} data-cursor-target onClick={() => setSelectedItem(1)} type="button"><img src="/photos/market-creator.jpg" alt="" /><span><small>LOCAL CREATOR · 1.4 MI</small><strong>Story + saved highlight</strong><em>$180 / campaign</em></span><b>02</b></button>
+            <button aria-pressed={selectedItem === 0} className={selectedItem === 0 ? "is-selected" : undefined} onClick={() => setSelectedItem(0)} type="button"><img src="/photos/corner-store.jpg" alt="" /><span><small>{t("STOREFRONT · 0.8 MI")}</small><strong>{t("Front window placement")}</strong><em>{t("$240 / 2 weeks")}</em></span><b>01</b></button>
+            <button aria-pressed={selectedItem === 1} className={selectedItem === 1 ? "is-selected" : undefined} data-cursor-target onClick={() => setSelectedItem(1)} type="button"><img src="/photos/market-creator.jpg" alt="" /><span><small>{t("LOCAL CREATOR · 1.4 MI")}</small><strong>{t("Story + saved highlight")}</strong><em>{t("$180 / campaign")}</em></span><b>02</b></button>
           </div>
-          <p className="ss-demo-hint">Choose either result to preview the selection.</p>
+          <p className="ss-demo-hint">{t("Choose either result to preview the selection.")}</p>
         </div>
       );
     }
 
     if (step === 1) {
       const shortlist = [
-        ["Storefront window", "$240", "5 days"],
-        ["Creator story", "$180", "3 days"],
-        ["Cafe counter cards", "$95", "2 days"],
+        [t("Storefront window"), "$240", t("5 days")],
+        [t("Creator story"), "$180", t("3 days")],
+        [t("Cafe counter cards"), "$95", t("2 days")],
       ];
 
       return withCursor(
         <div className="ss-demo-scene is-comparing">
-          <div className="ss-scene-title"><small>YOUR SHORTLIST</small><strong>Three ways to reach the neighborhood</strong><span>3 saved</span></div>
-          <div className="ss-compare-head"><span>OFFERING</span><span>RATE</span><span>LEAD TIME</span></div>
+          <div className="ss-scene-title"><small>{t("YOUR SHORTLIST")}</small><strong>{t("Three ways to reach the neighborhood")}</strong><span>{t("3 saved")}</span></div>
+          <div className="ss-compare-head"><span>{t("OFFERING")}</span><span>{t("RATE")}</span><span>{t("LEAD TIME")}</span></div>
           {shortlist.map(([name, rate, lead], index) => <button aria-pressed={selectedItem === index} className={selectedItem === index ? "ss-compare-row is-best" : "ss-compare-row"} data-cursor-target={index === 1 ? true : undefined} key={name} onClick={() => setSelectedItem(index)} type="button"><span><i>{index + 1}</i>{name}</span><strong>{rate}</strong><span>{lead}</span></button>)}
-          <div className="ss-scene-note"><i>✓</i><span><strong>Selected for the brief</strong>{shortlist[selectedItem][0]} · {shortlist[selectedItem][2]} lead time</span></div>
+          <div className="ss-scene-note"><i>✓</i><span><strong>{t("Selected for the brief")}</strong>{t("{shortlist} · {shortlist2} lead time", { shortlist: shortlist[selectedItem][0], shortlist2: shortlist[selectedItem][2] })}</span></div>
         </div>
       );
     }
@@ -1268,13 +1273,13 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
     if (step === 2) {
       return withCursor(
         <div className="ss-demo-scene is-requesting">
-          <div className="ss-scene-title"><small>CAMPAIGN REQUEST</small><strong>Neighborhood launch weekend</strong><span>DRAFT</span></div>
+          <div className="ss-scene-title"><small>{t("CAMPAIGN REQUEST")}</small><strong>{t("Neighborhood launch weekend")}</strong><span>{t("DRAFT")}</span></div>
           <div className="ss-request-grid">
-            <label><span>RUN DATES</span><strong>SEP 12 — SEP 14</strong></label>
-            <label><span>WORKING BUDGET</span><strong>$600</strong></label>
+            <label><span>{t("RUN DATES")}</span><strong>{t("SEP 12 — SEP 14")}</strong></label>
+            <label><span>{t("WORKING BUDGET")}</span><strong>$600</strong></label>
           </div>
-          <div className="ss-request-brief"><span>WHAT SHOULD RUN?</span><p>One story showing the opening, saved to a local guide highlight for two weeks.</p></div>
-          <div className="ss-scene-action"><span>{actionComplete ? "Offer delivered to Maya" : "3 deliverables attached"}</span><button className={actionComplete ? "is-complete" : undefined} data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? "OFFER SENT ✓" : "SEND OFFER ↗"}</button></div>
+          <div className="ss-request-brief"><span>{t("WHAT SHOULD RUN?")}</span><p>{t("One story showing the opening, saved to a local guide highlight for two weeks.")}</p></div>
+          <div className="ss-scene-action"><span>{actionComplete ? t("Offer delivered to Maya") : t("3 deliverables attached")}</span><button className={actionComplete ? "is-complete" : undefined} data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? t("OFFER SENT ✓") : t("SEND OFFER ↗")}</button></div>
         </div>
       );
     }
@@ -1282,15 +1287,15 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
     if (step === 3) {
       return withCursor(
         <div className="ss-demo-scene is-talking">
-          <div className="ss-thread-person"><span>MC</span><div><strong>Maya Chen</strong><small>LOCAL CREATOR · ACTIVE NOW</small></div><b>•••</b></div>
+          <div className="ss-thread-person"><span>{t("MC")}</span><div><strong>{t("Maya Chen")}</strong><small>{t("LOCAL CREATOR · ACTIVE NOW")}</small></div><b>•••</b></div>
           <div className="ss-scene-thread">
-            <p>Could the story stay in your local guide highlight for two weeks?</p>
-            <p>Yes. I can include that for $640 total.</p>
+            <p>{t("Could the story stay in your local guide highlight for two weeks?")}</p>
+            <p>{t("Yes. I can include that for $640 total.")}</p>
           </div>
           {actionComplete ? (
-            <div className="ss-payout-screen"><span>PAYMENT SECURED</span><strong>$640</strong><p>Creator payout is scheduled after the campaign is completed.</p><div><small>RECIPIENT</small><b>Maya Chen</b><small>STATUS</small><b>READY</b></div></div>
+            <div className="ss-payout-screen"><span>{t("PAYMENT SECURED")}</span><strong>$640</strong><p>{t("Creator payout is scheduled after the campaign is completed.")}</p><div><small>{t("RECIPIENT")}</small><b>{t("Maya Chen")}</b><small>{t("STATUS")}</small><b>{t("READY")}</b></div></div>
           ) : (
-            <div className="ss-counter-card"><span>COUNTER OFFER</span><strong>$640</strong><small>Story + 2-week saved highlight</small><div><button data-cursor-target onClick={() => setActionComplete(true)} type="button">ACCEPT</button><button onClick={() => setActionComplete(false)} type="button">REPLY</button></div></div>
+            <div className="ss-counter-card"><span>{t("COUNTER OFFER")}</span><strong>$640</strong><small>{t("Story + 2-week saved highlight")}</small><div><button data-cursor-target onClick={() => setActionComplete(true)} type="button">{t("ACCEPT")}</button><button onClick={() => setActionComplete(false)} type="button">{t("REPLY")}</button></div></div>
           )}
         </div>
       );
@@ -1299,11 +1304,11 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
     return withCursor(
       <div className="ss-demo-scene is-agreed">
         <div className="ss-agreed-mark">✓</div>
-        <small>CAMPAIGN AGREED</small>
-        <h3>Neighborhood launch weekend</h3>
-        <p>Maya Chen × Little Sun Coffee</p>
-        <div className="ss-agreed-details"><span><small>DATES</small><strong>SEP 12 — 14</strong></span><span><small>AGREED TOTAL</small><strong>$640</strong></span></div>
-        <button className={`ss-agreed-next${actionComplete ? " is-open" : ""}`} data-cursor-target={actionComplete ? undefined : true} onClick={() => setActionComplete(true)} type="button"><i>{actionComplete ? "✓" : "01"}</i><span><strong>{actionComplete ? "Asset thread ready" : "Next up"}</strong>{actionComplete ? "Brief, files, and final details are now in one place." : "Share final assets in the campaign thread."}</span></button>
+        <small>{t("CAMPAIGN AGREED")}</small>
+        <h3>{t("Neighborhood launch weekend")}</h3>
+        <p>{t("Maya Chen × Little Sun Coffee")}</p>
+        <div className="ss-agreed-details"><span><small>{t("DATES")}</small><strong>{t("SEP 12 — 14")}</strong></span><span><small>{t("AGREED TOTAL")}</small><strong>$640</strong></span></div>
+        <button className={`ss-agreed-next${actionComplete ? " is-open" : ""}`} data-cursor-target={actionComplete ? undefined : true} onClick={() => setActionComplete(true)} type="button"><i>{actionComplete ? "✓" : "01"}</i><span><strong>{actionComplete ? t("Asset thread ready") : t("Next up")}</strong>{actionComplete ? t("Brief, files, and final details are now in one place.") : t("Share final assets in the campaign thread.")}</span></button>
       </div>
     );
   }
@@ -1311,8 +1316,8 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
   if (step === 0) {
     return withCursor(
       <div className="ss-demo-scene is-listing">
-        <div className="ss-listing-photo"><img src="/photos/market-creator.jpg" alt="" /><span>＋ ADD PHOTOS</span></div>
-        <div className="ss-listing-form"><small>{actionComplete ? "DRAFT SAVED" : "NEW OFFERING"}</small><h3>Local story + saved highlight</h3><div><button aria-pressed={selectedItem === 0} className={selectedItem === 0 ? "is-active" : undefined} onClick={() => setSelectedItem(0)} type="button">CREATOR</button><button aria-pressed={selectedItem === 1} className={selectedItem === 1 ? "is-active" : undefined} onClick={() => setSelectedItem(1)} type="button">PHYSICAL</button><button aria-pressed={selectedItem === 2} className={selectedItem === 2 ? "is-active" : undefined} onClick={() => setSelectedItem(2)} type="button">SPONSORSHIP</button></div><p>Reach neighbors who follow local food, shops, and weekend plans.</p><button className={actionComplete ? "is-complete" : undefined} data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? "DRAFT SAVED ✓" : "CONTINUE ↗"}</button></div>
+        <div className="ss-listing-photo"><img src="/photos/market-creator.jpg" alt="" /><span>{t("＋ ADD PHOTOS")}</span></div>
+        <div className="ss-listing-form"><small>{actionComplete ? t("DRAFT SAVED") : t("NEW OFFERING")}</small><h3>{t("Local story + saved highlight")}</h3><div><button aria-pressed={selectedItem === 0} className={selectedItem === 0 ? "is-active" : undefined} onClick={() => setSelectedItem(0)} type="button">{t("CREATOR")}</button><button aria-pressed={selectedItem === 1} className={selectedItem === 1 ? "is-active" : undefined} onClick={() => setSelectedItem(1)} type="button">{t("PHYSICAL")}</button><button aria-pressed={selectedItem === 2} className={selectedItem === 2 ? "is-active" : undefined} onClick={() => setSelectedItem(2)} type="button">{t("SPONSORSHIP")}</button></div><p>{t("Reach neighbors who follow local food, shops, and weekend plans.")}</p><button className={actionComplete ? "is-complete" : undefined} data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? t("DRAFT SAVED ✓") : t("CONTINUE ↗")}</button></div>
       </div>
     );
   }
@@ -1320,12 +1325,12 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
   if (step === 1) {
     return withCursor(
       <div className="ss-demo-scene is-terms">
-        <div className="ss-scene-title"><small>PRICE &amp; AVAILABILITY</small><strong>You decide the terms</strong><span>STEP 2 / 3</span></div>
-        <div className="ss-terms-rate"><span>YOUR RATE</span><strong><i>$</i>180</strong><small>PER CAMPAIGN</small></div>
-        <div className="ss-terms-grid"><label><span>LEAD TIME</span><strong>3 days</strong></label><label><span>AVAILABLE</span><strong>Thu — Sun</strong></label></div>
-        <button aria-pressed={termsEnabled[0]} className="ss-terms-rule" onClick={() => setTermsEnabled((current) => [!current[0], current[1]])} type="button"><span>Saved highlight included</span><i>{termsEnabled[0] ? "YES" : "NO"}</i></button>
-        <button aria-pressed={termsEnabled[1]} className="ss-terms-rule" onClick={() => setTermsEnabled((current) => [current[0], !current[1]])} type="button"><span>Product approval required</span><i>{termsEnabled[1] ? "YES" : "NO"}</i></button>
-        <div className="ss-scene-action"><span>{actionComplete ? "Your offering is now visible" : "You can change these anytime"}</span><button className={actionComplete ? "is-complete" : undefined} data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? "PUBLISHED ✓" : "PUBLISH OFFERING ↗"}</button></div>
+        <div className="ss-scene-title"><small>{t("PRICE & AVAILABILITY")}</small><strong>{t("You decide the terms")}</strong><span>{t("STEP 2 / 3")}</span></div>
+        <div className="ss-terms-rate"><span>{t("YOUR RATE")}</span><strong><i>$</i>180</strong><small>{t("PER CAMPAIGN")}</small></div>
+        <div className="ss-terms-grid"><label><span>{t("LEAD TIME")}</span><strong>{t("3 days")}</strong></label><label><span>{t("AVAILABLE")}</span><strong>{t("Thu — Sun")}</strong></label></div>
+        <button aria-pressed={termsEnabled[0]} className="ss-terms-rule" onClick={() => setTermsEnabled((current) => [!current[0], current[1]])} type="button"><span>{t("Saved highlight included")}</span><i>{termsEnabled[0] ? t("YES") : t("NO")}</i></button>
+        <button aria-pressed={termsEnabled[1]} className="ss-terms-rule" onClick={() => setTermsEnabled((current) => [current[0], !current[1]])} type="button"><span>{t("Product approval required")}</span><i>{termsEnabled[1] ? t("YES") : t("NO")}</i></button>
+        <div className="ss-scene-action"><span>{actionComplete ? t("Your offering is now visible") : t("You can change these anytime")}</span><button className={actionComplete ? "is-complete" : undefined} data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? t("PUBLISHED ✓") : t("PUBLISH OFFERING ↗")}</button></div>
       </div>
     );
   }
@@ -1339,8 +1344,8 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
 
     return withCursor(
       <div className="ss-demo-scene is-offers">
-        <div className="ss-scene-title"><small>3 INCOMING OFFERS</small><strong>Choose what fits your audience</strong><span>{offers[selectedItem][1]} SELECTED</span></div>
-        {offers.map(([name, rate, dates], index) => <button aria-pressed={selectedItem === index} className={selectedItem === index ? "is-best" : undefined} data-cursor-target={index === 1 ? true : undefined} key={name} onClick={() => setSelectedItem(index)} type="button"><span>{name.slice(0, 2).toUpperCase()}</span><span><strong>{name}</strong><small>{dates}</small></span><b>{rate}</b><i>{selectedItem === index ? "SELECTED" : "VIEW"}</i></button>)}
+        <div className="ss-scene-title"><small>{t("3 INCOMING OFFERS")}</small><strong>{t("Choose what fits your audience")}</strong><span>{t("{offers} SELECTED", { offers: offers[selectedItem][1] })}</span></div>
+        {offers.map(([name, rate, dates], index) => <button aria-pressed={selectedItem === index} className={selectedItem === index ? "is-best" : undefined} data-cursor-target={index === 1 ? true : undefined} key={name} onClick={() => setSelectedItem(index)} type="button"><span>{name.slice(0, 2).toUpperCase()}</span><span><strong>{name}</strong><small>{dates}</small></span><b>{rate}</b><i>{selectedItem === index ? t("SELECTED") : t("VIEW")}</i></button>)}
       </div>
     );
   }
@@ -1348,9 +1353,9 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
   if (step === 3) {
     return withCursor(
       <div className="ss-demo-scene is-talking">
-        <div className="ss-thread-person"><span>LS</span><div><strong>Little Sun Coffee</strong><small>BUSINESS · CAMPAIGN REQUEST</small></div><b>•••</b></div>
-        <div className="ss-scene-thread"><p>Could we include a saved highlight for two weeks?</p><p>Yes—that would bring the total to $640.</p></div>
-        <div className={`ss-counter-compose${actionComplete ? " is-complete" : ""}`}><span>{actionComplete ? "COUNTER SENT" : "YOUR COUNTER"}</span><strong>{actionComplete ? "✓" : "$640"}</strong><p>Includes story + two-week saved highlight.</p><button data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? "SENT ✓" : "SEND COUNTER ↗"}</button></div>
+        <div className="ss-thread-person"><span>{t("LS")}</span><div><strong>{t("Little Sun Coffee")}</strong><small>{t("BUSINESS · CAMPAIGN REQUEST")}</small></div><b>•••</b></div>
+        <div className="ss-scene-thread"><p>{t("Could we include a saved highlight for two weeks?")}</p><p>{t("Yes—that would bring the total to $640.")}</p></div>
+        <div className={`ss-counter-compose${actionComplete ? " is-complete" : ""}`}><span>{actionComplete ? t("COUNTER SENT") : t("YOUR COUNTER")}</span><strong>{actionComplete ? "✓" : "$640"}</strong><p>{t("Includes story + two-week saved highlight.")}</p><button data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? t("SENT ✓") : t("SEND COUNTER ↗")}</button></div>
       </div>
     );
   }
@@ -1359,24 +1364,25 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
     actionComplete ? (
       <div className="ss-demo-scene is-payout">
         <div className="ss-payout-mark">✓</div>
-        <small>PAYOUT DETAILS</small>
+        <small>{t("PAYOUT DETAILS")}</small>
         <h3>$640</h3>
-        <p>Scheduled after the campaign is completed.</p>
-        <div className="ss-payout-breakdown"><span><small>FROM</small><strong>Little Sun Coffee</strong></span><span><small>CAMPAIGN</small><strong>SEP 12 — 14</strong></span><span><small>STATUS</small><strong>READY</strong></span></div>
+        <p>{t("Scheduled after the campaign is completed.")}</p>
+        <div className="ss-payout-breakdown"><span><small>{t("FROM")}</small><strong>{t("Little Sun Coffee")}</strong></span><span><small>{t("CAMPAIGN")}</small><strong>{t("SEP 12 — 14")}</strong></span><span><small>{t("STATUS")}</small><strong>{t("READY")}</strong></span></div>
       </div>
     ) : (
       <div className="ss-demo-scene is-accepting">
-        <small>FINAL OFFER</small>
-        <h3>Neighborhood launch weekend</h3>
-        <p>Little Sun Coffee wants a story and two-week saved highlight.</p>
-        <div className="ss-final-offer"><span><small>DATES</small><strong>SEP 12 — 14</strong></span><span><small>YOU RECEIVE</small><strong>$640</strong></span></div>
-        <button data-cursor-target onClick={() => setActionComplete(true)} type="button">ACCEPT OFFER ↗</button>
+        <small>{t("FINAL OFFER")}</small>
+        <h3>{t("Neighborhood launch weekend")}</h3>
+        <p>{t("Little Sun Coffee wants a story and two-week saved highlight.")}</p>
+        <div className="ss-final-offer"><span><small>{t("DATES")}</small><strong>{t("SEP 12 — 14")}</strong></span><span><small>{t("YOU RECEIVE")}</small><strong>$640</strong></span></div>
+        <button data-cursor-target onClick={() => setActionComplete(true)} type="button">{t("ACCEPT OFFER ↗")}</button>
       </div>
     )
   );
 }
 
 export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
+  const t = useT();
   const [side, setSide] = useState<JourneySide>("advertiser");
   const [activeStep, setActiveStep] = useState(0);
   const [stepDirection, setStepDirection] = useState(1);
@@ -1487,13 +1493,12 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
   return (
     <>
       <section className="ss-page-hero ss-how-hero" id="main-content">
-        <p className="ss-kicker">HOW SIDESPACE WORKS</p>
-        <h1 data-ss-parallax="0.05" data-ss-parallax-max="30">One marketplace.<br /><em>Two clear paths.</em></h1>
+        <p className="ss-kicker">{t("HOW SIDESPACE WORKS")}</p>
+        <h1 data-ss-parallax="0.05" data-ss-parallax-max="30">{t("One marketplace.")}<br /><em>{t("Two clear paths.")}</em></h1>
         <p>
-          Businesses find the attention they need. Creators, owners, and hosts
-          decide what they offer. Both sides talk directly before anything runs.
+          {t("Businesses find the attention they need. Creators, owners, and hosts decide what they offer. Both sides talk directly before anything runs.")}
         </p>
-        <div className="ss-journey-switch" role="tablist" aria-label="Choose a SideSpace journey">
+        <div className="ss-journey-switch" role="tablist" aria-label={t("Choose a SideSpace journey")}>
           {JOURNEY_OPTIONS.map((option) => {
             const isSelected = side === option.side;
 
@@ -1520,7 +1525,7 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
                     }
                   />
                 )}
-                <span className="ss-journey-switch-label">{option.label}</span>
+                <span className="ss-journey-switch-label">{t(option.label)}</span>
               </button>
             );
           })}
@@ -1557,8 +1562,8 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
               variants={contentVariants}
             >
               <div className="ss-journey-step-intro">
-                <span>{side === "advertiser" ? "FOR BUSINESSES" : "FOR CREATORS"}</span>
-                <p>{reduceMotion ? "Choose a step to explore the journey." : "Follow the journey, or choose any step."}</p>
+                <span>{side === "advertiser" ? t("FOR BUSINESSES") : t("FOR CREATORS")}</span>
+                <p>{reduceMotion ? t("Choose a step to explore the journey.") : t("Follow the journey, or choose any step.")}</p>
               </div>
               {steps.map((step, index) => (
                 <button
@@ -1568,7 +1573,7 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
                   onClick={() => selectStep(index)}
                   type="button"
                 >
-                  <span>{String(index + 1).padStart(2, "0")} / {step.eyebrow}</span>
+                  <span>{String(index + 1).padStart(2, "0")} / {t(step.eyebrow)}</span>
                   <div><h2>{step.title}</h2><p>{step.copy}</p></div>
                   <i aria-hidden="true" className="ss-journey-step-progress" onAnimationEnd={advanceJourney} />
                 </button>
@@ -1578,7 +1583,7 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
         </div>
         <div className="ss-journey-demo">
           <div className="ss-demo-window">
-            <header><i /><i /><i /><span>SIDESPACE / {side === "advertiser" ? "BUSINESS" : "CREATOR"}</span><b>{String(activeStep + 1).padStart(2, "0")} / {String(steps.length).padStart(2, "0")}</b></header>
+            <header><i /><i /><i /><span>{t("SIDESPACE /")}{" "}{side === "advertiser" ? t("BUSINESS") : t("CREATOR")}</span><b>{String(activeStep + 1).padStart(2, "0")} / {String(steps.length).padStart(2, "0")}</b></header>
             <AnimatePresence custom={stepDirection} initial={false} mode="wait">
             <motion.div
               animate="center"
@@ -1593,29 +1598,29 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
               <JourneyScene side={side} step={activeStep} />
             </motion.div>
             </AnimatePresence>
-            <footer><span>{steps[activeStep].eyebrow}</span><div aria-hidden="true">{steps.map((_, index) => <i className={index <= activeStep ? "is-filled" : undefined} key={index} />)}</div><b>{journeyPlaying ? "PLAYING" : reduceMotion ? "MANUAL" : "PAUSED"}</b></footer>
+            <footer><span>{t(steps[activeStep].eyebrow)}</span><div aria-hidden="true">{steps.map((_, index) => <i className={index <= activeStep ? "is-filled" : undefined} key={index} />)}</div><b>{journeyPlaying ? t("PLAYING") : reduceMotion ? t("MANUAL") : t("PAUSED")}</b></footer>
           </div>
         </div>
       </section>
 
       <section className="ss-principles-band">
-        <article><span>CONTROL</span><h3>The owner decides.</h3><p>Every request can be discussed, countered, accepted, or declined.</p></article>
-        <article><span>CONTEXT</span><h3>The listing is specific.</h3><p>A real audience, surface, route, place, or event—not an abstract ad unit.</p></article>
-        <article><span>CONVERSATION</span><h3>The parties talk directly.</h3><p>Price, timing, fit, and campaign details stay in one private thread.</p></article>
+        <article><span>{t("CONTROL")}</span><h3>{t("The owner decides.")}</h3><p>{t("Every request can be discussed, countered, accepted, or declined.")}</p></article>
+        <article><span>{t("CONTEXT")}</span><h3>{t("The listing is specific.")}</h3><p>{t("A real audience, surface, route, place, or event—not an abstract ad unit.")}</p></article>
+        <article><span>{t("CONVERSATION")}</span><h3>{t("The parties talk directly.")}</h3><p>{t("Price, timing, fit, and campaign details stay in one private thread.")}</p></article>
       </section>
 
       <section className="ss-page-cta">
-        <p className="ss-kicker">START WITH THE SIDE THAT FITS YOU</p>
-        <h2>Ready to see what is already here?</h2>
+        <p className="ss-kicker">{t("START WITH THE SIDE THAT FITS YOU")}</p>
+        <h2>{t("Ready to see what is already here?")}</h2>
         <div>
           <Link className="ss-button is-dark" href="/marketplace">
-            Browse marketplace{" "}
+            {t("Browse marketplace")}{" "}
             <span aria-hidden="true" className="ss-icon-arrow">
               ↗
             </span>
           </Link>
           <button className="ss-button is-light" onClick={onJoin}>
-            Create a free profile{" "}
+            {t("Create a free profile")}{" "}
             <span aria-hidden="true" className="ss-icon-plus">
               ＋
             </span>
@@ -1635,6 +1640,7 @@ export function CreatorsPage({
   onList: () => void;
   onOpenListing: (listingId: string) => void;
 }) {
+  const t = useT();
   const bookable = listings.filter((listing) => !isDemandBrief(listing));
   const creatorInventory = bookable.filter((listing) =>
     /instagram|tiktok|youtube|newsletter|creator|sponsor|story|video|window|storefront|vehicle|wall|counter|board|room|placement/i.test(
@@ -1647,54 +1653,52 @@ export function CreatorsPage({
     <>
       <section className="ss-page-hero ss-creators-hero" id="main-content">
         <div data-ss-parallax="0.045" data-ss-parallax-max="28">
-          <p className="ss-kicker">CREATORS &amp; LOCAL INVENTORY</p>
-          <h1>Your local reach<br /><em>can work for you.</em></h1>
+          <p className="ss-kicker">{t("CREATORS & LOCAL INVENTORY")}</p>
+          <h1>{t("Your local reach")}<br /><em>{t("can work for you.")}</em></h1>
           <p>
-            List the way you can advertise—on social, in a newsletter, on a
-            storefront, around a team, or at a local event. You choose the offer,
-            the price, and every campaign.
+            {t("List the way you can advertise—on social, in a newsletter, on a storefront, around a team, or at a local event. You choose the offer, the price, and every campaign.")}
           </p>
-          <button className="ss-button is-dark" onClick={onList}>List my reach <span aria-hidden="true" className="ss-icon-arrow">↗</span></button>
+          <button className="ss-button is-dark" onClick={onList}>{t("List my reach")}{" "}<span aria-hidden="true" className="ss-icon-arrow">↗</span></button>
         </div>
         <div className="ss-creator-stack">
-          <article className="is-social" data-ss-parallax="0.1" data-ss-parallax-max="44"><span>INSTAGRAM / LOCAL</span><img src="/photos/market-creator.jpg" alt="Local creator at an outdoor market" /><strong>Story + saved highlight</strong><p>Audience, format, rate</p></article>
-          <article className="is-newsletter" data-ss-parallax="0.18" data-ss-parallax-max="62"><span>NEWSLETTER / WEEKLY</span><strong>The Friday local list</strong><p>2.4K readers · One featured mention</p><b>OWNER SETS THE PRICE</b></article>
-          <article className="is-event" data-ss-parallax="0.14" data-ss-parallax-max="54"><span>EVENT / SPONSORSHIP</span><strong>Community team season</strong><p>Named tier · Benefits · Available slots</p></article>
+          <article className="is-social" data-ss-parallax="0.1" data-ss-parallax-max="44"><span>{t("INSTAGRAM / LOCAL")}</span><img src="/photos/market-creator.jpg" alt={t("Local creator at an outdoor market")} /><strong>{t("Story + saved highlight")}</strong><p>{t("Audience, format, rate")}</p></article>
+          <article className="is-newsletter" data-ss-parallax="0.18" data-ss-parallax-max="62"><span>{t("NEWSLETTER / WEEKLY")}</span><strong>{t("The Friday local list")}</strong><p>{t("2.4K readers · One featured mention")}</p><b>{t("OWNER SETS THE PRICE")}</b></article>
+          <article className="is-event" data-ss-parallax="0.14" data-ss-parallax-max="54"><span>{t("EVENT / SPONSORSHIP")}</span><strong>{t("Community team season")}</strong><p>{t("Named tier · Benefits · Available slots")}</p></article>
         </div>
       </section>
 
       <section className="ss-creator-types">
         {[
-          ["Social", "Instagram, TikTok, YouTube, and the formats your audience expects."],
-          ["Newsletters", "A useful local recommendation delivered to a known reader base."],
-          ["Placements", "Windows, walls, vehicles, counters, rooms, and boards people already pass."],
-          ["Teams", "Season, event, jersey, banner, and community sponsorship opportunities."],
-          ["Events", "Gatherings, markets, showcases, and recurring local occasions."],
-          ["Podcasts", "Host-read mentions, sponsored segments, and trusted recommendations for local listeners."],
+          [t("Social"), t("Instagram, TikTok, YouTube, and the formats your audience expects.")],
+          [t("Newsletters"), t("A useful local recommendation delivered to a known reader base.")],
+          [t("Placements"), t("Windows, walls, vehicles, counters, rooms, and boards people already pass.")],
+          [t("Teams"), t("Season, event, jersey, banner, and community sponsorship opportunities.")],
+          [t("Events"), t("Gatherings, markets, showcases, and recurring local occasions.")],
+          [t("Podcasts"), t("Host-read mentions, sponsored segments, and trusted recommendations for local listeners.")],
         ].map(([title, copy], index) => <article key={title}><span>{String(index + 1).padStart(2, "0")}</span><h2>{title}</h2><p>{copy}</p></article>)}
       </section>
 
       <section className="ss-creator-offer">
-        <div><p className="ss-kicker">BUILD AN OFFER PEOPLE CAN UNDERSTAND</p><h2>You know your audience.<br /><em>You define the inventory.</em></h2></div>
+        <div><p className="ss-kicker">{t("BUILD AN OFFER PEOPLE CAN UNDERSTAND")}</p><h2>{t("You know your audience.")}<br /><em>{t("You define the inventory.")}</em></h2></div>
         <ol>
-          <li><span>01</span><div><strong>Say where the attention lives.</strong><p>Platform, newsletter, placement, team, event, or organization.</p></div></li>
-          <li><span>02</span><div><strong>Describe exactly what a business gets.</strong><p>Frames, video length, placement, mention, tier, or sponsor benefit.</p></div></li>
-          <li><span>03</span><div><strong>Set the price and boundaries.</strong><p>You can discuss, counter, accept, or decline every request.</p></div></li>
+          <li><span>01</span><div><strong>{t("Say where the attention lives.")}</strong><p>{t("Platform, newsletter, placement, team, event, or organization.")}</p></div></li>
+          <li><span>02</span><div><strong>{t("Describe exactly what a business gets.")}</strong><p>{t("Frames, video length, placement, mention, tier, or sponsor benefit.")}</p></div></li>
+          <li><span>03</span><div><strong>{t("Set the price and boundaries.")}</strong><p>{t("You can discuss, counter, accept, or decline every request.")}</p></div></li>
         </ol>
       </section>
 
       <section className="ss-live-preview">
         <header className="ss-section-heading is-horizontal" data-ss-parallax="0.04" data-ss-parallax-max="26">
           <div>
-            <p className="ss-kicker">CREATOR INVENTORY</p>
+            <p className="ss-kicker">{t("CREATOR INVENTORY")}</p>
             <h2>
-              Creators and local owners
+              {t("Creators and local owners")}
               <br />
-              <em>already listing.</em>
+              <em>{t("already listing.")}</em>
             </h2>
           </div>
           <Link href="/marketplace?intent=supply">
-            Explore creator listings{" "}
+            {t("Explore creator listings")}{" "}
             <span aria-hidden="true" className="ss-icon-arrow">
               ↗
             </span>
@@ -1708,25 +1712,24 @@ export function CreatorsPage({
 }
 
 export function PricingPage({ onJoin }: { onJoin: () => void }) {
+  const t = useT();
   return (
     <>
       <section className="ss-page-hero ss-pricing-hero" id="main-content">
-        <p className="ss-kicker">PRICING / PAY AS YOU GO</p>
-        <h1 data-ss-parallax="0.05" data-ss-parallax-max="30">Free to join.<br /><em>Clear campaign fees.</em></h1>
+        <p className="ss-kicker">{t("PRICING / PAY AS YOU GO")}</p>
+        <h1 data-ss-parallax="0.05" data-ss-parallax-max="30">{t("Free to join.")}<br /><em>{t("Clear campaign fees.")}</em></h1>
         <p>
-          Create a profile, publish listings, browse the marketplace, send
-          campaign requests, and message members without a subscription.
-          SideSpace charges each side only when an accepted campaign is paid.
+          {t("Create a profile, publish listings, browse the marketplace, send campaign requests, and message members without a subscription. SideSpace charges each side only when an accepted campaign is paid.")}
         </p>
-        <button className="ss-button is-dark" onClick={onJoin}>Create a free account <span aria-hidden="true" className="ss-icon-arrow">↗</span></button>
+        <button className="ss-button is-dark" onClick={onJoin}>{t("Create a free account")}{" "}<span aria-hidden="true" className="ss-icon-arrow">↗</span></button>
       </section>
 
       <section className="ss-current-pricing" aria-labelledby="current-pricing-title">
-        <div className="ss-current-flag" data-ss-parallax="0.06" data-ss-parallax-max="28"><span>CURRENT</span><b>LIVE NOW</b></div>
-        <div data-ss-parallax="0.11" data-ss-parallax-max="42"><p className="ss-kicker">MARKETPLACE</p><h2 id="current-pricing-title">5% + 5%</h2><p className="ss-price"><strong>$0</strong><span>/ month</span></p></div>
-        <ul data-ss-parallax="0.08" data-ss-parallax-max="34"><li>Businesses pay the agreed campaign price plus 5%</li><li>Creators receive the agreed price minus 5%</li><li>Applicable tax is calculated at Stripe Checkout</li><li>Stripe hosts checkout, invoices, and payout onboarding</li><li>No subscription or minimum campaign spend</li></ul>
+        <div className="ss-current-flag" data-ss-parallax="0.06" data-ss-parallax-max="28"><span>{t("CURRENT")}</span><b>{t("LIVE NOW")}</b></div>
+        <div data-ss-parallax="0.11" data-ss-parallax-max="42"><p className="ss-kicker">{t("MARKETPLACE")}</p><h2 id="current-pricing-title">5% + 5%</h2><p className="ss-price"><strong>$0</strong><span>{t("/ month")}</span></p></div>
+        <ul data-ss-parallax="0.08" data-ss-parallax-max="34"><li>{t("Businesses pay the agreed campaign price plus 5%")}</li><li>{t("Creators receive the agreed price minus 5%")}</li><li>{t("Applicable tax is calculated at Stripe Checkout")}</li><li>{t("Stripe hosts checkout, invoices, and payout onboarding")}</li><li>{t("No subscription or minimum campaign spend")}</li></ul>
         <button onClick={onJoin}>
-          Create a free account{" "}
+          {t("Create a free account")}{" "}
           <span aria-hidden="true" className="ss-icon-arrow">
             ↗
           </span>
@@ -1734,30 +1737,30 @@ export function PricingPage({ onJoin }: { onJoin: () => void }) {
       </section>
 
       <section className="ss-future-pricing" aria-labelledby="future-pricing-title">
-        <header><div><p className="ss-kicker">EXAMPLE / EXACT MATH</p><h2 id="future-pricing-title">A $100 campaign, end to end.</h2></div><p>Fees are rounded to the nearest cent and shown before the business opens Stripe Checkout.</p></header>
+        <header><div><p className="ss-kicker">{t("EXAMPLE / EXACT MATH")}</p><h2 id="future-pricing-title">{t("A $100 campaign, end to end.")}</h2></div><p>{t("Fees are rounded to the nearest cent and shown before the business opens Stripe Checkout.")}</p></header>
         <div>
-          <article><span>BUSINESS</span><h3>Pays $105 before tax</h3><p>The $100 campaign subtotal plus a $5 SideSpace buyer fee.</p><ul><li>$100 agreed campaign</li><li>$5 buyer fee</li><li>Tax added when applicable</li></ul></article>
-          <article><span>CREATOR</span><h3>Earns $95</h3><p>The $100 campaign subtotal minus a $5 SideSpace creator fee.</p><ul><li>$100 gross campaign</li><li>$5 creator fee</li><li>$95 creator payout before Stripe payout adjustments</li></ul></article>
+          <article><span>{t("BUSINESS")}</span><h3>{t("Pays $105 before tax")}</h3><p>{t("The $100 campaign subtotal plus a $5 SideSpace buyer fee.")}</p><ul><li>{t("$100 agreed campaign")}</li><li>{t("$5 buyer fee")}</li><li>{t("Tax added when applicable")}</li></ul></article>
+          <article><span>{t("CREATOR")}</span><h3>{t("Earns $95")}</h3><p>{t("The $100 campaign subtotal minus a $5 SideSpace creator fee.")}</p><ul><li>{t("$100 gross campaign")}</li><li>{t("$5 creator fee")}</li><li>{t("$95 creator payout before Stripe payout adjustments")}</li></ul></article>
         </div>
       </section>
 
       <section className="ss-pricing-truth">
-        <h2>Hosted checkout. No hidden subscription.</h2>
-        <p>The business sees the campaign, buyer fee, and tax before paying. A verified Stripe webhook—not the browser redirect—confirms the campaign.</p>
+        <h2>{t("Hosted checkout. No hidden subscription.")}</h2>
+        <p>{t("The business sees the campaign, buyer fee, and tax before paying. A verified Stripe webhook—not the browser redirect—confirms the campaign.")}</p>
       </section>
 
       <section className="ss-page-cta">
-        <p className="ss-kicker">FREE TO JOIN</p>
-        <h2>Start with the marketplace, then pay only for accepted work.</h2>
+        <p className="ss-kicker">{t("FREE TO JOIN")}</p>
+        <h2>{t("Start with the marketplace, then pay only for accepted work.")}</h2>
         <div>
           <Link className="ss-button is-light" href="/marketplace">
-            Browse first{" "}
+            {t("Browse first")}{" "}
             <span aria-hidden="true" className="ss-icon-arrow">
               ↗
             </span>
           </Link>
           <button className="ss-button is-dark" onClick={onJoin}>
-            Join SideSpace{" "}
+            {t("Join SideSpace")}{" "}
             <span aria-hidden="true" className="ss-icon-plus">
               ＋
             </span>
@@ -1775,15 +1778,15 @@ export function DashboardGate({
   onSignIn: () => void;
   onJoin: () => void;
 }) {
+  const t = useT();
   return (
     <section className="ss-dashboard-gate" id="main-content">
-      <p className="ss-kicker">YOUR SIDESPACE</p>
-      <h1>Listings, requests, and<br /><em>conversations in one place.</em></h1>
+      <p className="ss-kicker">{t("YOUR SIDESPACE")}</p>
+      <h1>{t("Listings, requests, and")}<br /><em>{t("conversations in one place.")}</em></h1>
       <p>
-        Sign in to manage your profile, publish inventory, reply to campaign
-        requests, and continue private messages.
+        {t("Sign in to manage your profile, publish inventory, reply to campaign requests, and continue private messages.")}
       </p>
-      <div><button className="ss-button is-dark" onClick={onSignIn}>Sign in <span aria-hidden="true" className="ss-icon-arrow">↗</span></button><button className="ss-button is-light" onClick={onJoin}>Join SideSpace <span aria-hidden="true" className="ss-icon-plus">＋</span></button></div>
+      <div><button className="ss-button is-dark" onClick={onSignIn}>{t("Sign in")}{" "}<span aria-hidden="true" className="ss-icon-arrow">↗</span></button><button className="ss-button is-light" onClick={onJoin}>{t("Join SideSpace")}{" "}<span aria-hidden="true" className="ss-icon-plus">＋</span></button></div>
     </section>
   );
 }

@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useT } from "@/lib/i18n/client";
+import { LanguageSwitcher } from "@/app/components/LanguageSwitcher";
+import { msg } from "@/lib/i18n";
 
 export type SideSpaceRoute =
   | "home"
@@ -21,15 +24,15 @@ const PUBLIC_LINKS: Array<{
   label: string;
   route: SideSpaceRoute;
 }> = [
-  { href: "/marketplace", label: "Marketplace", route: "marketplace" },
+  { href: "/marketplace", label: msg("Marketplace"), route: "marketplace" },
   {
     href: "/marketplace?sort=popular",
-    label: "Popular",
+    label: msg("Popular"),
     route: "marketplace",
   },
-  { href: "/how-it-works", label: "How it works", route: "how-it-works" },
-  { href: "/creators", label: "Creators", route: "creators" },
-  { href: "/pricing", label: "Pricing", route: "pricing" },
+  { href: "/how-it-works", label: msg("How it works"), route: "how-it-works" },
+  { href: "/creators", label: msg("Creators"), route: "creators" },
+  { href: "/pricing", label: msg("Pricing"), route: "pricing" },
 ];
 
 export function SideSpaceMark() {
@@ -68,6 +71,7 @@ export function SiteHeader({
   onJoin: () => void;
   onAccount: () => void;
 }) {
+  const t = useT();
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -120,11 +124,11 @@ export function SiteHeader({
         className={`ss-header${scrolled ? " is-scrolled" : ""}${menuOpen ? " menu-open" : ""}`}
       >
         <div className="ss-header-inner">
-        <Link className="ss-brand" href="/" aria-label="SideSpace home">
+        <Link className="ss-brand" href="/" aria-label={t("SideSpace home")}>
           <SideSpaceMark />
         </Link>
 
-        <nav className="ss-desktop-nav" aria-label="Primary navigation">
+        <nav className="ss-desktop-nav" aria-label={t("Primary navigation")}>
           {PUBLIC_LINKS.map((link) => (
             <Link
               href={link.href}
@@ -136,7 +140,7 @@ export function SiteHeader({
                   : undefined
               }
             >
-              {link.label}
+              {t(link.label)}
             </Link>
           ))}
         </nav>
@@ -147,7 +151,7 @@ export function SiteHeader({
           ) : viewer ? (
             <>
               <button className="ss-header-text-action" onClick={onMessages}>
-                Messages
+                {t("Messages")}
                 {unreadCount > 0 && (
                   <b>{unreadCount > 99 ? "99+" : unreadCount}</b>
                 )}
@@ -156,12 +160,12 @@ export function SiteHeader({
                 className={`ss-header-text-action ss-dashboard-link${route === "dashboard" ? " is-current" : ""}`}
                 href="/dashboard"
               >
-                Dashboard
+                {t("Dashboard")}
               </Link>
               <button
                 className="ss-profile-control"
                 onClick={onAccount}
-                aria-label={`Open ${viewer.displayName}'s profile and settings`}
+                aria-label={t("Open {displayName}'s profile and settings", { displayName: viewer.displayName })}
               >
                 {viewer.avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -171,17 +175,17 @@ export function SiteHeader({
                     {viewer.displayName.slice(0, 1).toUpperCase()}
                   </span>
                 )}
-                <span>Profile</span>
+                <span>{t("Profile")}</span>
               </button>
             </>
           ) : (
             <>
               <button className="ss-header-text-action ss-sign-in" onClick={onSignIn}>
-                Sign in
+                {t("Sign in")}
               </button>
               <button className="ss-header-join" onClick={onJoin}>
                 <span>
-                  Join<span className="ss-header-join-full"> SideSpace</span>
+                  {t("Join")}<span className="ss-header-join-full"> SideSpace</span>
                 </span>
                 <span aria-hidden="true" className="ss-icon-arrow">
                   ↗
@@ -195,7 +199,7 @@ export function SiteHeader({
             type="button"
             aria-expanded={menuOpen}
             aria-controls="ss-mobile-menu"
-            aria-label={menuOpen ? "Close navigation" : "Open navigation"}
+            aria-label={menuOpen ? t("Close navigation") : t("Open navigation")}
             onClick={() => setMenuOpen((open) => !open)}
           >
             <span />
@@ -205,7 +209,7 @@ export function SiteHeader({
       </div>
 
       <div className="ss-mobile-menu" id="ss-mobile-menu" hidden={!menuOpen}>
-        <nav aria-label="Mobile navigation">
+        <nav aria-label={t("Mobile navigation")}>
           {PUBLIC_LINKS.map((link, index) => (
             <Link
               href={link.href}
@@ -214,7 +218,7 @@ export function SiteHeader({
               onClick={() => setMenuOpen(false)}
             >
               <span>{String(index + 1).padStart(2, "0")}</span>
-              {link.label}
+              {t(link.label)}
               <b aria-hidden="true" className="ss-icon-arrow">
                 ↗
               </b>
@@ -228,7 +232,7 @@ export function SiteHeader({
                 onClick={() => setMenuOpen(false)}
               >
                 <span>05</span>
-                Dashboard
+                {t("Dashboard")}
                 <b aria-hidden="true" className="ss-icon-arrow">
                   ↗
                 </b>
@@ -240,7 +244,7 @@ export function SiteHeader({
                 }}
               >
                 <span>06</span>
-                Messages
+                {t("Messages")}
                 {unreadCount > 0 && <b>{unreadCount}</b>}
               </button>
               <button
@@ -250,12 +254,13 @@ export function SiteHeader({
                 }}
               >
                 <span>07</span>
-                Profile
+                {t("Profile")}
                 <b aria-hidden="true">↗</b>
               </button>
             </>
           )}
         </nav>
+        <LanguageSwitcher className="ss-language-mobile" />
         {!viewer && (
           <div className="ss-mobile-auth">
             <button
@@ -264,7 +269,7 @@ export function SiteHeader({
                 onSignIn();
               }}
             >
-              Sign in
+              {t("Sign in")}
             </button>
             <button
               onClick={() => {
@@ -272,7 +277,7 @@ export function SiteHeader({
                 onJoin();
               }}
             >
-              Join SideSpace{" "}
+              {t("Join SideSpace")}{" "}
               <span aria-hidden="true" className="ss-icon-arrow">
                 ↗
               </span>
@@ -283,7 +288,7 @@ export function SiteHeader({
     </header>
       {menuOpen && (
         <button
-          aria-label="Close navigation"
+          aria-label={t("Close navigation")}
           className="ss-menu-backdrop"
           type="button"
           onClick={() => setMenuOpen(false)}
@@ -294,35 +299,37 @@ export function SiteHeader({
 }
 
 export function SiteFooter({ onJoin }: { onJoin: () => void }) {
+  const t = useT();
   return (
     <footer className="ss-footer">
       <div className="ss-footer-lead">
-        <Link className="ss-brand" href="/" aria-label="SideSpace home">
+        <Link className="ss-brand" href="/" aria-label={t("SideSpace home")}>
           <SideSpaceMark />
         </Link>
         <p>
-          The marketplace for local attention.
+          {t("The marketplace for local attention.")}
           <br />
-          Digital, physical, and directly bookable.
+          {t("Digital, physical, and directly bookable.")}
         </p>
       </div>
-      <nav aria-label="Footer navigation">
+      <nav aria-label={t("Footer navigation")}>
         {PUBLIC_LINKS.map((link) => (
           <Link href={link.href} key={link.href}>
-            {link.label}
+            {t(link.label)}
           </Link>
         ))}
-        <Link href="/terms">Terms</Link>
-        <Link href="/privacy">Privacy</Link>
+        <Link href="/terms">{t("Terms")}</Link>
+        <Link href="/privacy">{t("Privacy")}</Link>
       </nav>
       <div className="ss-footer-end">
         <button onClick={onJoin}>
-          List what you have{" "}
+          {t("List what you have")}{" "}
           <span aria-hidden="true" className="ss-icon-arrow">
             ↗
           </span>
         </button>
-        <small>© {new Date().getFullYear()} SideSpace</small>
+        <LanguageSwitcher />
+        <small>{t("© {year} SideSpace", { year: new Date().getFullYear() })}</small>
       </div>
     </footer>
   );

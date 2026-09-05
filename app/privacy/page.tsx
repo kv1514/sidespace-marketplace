@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { OG_IMAGE } from "@/lib/site-metadata";
+import { getTranslator } from "@/lib/i18n/server";
 
-export const metadata: Metadata = {
-  title: "Privacy Policy",
-  description: "What SideSpace collects, why, and what stays private.",
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslator();
+  return {
+  title: t("Privacy Policy"),
+  description: t("What SideSpace collects, why, and what stays private."),
   // Inherited the homepage's og:url, which Slack and LinkedIn treat as a
   // canonical hint - so sharing this page unfurled as the homepage.
   alternates: { canonical: "/privacy" },
@@ -13,23 +16,32 @@ export const metadata: Metadata = {
     type: "article",
     siteName: "SideSpace",
     url: "/privacy",
-    title: "Privacy Policy · SideSpace",
-    description: "What SideSpace collects, why, and what stays private.",
+    title: t("Privacy Policy · SideSpace"),
+    description: t("What SideSpace collects, why, and what stays private."),
   },
   twitter: {
     images: OG_IMAGE,
     card: "summary",
-    title: "Privacy Policy · SideSpace",
-    description: "What SideSpace collects, why, and what stays private.",
+    title: t("Privacy Policy · SideSpace"),
+    description: t("What SideSpace collects, why, and what stays private."),
   },
-};
+  };
+}
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  // The legal text is English only: a machine translation of a policy is a
+  // liability, not a courtesy. Readers in another language get told so.
+  const t = await getTranslator();
   return (
     <main className="legal-page">
       <Link className="legal-home" href="/">
         ← SideSpace
       </Link>
+      {t.locale !== "en" && (
+        <p className="legal-updated">
+          {t("This page is available in English only. The English text is the version that applies.")}
+        </p>
+      )}
       <h1>Privacy Policy</h1>
       <p className="legal-updated">Last updated: September 4, 2026</p>
 
