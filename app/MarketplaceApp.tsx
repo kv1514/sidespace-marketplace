@@ -18,6 +18,8 @@ import {
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { toastTone, type ToastTone } from "@/lib/toast-tone";
+import { english, msg, type Translate, type Vars } from "@/lib/i18n";
+import { LOCALE_TAGS, type Locale } from "@/lib/i18n/locales";
 import {
   loadProfileContacts,
   saveProfileContacts,
@@ -86,6 +88,7 @@ import { bookingDateLabel, pricingLabel } from "@/lib/listings/booking";
 import { InstantBookingPanel } from "@/components/InstantBookingPanel";
 import { addCalendarDays, calendarToday, availableStartDates, type BookingSchedule } from "@/lib/listings/availability";
 import { isUnitedStatesPlaceLabel } from "@/lib/geo/places";
+import { useT } from "@/lib/i18n/client";
 
 const stripeConfigured = /^pk_(?:test|live)_/.test(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "",
@@ -245,14 +248,14 @@ type Listing = BookingSchedule & {
  * construct" - a newsletter or a podcast is stored as whatever the member typed
  * (see normalizeSocialUrl). */
 const socialPlatforms = [
-  { key: "instagram", label: "Instagram", short: "IG", base: "https://instagram.com/" },
-  { key: "tiktok", label: "TikTok", short: "TT", base: "https://tiktok.com/@" },
-  { key: "youtube", label: "YouTube", short: "YT", base: "https://youtube.com/@" },
-  { key: "facebook", label: "Facebook", short: "FB", base: "https://facebook.com/" },
-  { key: "x", label: "X", short: "X", base: "https://x.com/" },
-  { key: "twitch", label: "Twitch", short: "TW", base: "https://twitch.tv/" },
-  { key: "newsletter", label: "Newsletter", short: "NL", base: "" },
-  { key: "podcast", label: "Podcast", short: "PC", base: "" },
+  { key: "instagram", label: msg("Instagram"), short: msg("IG"), base: "https://instagram.com/" },
+  { key: "tiktok", label: msg("TikTok"), short: msg("TT"), base: "https://tiktok.com/@" },
+  { key: "youtube", label: msg("YouTube"), short: msg("YT"), base: "https://youtube.com/@" },
+  { key: "facebook", label: msg("Facebook"), short: msg("FB"), base: "https://facebook.com/" },
+  { key: "x", label: msg("X"), short: msg("X"), base: "https://x.com/" },
+  { key: "twitch", label: msg("Twitch"), short: msg("TW"), base: "https://twitch.tv/" },
+  { key: "newsletter", label: msg("Newsletter"), short: msg("NL"), base: "" },
+  { key: "podcast", label: msg("Podcast"), short: msg("PC"), base: "" },
 ] as const;
 
 type Conversation = {
@@ -429,33 +432,33 @@ const roleCopy: Record<
   // Retired. Kept only so roleLabel() and the person card do not crash on a
   // legacy row - it is not offered by the picker. See PICKABLE_ROLES.
   consumer: {
-    label: "Campaign shopper",
-    short: "Find and book local reach",
-    eyebrow: "I’m looking to discover",
+    label: msg("Campaign shopper"),
+    short: msg("Find and book local reach"),
+    eyebrow: msg("I’m looking to discover"),
     icon: "↗",
   },
   business: {
-    label: "Business",
-    short: "Run a campaign with creators and local advertising inventory",
-    eyebrow: "I want to advertise",
+    label: msg("Business"),
+    short: msg("Run a campaign with creators and local advertising inventory"),
+    eyebrow: msg("I want to advertise"),
     icon: "◆",
   },
   creator: {
-    label: "Creator",
-    short: "I have a way to advertise.",
-    eyebrow: "I have reach to offer",
+    label: msg("Creator"),
+    short: msg("I have a way to advertise."),
+    eyebrow: msg("I have reach to offer"),
     icon: "@",
   },
   space_owner: {
-    label: "Physical space",
-    short: "Rent out a window, wall, vehicle, counter, or room",
-    eyebrow: "I own a space people walk past",
+    label: msg("Physical space"),
+    short: msg("Rent out a window, wall, vehicle, counter, or room"),
+    eyebrow: msg("I own a space people walk past"),
     icon: "⌂",
   },
   sponsor_host: {
-    label: "Sponsorship host",
-    short: "Offer sponsors a logo, a banner, or a named tier",
-    eyebrow: "I run a team or event",
+    label: msg("Sponsorship host"),
+    short: msg("Offer sponsors a logo, a banner, or a named tier"),
+    eyebrow: msg("I run a team or event"),
     icon: "★",
   },
 };
@@ -487,7 +490,7 @@ const legacyDemoProfiles: Profile[] = [
     handle: "@mayaonfilm",
     bio: "Analog fashion, thrift finds, and honest city guides for a community that actually shows up.",
     city: "East LA, CA",
-    categories: ["Instagram", "Fashion", "Local"],
+    categories: [msg("Instagram"), msg("Fashion"), msg("Local")],
     followers: 18400,
     avg_views: 8200,
     audience_age: "72% ages 18–29",
@@ -505,7 +508,7 @@ const legacyDemoProfiles: Profile[] = [
     handle: "@drew.eats",
     bio: "No-frills food reviews and weekly neighborhood roundups. My audience follows for what to order tonight.",
     city: "Oakland, CA",
-    categories: ["TikTok", "Food", "Local"],
+    categories: [msg("TikTok"), msg("Food"), msg("Local")],
     followers: 11700,
     avg_views: 12100,
     audience_age: "61% ages 21–34",
@@ -524,7 +527,7 @@ const legacyDemoProfiles: Profile[] = [
     handle: "Silver ’84 Volvo",
     bio: "A restored wagon parked in a high-footfall arts district and driven through downtown every weekday.",
     city: "Portland, OR",
-    categories: ["Vehicle", "Physical", "Local"],
+    categories: [msg("Vehicle"), msg("Physical"), msg("Local")],
     followers: 0,
     avg_views: 31000,
     audience_age: "Commuters + arts district",
@@ -543,7 +546,7 @@ const legacyDemoProfiles: Profile[] = [
     handle: "Student-run space network",
     bio: "Storefront windows and benches along the busiest off-campus routes.",
     city: "Tempe, AZ",
-    categories: ["Campus", "Storefront", "Gen Z"],
+    categories: [msg("Campus"), msg("Storefront"), msg("Gen Z")],
     followers: 0,
     avg_views: 48000,
     audience_age: "83% ages 18–24",
@@ -561,7 +564,7 @@ const legacyDemoProfiles: Profile[] = [
     handle: "@sunroomcoffee",
     bio: "A neighborhood coffee bar opening its second location and looking for local launch partners.",
     city: "Los Angeles, CA",
-    categories: ["Food", "Local", "Launch"],
+    categories: [msg("Food"), msg("Local"), msg("Launch")],
     followers: 6200,
     avg_views: 4500,
     audience_age: "Coffee, design, local life",
@@ -579,7 +582,7 @@ const legacyDemoProfiles: Profile[] = [
     handle: "@goodbonesprints",
     bio: "Independent art prints and frames made for renters, first homes, and rooms with personality.",
     city: "Atlanta, GA",
-    categories: ["Home", "Design", "Product"],
+    categories: [msg("Home"), msg("Design"), msg("Product")],
     followers: 8700,
     avg_views: 5300,
     audience_age: "Renters and first homes",
@@ -595,13 +598,13 @@ const legacyListingSeeds: Omit<Listing, "owner">[] = [
   {
     id: "a1111111-1111-4111-8111-111111111111",
     owner_profile_id: legacyDemoProfiles[0].id,
-    title: "Story set + saved highlight",
+    title: msg("Story set + saved highlight"),
     channel: "Instagram",
     format: "3 frames · 48 hr highlight",
     price_cents: 14_500,
     price_unit: "campaign",
     description:
-      "A natural three-frame story with a clear call to action, kept in my Local Finds highlight.",
+      msg("A natural three-frame story with a clear call to action, kept in my Local Finds highlight."),
     demographics: "72% ages 18–29 · East LA",
     image_url: "/photos/market-creator.jpg",
     status: "active",
@@ -609,13 +612,13 @@ const legacyListingSeeds: Omit<Listing, "owner">[] = [
   {
     id: "a2222222-2222-4222-8222-222222222222",
     owner_profile_id: legacyDemoProfiles[1].id,
-    title: "An honest neighborhood food feature",
+    title: msg("An honest neighborhood food feature"),
     channel: "TikTok",
     format: "30–45 sec · link in bio",
     price_cents: 22_000,
     price_unit: "video",
     description:
-      "One fast, useful food feature filmed on location and posted when my local audience is most active.",
+      msg("One fast, useful food feature filmed on location and posted when my local audience is most active."),
     demographics: "61% ages 21–34 · Oakland",
     image_url: "/photos/drew-kitchen.jpg",
     status: "active",
@@ -623,13 +626,13 @@ const legacyListingSeeds: Omit<Listing, "owner">[] = [
   {
     id: "a3333333-3333-4333-8333-333333333333",
     owner_profile_id: legacyDemoProfiles[2].id,
-    title: "Rear-window campaign",
+    title: msg("Rear-window campaign"),
     channel: "Vehicle",
     format: "18 × 24 in · weather-safe",
     price_cents: 8_500,
     price_unit: "week",
     description:
-      "Rear-window placement on a vintage wagon that moves through Portland’s east-side neighborhoods.",
+      msg("Rear-window placement on a vintage wagon that moves through Portland’s east-side neighborhoods."),
     demographics: "31K weekly looks · commuter route",
     image_url: "/photos/jay-volvo.jpg",
     status: "active",
@@ -637,13 +640,13 @@ const legacyListingSeeds: Omit<Listing, "owner">[] = [
   {
     id: "a4444444-4444-4444-8444-444444444444",
     owner_profile_id: legacyDemoProfiles[3].id,
-    title: "Two-location campus run",
+    title: msg("Two-location campus run"),
     channel: "Storefront",
     format: "2 placements · weekly proof",
     price_cents: 16_000,
     price_unit: "week",
     description:
-      "Two high-visibility placements near campus with timestamped setup and weekly proof photos.",
+      msg("Two high-visibility placements near campus with timestamped setup and weekly proof photos."),
     demographics: "48K weekly looks · 83% ages 18–24",
     image_url: "/photos/cafe-patio.jpg",
     status: "active",
@@ -651,13 +654,13 @@ const legacyListingSeeds: Omit<Listing, "owner">[] = [
   {
     id: "a5555555-5555-4555-8555-555555555555",
     owner_profile_id: legacyDemoProfiles[4].id,
-    title: "Second-store launch partners",
+    title: msg("Second-store launch partners"),
     channel: "Business brief",
     format: "Stories · tasting · street placement",
     price_cents: 25_000,
     price_unit: "partner",
     description:
-      "Paid launch brief for creators and spaces with a genuine connection to neighborhood coffee culture.",
+      msg("Paid launch brief for creators and spaces with a genuine connection to neighborhood coffee culture."),
     demographics: "Local coffee, design, and culture",
     image_url: "/photos/sunroom-cafe.jpg",
     status: "active",
@@ -732,15 +735,20 @@ const GoogleSignInButton = dynamic(
 );
 
 /** three.js and the viewer arrive only on a listing that has a 360 walkthrough. */
-const PanoramaViewer = dynamic(() => import("./components/PanoramaViewer"), {
-  ssr: false,
-  loading: () => (
+function PanoramaLoading() {
+  const t = useT();
+  return (
     <div className="pano-viewer">
       <span className="pano-status" role="status">
-        Loading the 360° view…
+        {t("Loading the 360° view…")}
       </span>
     </div>
-  ),
+  );
+}
+
+const PanoramaViewer = dynamic(() => import("./components/PanoramaViewer"), {
+  ssr: false,
+  loading: PanoramaLoading,
 });
 
 /** Google Maps, opened straight on a Street View panorama. Needs no key. */
@@ -753,6 +761,7 @@ function streetPanoUrl(pano: string) {
  * kinds open in the panorama viewer, where a buyer drags to look around.
  */
 function ListingTour({ listing }: { listing: Listing }) {
+  const t = useT();
   const kind = listing.tour_kind;
   if (!listing.tour_url || !kind) return null;
   return (
@@ -763,22 +772,22 @@ function ListingTour({ listing }: { listing: Listing }) {
           controls
           playsInline
           preload="metadata"
-          aria-label={`Walkthrough video of ${listing.title}`}
+          aria-label={t("Walkthrough video of {title}", { title: listing.title })}
         />
       ) : (
         <PanoramaViewer
           key={listing.tour_url}
           src={listing.tour_url}
           kind={kind}
-          label={`360° ${kind === "video360" ? "video" : "photo"} of ${listing.title}`}
+          label={t("360° {value} of {title}", { value: kind === "video360" ? "video" : "photo", title: listing.title })}
         />
       )}
       <figcaption>
         {kind === "video"
-          ? "Walkthrough video from the owner: the space as it is, and how people move through it."
+          ? t("Walkthrough video from the owner: the space as it is, and how people move through it.")
           : kind === "video360"
-            ? "360° walkthrough from the owner. Press play, then drag to look around."
-            : "360° photo from the owner. Drag to look around the whole space."}
+            ? t("360° walkthrough from the owner. Press play, then drag to look around.")
+            : t("360° photo from the owner. Drag to look around the whole space.")}
       </figcaption>
     </figure>
   );
@@ -812,19 +821,19 @@ const HeroCanvas = dynamic(() => import("./components/HeroCanvas"), {
  *  database), so the editor also always offers whatever the listing already
  *  has - otherwise editing it would rewrite the channel. */
 const LISTING_CHANNELS = [
-  "Instagram",
-  "TikTok",
-  "YouTube",
-  "Newsletter",
-  "Website",
-  "Storefront",
-  "Vehicle",
-  "Wall / mural",
-  "Room / interior",
-  "Community board",
-  "Business brief",
-  "Sponsorship",
-  "Other",
+  msg("Instagram"),
+  msg("TikTok"),
+  msg("YouTube"),
+  msg("Newsletter"),
+  msg("Website"),
+  msg("Storefront"),
+  msg("Vehicle"),
+  msg("Wall / mural"),
+  msg("Room / interior"),
+  msg("Community board"),
+  msg("Business brief"),
+  msg("Sponsorship"),
+  msg("Other"),
 ];
 
 /* ---------------------------------------------------------------------------
@@ -840,19 +849,19 @@ const LISTING_CHANNELS = [
 
 /** Written to profiles.categories. Shared by the creator and business panes. */
 const CATEGORY_CHIPS = [
-  "Food & drink",
-  "Fashion",
-  "Fitness",
-  "Beauty",
-  "Local news",
-  "Family",
-  "Music",
-  "Sports",
-  "Tech",
-  "Home",
-  "Pets",
-  "Auto",
-  "Other",
+  msg("Food & drink"),
+  msg("Fashion"),
+  msg("Fitness"),
+  msg("Beauty"),
+  msg("Local news"),
+  msg("Family"),
+  msg("Music"),
+  msg("Sports"),
+  msg("Tech"),
+  msg("Home"),
+  msg("Pets"),
+  msg("Auto"),
+  msg("Other"),
 ];
 
 /** Creator: which socialPlatforms keys are offered, and their offer examples. */
@@ -875,18 +884,18 @@ const CREATOR_OFFER_TYPES: Array<{
 }> = [
   {
     value: "social",
-    label: "Online",
-    help: "Social posts, video, newsletters, or podcasts",
+    label: msg("Online"),
+    help: msg("Social posts, video, newsletters, or podcasts"),
   },
   {
     value: "physical",
-    label: "Physical",
-    help: "Windows, walls, vehicles, rooms, or boards",
+    label: msg("Physical"),
+    help: msg("Windows, walls, vehicles, rooms, or boards"),
   },
   {
     value: "sponsorship",
-    label: "Sponsorship",
-    help: "Teams, events, jerseys, banners, and named tiers",
+    label: msg("Sponsorship"),
+    help: msg("Teams, events, jerseys, banners, and named tiers"),
   },
 ];
 
@@ -907,27 +916,27 @@ type ListingFormKind = "brief" | CreatorOfferType;
 
 /** Suggestion chips for `format`, filtered to the platforms actually picked. */
 const CREATOR_OFFER_EXAMPLES: Record<string, string[]> = {
-  instagram: ["three Instagram stories over 48 hours", "one in-feed post"],
-  tiktok: ["a TikTok with a 24-hour pin", "a TikTok product feature"],
-  youtube: ["a dedicated YouTube segment", "a YouTube short"],
-  x: ["a pinned post for 24 hours"],
-  facebook: ["a post to my local group"],
-  newsletter: ["a newsletter mention"],
-  podcast: ["a podcast read"],
-  twitch: ["a stream shout-out"],
+  instagram: [msg("three Instagram stories over 48 hours"), msg("one in-feed post")],
+  tiktok: [msg("a TikTok with a 24-hour pin"), msg("a TikTok product feature")],
+  youtube: [msg("a dedicated YouTube segment"), msg("a YouTube short")],
+  x: [msg("a pinned post for 24 hours")],
+  facebook: [msg("a post to my local group")],
+  newsletter: [msg("a newsletter mention")],
+  podcast: [msg("a podcast read")],
+  twitch: [msg("a stream shout-out")],
 };
 
 /** Space owner: chip -> the LISTING_CHANNELS value it stores. */
 const SPACE_KIND_CHIPS: Array<{ label: string; channel: string }> = [
-  { label: "Window", channel: "Storefront" },
-  { label: "Wall or mural", channel: "Wall / mural" },
-  { label: "Storefront counter", channel: "Storefront" },
-  { label: "Vehicle", channel: "Vehicle" },
-  { label: "Yard or fence", channel: "Other" },
-  { label: "Room or interior", channel: "Room / interior" },
-  { label: "Community board", channel: "Community board" },
-  { label: "A-frame sign", channel: "Other" },
-  { label: "Something else", channel: "Other" },
+  { label: msg("Window"), channel: msg("Storefront") },
+  { label: msg("Wall or mural"), channel: msg("Wall / mural") },
+  { label: msg("Storefront counter"), channel: msg("Storefront") },
+  { label: msg("Vehicle"), channel: msg("Vehicle") },
+  { label: msg("Yard or fence"), channel: msg("Other") },
+  { label: msg("Room or interior"), channel: msg("Room / interior") },
+  { label: msg("Community board"), channel: msg("Community board") },
+  { label: msg("A-frame sign"), channel: msg("Other") },
+  { label: msg("Something else"), channel: msg("Other") },
 ];
 
 /**
@@ -945,17 +954,17 @@ const SPACE_KIND_CHIPS: Array<{ label: string; channel: string }> = [
  * and I can help put it up." A shop that does not allow adhesive on glass was
  * advertising decals, and every owner was volunteering their own labour.
  */
-const SURFACE_OTHER = "Something else";
+const SURFACE_OTHER = msg("Something else");
 
 const SURFACE_CHIPS = [
-  "Posters",
-  "Vinyl decals",
-  "Counter cards",
-  "Flyers",
-  "Banners",
-  "A-frame signs",
-  "Paint or mural",
-  "Digital screens",
+  msg("Posters"),
+  msg("Vinyl decals"),
+  msg("Counter cards"),
+  msg("Flyers"),
+  msg("Banners"),
+  msg("A-frame signs"),
+  msg("Paint or mural"),
+  msg("Digital screens"),
   // Required, and it becomes `deliverables` - the literal list of what a buyer
   // gets. An owner offering a shelf for product samples, a hanging mobile or a
   // lightbox had nothing to pick and no way to say so, on the one question
@@ -970,19 +979,19 @@ const INSTALL_CHIPS: Array<{
   sentence: string;
 }> = [
   {
-    label: "I put it up",
+    label: msg("I put it up"),
     value: "owner",
-    sentence: "I’ll put it up for you.",
+    sentence: msg("I’ll put it up for you."),
   },
   {
-    label: "You come and install it",
+    label: msg("You come and install it"),
     value: "renter",
-    sentence: "You install it yourself — we’ll arrange a time.",
+    sentence: msg("You install it yourself — we’ll arrange a time."),
   },
   {
-    label: "Either works",
+    label: msg("Either works"),
     value: "either",
-    sentence: "I can put it up, or you’re welcome to install it yourself.",
+    sentence: msg("I can put it up, or you’re welcome to install it yourself."),
   },
 ];
 
@@ -992,30 +1001,30 @@ const TRAFFIC_CHIPS: Array<{
   sentence: string;
 }> = [
   {
-    label: "Quiet street",
+    label: msg("Quiet street"),
     count: 50,
-    sentence: "A quiet street - regulars and neighbours rather than crowds.",
+    sentence: msg("A quiet street - regulars and neighbours rather than crowds."),
   },
   {
-    label: "Steady neighborhood",
+    label: msg("Steady neighborhood"),
     count: 300,
-    sentence: "About 300 people a day, mostly local regulars.",
+    sentence: msg("About 300 people a day, mostly local regulars."),
   },
   {
-    label: "Busy block",
+    label: msg("Busy block"),
     count: 1200,
-    sentence: "About 1,200 people a day on a busy block.",
+    sentence: msg("About 1,200 people a day on a busy block."),
   },
   {
-    label: "Major foot traffic",
+    label: msg("Major foot traffic"),
     count: 5000,
-    sentence: "5,000+ people a day - a main pedestrian route.",
+    sentence: msg("5,000+ people a day - a main pedestrian route."),
   },
   // Not "Not sure". That chip published a space with no reach at all, which
   // sorts below every space that guessed - the exact opposite of what someone
   // picking it intends. This one reveals nothing new; it just leaves the count
   // input, which is always on screen, for them to fill in.
-  { label: "I’ll count it myself", count: null, sentence: "" },
+  { label: msg("I’ll count it myself"), count: null, sentence: "" },
 ];
 
 /** Space owner availability. One chip, no date pickers. */
@@ -1036,40 +1045,40 @@ const AVAILABILITY_CHIPS: Array<{
   days: number;
   sentence: string;
 }> = [
-  { label: "Available now", startDays: 0, days: 90, sentence: "It’s free now." },
+  { label: msg("Available now"), startDays: 0, days: 90, sentence: msg("It’s free now.") },
   {
-    label: "From next month",
+    label: msg("From next month"),
     startDays: 30,
     days: 120,
-    sentence: "It opens up next month.",
+    sentence: msg("It opens up next month."),
   },
   {
-    label: "Seasonal",
+    label: msg("Seasonal"),
     startDays: 0,
     days: 180,
-    sentence: "It’s free seasonally — ask about specific dates.",
+    sentence: msg("It’s free seasonally — ask about specific dates."),
   },
-  { label: "Ask me", startDays: null, days: 0, sentence: "Ask me about dates." },
+  { label: msg("Ask me"), startDays: null, days: 0, sentence: msg("Ask me about dates.") },
 ];
 
 /** Business: what the campaign should achieve. Seeds the description draft. */
 const BUSINESS_GOAL_CHIPS: Array<{ label: string; sentence: string }> = [
   {
-    label: "Get people into the store",
-    sentence: "We want more people through the door.",
+    label: msg("Get people into the store"),
+    sentence: msg("We want more people through the door."),
   },
   {
-    label: "Launch something new",
-    sentence: "We are launching something new and want the neighbourhood to know.",
+    label: msg("Launch something new"),
+    sentence: msg("We are launching something new and want the neighbourhood to know."),
   },
   {
-    label: "Grow our following",
-    sentence: "We want to grow a genuinely local following.",
+    label: msg("Grow our following"),
+    sentence: msg("We want to grow a genuinely local following."),
   },
-  { label: "Sell out an event", sentence: "We have an event to fill." },
+  { label: msg("Sell out an event"), sentence: msg("We have an event to fill.") },
   {
-    label: "Stay top of mind nearby",
-    sentence: "We want to stay top of mind with people nearby.",
+    label: msg("Stay top of mind nearby"),
+    sentence: msg("We want to stay top of mind with people nearby."),
   },
 ];
 
@@ -1085,44 +1094,44 @@ const BRIEF_SCOPE_CHIPS: Array<{
   help: string;
 }> = [
   {
-    label: "Physical space",
+    label: msg("Physical space"),
     value: "physical",
-    help: "Windows, walls, counters, vehicles, boards",
+    help: msg("Windows, walls, counters, vehicles, boards"),
   },
   {
-    label: "Virtual / social",
+    label: msg("Virtual / social"),
     value: "virtual",
-    help: "Posts, reels, stories, newsletters",
+    help: msg("Posts, reels, stories, newsletters"),
   },
-  { label: "Both", value: "both", help: "Whatever reaches people locally" },
+  { label: msg("Both"), value: "both", help: msg("Whatever reaches people locally") },
 ];
 
 /** Physical placements a brief can ask for. Only shown for physical/both. */
 const BRIEF_PHYSICAL_CHIPS = [
-  "Storefront windows",
-  "Walls & murals",
-  "Counters & registers",
-  "Vehicles",
-  "Community boards",
-  "Yards & fences",
-  "A-frame signs",
-  "Event booths",
-  "Local teams & events",
-  "Other",
+  msg("Storefront windows"),
+  msg("Walls & murals"),
+  msg("Counters & registers"),
+  msg("Vehicles"),
+  msg("Community boards"),
+  msg("Yards & fences"),
+  msg("A-frame signs"),
+  msg("Event booths"),
+  msg("Local teams & events"),
+  msg("Other"),
 ];
 
 /** Social platforms a brief can target. Only shown for virtual/both. */
 const BRIEF_PLATFORM_CHIPS = [
-  "Instagram",
-  "TikTok",
-  "YouTube",
-  "X",
-  "Facebook",
-  "Newsletter",
-  "Podcast",
-  "Twitch",
-  "LinkedIn",
-  "Other",
+  msg("Instagram"),
+  msg("TikTok"),
+  msg("YouTube"),
+  msg("X"),
+  msg("Facebook"),
+  msg("Newsletter"),
+  msg("Podcast"),
+  msg("Twitch"),
+  msg("LinkedIn"),
+  msg("Other"),
 ];
 
 /** Budget range presets: [low, high]. A range beats one number for a brief. */
@@ -1147,21 +1156,21 @@ const BUSINESS_TIMING_CHIPS: Array<{
   sentence: string;
 }> = [
   {
-    label: "Next 2 weeks",
+    label: msg("Next 2 weeks"),
     days: 14,
-    sentence: "We’d like this live in the next two weeks.",
+    sentence: msg("We’d like this live in the next two weeks."),
   },
-  { label: "This month", days: 30, sentence: "We’d like this live this month." },
-  { label: "Next month", days: 60, sentence: "We’re planning for next month." },
-  { label: "Flexible", days: 90, sentence: "Our timing is flexible." },
+  { label: msg("This month"), days: 30, sentence: msg("We’d like this live this month.") },
+  { label: msg("Next month"), days: 60, sentence: msg("We’re planning for next month.") },
+  { label: msg("Flexible"), days: 90, sentence: msg("Our timing is flexible.") },
 ];
 
 /** Suggestion chips for a business's `deliverables`, social placements only. */
 const DELIVERABLE_EXAMPLES = [
-  "Tag @us",
-  "Use our hashtag",
-  "Link in bio for 48h",
-  "Show the product on camera",
+  msg("Tag @us"),
+  msg("Use our hashtag"),
+  msg("Link in bio for 48h"),
+  msg("Show the product on camera"),
 ];
 
 /**
@@ -1170,19 +1179,19 @@ const DELIVERABLE_EXAMPLES = [
  * nothing wrote it, so a robotics team published with no categories at all
  * and could not be found by searching for one.
  */
-const SPONSOR_ORG_OTHER = "Something else";
+const SPONSOR_ORG_OTHER = msg("Something else");
 
 const SPONSOR_ORG_CHIPS = [
-  "Robotics team",
-  "Sports team",
-  "Esports team",
-  "Hackathon",
-  "Conference",
-  "Nonprofit",
-  "Student org",
-  "School club",
-  "Festival",
-  "Band or theater",
+  msg("Robotics team"),
+  msg("Sports team"),
+  msg("Esports team"),
+  msg("Hackathon"),
+  msg("Conference"),
+  msg("Nonprofit"),
+  msg("Student org"),
+  msg("School club"),
+  msg("Festival"),
+  msg("Band or theater"),
   // SPACE_KIND_CHIPS has always ended with an escape hatch and this did not,
   // so a scout troop, a PTA, a church group or an animal shelter had to file
   // itself under "Nonprofit". That label is not cosmetic: it opens their
@@ -1203,47 +1212,47 @@ const SPONSOR_REACH_CHIPS: Array<{
   sentence: string;
 }> = [
   {
-    label: "Our team and families (~100)",
+    label: msg("Our team and families (~100)"),
     count: 100,
-    unit: "people a season",
-    sentence: "Around 100 people across the season - the team and their families.",
+    unit: msg("people a season"),
+    sentence: msg("Around 100 people across the season - the team and their families."),
   },
   {
-    label: "A local crowd (~1,000)",
+    label: msg("A local crowd (~1,000)"),
     count: 1000,
-    unit: "people a season",
-    sentence: "Around 1,000 people across the season.",
+    unit: msg("people a season"),
+    sentence: msg("Around 1,000 people across the season."),
   },
   {
-    label: "A regional event (~5,000)",
+    label: msg("A regional event (~5,000)"),
     count: 5000,
-    unit: "people per event",
-    sentence: "Around 5,000 people at the event.",
+    unit: msg("people per event"),
+    sentence: msg("Around 5,000 people at the event."),
   },
   {
-    label: "A big event (10,000+)",
+    label: msg("A big event (10,000+)"),
     count: 10000,
-    unit: "people per event",
-    sentence: "10,000+ people at the event.",
+    unit: msg("people per event"),
+    sentence: msg("10,000+ people at the event."),
   },
   // Same trap as the old traffic chip: picking "Not sure" satisfied the chip
   // but left reachCount empty, and the validator then refused to publish with
   // no way back except un-picking the answer they meant.
-  { label: "I’ll put in a number", count: null, unit: "", sentence: "" },
+  { label: msg("I’ll put in a number"), count: null, unit: "", sentence: "" },
 ];
 
 /** What a sponsor actually receives. First two feed `format`, all feed `deliverables`. */
 const SPONSOR_BENEFIT_CHIPS = [
-  "Logo on jerseys",
-  "Logo on the robot or kit",
-  "Banner at events",
-  "Named tier",
-  "Social shoutouts",
-  "Newsletter mention",
-  "Booth or table",
-  "Logo on our website",
-  "Announcer shout-out",
-  "Program ad",
+  msg("Logo on jerseys"),
+  msg("Logo on the robot or kit"),
+  msg("Banner at events"),
+  msg("Named tier"),
+  msg("Social shoutouts"),
+  msg("Newsletter mention"),
+  msg("Booth or table"),
+  msg("Logo on our website"),
+  msg("Announcer shout-out"),
+  msg("Program ad"),
 ];
 
 /**
@@ -1311,13 +1320,13 @@ const SPONSOR_SEASON_CHIPS: Array<{
   sentence: string;
 }> = [
   {
-    label: "This season",
+    label: msg("This season"),
     days: 120,
-    sentence: "This is a season-long sponsorship.",
+    sentence: msg("This is a season-long sponsorship."),
   },
-  { label: "This semester", days: 150, sentence: "This runs for the semester." },
-  { label: "One event", days: 30, sentence: "This is for a single event." },
-  { label: "Year-round", days: 365, sentence: "This runs year-round." },
+  { label: msg("This semester"), days: 150, sentence: msg("This runs for the semester.") },
+  { label: msg("One event"), days: 30, sentence: msg("This is for a single event.") },
+  { label: msg("Year-round"), days: 365, sentence: msg("This runs year-round.") },
 ];
 
 /** Price presets per role. "Custom" reveals a number input. */
@@ -1498,11 +1507,12 @@ type OnboardingAnswers = {
  * rest on the lime fill alone.
  */
 function OptionalFieldLabel({ children }: { children: ReactNode }) {
+  const t = useT();
   return (
     <span className="field-label-line">
       {children}
       {" "}
-      <span className="optional">optional</span>
+      <span className="optional">{t("optional")}</span>
     </span>
   );
 }
@@ -1552,6 +1562,7 @@ function ProfilePhotoField({
   onFileChange: (file: File | null) => void;
   onCropStateChange: (pending: boolean) => void;
 }) {
+  const t = useT();
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceReadyFile, setSourceReadyFile] = useState<File | null>(null);
@@ -1591,12 +1602,12 @@ function ProfilePhotoField({
         });
       };
       image.onerror = () => {
-        if (!cancelled) setCropError("That photo could not be read.");
+        if (!cancelled) setCropError(t("That photo could not be read."));
       };
       image.src = dataUrl;
     };
     reader.onerror = () => {
-      if (!cancelled) setCropError("That photo could not be read.");
+      if (!cancelled) setCropError(t("That photo could not be read."));
     };
     reader.readAsDataURL(sourceFile);
 
@@ -1604,7 +1615,7 @@ function ProfilePhotoField({
       cancelled = true;
       reader.abort();
     };
-  }, [sourceFile]);
+  }, [sourceFile, t]);
 
   useEffect(() => {
     if (!value) return;
@@ -1671,11 +1682,11 @@ function ProfilePhotoField({
       !file.type ||
       !["image/jpeg", "image/png", "image/webp"].includes(file.type)
     ) {
-      setCropError("Choose a JPG, PNG, or WebP image.");
+      setCropError(t("Choose a JPG, PNG, or WebP image."));
       if (inputRef.current) inputRef.current.value = "";
       return;
     }
-    setCropError("");
+    setCropError(t(""));
     setSourceReadyFile(null);
     setImageDimensions(null);
     setZoom(1);
@@ -1771,7 +1782,7 @@ function ProfilePhotoField({
       return;
     }
 
-    setCropError("");
+    setCropError(t(""));
     setCropping(true);
     try {
       const image = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -1839,7 +1850,7 @@ function ProfilePhotoField({
       if (inputRef.current) inputRef.current.value = "";
     } catch (error) {
       setCropError(
-        error instanceof Error ? error.message : "That photo could not be cropped.",
+        t(error instanceof Error ? error.message : "That photo could not be cropped."),
       );
     } finally {
       setCropping(false);
@@ -1849,7 +1860,7 @@ function ProfilePhotoField({
   function cancelCrop() {
     onCropStateChange(false);
     setSourceFile(null);
-    setCropError("");
+    setCropError(t(""));
     if (inputRef.current) inputRef.current.value = "";
   }
 
@@ -1869,7 +1880,7 @@ function ProfilePhotoField({
             ref={cropSurfaceRef}
             className={`profile-photo-crop-surface${dragging ? " is-dragging" : ""}`}
             role="region"
-            aria-label="Crop profile photo. Drag the image to reposition it."
+            aria-label={t("Crop profile photo. Drag the image to reposition it.")}
             tabIndex={0}
             onKeyDown={handleCropKeyDown}
             onPointerDown={handlePointerDown}
@@ -1881,7 +1892,7 @@ function ProfilePhotoField({
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={sourceUrl}
-                alt="Profile photo crop preview"
+                alt={t("Profile photo crop preview")}
                 draggable={false}
                 onLoad={(event) =>
                   setImageDimensions({
@@ -1898,29 +1909,29 @@ function ProfilePhotoField({
                 }}
               />
             ) : (
-              <span className="profile-photo-crop-loading">Loading photo…</span>
+              <span className="profile-photo-crop-loading">{t("Loading photo…")}</span>
             )}
             <span className="profile-photo-crop-outline" aria-hidden="true" />
           </div>
           <div className="profile-photo-crop-controls">
             <label className="profile-photo-zoom">
-              <span>Zoom</span>
+              <span>{t("Zoom")}</span>
               <input
                 type="range"
                 min="1"
                 max="3"
                 step="0.01"
                 value={zoom}
-                aria-label="Zoom profile photo"
+                aria-label={t("Zoom profile photo")}
                 onChange={(event) => handleZoomChange(Number(event.target.value))}
               />
               <output>{Math.round(zoom * 100)}%</output>
             </label>
-            <small>Drag the photo to choose what appears in the circle.</small>
+            <small>{t("Drag the photo to choose what appears in the circle.")}</small>
           </div>
           <div className="profile-photo-crop-actions">
             <button type="button" onClick={cancelCrop}>
-              Cancel
+              {t("Cancel")}
             </button>
             <button
               type="button"
@@ -1928,7 +1939,7 @@ function ProfilePhotoField({
               disabled={!imageLayout || cropping}
               onClick={() => void applyCrop()}
             >
-              {cropping ? "Preparing…" : "Use this crop"}
+              {cropping ? t("Preparing…") : t("Use this crop")}
             </button>
           </div>
         </div>
@@ -1940,15 +1951,15 @@ function ProfilePhotoField({
             <img
               className="profile-photo-preview"
               src={value ? valuePreviewUrl : currentUrl}
-              alt={value ? "Selected profile photo" : "Current profile photo"}
+              alt={value ? t("Selected profile photo") : t("Current profile photo")}
             />
           )}
           <small>
             {value
-              ? "Your cropped photo is ready. Choose another photo to adjust it."
+              ? t("Your cropped photo is ready. Choose another photo to adjust it.")
               : currentUrl
-                ? "Your current photo is shown here. Choose another photo to replace it."
-                : "Choose a photo, then drag it into place."}
+                ? t("Your current photo is shown here. Choose another photo to replace it.")
+                : t("Choose a photo, then drag it into place.")}
           </small>
         </div>
       )}
@@ -1979,24 +1990,24 @@ function bioMeetsRequirement(value: string, role: Role | null) {
     : value.trim().length >= BIO_MIN_CHARACTERS;
 }
 
-function getBioRequirementHint(value: string, role: Role | null) {
+function getBioRequirementHint(value: string, role: Role | null, t: Translate = english) {
   if (usesWordBasedBioRequirement(role)) {
     const remaining = Math.max(0, BUSINESS_BIO_MIN_WORDS - countWords(value));
 
     if (remaining === 0) {
-      return "Minimum reached";
+      return t("Minimum reached");
     }
 
-    return `${remaining} more ${remaining === 1 ? "word" : "words"} needed`;
+    return remaining === 1 ? t("1 more word needed") : t("{count} more words needed", { count: remaining });
   }
 
   const remaining = Math.max(0, BIO_MIN_CHARACTERS - value.trim().length);
 
   if (remaining === 0) {
-    return "Minimum reached";
+    return t("Minimum reached");
   }
 
-  return `${remaining} more ${remaining === 1 ? "character" : "characters"} needed`;
+  return remaining === 1 ? t("1 more character needed") : t("{count} more characters needed", { count: remaining });
 }
 
 function ChipRow({
@@ -2018,6 +2029,7 @@ function ChipRow({
   optional?: boolean;
   hideLabel?: boolean;
 }) {
+  const t = useT();
   // The label used to live only in aria-label, so a sighted member met several
   // required chip rows as unheaded rows of pills - "pick what kind of business
   // you are" was never written down anywhere. Rendering it fixes the same gap
@@ -2029,7 +2041,7 @@ function ChipRow({
         <span className="chip-label" id={labelId}>
           {label}
           {" "}
-          {optional && <span className="optional">optional</span>}
+          {optional && <span className="optional">{t("optional")}</span>}
         </span>
       )}
       <div
@@ -2083,6 +2095,7 @@ function CreatorAudienceFields({
   igStats: IgStats | null;
   onCheckInstagram: (handle: string) => void;
 }) {
+  const t = useT();
   const selectedPlatforms = answers.platforms
     .map((key) => socialPlatforms.find((platform) => platform.key === key))
     .filter((platform): platform is (typeof socialPlatforms)[number] =>
@@ -2118,7 +2131,7 @@ function CreatorAudienceFields({
     <div className="creator-audience-fieldset">
       <ChipRow
         field="platforms"
-        label="Choose all that apply"
+        label={t("Choose all that apply")}
         multi
         options={CREATOR_PLATFORMS.map(
           (key) =>
@@ -2132,10 +2145,10 @@ function CreatorAudienceFields({
         <div className="audience-profile-list">
           <div className="audience-profile-heading">
             <div>
-              <strong>Add your profiles</strong>
-              <span>Add a handle or link for the ones you want shown.</span>
+              <strong>{t("Add your profiles")}</strong>
+              <span>{t("Add a handle or link for the ones you want shown.")}</span>
             </div>
-            <small>{selectedPlatforms.length} selected</small>
+            <small>{t("{selectedPlatformsCount} selected", { selectedPlatformsCount: selectedPlatforms.length })}</small>
           </div>
 
           {selectedPlatforms.map((platform) => {
@@ -2144,9 +2157,9 @@ function CreatorAudienceFields({
             const canBePrimary = Boolean(value.trim());
             const placeholder =
               platform.key === "newsletter"
-                ? "Newsletter link"
+                ? t("Newsletter link")
                 : platform.key === "podcast"
-                  ? "Show link"
+                  ? t("Show link")
                   : "@yourhandle";
 
             return (
@@ -2155,14 +2168,14 @@ function CreatorAudienceFields({
                 key={platform.key}
               >
                 <div className="audience-platform-id">
-                  <span aria-hidden="true">{platform.short}</span>
-                  <strong>{platform.label}</strong>
+                  <span aria-hidden="true">{t(platform.short)}</span>
+                  <strong>{t(platform.label)}</strong>
                 </div>
                 <label
                   className="audience-handle-field"
                   htmlFor={`audience-${platform.key}`}
                 >
-                  <span className="sr-only">{platform.label} handle or link</span>
+                  <span className="sr-only">{t("{label} handle or link", { label: t(platform.label) })}</span>
                   <input
                     id={`audience-${platform.key}`}
                     value={value}
@@ -2186,11 +2199,11 @@ function CreatorAudienceFields({
                       disabled={igAvatarBusy || !value.trim()}
                       onClick={() => onCheckInstagram(value)}
                     >
-                      {igAvatarBusy ? "Checking…" : "Check"}
+                      {igAvatarBusy ? t("Checking…") : t("Check")}
                     </button>
                   )}
                   {isPrimary ? (
-                    <span className="audience-primary-badge">Primary</span>
+                    <span className="audience-primary-badge">{t("Primary")}</span>
                   ) : (
                     <button
                       type="button"
@@ -2199,11 +2212,11 @@ function CreatorAudienceFields({
                       onClick={() => makePrimary(platform.key)}
                       title={
                         canBePrimary
-                          ? `Use ${platform.label} as your primary channel`
-                          : `Add your ${platform.label} profile first`
+                          ? t("Use {label} as your primary channel", { label: t(platform.label) })
+                          : t("Add your {label} profile first", { label: t(platform.label) })
                       }
                     >
-                      Make primary
+                      {t("Make primary")}
                     </button>
                   )}
                 </div>
@@ -2211,9 +2224,9 @@ function CreatorAudienceFields({
                 {platform.key === "instagram" && igAvatar && (
                   <span className="ig-avatar-preview audience-row-result">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={igAvatar} alt="Instagram profile preview" />
+                    <img src={igAvatar} alt={t("Instagram profile preview")} />
                     <small>
-                      Profile found. Upload your own photo in step 1 to replace it.
+                      {t("Profile found. Upload your own photo in step 1 to replace it.")}
                     </small>
                   </span>
                 )}
@@ -2223,10 +2236,10 @@ function CreatorAudienceFields({
                     role="status"
                   >
                     {igStats.throttled
-                      ? "Instagram is rate-limiting us. Add your audience size below and carry on."
+                      ? t("Instagram is rate-limiting us. Add your audience size below and carry on.")
                       : igStats.error
-                        ? "We couldn’t read that profile. You can still add your audience size below."
-                        : `Found @${igStats.username} — ${compactNumber(igStats.followers ?? 0)} followers.`}
+                        ? t("We couldn’t read that profile. You can still add your audience size below.")
+                        : t("Found @{username} — {compactNumber} followers.", { username: igStats.username, compactNumber: compactNumber(igStats.followers ?? 0) })}
                   </small>
                 )}
               </div>
@@ -2236,11 +2249,11 @@ function CreatorAudienceFields({
           <label className="audience-size-field">
             <span>
               {primaryPlatform
-                ? `${primaryPlatform.label} audience size`
-                : "Audience size"}
-              <small className="optional">Optional</small>
+                ? t("{label} audience size", { label: t(primaryPlatform.label) })
+                : t("Audience size")}
+              <small className="optional">{t("Optional")}</small>
             </span>
-            <small>An estimate is fine. This helps brands compare reach.</small>
+            <small>{t("An estimate is fine. This helps brands compare reach.")}</small>
             <input
               type="number"
               inputMode="numeric"
@@ -2262,8 +2275,7 @@ function CreatorAudienceFields({
           <div className="audience-filing-note" aria-live="polite">
             <span aria-hidden="true">↳</span>
             <p>
-              Your card will appear under <b>{creatorChannel(answers)}</b>.
-              Only profiles with a handle or link are shown publicly.
+              {t("Your card will appear under")}{" "}<b>{creatorChannel(answers)}</b>{t(". Only profiles with a handle or link are shown publicly.")}
             </p>
           </div>
         </div>
@@ -2618,7 +2630,7 @@ function emptyTier(name: string): SponsorTier {
  * used to carry was never read - emptyTier was called with null - so it is
  * gone; PRICE_CHIPS.sponsor_host is what actually suggests a number now.
  */
-const TIER_PRESETS = ["Gold", "Silver", "Bronze", "Supporter", "Friend"];
+const TIER_PRESETS = [msg("Gold"), msg("Silver"), msg("Bronze"), msg("Supporter"), msg("Friend")];
 
 /**
  * How many levels a sponsorship can publish.
@@ -3112,7 +3124,7 @@ function deriveReach(
     // owner who knows their real number is never overruled by a bracket.
     const count = answers.trafficCount ?? null;
     if (!count || count < 1) return { avg_views: null, reach_unit: null };
-    return { avg_views: count, reach_unit: "people a day" };
+    return { avg_views: count, reach_unit: msg("people a day") };
   }
   if (isSponsorshipOffer(role, answers)) {
     const chip = SPONSOR_REACH_CHIPS.find((item) => item.label === answers.reach);
@@ -3120,7 +3132,7 @@ function deriveReach(
     if (!count || count < 1) return { avg_views: null, reach_unit: null };
     // The chip still decides the UNIT - a season and an event are different
     // things - but the number is whatever they typed.
-    return { avg_views: count, reach_unit: chip?.unit || "people a season" };
+    return { avg_views: count, reach_unit: chip?.unit || msg("people a season") };
   }
   return { avg_views: null, reach_unit: null };
 }
@@ -3151,7 +3163,7 @@ function reachSentence(answers: OnboardingAnswers): string {
   const count = answers.reachCount ?? null;
   if (chip && chip.count !== null && chip.count === count) return chip.sentence;
   if (!count || count < 1) return "";
-  const unit = chip?.unit || "people a season";
+  const unit = chip?.unit || msg("people a season");
   return `Around ${count.toLocaleString("en-US")} ${unit}.`;
 }
 
@@ -3700,17 +3712,17 @@ function buildListingDrafts(
  * filled in by the time the others could fire, and collecting them all would
  * otherwise produce "Set what one  sponsor pays."
  */
-function tierProblems(answers: OnboardingAnswers): Array<[string, string]> {
+function tierProblems(answers: OnboardingAnswers, t: Translate = english): Array<[string, string]> {
   const out: Array<[string, string]> = [];
   for (let i = 0; i < answers.tiers.length; i += 1) {
     const tier = answers.tiers[i];
-    const label = `Tier ${i + 1}`;
+    const label = t("Tier {number}", { number: i + 1 });
     const named = tier.name.trim() || label.toLowerCase();
     if (!tier.name.trim()) {
-      out.push([`Name ${label} — Gold, Founding Partner, anything.`, `tierName${i}`]);
+      out.push([t("Name {tier} — Gold, Founding Partner, anything.", { tier: label }), `tierName${i}`]);
     }
     if (!tier.price || tier.price < 1) {
-      out.push([`Set what one ${named} sponsor pays.`, `tierPrice${i}`]);
+      out.push([t("Set what one {tier} sponsor pays.", { tier: named }), `tierPrice${i}`]);
     }
     // listings_price_max_valid rejects this at the database, where it surfaces
     // as a generic "something went wrong".
@@ -3720,13 +3732,13 @@ function tierProblems(answers: OnboardingAnswers): Array<[string, string]> {
       tier.priceMax < tier.price
     ) {
       out.push([
-        `${named}'s upper price is below its lower one.`,
+        t("{tier}'s upper price is below its lower one.", { tier: named }),
         `tierPriceMax${i}`,
       ]);
     }
     if (!tier.benefits.length) {
       out.push([
-        `Pick what a ${named} sponsor actually gets.`,
+        t("Pick what a {tier} sponsor actually gets.", { tier: named }),
         `tierBenefits${i}`,
       ]);
     }
@@ -3739,7 +3751,7 @@ function tierProblems(answers: OnboardingAnswers): Array<[string, string]> {
   );
   if (duplicate > 0) {
     out.push([
-      "Two tiers are priced the same — give them different prices or drop one.",
+      t("Two tiers are priced the same — give them different prices or drop one."),
       `tierPrice${duplicate}`,
     ]);
   }
@@ -3941,6 +3953,7 @@ function creatorPostRecommendations(
   profile: Profile,
   ownListings: Listing[],
   blockedProfileIds: string[],
+  t: Translate = english,
 ): CreatorRecommendation[] {
   const preferences = businessPreferencesForProfile(profile, ownListings);
   const targetPlatforms = preferences.targetPlatforms.map(lower);
@@ -3992,12 +4005,12 @@ function creatorPostRecommendations(
       );
       if (categoryOverlap.length) {
         score += Math.min(30, categoryOverlap.length * 15);
-        reasons.push("fits " + categoryOverlap.slice(0, 2).join(" and "));
+        reasons.push(t("fits {categories}", { categories: categoryOverlap.slice(0, 2).map((item) => t(item)).join(", ") }));
       }
       const locationText = lower(listingCity(listing));
       if (wantedArea && locationText.includes(wantedArea)) {
         score += 18;
-        reasons.push("near " + preferences.wantedArea);
+        reasons.push(t("near {area}", { area: preferences.wantedArea }));
       } else if (
         lower(listingCity(listing)).split(",")[0] ===
         lower(preferences.wantedArea || profile.city).split(",")[0]
@@ -4117,31 +4130,31 @@ function friendlyDbError(error: unknown): string {
     // listing that was just paused or removed, an account that was deleted,
     // or an unfinished profile. Naming only blocking told people they had been
     // blocked when nobody had blocked anyone, which is worse than vague.
-    return "That is not available any more. The listing may have been paused or removed, or one of you may have blocked the other.";
+    return msg("That is not available any more. The listing may have been paused or removed, or one of you may have blocked the other.");
   }
   if (/listing_cap_reached/i.test(raw)) {
-    return "You have reached the limit of 25 listings. Email support and we can remove one for you.";
+    return msg("You have reached the limit of 25 listings. Email support and we can remove one for you.");
   }
   if (/out of range|numeric field overflow/i.test(raw)) {
-    return "That number is too large. Use a smaller amount.";
+    return msg("That number is too large. Use a smaller amount.");
   }
   if (code === "23505" || /duplicate key/i.test(raw)) {
-    return "That already exists.";
+    return msg("That already exists.");
   }
   if (code === "23514" || /violates check constraint/i.test(raw)) {
-    return "Some of those details are too short or too long. Check the highlighted fields and try again.";
+    return msg("Some of those details are too short or too long. Check the highlighted fields and try again.");
   }
   if (code === "23503" || /foreign key/i.test(raw)) {
-    return "Something this refers to is no longer available. Refresh and try again.";
+    return msg("Something this refers to is no longer available. Refresh and try again.");
   }
   if (/fetch|network|Failed to fetch/i.test(raw)) {
-    return "We could not reach the server. Check your connection and try again.";
+    return msg("We could not reach the server. Check your connection and try again.");
   }
   // Anything already written for humans (our own thrown Errors) passes through.
   if (raw && !/violates|constraint|relation |column |syntax error/i.test(raw)) {
     return raw;
   }
-  return "Something went wrong. Please try again.";
+  return msg("Something went wrong. Please try again.");
 }
 
 function compactNumber(value: number) {
@@ -4490,17 +4503,35 @@ const SUPPORT_EMAIL = "sidespacesupport@gmail.com";
 // Constructed once at module scope. Intl.DateTimeFormat is among the most
 // expensive built-ins to construct - locale resolution plus ICU allocation -
 // and these were being rebuilt per row inside render bodies.
-const DATE_FORMAT = new Intl.DateTimeFormat("en", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  timeZone: "UTC",
-});
+const DATE_FORMATS = new Map<Locale, Intl.DateTimeFormat>();
+const TIME_FORMATS = new Map<Locale, Intl.DateTimeFormat>();
 
-const TIME_FORMAT = new Intl.DateTimeFormat("en", {
-  hour: "numeric",
-  minute: "2-digit",
-});
+/** One formatter per language, built the first time that language asks. */
+function dateFormat(locale: Locale) {
+  let format = DATE_FORMATS.get(locale);
+  if (!format) {
+    format = new Intl.DateTimeFormat(LOCALE_TAGS[locale], {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    DATE_FORMATS.set(locale, format);
+  }
+  return format;
+}
+
+function timeFormat(locale: Locale) {
+  let format = TIME_FORMATS.get(locale);
+  if (!format) {
+    format = new Intl.DateTimeFormat(LOCALE_TAGS[locale], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    TIME_FORMATS.set(locale, format);
+  }
+  return format;
+}
 
 /**
  * What a date chip is about to publish, said out loud.
@@ -4511,25 +4542,29 @@ const TIME_FORMAT = new Intl.DateTimeFormat("en", {
  * never saw. Showing the window here is the difference between a shortcut and
  * a guess published in their name.
  */
-function windowNote(startDays: number | null, days: number) {
+function windowNote(startDays: number | null, days: number, t: Translate = english) {
   if (startDays === null) {
-    return "No dates go on your card — people will message you to ask.";
+    return t("No dates go on your card — people will message you to ask.");
   }
-  return `Your card will show ${displayDate(
-    isoDaysFromToday(startDays),
-  )} – ${displayDate(isoDaysFromToday(startDays + days))}. You can change the exact dates on your listing any time.`;
+  return t(
+    "Your card will show {start} – {end}. You can change the exact dates on your listing any time.",
+    {
+      start: displayDate(isoDaysFromToday(startDays), t),
+      end: displayDate(isoDaysFromToday(startDays + days), t),
+    },
+  );
 }
 
-function displayDate(value?: string | null) {
-  if (!value) return "Flexible";
-  return DATE_FORMAT.format(new Date(`${value}T00:00:00Z`));
+function displayDate(value: string | null | undefined, t: Translate = english) {
+  if (!value) return t("Flexible");
+  return dateFormat(t.locale).format(new Date(`${value}T00:00:00Z`));
 }
 
-function displayDateTime(value?: string | null) {
-  if (!value) return "Not set";
+function displayDateTime(value: string | null | undefined, t: Translate = english) {
+  if (!value) return t("Not set");
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(LOCALE_TAGS[t.locale], {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
@@ -4595,13 +4630,16 @@ function ListingLikeButton({
   placement: "card" | "detail";
   onToggle: () => void;
 }) {
+  const t = useT();
   const count = normalizeLikeCount(likeCount);
-  const countLabel = `${count} ${count === 1 ? "like" : "likes"}`;
+  const countLabel = count === 1 ? t("1 like") : t("{count} likes", { count });
   const actionLabel = !canLike
-    ? disabledReason || "You cannot like this listing"
+    ? t(disabledReason || "You cannot like this listing")
     : isAuthenticated
-      ? `${liked ? "Unlike" : "Like"} ${title}`
-      : `Sign in to like ${title}`;
+      ? liked
+        ? t("Unlike {title}", { title })
+        : t("Like {title}", { title })
+      : t("Sign in to like {title}", { title });
 
   return (
     <button
@@ -4627,6 +4665,7 @@ function ListingLikeButton({
 }
 
 function SocialLinks({ profile, compact = false }: { profile: Profile; compact?: boolean }) {
+  const t = useT();
   const links = socialPlatforms
     .map((platform) => ({
       ...platform,
@@ -4637,23 +4676,21 @@ function SocialLinks({ profile, compact = false }: { profile: Profile; compact?:
   if (!links.length) return null;
 
   return (
-    <nav className={`social-links ${compact ? "social-links-compact" : ""}`} aria-label={`${profile.display_name} social profiles`}>
+    <nav className={`social-links ${compact ? "social-links-compact" : ""}`} aria-label={t("{display_name} social profiles", { display_name: profile.display_name })}>
       {links.map((platform) => (
         <a
           key={platform.key}
           href={platform.url}
           target="_blank"
           rel="noreferrer"
-          aria-label={`${profile.display_name} on ${platform.label}${
-            profile.social_verification?.[platform.key] === "verified"
+          aria-label={t("{display_name} on {label}{value}", { display_name: profile.display_name, label: t(platform.label), value: profile.social_verification?.[platform.key] === "verified"
               ? ", connected and verified"
-              : ", self-reported link"
-          }`}
+              : ", self-reported link" })}
         >
-          <b>{platform.short}</b>
-          {!compact && <span>{platform.label}</span>}
+          <b>{t(platform.short)}</b>
+          {!compact && <span>{t(platform.label)}</span>}
           {profile.social_verification?.[platform.key] === "verified" && (
-            <i title="Connected and verified">✓</i>
+            <i title={t("Connected and verified")}>✓</i>
           )}
         </a>
       ))}
@@ -4665,7 +4702,7 @@ function SocialLinks({ profile, compact = false }: { profile: Profile; compact?:
 // without it the dialog's Tab cycle stepped straight over the first control on
 // the sign-in screen and a keyboard user could not reach it at all.
 const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])';
+  msg("a[href], button:not([disabled]), input:not([disabled]):not([type=\"hidden\"]), select:not([disabled]), textarea:not([disabled]), iframe, [tabindex]:not([tabindex=\"-1\"])");
 
 /**
  * A dialog cannot read which control opened it: by the time it mounts the
@@ -4766,6 +4803,7 @@ function Modal({
   /** Gate dialogs (auth, onboarding) that must outrank any other overlay. */
   elevated?: boolean;
 }) {
+  const t = useT();
   const cardRef = useRef<HTMLElement | null>(null);
   // The focus effect must run exactly once per modal lifetime, but Escape
   // still needs the freshest onClose closure; a ref bridges the two.
@@ -4868,7 +4906,7 @@ function Modal({
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button className="close-button" onClick={onClose} aria-label="Close">
+        <button className="close-button" onClick={onClose} aria-label={t("Close")}>
           ×
         </button>
         {children}
@@ -4886,6 +4924,7 @@ function CreatorOfferSwitcher({
   onSelect: (offer: CreatorOfferType) => void;
   isOfferComplete?: (offer: CreatorOfferType) => boolean;
 }) {
+  const t = useT();
   const offers = selectedCreatorOffers(answers);
   if (!offers.length) return null;
   const isSingleOffer = offers.length === 1;
@@ -4902,19 +4941,19 @@ function CreatorOfferSwitcher({
     >
       <div className="creator-offer-workspace-heading">
         <div>
-          <span>{isSingleOffer ? "Current listing" : "Selected offers"}</span>
+          <span>{isSingleOffer ? t("Current listing") : t("Selected offers")}</span>
           <strong>
             {isSingleOffer
               ? creatorOfferLabel(activeOffer)
-              : "Fill in each one before you publish."}
+              : t("Fill in each one before you publish.")}
           </strong>
         </div>
         <small>
           {isSingleOffer
             ? activeOfferReady
-              ? "Complete"
-              : "Needs details"
-            : `${offers.length} listings planned`}
+              ? t("Complete")
+              : t("Needs details")
+            : t("{offersCount} listings planned", { offersCount: offers.length })}
         </small>
       </div>
       {!isSingleOffer && (
@@ -4922,7 +4961,7 @@ function CreatorOfferSwitcher({
           <div
             className="creator-offer-tabs"
             role="tablist"
-            aria-label="Choose which offer to edit"
+            aria-label={t("Choose which offer to edit")}
           >
             {offers.map((offer) => {
               const active = answers.creatorOffer === offer;
@@ -4943,16 +4982,14 @@ function CreatorOfferSwitcher({
                   onClick={() => onSelect(offer)}
                 >
                   <span>{creatorOfferLabel(offer)}</span>
-                  <small>{ready ? "Complete" : "Needs details"}</small>
+                  <small>{ready ? t("Complete") : t("Needs details")}</small>
                 </button>
               );
             })}
           </div>
           <p className="creator-offer-workspace-note">
-            You are editing{" "}
-            <b>{creatorOfferLabel(answers.creatorOffer || offers[0])}</b>. Each
-            selected path gets its own listing, and you can come back to edit any
-            of them later.
+            {t("You are editing")}{" "}
+            <b>{creatorOfferLabel(answers.creatorOffer || offers[0])}</b>{t(". Each selected path gets its own listing, and you can come back to edit any of them later.")}
           </p>
         </>
       )}
@@ -4973,6 +5010,7 @@ function PreferenceChipGroup({
   multi?: boolean;
   onPick: (value: string) => void;
 }) {
+  const t = useT();
   return (
     <fieldset className="preference-chip-group">
       <legend>{label}</legend>
@@ -4990,7 +5028,7 @@ function PreferenceChipGroup({
               onClick={() => onPick(option.value)}
             >
               {multi && active ? "✓ " : ""}
-              {option.label}
+              {t(option.label)}
             </button>
           );
         })}
@@ -5010,6 +5048,7 @@ function OnboardingPreviewCards({
   touched: { title: boolean; description: boolean };
   previewPhotoUrl: string;
 }) {
+  const t = useT();
   const drafts = buildListingDrafts(role, answers, touched);
   const isMulti = drafts.length > 1;
   return (
@@ -5019,11 +5058,11 @@ function OnboardingPreviewCards({
       <div className="onboarding-preview-heading">
         <span>
           {isMulti
-            ? "These are the " + drafts.length + " listings people will see"
-            : "This is what people will see"}
+            ? t("These are the {count} listings people will see", { count: drafts.length })
+            : t("This is what people will see")}
         </span>
         {isMulti && (
-          <small>One card per selected offer or sponsorship tier.</small>
+          <small>{t("One card per selected offer or sponsorship tier.")}</small>
         )}
       </div>
       <div className="preview-card-grid">
@@ -5043,7 +5082,7 @@ function OnboardingPreviewCards({
                 />
               ) : (
                 <p className="preview-card-photo is-empty">
-                  Add a photo above — it fills the top half of your card.
+                  {t("Add a photo above — it fills the top half of your card.")}
                 </p>
               )}
               <div className="preview-card-top">
@@ -5054,31 +5093,31 @@ function OnboardingPreviewCards({
                       : "preview-chip"
                   }
                 >
-                  {role === "business" ? "Wanted" : draft.channel}
+                  {role === "business" ? t("Wanted") : draft.channel}
                 </span>
                 <small className="preview-offer">
-                  {answers.display_name.trim() || "Your name"}
+                  {answers.display_name.trim() || t("Your name")}
                   {answers.city.trim() ? " · " + answers.city.trim() : ""}
                 </small>
               </div>
               <div className="preview-card-body">
-                <strong>{draft.title || "Untitled listing"}</strong>
+                <strong>{draft.title || t("Untitled listing")}</strong>
                 <span className="preview-offer">
                   {draft.format.trim()
                     ? role === "business"
-                      ? "Looking for " + draft.format.trim()
-                      : "You get " + formatOffer(draft.format)
-                    : "Add what people get above."}
+                      ? t("Looking for {offer}", { offer: draft.format.trim() })
+                      : t("You get {offer}", { offer: formatOffer(draft.format) })
+                    : t("Add what people get above.")}
                 </span>
                 <p className="preview-card-blurb">
-                  {draft.description || "Your description will show here."}
+                  {draft.description || t("Your description will show here.")}
                 </p>
                 <div className="preview-card-foot">
                   {role === "business" && (
-                    <span className="preview-lead">Budget</span>
+                    <span className="preview-lead">{t("Budget")}</span>
                   )}
                   <b className={hasPrice ? undefined : "preview-price-empty"}>
-                    {hasPrice ? priceLabel(draft) : "Add a price"}
+                    {hasPrice ? priceLabel(draft) : t("Add a price")}
                   </b>
                   <small>/ {draft.price_unit}</small>
                 </div>
@@ -5099,13 +5138,13 @@ function OnboardingPreviewCards({
  * character next to an SVG.
  */
 const DASHBOARD_STAT_ICONS = {
-  listings: "M2.75 4.5h10.5M2.75 8h10.5M2.75 11.5h6.5",
-  incoming: "M8 2.75v6.5M5.25 6.5 8 9.25l2.75-2.75M2.75 11.25v1a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1v-1",
-  outgoing: "M8 13.25v-6.5M5.25 9.5 8 6.75l2.75 2.75M2.75 4.75v-1a1 1 0 0 1 1-1h8.5a1 1 0 0 1 1 1v1",
-  messages: "M13.25 8.5c0 2.6-2.35 4.75-5.25 4.75a6 6 0 0 1-1.9-.3l-3.35 1 1-2.75A4.5 4.5 0 0 1 2.75 8.5c0-2.6 2.35-4.75 5.25-4.75s5.25 2.15 5.25 4.75Z",
-  payments: "M2.75 6.25h10.5M3.75 3.75h8.5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-8.5a1 1 0 0 1-1-1v-6.5a1 1 0 0 1 1-1ZM5 9.75h2",
-  analytics: "M3 13V9.5M6.33 13V6M9.67 13V8.25M13 13V3.5",
-  likes: "M8 13.25S2.75 9.9 2.75 6.2a2.7 2.7 0 0 1 5.25-.9 2.7 2.7 0 0 1 5.25.9c0 3.7-5.25 7.05-5.25 7.05Z",
+  listings: msg("M2.75 4.5h10.5M2.75 8h10.5M2.75 11.5h6.5"),
+  incoming: msg("M8 2.75v6.5M5.25 6.5 8 9.25l2.75-2.75M2.75 11.25v1a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1v-1"),
+  outgoing: msg("M8 13.25v-6.5M5.25 9.5 8 6.75l2.75 2.75M2.75 4.75v-1a1 1 0 0 1 1-1h8.5a1 1 0 0 1 1 1v1"),
+  messages: msg("M13.25 8.5c0 2.6-2.35 4.75-5.25 4.75a6 6 0 0 1-1.9-.3l-3.35 1 1-2.75A4.5 4.5 0 0 1 2.75 8.5c0-2.6 2.35-4.75 5.25-4.75s5.25 2.15 5.25 4.75Z"),
+  payments: msg("M2.75 6.25h10.5M3.75 3.75h8.5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-8.5a1 1 0 0 1-1-1v-6.5a1 1 0 0 1 1-1ZM5 9.75h2"),
+  analytics: msg("M3 13V9.5M6.33 13V6M9.67 13V8.25M13 13V3.5"),
+  likes: msg("M8 13.25S2.75 9.9 2.75 6.2a2.7 2.7 0 0 1 5.25-.9 2.7 2.7 0 0 1 5.25.9c0 3.7-5.25 7.05-5.25 7.05Z"),
 } as const;
 
 function DashboardStatIcon({
@@ -5164,6 +5203,7 @@ export default function MarketplaceApp({
   initialChannel?: string;
   initialSort?: ListingSort;
 } = {}) {
+  const t = useT();
   const seededProfiles = useMemo(() => {
     const loaded = safeProfiles(initialProfiles);
     return loaded.length ? loaded : demoProfiles;
@@ -5656,9 +5696,16 @@ export default function MarketplaceApp({
    * which were being announced with a green tick, as if they had worked.
    * Passing "" clears the toast.
    */
-  const setToast = useCallback((text: string, tone?: ToastTone) => {
-    setToastState(text ? { text, tone: toastTone(text, tone) } : null);
-  }, []);
+  const setToast = useCallback(
+    (text: string, tone?: ToastTone, vars?: Vars) => {
+      // The tone is read from the English before it is translated: the
+      // failure vocabulary the inference knows is English.
+      setToastState(
+        text ? { text: t(text, vars), tone: toastTone(text, tone) } : null,
+      );
+    },
+    [t],
+  );
   const [busy, setBusy] = useState(false);
   const [googleOAuthEnabled, setGoogleOAuthEnabled] = useState(false);
   // Set once the on-domain token exchange has been refused, so the redirect
@@ -5924,7 +5971,7 @@ export default function MarketplaceApp({
         setBlockedProfiles(
           rows.map((item) => ({
             id: item.blocked_profile_id,
-            display_name: item.blocked?.display_name ?? "Member",
+            display_name: item.blocked?.display_name ?? t("Member"),
           })),
         );
       }
@@ -5944,7 +5991,7 @@ export default function MarketplaceApp({
         setUnreadCount(unreadResult.count ?? 0);
       }
     },
-    [countUnread, supabase],
+    [countUnread, supabase, t],
   );
 
   useEffect(() => {
@@ -6669,9 +6716,10 @@ export default function MarketplaceApp({
             profile,
             ownListings,
             blockedProfileIds,
+            t,
           )
         : [],
-    [blocksPending, blockedProfileIds, listings, ownListings, profile],
+    [blocksPending, blockedProfileIds, listings, ownListings, profile, t],
   );
 
   // Reveal widgets as they scroll into view, and cycle the how-it-works steps
@@ -7101,7 +7149,7 @@ export default function MarketplaceApp({
       ),
     );
     setAnswers(answersFromProfile(source, invite));
-    setOnboardingError("");
+    setOnboardingError(t(""));
     setLocationError("");
     // Otherwise a second open keeps treating the generated title and
     // description as hand-written, and stops regenerating them.
@@ -7858,7 +7906,7 @@ export default function MarketplaceApp({
             field("benefits"),
           );
           out.push(
-            ...tierProblems(view).map(
+            ...tierProblems(view, t).map(
               ([message, tierField]) =>
                 [message, field(tierField)] as [string, string],
             ),
@@ -7877,13 +7925,13 @@ export default function MarketplaceApp({
           need(
             shownTitle.trim().length < LISTING_READY_MIN.title,
             shownTitle.trim()
-              ? "That " + creatorOfferLabel(offer) + " title is too short."
-              : "Give your " + creatorOfferLabel(offer) + " offer a title.",
+              ? t("That {offer} title is too short.", { offer: t(creatorOfferLabel(offer)) })
+              : t("Give your {offer} offer a title.", { offer: t(creatorOfferLabel(offer)) }),
             field("title"),
           );
           need(
             !view.price || view.price < 1,
-            "Set a price for your " + creatorOfferLabel(offer) + " offer.",
+            t("Set a price for your {offer} offer.", { offer: t(creatorOfferLabel(offer)) }),
             field("price"),
           );
         }
@@ -7901,9 +7949,7 @@ export default function MarketplaceApp({
         }
         need(
           shownDescription.trim().length < LISTING_READY_MIN.description,
-          "Add a bit more detail to your " +
-            creatorOfferLabel(offer) +
-            " offer.",
+          t("Add a bit more detail to your {offer} offer.", { offer: t(creatorOfferLabel(offer)) }),
           field("description"),
         );
       }
@@ -8146,7 +8192,7 @@ export default function MarketplaceApp({
   function goToOnboardingStep(step: number) {
     const next = Math.max(1, Math.min(onboardingStepCount(), step));
     setOnboardingDirection(next >= onboardingStep ? 1 : -1);
-    setOnboardingError("");
+    setOnboardingError(t(""));
     setOnboardingInvalidField("");
     setOnboardingStep(next);
     window.requestAnimationFrame(() => {
@@ -8251,12 +8297,12 @@ export default function MarketplaceApp({
       window.requestAnimationFrame(() => scrollToField(fieldName));
     }
     setOnboardingInvalidField(fieldName);
-    setOnboardingError(message);
+    setOnboardingError(t(message));
   }
 
   function advanceOnboarding() {
     if (avatarCropPending) {
-      setOnboardingError("Finish positioning your photo, or cancel the crop, before continuing.");
+      setOnboardingError(t("Finish positioning your photo, or cancel the crop, before continuing."));
       return;
     }
     const problem = firstMissingAnswer();
@@ -8278,7 +8324,7 @@ export default function MarketplaceApp({
       ...current,
       businessSetupPath: "campaign",
     }));
-    setOnboardingError("");
+    setOnboardingError(t(""));
   }
 
   function browseBusinessListings() {
@@ -8370,7 +8416,7 @@ export default function MarketplaceApp({
       (selectedRole === "business" && answers.businessSetupPath === "browse");
 
     if (avatarCropPending) {
-      setOnboardingError("Finish positioning your photo, or cancel the crop, before saving.");
+      setOnboardingError(t("Finish positioning your photo, or cancel the crop, before saving."));
       return;
     }
 
@@ -8389,7 +8435,7 @@ export default function MarketplaceApp({
       reportMissing(problem);
       return;
     }
-    setOnboardingError("");
+    setOnboardingError(t(""));
 
     const role = selectedRole;
     if (!role) {
@@ -8406,7 +8452,7 @@ export default function MarketplaceApp({
           setup.cancellation.trim().length < 2 || setup.cancellation.trim().length > 1000);
       });
       if (invalid) {
-        setOnboardingError(`For “${invalid.title}”, add a fixed price, open dates, deliverables, and cancellation terms to enable instant booking.`);
+        setOnboardingError(t("For “{title}”, add a fixed price, open dates, deliverables, and cancellation terms to enable instant booking.", { title: invalid.title }));
         setOnboardingStep(5);
         return;
       }
@@ -8568,7 +8614,7 @@ export default function MarketplaceApp({
           ? Math.max(0, answers.followers ?? 0)
           : Math.max(0, answers.followers ?? existing?.followers ?? 0),
         avg_views: Math.max(0, reach.avg_views ?? existing?.avg_views ?? 0),
-        reach_unit: reach.reach_unit ?? existing?.reach_unit ?? "weekly looks",
+        reach_unit: reach.reach_unit ?? existing?.reach_unit ?? msg("weekly looks"),
         audience_age: existing?.audience_age ?? "",
         website: existing?.website ?? "",
         avatar_url:
@@ -8763,13 +8809,19 @@ export default function MarketplaceApp({
           setToast(
             role === "business"
               ? adCreditAwarded
-                ? `Your brief is live. ${formatCents(adCreditAwarded)} in ad credit is ready for your first campaign.`
+                ? "Your brief is live. {credit} in ad credit is ready for your first campaign."
                 : adCreditSyncFailed
                   ? "Your brief is live. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
                   : "Your brief is live. We’ll tell you the moment someone answers."
                 : canonicalRole(role) === "creator" && drafts.length > 1
-                  ? "You’re live. " + drafts.length + " listings are on the marketplace."
-                : `You’re live. “${drafts[0].title}” is on the marketplace.`,
+                  ? "You’re live. {count} listings are on the marketplace."
+                : "You’re live. “{title}” is on the marketplace.",
+            undefined,
+            {
+              credit: formatCents(adCreditAwarded || 0),
+              count: drafts.length,
+              title: drafts[0]?.title ?? "",
+            },
           );
           return;
         }
@@ -8787,10 +8839,12 @@ export default function MarketplaceApp({
         ]);
         setToast(
           adCreditAwarded
-            ? `You’re in. ${formatCents(adCreditAwarded)} in ad credit is ready when you start a campaign.`
+            ? "You’re in. {credit} in ad credit is ready when you start a campaign."
             : adCreditSyncFailed
               ? "You’re in. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
               : "You’re in. Browse listings, or start a campaign whenever you’re ready.",
+          undefined,
+          { credit: formatCents(adCreditAwarded || 0) },
         );
         if (route !== "marketplace") {
           window.location.assign("/marketplace?role=supply");
@@ -8808,10 +8862,12 @@ export default function MarketplaceApp({
       ]);
       setToast(
         adCreditAwarded
-          ? `${formatCents(adCreditAwarded)} in ad credit is ready for your first campaign.`
+          ? "{credit} in ad credit is ready for your first campaign."
           : adCreditSyncFailed
             ? "Saved. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
             : "Saved. Your profile is up to date.",
+        undefined,
+        { credit: formatCents(adCreditAwarded || 0) },
       );
     } catch (error) {
       // The profile write succeeding and the listing write failing is a real
@@ -8840,7 +8896,7 @@ export default function MarketplaceApp({
         // read as an unexplained failure and Publish looped on the same value.
         const why = friendlyDbError(error);
         setToast(
-          `Your profile is saved, but the listing didn’t post.${why ? ` ${why}` : ""} Nothing you typed is lost — open it again from your dashboard.`,
+          "Your profile is saved, but the listing didn’t post.{value} Nothing you typed is lost — open it again from your dashboard.", undefined, { value: why ? ` ${why}` : "" },
         );
       } else if ((error as { code?: string })?.code === "23505") {
         // A duplicate @handle. profiles_handle_unique is a unique index on
@@ -8853,7 +8909,7 @@ export default function MarketplaceApp({
         );
       } else {
         setOnboardingError(
-          friendlyDbError(error) || "Could not save your profile.",
+          t(friendlyDbError(error) || "Could not save your profile."),
         );
       }
     } finally {
@@ -8902,7 +8958,7 @@ export default function MarketplaceApp({
     // Preserve the selected pricing basis; surface AI rate suggestions for review.
     if (!(basis instanceof HTMLSelectElement) && !(basis instanceof HTMLInputElement)) setValue("price_unit", draft.price_unit);
     if (basis && String((basis as HTMLInputElement).value) && draft.price_unit !== String((form.elements.namedItem("price_unit") as HTMLInputElement)?.value)) {
-      setAiQuestions((current) => [...current, `The draft suggests a price per ${draft.price_unit}. Check your selected price unit.`]);
+      setAiQuestions((current) => [...current, t("The draft suggests a price per {unit}. Check your selected price unit.", { unit: draft.price_unit })]);
     }
     if (draft.minimum_booking) setValue("minimum_booking", draft.minimum_booking);
     if (draft.availability_notes) {
@@ -9303,15 +9359,18 @@ export default function MarketplaceApp({
       setAiObservations(payload.draft.photo_observations ?? []);
       const asked = payload.draft.questions?.length ?? 0;
       const skipped = tourSkipped
-        ? " The walkthrough could not be read here, so this draft went without it."
+        ? " " + t("The walkthrough could not be read here, so this draft went without it.")
         : "";
       setToast(
         (asked
-          ? `Filled what you told me. ${asked} quick question${asked === 1 ? "" : "s"} below - answer them and fill again.`
+          ? asked === 1
+            ? t("Filled what you told me. 1 quick question below - answer it and fill again.")
+            : t("Filled what you told me. {count} quick questions below - answer them and fill again.", { count: asked })
           : file || tour
-            ? "Drafted. Read it over and change anything before you publish."
-            : "Drafted from your words. Add a photo and fill again for a better draft, or edit this one.") +
+            ? t("Drafted. Read it over and change anything before you publish.")
+            : t("Drafted from your words. Add a photo and fill again for a better draft, or edit this one.")) +
           skipped,
+        tourSkipped ? "problem" : "success",
       );
     } catch (error) {
       setToast(
@@ -9342,7 +9401,7 @@ export default function MarketplaceApp({
     if (file.size > TOUR_MAX_BYTES) {
       setTourPick(null);
       setToast(
-        `${file.name} is ${Math.round(file.size / 1024 / 1024)} MB and the limit is 50 MB. Trim it, or export it smaller, and pick it again.`,
+        "{name} is {round} MB and the limit is 50 MB. Trim it, or export it smaller, and pick it again.", undefined, { name: file.name, round: Math.round(file.size / 1024 / 1024) },
       );
       return;
     }
@@ -9404,7 +9463,7 @@ export default function MarketplaceApp({
   /** Take the walkthrough off a listing, at the owner's request and only then. The file goes too. */
   async function removeListingTour(listing: Listing) {
     if (!supabase || !profile || !listing.tour_url) return;
-    if (!window.confirm("Remove the walkthrough from this listing? The file is deleted too.")) {
+    if (!window.confirm(t("Remove the walkthrough from this listing? The file is deleted too."))) {
       return;
     }
     setBusy(true);
@@ -9442,7 +9501,7 @@ export default function MarketplaceApp({
    */
   async function removeListingPhoto(listing: Listing, url: string) {
     if (!supabase || !profile) return;
-    if (!window.confirm("Remove this photo from the listing?")) return;
+    if (!window.confirm(t("Remove this photo from the listing?"))) return;
     setBusy(true);
     try {
       const remaining = listingImages(listing).filter((item) => item !== url);
@@ -9524,14 +9583,14 @@ export default function MarketplaceApp({
 
   async function saveListing(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (listingPreview) { setListingFeedback("Preview complete. Nothing was saved."); return; }
+    if (listingPreview) { setListingFeedback(t("Preview complete. Nothing was saved.")); return; }
     if (!supabase) return;
     if (!profile) {
       // The session ended while they were typing. The form is uncontrolled and
       // still mounted, so everything they wrote is intact - say so and offer
       // the way back, rather than letting Publish do nothing forever.
       setListingFeedback(
-        "Your session ended. Sign in again, then press Publish — everything you typed is still here.",
+        t("Your session ended. Sign in again, then press Publish — everything you typed is still here."),
       );
       setAuthMode("signin");
       setAuthOpen(true);
@@ -9553,7 +9612,7 @@ export default function MarketplaceApp({
       profile.gallery_urls?.[0] ||
       profile.avatar_url ||
       (editingListingIsBrief ? "" : DEFAULT_LISTING_IMAGE);
-    setListingFeedback("");
+    setListingFeedback(t(""));
     setBusy(true);
     try {
       // The owner's photos stay, in their order, cover first; new ones go
@@ -9568,8 +9627,8 @@ export default function MarketplaceApp({
         const room = MAX_LISTING_PHOTOS - keptImages.length;
         throw new Error(
           room > 0
-            ? `This listing has ${keptImages.length} photos, so you can add ${room} more. Remove one first to add others.`
-            : `This listing already has ${MAX_LISTING_PHOTOS} photos. Remove one first to add another.`,
+            ? t("This listing has {count} photos, so you can add {room} more. Remove one first to add others.", { count: keptImages.length, room })
+            : t("This listing already has {max} photos. Remove one first to add another.", { max: MAX_LISTING_PHOTOS }),
         );
       }
       if (tourPick?.kind === "photo" && !tourSpherical) {
@@ -9651,14 +9710,14 @@ export default function MarketplaceApp({
       // listings.title to catch it server-side.
       const missing = (
         [
-          ["title", "a listing title"],
-          ["channel", "where it appears"],
-          ["format", "what the buyer gets"],
-          ["deliverables", "what’s included"],
+          ["title", msg("a listing title")],
+          ["channel", msg("where it appears")],
+          ["format", msg("what the buyer gets")],
+          ["deliverables", msg("what’s included")],
         ] as Array<[keyof typeof fields, string]>
       ).find(([key]) => !String(fields[key] ?? "").trim());
       if (missing) {
-        invalid(missing[0], `Add ${missing[1]} before publishing.`);
+        invalid(missing[0], t("Add {field} before publishing.", { field: t(missing[1]) }));
       }
       if (!Number.isSafeInteger(fields.price_cents) || fields.price_cents < 0) {
         throw new Error("Enter a price of 0 or more.");
@@ -9750,9 +9809,7 @@ export default function MarketplaceApp({
           // swallowing the reason left the member retrying a file that will
           // never work (too large, wrong format, offline) with no way to know.
           const why = friendlyDbError(photoError);
-          photoWarning = ` The listing is saved, but the photos could not upload${
-            why ? `: ${why}` : "."
-          } You can add them from Edit listing.`;
+          photoWarning = " " + t("The listing is saved, but the photos could not upload{reason} You can add them from Edit listing.", { reason: why ? `: ${t(why)}` : "." });
         }
       }
 
@@ -9799,9 +9856,7 @@ export default function MarketplaceApp({
           }
         } catch (tourError) {
           const why = friendlyDbError(tourError);
-          tourWarning = ` The walkthrough could not upload${
-            why ? `: ${why}` : "."
-          } You can add it from Edit listing.`;
+          tourWarning = " " + t("The walkthrough could not upload{reason} You can add it from Edit listing.", { reason: why ? `: ${t(why)}` : "." });
         }
       }
 
@@ -9821,15 +9876,16 @@ export default function MarketplaceApp({
       setEditingListing(null);
       setAccountOpen(false);
       setToast(
-        wasEditing
-          ? `Your listing changes are saved.${photoWarning}${tourWarning}`
-          : `Your listing is live and ready to manage in Dashboard.${photoWarning}${tourWarning}`,
+        (wasEditing
+          ? t("Your listing changes are saved.")
+          : t("Your listing is live and ready to manage in Dashboard.")) + photoWarning + tourWarning,
+        photoWarning || tourWarning ? "problem" : "success",
       );
       await Promise.all([loadMarketplace(), loadOwnListings(profile)]);
     } catch (error) {
       const message =
         friendlyDbError(error) || "Could not save your listing. Please try again.";
-      setListingFeedback(message);
+      setListingFeedback(t(message));
       setToast(message);
     } finally {
       setBusy(false);
@@ -10044,7 +10100,7 @@ export default function MarketplaceApp({
       // paying, so it is weighted heaviest in what we show them next.
       trackOffer(listing.id);
       closeListing();
-      setCampaignFeedback("");
+      setCampaignFeedback(t(""));
       setCampaignRequestMode(mode);
       setCampaignListing(listing);
     });
@@ -10060,23 +10116,23 @@ export default function MarketplaceApp({
     if (!profile) {
       // Session ended mid-offer; the form still holds everything they wrote.
       setCampaignFeedback(
-        "Your session ended. Sign in again, then send it — your details are still here.",
+        t("Your session ended. Sign in again, then send it — your details are still here."),
       );
       setAuthMode("signin");
       setAuthOpen(true);
       return;
     }
-    setCampaignFeedback("");
+    setCampaignFeedback(t(""));
     const form = event.currentTarget;
     const values = new FormData(form);
     const startDate = String(values.get("start_date") ?? "");
     const endDate = String(values.get("end_date") ?? "");
     if (!startDate || !endDate) {
-      setCampaignFeedback("Choose your delivery date or campaign dates.");
+      setCampaignFeedback(t("Choose your delivery date or campaign dates."));
       return;
     }
     if (endDate < startDate) {
-      setCampaignFeedback("Choose an end date on or after the start date.");
+      setCampaignFeedback(t("Choose an end date on or after the start date."));
       return;
     }
     // A window that has already elapsed cannot be run. The common way in is a
@@ -10084,7 +10140,7 @@ export default function MarketplaceApp({
     // sides to negotiating a campaign that can never happen.
     if (endDate < calendarToday(campaignListing.booking_timezone)) {
       setCampaignFeedback(
-        "That campaign window has already ended. Pick dates that run today or later.",
+        t("That campaign window has already ended. Pick dates that run today or later."),
       );
       return;
     }
@@ -10092,13 +10148,13 @@ export default function MarketplaceApp({
       const minimumDate = listingBookingMinDate(campaignListing);
       if (startDate < minimumDate) {
         setCampaignFeedback(
-          `This listing needs dates starting ${displayDate(minimumDate)} or later.`,
+          t("This listing needs dates starting {date} or later.", { date: displayDate(minimumDate, t) }),
         );
         return;
       }
       if (campaignListing.available_to && endDate > campaignListing.available_to) {
         setCampaignFeedback(
-          `Choose an end date on or before ${displayDate(campaignListing.available_to)}.`,
+          t("Choose an end date on or before {date}.", { date: displayDate(campaignListing.available_to, t) }),
         );
         return;
       }
@@ -10126,35 +10182,35 @@ export default function MarketplaceApp({
     // after the conversation had already been created.
     if (charCount(campaignName) < 2 || charCount(campaignName) > 120) {
       setBusy(false);
-      return setCampaignFeedback("Give the campaign a name between 2 and 120 characters.");
+      return setCampaignFeedback(t("Give the campaign a name between 2 and 120 characters."));
     }
     if (charCount(goals) > 1500) {
       setBusy(false);
       return setCampaignFeedback(
-        "Keep campaign details under 1,500 characters.",
+        t("Keep campaign details under 1,500 characters."),
       );
     }
     if (charCount(deliverables) < 2 || charCount(deliverables) > 1000) {
       setBusy(false);
-      return setCampaignFeedback("Say what you are asking for (2 to 1000 characters).");
+      return setCampaignFeedback(t("Say what you are asking for (2 to 1000 characters)."));
     }
     if (charCount(notes) > 2000) {
       setBusy(false);
-      return setCampaignFeedback("Notes are limited to 2000 characters.");
+      return setCampaignFeedback(t("Notes are limited to 2000 characters."));
     }
     if (
       !isBookAsListed &&
       (!budgetInput || !Number.isFinite(proposedBudget) || proposedBudget < 0)
     ) {
       setBusy(false);
-      return setCampaignFeedback("Enter a budget of 0 or more.");
+      return setCampaignFeedback(t("Enter a budget of 0 or more."));
     }
 
     let budgetCents = campaignListing.price_cents;
     if (isBookAsListed) {
       const quoted = Number(values.get("quote_subtotal"));
       if (!Number.isSafeInteger(quoted) || quoted <= 0 || !values.get("quote_version")) {
-        setBusy(false); setCampaignFeedback("Choose available dates and wait for the price before sending."); return;
+        setBusy(false); setCampaignFeedback(t("Choose available dates and wait for the price before sending.")); return;
       }
       budgetCents = quoted;
     }
@@ -10164,9 +10220,7 @@ export default function MarketplaceApp({
       } catch (error) {
         setBusy(false);
         return setCampaignFeedback(
-          error instanceof Error
-            ? error.message
-            : "Enter a dollar amount with no more than two decimals.",
+          t(error instanceof Error ? error.message : "Enter a dollar amount with no more than two decimals."),
         );
       }
     }
@@ -10222,7 +10276,7 @@ export default function MarketplaceApp({
           // Not fatal: the request and the thread both exist, they are just not
           // cross-linked. Say so rather than pretending it all worked.
           setToast(
-            `${isBookAsListed ? "Booking request" : "Offer"} sent, but we could not attach it to the message thread.`,
+            "{value} sent, but we could not attach it to the message thread.", undefined, { value: isBookAsListed ? t("Booking request") : t("Offer") },
           );
         }
       }
@@ -10238,7 +10292,9 @@ export default function MarketplaceApp({
     setBusy(false);
     setToast(
       campaignListing.owner.is_demo
-        ? `Demo ${isBookAsListed ? "booking" : "offer"} saved. This sample profile is not a real recipient.`
+        ? isBookAsListed
+          ? "Demo booking saved. This sample profile is not a real recipient."
+          : "Demo offer saved. This sample profile is not a real recipient."
         : isBookAsListed
           ? "Booking request sent. The owner will confirm availability before payment."
             : "Offer sent. You can track it in Dashboard.",
@@ -10269,12 +10325,15 @@ export default function MarketplaceApp({
       await loadAccountMarketplaceState(profile);
       return;
     }
+    const booking = request.purchase_mode === "buy_now";
     setToast(
       status === "accepted"
-        ? `${request.purchase_mode === "buy_now" ? "Booking" : "Offer"} accepted. Payment is required before the work is confirmed.`
+        ? booking
+          ? "Booking accepted. Payment is required before the work is confirmed."
+          : "Offer accepted. Payment is required before the work is confirmed."
         : status === "declined"
-          ? `${request.purchase_mode === "buy_now" ? "Booking" : "Offer"} declined.`
-          : `${request.purchase_mode === "buy_now" ? "Booking" : "Offer"} cancelled.`,
+          ? booking ? "Booking declined." : "Offer declined."
+          : booking ? "Booking cancelled." : "Offer cancelled.",
     );
     await loadAccountMarketplaceState(profile);
   }
@@ -10360,7 +10419,7 @@ export default function MarketplaceApp({
     let details: string | undefined;
     if (action === "report_issue") {
       const entered = window.prompt(
-        "Describe what is incomplete or needs to be resolved. The Creator will be able to discuss it with you in Messages.",
+        t("Describe what is incomplete or needs to be resolved. The Creator will be able to discuss it with you in Messages."),
       );
       if (entered === null) return;
       details = entered.trim();
@@ -10437,7 +10496,7 @@ export default function MarketplaceApp({
 
   async function submitCreatorReview(transaction: PaymentTransaction) {
     if (!profile) return;
-    const ratingInput = window.prompt("Rate the Creator from 1 to 5.", "5");
+    const ratingInput = window.prompt(t("Rate the Creator from 1 to 5."), "5");
     if (ratingInput === null) return;
     const rating = Number(ratingInput);
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
@@ -10445,7 +10504,7 @@ export default function MarketplaceApp({
       return;
     }
     const review = window.prompt(
-      "Share what the Creator delivered and what it was like to work together.",
+      t("Share what the Creator delivered and what it was like to work together."),
     );
     if (review === null) return;
     if (review.trim().length < 10) {
@@ -10593,7 +10652,7 @@ export default function MarketplaceApp({
     // appear anywhere on screen.
     await reconcileUnreadCount(profile);
     setToast(
-      `${target.display_name} is now hidden. You can undo this in Profile & settings.`,
+      "{display_name} is now hidden. You can undo this in Profile & settings.", undefined, { display_name: target.display_name },
     );
   }
 
@@ -10617,7 +10676,7 @@ export default function MarketplaceApp({
     setBlockedProfiles((current) =>
       current.filter((item) => item.id !== blockedId),
     );
-    setToast(`${name} is visible again.`);
+    setToast("{name} is visible again.", undefined, { name });
     await loadMarketplace();
   }
 
@@ -10742,7 +10801,7 @@ export default function MarketplaceApp({
       setToast(friendlyDbError(error));
       return;
     }
-    setToast(`A secure reset link was sent to ${address}.`);
+    setToast("A secure reset link was sent to {address}.", undefined, { address });
   }
 
   async function updateListingStatus(listing: Listing) {
@@ -10825,8 +10884,12 @@ export default function MarketplaceApp({
     setBusy(false);
     setToast(
       declined
-        ? `Listing deleted. ${declined} open request${declined === 1 ? " was" : "s were"} declined and the sender${declined === 1 ? "" : "s"} told.`
+        ? declined === 1
+          ? "Listing deleted. 1 open request was declined and the sender told."
+          : "Listing deleted. {count} open requests were declined and the senders told."
         : "Listing deleted.",
+      undefined,
+      { count: declined },
     );
     await Promise.all([
       loadMarketplace(),
@@ -10916,9 +10979,7 @@ export default function MarketplaceApp({
     if (!supabase || !profile) return;
     if (
       !window.confirm(
-        kind === "avatar"
-          ? "Remove your profile photo?"
-          : "Remove this photo from your profile?",
+        t(kind === "avatar" ? "Remove your profile photo?" : "Remove this photo from your profile?"),
       )
     ) {
       return;
@@ -10994,10 +11055,14 @@ export default function MarketplaceApp({
       }
       setToast(
         affected.length
-          ? `Photo removed. ${affected.length} listing${affected.length === 1 ? "" : "s"} using it now show the default cover.`
+          ? affected.length === 1
+            ? "Photo removed. 1 listing using it now shows the default cover."
+            : "Photo removed. {count} listings using it now show the default cover."
           : kind === "avatar"
             ? "Profile photo removed."
             : "Photo removed.",
+        undefined,
+        { count: affected.length },
       );
       // Pass the row the update returned, not the `profile` captured when this
       // handler was created - that snapshot still carries the URL just deleted,
@@ -11121,7 +11186,7 @@ export default function MarketplaceApp({
             setIgStats(
               (detail as IgStats | null) ?? {
                 error:
-                  "We could not reach Instagram just now — type your follower count in yourself.",
+                  t("We could not reach Instagram just now — type your follower count in yourself."),
               },
             );
           }
@@ -11149,7 +11214,7 @@ export default function MarketplaceApp({
         if (seq === igAvatarSeqRef.current) {
           setIgStats({
             error:
-              "We could not reach Instagram just now — type your follower count in yourself.",
+              t("We could not reach Instagram just now — type your follower count in yourself."),
           });
         }
         return "";
@@ -11180,9 +11245,9 @@ export default function MarketplaceApp({
       ? { password: String(values.get("delete_password") ?? "") }
       : { confirmation: String(values.get("delete_confirmation") ?? "").trim() };
 
-    setDeleteAccountError("");
+    setDeleteAccountError(t(""));
     if (!usesPassword && body.confirmation !== "DELETE") {
-      setDeleteAccountError("Type DELETE exactly to confirm.");
+      setDeleteAccountError(t("Type DELETE exactly to confirm."));
       return;
     }
 
@@ -11192,7 +11257,7 @@ export default function MarketplaceApp({
         body,
       });
       if (error) {
-        let message = "Could not delete your account. Please try again.";
+        let message = t("Could not delete your account. Please try again.");
         try {
           const context = (error as { context?: Response }).context;
           if (context) {
@@ -11218,7 +11283,7 @@ export default function MarketplaceApp({
       setDeleteAccountError(
         error instanceof Error
           ? error.message
-          : "Could not delete your account. Please try again.",
+          : t("Could not delete your account. Please try again."),
       );
     } finally {
       setBusy(false);
@@ -11324,7 +11389,7 @@ export default function MarketplaceApp({
         );
         return;
       }
-      setListingFeedback("");
+      setListingFeedback(t(""));
       setFormatPreview("");
       setEditingListing(null);
       setStreetView(null);
@@ -11341,7 +11406,7 @@ export default function MarketplaceApp({
 
   function openListingEdit(listing: Listing) {
     setListingPreview(false);
-    setListingFeedback("");
+    setListingFeedback(t(""));
     setFormatPreview(listing.format ?? "");
     setEditingListing(listing);
     setStreetView(
@@ -11374,16 +11439,16 @@ export default function MarketplaceApp({
 
   function greeting() {
     const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 18) return "Good afternoon";
-    return "Good evening";
+    if (hour < 12) return t("Good morning");
+    if (hour < 18) return t("Good afternoon");
+    return t("Good evening");
   }
 
   /** One honest sentence about what needs attention right now. */
   function dashboardStatus() {
     if (!profile) return "";
     if (!profile.onboarding_complete) {
-      return "Finish your profile to go live on the marketplace.";
+      return t("Finish your profile to go live on the marketplace.");
     }
     // A request you countered is still waiting on you - you can accept,
     // decline or revise it - so it must not vanish from your own status line.
@@ -11403,16 +11468,24 @@ export default function MarketplaceApp({
     const parts: string[] = [];
     if (incoming) {
       parts.push(
-        `${incoming} offer or booking${incoming === 1 ? "" : "s"} waiting on you`,
+        incoming === 1
+          ? t("1 offer or booking waiting on you")
+          : t("{count} offers or bookings waiting on you", { count: incoming }),
       );
     }
     if (awaitingYou) {
       parts.push(
-        `${awaitingYou} counteroffer${awaitingYou === 1 ? "" : "s"} to review`,
+        awaitingYou === 1
+          ? t("1 counteroffer to review")
+          : t("{count} counteroffers to review", { count: awaitingYou }),
       );
     }
     if (unreadCount) {
-      parts.push(`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`);
+      parts.push(
+        unreadCount === 1
+          ? t("1 unread message")
+          : t("{count} unread messages", { count: unreadCount }),
+      );
     }
     // A listing with gaps is sorted below complete ones and says so on its own
     // card. Leaving it out of the status line meant the dashboard could open
@@ -11427,14 +11500,16 @@ export default function MarketplaceApp({
     ).length;
     if (unfinished) {
       parts.push(
-        `${unfinished} listing${unfinished === 1 ? "" : "s"} to finish`,
+        unfinished === 1
+          ? t("1 listing to finish")
+          : t("{count} listings to finish", { count: unfinished }),
       );
     }
-    if (parts.length) return `You have ${parts.join(" and ")}.`;
+    if (parts.length) return t("You have {items}.", { items: parts.join(" " + t("and") + " ") });
     if (profile.role !== "consumer" && !ownListings.length) {
-      return "Nothing is listed yet. Add your first space or audience to start getting requests.";
+      return t("Nothing is listed yet. Add your first space or audience to start getting requests.");
     }
-    return "Nothing needs your attention right now.";
+    return t("Nothing needs your attention right now.");
   }
 
   /**
@@ -11450,26 +11525,26 @@ export default function MarketplaceApp({
     if (!row.impressions && !row.clicks && !row.like_count && !row.offers) {
       return (
         <p className="listing-figures-empty">
-          Nobody has reached this one yet.
+          {t("Nobody has reached this one yet.")}
         </p>
       );
     }
     return (
       <div className="listing-figures">
         <span>
-          <small>Seen by</small>
+          <small>{t("Seen by")}</small>
           <b>{compactNumber(row.impressions)}</b>
         </span>
         <span>
-          <small>Opened</small>
+          <small>{t("Opened")}</small>
           <b>{compactNumber(row.clicks)}</b>
         </span>
         <span>
-          <small>Likes</small>
+          <small>{t("Likes")}</small>
           <b>{compactNumber(row.like_count)}</b>
         </span>
         <span>
-          <small>Offers</small>
+          <small>{t("Offers")}</small>
           <b>{compactNumber(row.offers)}</b>
         </span>
       </div>
@@ -11502,17 +11577,16 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-analytics"
-        aria-label="Analytics"
+        aria-label={t("Analytics")}
         tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
-            <p className="eyebrow">Analytics</p>
-            <h3>How your listings are doing.</h3>
+            <p className="eyebrow">{t("Analytics")}</p>
+            <h3>{t("How your listings are doing.")}</h3>
             <p className="account-section-lede">
-              Counted per person per day, so one member scrolling past your card
-              twice is one. Your own visits are never counted.
+              {t("Counted per person per day, so one member scrolling past your card twice is one. Your own visits are never counted.")}
             </p>
           </div>
         </div>
@@ -11522,22 +11596,22 @@ export default function MarketplaceApp({
             <div className="dashboard-grid">
               <div className="dashboard-stat dashboard-stat-readout">
                 <span className="dashboard-stat-top">
-                  <small>Seen by</small>
+                  <small>{t("Seen by")}</small>
                   <span className="dashboard-stat-icon">
                     <DashboardStatIcon name="analytics" />
                   </span>
                 </span>
                 <strong>{compactNumber(totals.impressions)}</strong>
                 <span className="dashboard-stat-caption">
-                  {totals.impressions === 1 ? "person" : "people"}
+                  {totals.impressions === 1 ? t("person") : t("people")}
                   {totals.impressions7d
-                    ? ` · ${compactNumber(totals.impressions7d)} this week`
+                    ? t(" · {impressions7d} this week", { impressions7d: compactNumber(totals.impressions7d) })
                     : ""}
                 </span>
               </div>
               <div className="dashboard-stat dashboard-stat-readout">
                 <span className="dashboard-stat-top">
-                  <small>Opened</small>
+                  <small>{t("Opened")}</small>
                   <span className="dashboard-stat-icon">
                     <DashboardStatIcon name="outgoing" />
                   </span>
@@ -11545,46 +11619,44 @@ export default function MarketplaceApp({
                 <strong>{compactNumber(totals.clicks)}</strong>
                 <span className="dashboard-stat-caption">
                   {totals.impressions
-                    ? `${Math.round((totals.clicks / totals.impressions) * 100)}% of those who saw`
-                    : "Nobody yet"}
+                    ? t("{round}% of those who saw", { round: Math.round((totals.clicks / totals.impressions) * 100) })
+                    : t("Nobody yet")}
                 </span>
               </div>
               <div className="dashboard-stat dashboard-stat-readout">
                 <span className="dashboard-stat-top">
-                  <small>Likes</small>
+                  <small>{t("Likes")}</small>
                   <span className="dashboard-stat-icon">
                     <DashboardStatIcon name="likes" />
                   </span>
                 </span>
                 <strong>{compactNumber(totals.likes)}</strong>
                 <span className="dashboard-stat-caption">
-                  {totals.likes === 1 ? "member" : "members"} liked one
+                  {totals.likes === 1 ? t("member") : t("members")}{" "}{t("liked one")}
                 </span>
               </div>
               <div className="dashboard-stat dashboard-stat-readout">
                 <span className="dashboard-stat-top">
-                  <small>Offers</small>
+                  <small>{t("Offers")}</small>
                   <span className="dashboard-stat-icon">
                     <DashboardStatIcon name="incoming" />
                   </span>
                 </span>
                 <strong>{compactNumber(totals.offers)}</strong>
                 <span className="dashboard-stat-caption">
-                  {totals.offers === 1 ? "offer" : "offers"} received
+                  {totals.offers === 1 ? t("offer") : t("offers")}{" "}{t("received")}
                 </span>
               </div>
             </div>
             <p className="account-section-lede dashboard-analytics-note">
-              Per-listing figures are on each card under Listings below.
+              {t("Per-listing figures are on each card under Listings below.")}
             </p>
           </>
         ) : (
           <div className="dashboard-panel-empty">
-            <strong>Nothing to count yet.</strong>
+            <strong>{t("Nothing to count yet.")}</strong>
             <p>
-              We started counting the moment your listing went live. Come back
-              once people have browsed and you will see how many reached it, how
-              many opened it, and where they stopped.
+              {t("We started counting the moment your listing went live. Come back once people have browsed and you will see how many reached it, how many opened it, and where they stopped.")}
             </p>
           </div>
         )}
@@ -11598,16 +11670,16 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-listings-all"
-        aria-label="Listings"
+        aria-label={t("Listings")}
         tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
-            <p className="eyebrow">Listings</p>
-            <h2>Manage what you have published.</h2>
+            <p className="eyebrow">{t("Listings")}</p>
+            <h2>{t("Manage what you have published.")}</h2>
             <p className="account-section-lede">
-              Keep your audience, placement, or sponsorship offer clear and bookable.
+              {t("Keep your audience, placement, or sponsorship offer clear and bookable.")}
             </p>
           </div>
           {profile.role !== "consumer" && (
@@ -11615,20 +11687,20 @@ export default function MarketplaceApp({
               className="button button-dark button-small"
               onClick={openListingEditor}
             >
-              New listing <span>＋</span>
+              {t("New listing")}{" "}<span>＋</span>
             </button>
           )}
         </div>
 
         {ownListingsLoading ? (
-          <div className="account-empty">Loading your saved listings…</div>
+          <div className="account-empty">{t("Loading your saved listings…")}</div>
         ) : ownListings.length ? (
           <div className="my-listings-grid">
             {ownListings.map((listing) => (
               <article className="my-listing-card" key={listing.id}>
                 <ListingCover
                   listing={listing}
-                  alt={`${listing.title} listing`}
+                  alt={t("{title} listing", { title: listing.title })}
                 />
                 <div>
                   <span className={`listing-status status-${listing.status}`}>
@@ -11636,33 +11708,33 @@ export default function MarketplaceApp({
                   </span>
                   <h4>{listing.title}</h4>
                   <p>
-                    {listing.channel} • {priceLabel(listing)}/{pricingLabel(listing)}
+                    {t(listing.channel)} • {priceLabel(listing)}/{t(pricingLabel(listing))}
                   </p>
                   {(() => {
                     const gaps = listingGaps(listing);
                     if (!gaps.length) return null;
                     return (
                       <p className="listing-gap">
-                        Sorted below complete listings — it needs {joinList(gaps)}.
+                        {t("Sorted below complete listings — it needs {gaps}.", { gaps: joinList(gaps) })}
                       </p>
                     );
                   })()}
                   {renderListingFigures(listing.id)}
                   <div className="my-listing-actions">
-                    <button onClick={() => openListing(listing)}>View</button>
-                    <button onClick={() => openListingEdit(listing)}>Edit</button>
+                    <button onClick={() => openListing(listing)}>{t("View")}</button>
+                    <button onClick={() => openListingEdit(listing)}>{t("Edit")}</button>
                     <button
                       disabled={busy}
                       onClick={() => void updateListingStatus(listing)}
                     >
-                      {listing.status === "active" ? "Pause" : "Make active"}
+                      {listing.status === "active" ? t("Pause") : t("Make active")}
                     </button>
                     <button
                       className="is-danger"
                       disabled={busy}
                       onClick={() => setDeleteListingTarget(listing)}
                     >
-                      Delete
+                      {t("Delete")}
                     </button>
                   </div>
                 </div>
@@ -11671,16 +11743,16 @@ export default function MarketplaceApp({
           </div>
         ) : (
           <div className="account-empty">
-            <strong>No listings yet.</strong>
+            <strong>{t("No listings yet.")}</strong>
             <p>
-              Your first listing will appear here immediately after you publish it.
+              {t("Your first listing will appear here immediately after you publish it.")}
             </p>
             {profile.role !== "consumer" && (
               <button
                 className="button button-coral button-small"
                 onClick={openListingEditor}
               >
-                Create my first listing <span>↗</span>
+                {t("Create my first listing")}{" "}<span>↗</span>
               </button>
             )}
           </div>
@@ -11704,9 +11776,9 @@ export default function MarketplaceApp({
       );
     };
     const sides = [
-      { key: "all" as const, label: "All" },
-      { key: "incoming" as const, label: "To you" },
-      { key: "outgoing" as const, label: "You sent" },
+      { key: "all" as const, label: t("All") },
+      { key: "incoming" as const, label: t("To you") },
+      { key: "outgoing" as const, label: t("You sent") },
     ];
     const sideCount = (key: (typeof sides)[number]["key"]) =>
       campaignRequests.filter((request) => matches(request, key)).length;
@@ -11717,16 +11789,16 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-campaigns-all"
-        aria-label="Offers and bookings"
+        aria-label={t("Offers and bookings")}
         tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
-            <p className="eyebrow">Offers &amp; bookings</p>
-            <h2>Review every offer and next step.</h2>
+            <p className="eyebrow">{t("Offers & bookings")}</p>
+            <h2>{t("Review every offer and next step.")}</h2>
             <p className="account-section-lede">
-              Accept, counter, pay, and keep active work moving from one place.
+              {t("Accept, counter, pay, and keep active work moving from one place.")}
             </p>
           </div>
           <div className="segmented-row">
@@ -11736,12 +11808,12 @@ export default function MarketplaceApp({
               className="filter-pill"
               onClick={() => setCampaignOpenOnly(false)}
             >
-              Open only
+              {t("Open only")}
               <span aria-hidden="true">×</span>
-              <span className="sr-only">, clear this filter</span>
+              <span className="sr-only">{t(", clear this filter")}</span>
             </button>
           )}
-          <div className="segmented" role="radiogroup" aria-label="Filter offers">
+          <div className="segmented" role="radiogroup" aria-label={t("Filter offers")}>
             {sides.map((side, index) => (
               <button
                 key={side.key}
@@ -11771,7 +11843,7 @@ export default function MarketplaceApp({
                 }}
                 onClick={() => setCampaignSide(side.key)}
               >
-                {side.label}
+                {t(side.label)}
                 <b>{sideCount(side.key)}</b>
               </button>
             ))}
@@ -11801,14 +11873,14 @@ export default function MarketplaceApp({
                   <header>
                     <div>
                       <small>
-                        {incoming ? "Incoming" : "You sent"} · {request.instant_booking ? "Instant booking" : isBookAsListed ? "Book as listed" : "Offer"}
+                        {incoming ? t("Incoming") : t("You sent")} · {request.instant_booking ? t("Instant booking") : isBookAsListed ? t("Book as listed") : t("Offer")}
                       </small>
                       <h4>{request.campaign_name}</h4>
                       <p>
                         {request.listing?.title ??
                           (request.status === "accepted" || request.status === "completed"
-                            ? "This listing is not currently public"
-                            : "Listing no longer available")}
+                            ? t("This listing is not currently public")
+                            : t("Listing no longer available"))}
                         {" · "}
                         {other.display_name}
                       </p>
@@ -11821,30 +11893,30 @@ export default function MarketplaceApp({
                   </header>
                   <div className="campaign-request-facts">
                     <span>
-                      <small>Dates</small>
+                      <small>{t("Dates")}</small>
                       <b>
-                        {bookingDateLabel(request.timing_kind, request.start_date, request.end_date)}
+                        {bookingDateLabel(request.timing_kind, request.start_date, request.end_date, t)}
                       </b>
                     </span>
                     <span>
-                      <small>{isBookAsListed ? "Listed price" : "Budget"}</small>
+                      <small>{isBookAsListed ? t("Listed price") : t("Budget")}</small>
                       <b>{formatCents(request.budget_cents)}</b>
                     </span>
                     <span>
-                      <small>{isBookAsListed ? "Listed deliverables" : "Requested"}</small>
+                      <small>{isBookAsListed ? t("Listed deliverables") : t("Requested")}</small>
                       <b>{request.requested_deliverables}</b>
                     </span>
                   </div>
-                  {request.listing_terms?.cancellation_policy && <details className="composer-options"><summary>Agreed cancellation terms</summary><p>{request.listing_terms.cancellation_policy}</p></details>}
+                  {request.listing_terms?.cancellation_policy && <details className="composer-options"><summary>{t("Agreed cancellation terms")}</summary><p>{request.listing_terms.cancellation_policy}</p></details>}
                   {request.goals && (
                     <p className="campaign-request-brief">
-                      <small>Goal</small>
+                      <small>{t("Goal")}</small>
                       {request.goals}
                     </p>
                   )}
                   {request.notes && (
                     <p className="campaign-request-brief">
-                      <small>Notes</small>
+                      <small>{t("Notes")}</small>
                       {request.notes}
                     </p>
                   )}
@@ -11852,8 +11924,8 @@ export default function MarketplaceApp({
                     <div className="counter-summary">
                       <strong>
                         {request.status === "accepted"
-                          ? `Agreed at ${formatCents(request.counter_budget_cents)}`
-                          : `Counteroffer: ${formatCents(request.counter_budget_cents)}`}
+                          ? t("Agreed at {counter_budget_cents}", { counter_budget_cents: formatCents(request.counter_budget_cents) })
+                          : t("Counteroffer: {counter_budget_cents}", { counter_budget_cents: formatCents(request.counter_budget_cents) })}
                       </strong>
                       {request.counter_message && <p>{request.counter_message}</p>}
                     </div>
@@ -11861,15 +11933,15 @@ export default function MarketplaceApp({
                   {acceptedMoney && isPayer && (
                     <div className="campaign-request-facts">
                       <span>
-                        <small>Campaign</small>
+                        <small>{t("Campaign")}</small>
                         <b>{formatCents(acceptedMoney.subtotalCents)}</b>
                       </span>
                       <span>
-                        <small>SideSpace buyer fee (5%)</small>
+                        <small>{t("SideSpace buyer fee (5%)")}</small>
                         <b>{formatCents(acceptedMoney.buyerFeeCents)}</b>
                       </span>
                       <span>
-                        <small>{promoPreview ? "Estimated total before tax" : "Total before tax"}</small>
+                        <small>{promoPreview ? t("Estimated total before tax") : t("Total before tax")}</small>
                         <b>
                           {formatCents(
                             payment?.charged_total_cents ?? promoPreview?.chargedTotalCents ?? acceptedMoney.customerTotalCents,
@@ -11878,7 +11950,7 @@ export default function MarketplaceApp({
                       </span>
                       {(payment?.ad_credit_cents ?? promoPreview?.adCreditCents ?? 0) > 0 && (
                         <span>
-                          <small>Promo credit</small>
+                          <small>{t("Promo credit")}</small>
                           <b>−{formatCents(payment?.ad_credit_cents ?? promoPreview?.adCreditCents ?? 0)}</b>
                         </span>
                       )}
@@ -11886,32 +11958,31 @@ export default function MarketplaceApp({
                   )}
                   {acceptedMoney && isPayer && !payment && adCreditBalanceCents > 0 && (
                     <p className="campaign-request-brief">
-                      <small>Available ad credit</small>
-                      {formatCents(applyAdCreditToCheckout({
+                      <small>{t("Available ad credit")}</small>
+                      {t("{adCreditCents} can apply at checkout. Any remaining promo credit stays in your balance. Your creator receives their normal payout.", { adCreditCents: formatCents(applyAdCreditToCheckout({
                         ...acceptedMoney, availableCents: adCreditBalanceCents,
-                      }).adCreditCents)} can apply at checkout. Any remaining promo
-                      credit stays in your balance. Your creator receives their normal payout.
+                      }).adCreditCents) })}
                     </p>
                   )}
                   {acceptedMoney && isPayee && (
                     <div className="campaign-request-facts">
                       <span>
-                        <small>Campaign</small>
+                        <small>{t("Campaign")}</small>
                         <b>{formatCents(acceptedMoney.subtotalCents)}</b>
                       </span>
                       <span>
-                        <small>SideSpace creator fee (5%)</small>
+                        <small>{t("SideSpace creator fee (5%)")}</small>
                         <b>−{formatCents(acceptedMoney.creatorFeeCents)}</b>
                       </span>
                       <span>
-                        <small>Your earnings</small>
+                        <small>{t("Your earnings")}</small>
                         <b>{formatCents(acceptedMoney.creatorPayoutCents)}</b>
                       </span>
                     </div>
                   )}
                   {(payment?.tax_cents ?? 0) > 0 && isPayer && (
                     <p className="campaign-request-brief">
-                      <small>Tax collected by Stripe</small>
+                      <small>{t("Tax collected by Stripe")}</small>
                       {formatCents(payment?.tax_cents ?? 0)}
                     </p>
                   )}
@@ -11922,14 +11993,14 @@ export default function MarketplaceApp({
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "accepted")}
                       >
-                        Accept
+                        {t("Accept")}
                       </button>
                     )}
                     {incoming &&
                       request.purchase_mode !== "buy_now" &&
                       OPEN_REQUEST_STATUSES.includes(request.status) && (
                         <button onClick={() => setCounteringRequest(request)}>
-                          {request.status === "countered" ? "Revise counteroffer" : "Counteroffer"}
+                          {request.status === "countered" ? t("Revise counteroffer") : t("Counteroffer")}
                         </button>
                       )}
                     {incoming && OPEN_REQUEST_STATUSES.includes(request.status) && (
@@ -11937,7 +12008,7 @@ export default function MarketplaceApp({
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "declined")}
                       >
-                        Decline
+                        {t("Decline")}
                       </button>
                     )}
                     {!incoming && request.status === "countered" && (
@@ -11946,7 +12017,7 @@ export default function MarketplaceApp({
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "accepted")}
                       >
-                        Accept counteroffer
+                        {t("Accept counteroffer")}
                       </button>
                     )}
                     {!incoming && OPEN_REQUEST_STATUSES.includes(request.status) && (
@@ -11954,7 +12025,7 @@ export default function MarketplaceApp({
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "cancelled")}
                       >
-                        {isBookAsListed ? "Cancel booking" : "Cancel offer"}
+                        {isBookAsListed ? t("Cancel booking") : t("Cancel offer")}
                       </button>
                     )}
                     {request.status === "accepted" && (
@@ -11966,8 +12037,8 @@ export default function MarketplaceApp({
                             onClick={() => void startCampaignCheckout(request.id)}
                           >
                             {payment?.status === "checkout_open"
-                              ? "Continue secure checkout"
-                              : "Pay securely with Stripe"}
+                              ? t("Continue secure checkout")
+                              : t("Pay securely with Stripe")}
                           </button>
                         )}
                         {isPayee &&
@@ -11980,10 +12051,10 @@ export default function MarketplaceApp({
                                 void openStripeFlow("/api/stripe/connect/onboard")
                               }
                             >
-                              Finish payout setup
+                              {t("Finish payout setup")}
                             </button>
                           )}
-                        <button onClick={openInbox}>Continue in Messages</button>
+                        <button onClick={openInbox}>{t("Continue in Messages")}</button>
                       </>
                     )}
                   </div>
@@ -11995,14 +12066,15 @@ export default function MarketplaceApp({
           <div className="account-empty">
             <strong>
               {campaignOpenOnly
-                ? "Nothing here needs you right now."
+                ? t("Nothing here needs you right now.")
                 : campaignSide === "incoming"
-                  ? "No offers waiting on you."
-                  : "You have not sent any offers."}
+                  ? t("No offers waiting on you.")
+                  : t("You have not sent any offers.")}
             </strong>
             <p>
-              You have {campaignRequests.length} offer
-              {campaignRequests.length === 1 ? "" : "s"} outside this filter.
+              {campaignRequests.length === 1
+                ? t("You have 1 offer outside this filter.")
+                : t("You have {count} offers outside this filter.", { count: campaignRequests.length })}
             </p>
             <button
               className="button button-ghost button-small"
@@ -12012,15 +12084,15 @@ export default function MarketplaceApp({
                 setCampaignOpenOnly(false);
               }}
             >
-              Show all offers <span>→</span>
+              {t("Show all offers")}{" "}<span>→</span>
             </button>
           </div>
         ) : (
           <div className="account-empty">
-            <strong>No offers or bookings yet.</strong>
-            <p>Open a listing to book an available date or make a custom offer.</p>
+            <strong>{t("No offers or bookings yet.")}</strong>
+            <p>{t("Open a listing to book an available date or make a custom offer.")}</p>
             <a className="button button-ghost button-small" href="/marketplace">
-              Browse marketplace <span>↗</span>
+              {t("Browse marketplace")}{" "}<span>↗</span>
             </a>
           </div>
         )}
@@ -12034,19 +12106,19 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-payments"
-        aria-label="Payments"
+        aria-label={t("Payments")}
         tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
-            <p className="eyebrow">Payments</p>
-            <h2>Track money in motion.</h2>
+            <p className="eyebrow">{t("Payments")}</p>
+            <h2>{t("Track money in motion.")}</h2>
             <p className="account-section-lede">
-              Payment, delivery, review, refund, and payout status stay together here.
+              {t("Payment, delivery, review, refund, and payout status stay together here.")}
             </p>
           </div>
-          <span className="section-count">{paymentTransactions.length} total</span>
+          <span className="section-count">{t("{paymentTransactionsCount} total", { paymentTransactionsCount: paymentTransactions.length })}</span>
         </div>
         <div className="campaign-request-list">
           {paymentTransactions.map((transaction) => {
@@ -12056,25 +12128,25 @@ export default function MarketplaceApp({
               : false;
             const statusLabel =
               transaction.workflow_status === "refund_pending"
-                ? "Refund processing"
+                ? t("Refund processing")
                 : transaction.payout_status === "released"
-                  ? "Payout released"
+                  ? t("Payout released")
                   : transaction.payout_status === "releasing"
-                    ? "Releasing payout"
+                    ? t("Releasing payout")
                     : transaction.workflow_status === "awaiting_payer_review"
-                      ? "Awaiting payer review"
+                      ? t("Awaiting payer review")
                       : transaction.issue_status === "escalated"
-                        ? "Issue escalated"
+                        ? t("Issue escalated")
                         : transaction.issue_status === "open"
-                          ? "Issue open"
+                          ? t("Issue open")
                           : transaction.payout_status === "pending"
-                            ? "Payout pending"
+                            ? t("Payout pending")
                             : transaction.workflow_status.replaceAll("_", " ");
             return (
               <article className="campaign-request-card" key={transaction.id}>
                 <header>
                   <div>
-                    <small>{buyer ? "Business payment" : "Creator earnings"}</small>
+                    <small>{buyer ? t("Business payment") : t("Creator earnings")}</small>
                     <h4>{transaction.campaign_name}</h4>
                     <p>{transaction.listing_title}</p>
                   </div>
@@ -12084,11 +12156,11 @@ export default function MarketplaceApp({
                 </header>
                 <div className="campaign-request-facts">
                   <span>
-                    <small>{buyer ? "Campaign" : "Gross campaign"}</small>
+                    <small>{buyer ? t("Campaign") : t("Gross campaign")}</small>
                     <b>{formatCents(transaction.subtotal_cents)}</b>
                   </span>
                   <span>
-                    <small>{buyer ? "Buyer fee" : "Creator fee"}</small>
+                    <small>{buyer ? t("Buyer fee") : t("Creator fee")}</small>
                     <b>
                       {buyer ? "" : "−"}
                       {formatCents(
@@ -12097,7 +12169,7 @@ export default function MarketplaceApp({
                     </b>
                   </span>
                   <span>
-                    <small>{buyer ? "Total before tax" : "Your earnings"}</small>
+                    <small>{buyer ? t("Total before tax") : t("Your earnings")}</small>
                     <b>
                       {formatCents(
                         buyer
@@ -12109,82 +12181,77 @@ export default function MarketplaceApp({
                 </div>
                 {buyer && (transaction.ad_credit_cents ?? 0) > 0 && (
                   <p className="campaign-request-brief">
-                    <small>Ad credit applied</small>
-                    −{formatCents(transaction.ad_credit_cents ?? 0)} promotional credit. It
-                    cannot be withdrawn or transferred.
+                    <small>{t("Ad credit applied")}</small>
+                    {t("−{formatCents} promotional credit. It cannot be withdrawn or transferred.", { formatCents: formatCents(transaction.ad_credit_cents ?? 0) })}
                   </p>
                 )}
                 {transaction.refunded_cents > 0 && (
                   <p className="campaign-request-brief">
-                    <small>Refunded</small>
+                    <small>{t("Refunded")}</small>
                     {formatCents(transaction.refunded_cents)}
                   </p>
                 )}
                 {transaction.payout_status === "pending" &&
                   transaction.workflow_status === "paid_payout_pending" && (
                     <div className="campaign-request-brief">
-                      <small>{buyer ? "Creator payout" : "Payment pending"}</small>
+                      <small>{buyer ? t("Creator payout") : t("Payment pending")}</small>
                       {buyer
-                        ? "Your payment is verified. The Creator can begin work; their payout stays pending until delivery is reviewed."
-                        : "The customer paid in full. Your earnings remain pending until you mark the campaign delivered and the review period ends."}
+                        ? t("Your payment is verified. The Creator can begin work; their payout stays pending until delivery is reviewed.")
+                        : t("The customer paid in full. Your earnings remain pending until you mark the campaign delivered and the review period ends.")}
                     </div>
                   )}
                 {transaction.delivered_at && transaction.review_deadline && (
                   <div className="campaign-request-brief">
                     <small>
-                      {buyer ? "Creator marked this campaign delivered" : "Review period ends"}
+                      {buyer ? t("Creator marked this campaign delivered") : t("Review period ends")}
                     </small>
-                    {buyer && `Delivered ${displayDateTime(transaction.delivered_at)}. `}
-                    Review deadline: {displayDateTime(transaction.review_deadline)}.
+                    {buyer && t("Delivered {delivered_at}. ", { delivered_at: displayDateTime(transaction.delivered_at, t) })}
+                    {t("Review deadline: {review_deadline}.", { review_deadline: displayDateTime(transaction.review_deadline, t) })}
                     {!buyer &&
-                      " Payout is expected after that time unless the payer reports an issue."}
+                      t(" Payout is expected after that time unless the payer reports an issue.")}
                     {reviewExpired &&
                       transaction.payout_status !== "released" &&
                       transaction.issue_status === "none" &&
-                      " The deadline has passed; automatic release is processing server-side."}
+                      t(" The deadline has passed; automatic release is processing server-side.")}
                   </div>
                 )}
                 {transaction.issue_status !== "none" && transaction.issue && (
                   <div className="counter-summary">
                     <strong>
                       {transaction.issue_status === "escalated"
-                        ? "Issue escalated to SideSpace"
+                        ? t("Issue escalated to SideSpace")
                         : transaction.issue_status === "resolved"
-                          ? "Issue resolved"
-                          : "Resolve with the Creator"}
+                          ? t("Issue resolved")
+                          : t("Resolve with the Creator")}
                     </strong>
                     <p>{transaction.issue.details}</p>
                     {transaction.issue_status === "open" && (
                       <p>
-                        Payout remains pending. Use Messages to try to resolve the issue
-                        directly before escalating it.
+                        {t("Payout remains pending. Use Messages to try to resolve the issue directly before escalating it.")}
                       </p>
                     )}
                   </div>
                 )}
                 {transaction.payout_status === "released" && (
                   <div className="campaign-request-brief">
-                    <small>Payout released</small>
+                    <small>{t("Payout released")}</small>
                     {buyer
-                      ? "The Creator payout has been released and this campaign is complete."
-                      : `${formatCents(transaction.payout_amount_cents)} was released${
-                          transaction.payout_released_at
-                            ? ` on ${displayDateTime(transaction.payout_released_at)}`
-                            : ""
-                        }.`}
+                      ? t("The Creator payout has been released and this campaign is complete.")
+                      : t("{payout_amount_cents} was released{value}.", { payout_amount_cents: formatCents(transaction.payout_amount_cents), value: transaction.payout_released_at
+                            ? " " + t("on {date}", { date: displayDateTime(transaction.payout_released_at, t) })
+                            : "" })}
                   </div>
                 )}
                 {transaction.review && (
                   <div className="campaign-request-brief">
-                    <small>Creator review · {transaction.review.rating}/5</small>
+                    <small>{t("Creator review · {rating}/5", { rating: transaction.review.rating })}</small>
                     {transaction.review.review_text}
                   </div>
                 )}
                 {transaction.payout_issue && (
                   <div className="campaign-request-brief">
-                    <small>Payout release needs attention</small>
-                    SideSpace could not finish the transfer yet. It is safe to retry; no
-                    duplicate payout will be created.
+                    <small>{t("Payout release needs attention")}</small>
+                    {t("SideSpace could not finish the transfer yet. It is safe to retry; no duplicate payout will be created.")}
                   </div>
                 )}
                 <div className="campaign-request-actions">
@@ -12196,7 +12263,7 @@ export default function MarketplaceApp({
                         disabled={busy}
                         onClick={() => void runCampaignPaymentAction(transaction, "deliver")}
                       >
-                        {busy ? "Updating…" : "Mark campaign delivered"}
+                        {busy ? t("Updating…") : t("Mark campaign delivered")}
                       </button>
                     )}
                   {buyer &&
@@ -12210,7 +12277,7 @@ export default function MarketplaceApp({
                           disabled={busy}
                           onClick={() => void runCampaignPaymentAction(transaction, "confirm")}
                         >
-                          {busy ? "Releasing…" : "Confirm work completed"}
+                          {busy ? t("Releasing…") : t("Confirm work completed")}
                         </button>
                         <button
                           disabled={busy}
@@ -12218,19 +12285,19 @@ export default function MarketplaceApp({
                             void runCampaignPaymentAction(transaction, "report_issue")
                           }
                         >
-                          Report an issue
+                          {t("Report an issue")}
                         </button>
                       </>
                     )}
                   {transaction.issue_status === "open" && (
-                    <button onClick={openInbox}>Resolve with the Creator</button>
+                    <button onClick={openInbox}>{t("Resolve with the Creator")}</button>
                   )}
                   {buyer && transaction.issue_status === "open" && (
                     <button
                       disabled={busy}
                       onClick={() => void runCampaignPaymentAction(transaction, "escalate")}
                     >
-                      Escalate to SideSpace
+                      {t("Escalate to SideSpace")}
                     </button>
                   )}
                   {buyer && transaction.payout_status === "released" && !transaction.review && (
@@ -12239,7 +12306,7 @@ export default function MarketplaceApp({
                       disabled={busy}
                       onClick={() => void submitCreatorReview(transaction)}
                     >
-                      Review Creator
+                      {t("Review Creator")}
                     </button>
                   )}
                 </div>
@@ -12260,7 +12327,7 @@ export default function MarketplaceApp({
   return (
     <main>
       <a className="ss-skip-link" href="#main-content">
-        Skip to main content
+        {t("Skip to main content")}
       </a>
       <SiteHeader
         route={route}
@@ -12288,15 +12355,15 @@ export default function MarketplaceApp({
           className="dashboard"
           id="main-content"
           tabIndex={-1}
-          aria-label="Loading your dashboard"
+          aria-label={t("Loading your dashboard")}
         >
           <div className="dashboard-head">
             <div>
-              <p className="eyebrow">Your dashboard</p>
+              <p className="eyebrow">{t("Your dashboard")}</p>
               <h1 className="dashboard-title">
-                Setting things <em>up...</em>
+                {t("Setting things")}{" "}<em>{t("up...")}</em>
               </h1>
-              <p className="dashboard-sub">One moment while we load your dashboard.</p>
+              <p className="dashboard-sub">{t("One moment while we load your dashboard.")}</p>
             </div>
           </div>
         </section>
@@ -12305,14 +12372,14 @@ export default function MarketplaceApp({
           className="dashboard"
           id="main-content"
           tabIndex={-1}
-          aria-label="Your SideSpace dashboard"
+          aria-label={t("Your SideSpace dashboard")}
         >
           <div className="dashboard-head">
             <div>
-              <p className="eyebrow">{rolesLabel(profile)} · {profile.city || "Add your city"}</p>
+              <p className="eyebrow">{rolesLabel(profile)} · {profile.city || t("Add your city")}</p>
               <h1 className="dashboard-title">
                 <em>{greeting()},</em>{" "}
-                {profile.display_name.split(" ")[0] || "there"}.
+                {profile.display_name.split(" ")[0] || t("there")}.
               </h1>
               <p className="dashboard-sub">{dashboardStatus()}</p>
             </div>
@@ -12326,7 +12393,7 @@ export default function MarketplaceApp({
             <div className="dashboard-actions">
               {profile.role !== "consumer" && (
                 <button className="button button-dark" onClick={openListingEditor}>
-                  New listing
+                  {t("New listing")}
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path
                       d="M8 3.5v9M3.5 8h9"
@@ -12348,10 +12415,10 @@ export default function MarketplaceApp({
                 href="/marketplace?role=business"
                 key="supply"
               >
-                <span>I&rsquo;m a creator or host</span>
-                <strong>Find business briefs</strong>
-                <p>See local campaigns that need your audience or space.</p>
-                <b>Browse briefs →</b>
+                <span>{t("I’m a creator or host")}</span>
+                <strong>{t("Find business briefs")}</strong>
+                <p>{t("See local campaigns that need your audience or space.")}</p>
+                <b>{t("Browse briefs →")}</b>
               </a>
             );
             const demandPath = (
@@ -12360,10 +12427,10 @@ export default function MarketplaceApp({
                 href="/marketplace?role=supply"
                 key="demand"
               >
-                <span>I&rsquo;m a business</span>
-                <strong>Book local reach</strong>
-                <p>Choose a creator or space, pick an open date, and check out.</p>
-                <b>Browse creators and spaces →</b>
+                <span>{t("I’m a business")}</span>
+                <strong>{t("Book local reach")}</strong>
+                <p>{t("Choose a creator or space, pick an open date, and check out.")}</p>
+                <b>{t("Browse creators and spaces →")}</b>
               </a>
             );
             // Both stay: a creator books other creators often enough that
@@ -12415,23 +12482,23 @@ export default function MarketplaceApp({
                 go: () => void;
               }> = [
                 {
-                  label: "Live listings",
+                  label: t("Live listings"),
                   value: active,
                   caption: paused
-                    ? `${paused} paused`
-                    : "Visible in the marketplace",
+                    ? t("{count} paused", { count: paused })
+                    : t("Visible in the marketplace"),
                   icon: "listings" as const,
                   tone: active ? "" : "muted",
-                  action: "Manage listings",
+                  action: t("Manage listings"),
                   go: () => goToDashboardSection("dashboard-listings-all"),
                 },
                 {
-                  label: "Offers to you",
+                  label: t("Offers to you"),
                   value: incoming,
-                  caption: incoming ? "Waiting on your reply" : "Nothing pending",
+                  caption: incoming ? t("Waiting on your reply") : t("Nothing pending"),
                   icon: "incoming" as const,
                   tone: incoming ? "alert" : "muted",
-                  action: "Review offers",
+                  action: t("Review offers"),
                   go: () => {
                     setCampaignSide("incoming");
                     // The tile counted open work only; the section has to
@@ -12441,12 +12508,12 @@ export default function MarketplaceApp({
                   },
                 },
                 {
-                  label: "Offers you sent",
+                  label: t("Offers you sent"),
                   value: outgoing,
-                  caption: outgoing ? "Awaiting a reply" : "None open",
+                  caption: outgoing ? t("Awaiting a reply") : t("None open"),
                   icon: "outgoing" as const,
                   tone: outgoing ? "" : "muted",
-                  action: "Track your offers",
+                  action: t("Track your offers"),
                   go: () => {
                     setCampaignSide("outgoing");
                     // The tile counted open work only; the section has to
@@ -12456,12 +12523,12 @@ export default function MarketplaceApp({
                   },
                 },
                 {
-                  label: "Unread messages",
+                  label: t("Unread messages"),
                   value: unreadCount,
-                  caption: unreadCount ? "In your inbox" : "All caught up",
+                  caption: unreadCount ? t("In your inbox") : t("All caught up"),
                   icon: "messages" as const,
                   tone: unreadCount ? "alert" : "muted",
-                  action: "Open inbox",
+                  action: t("Open inbox"),
                   go: openInbox,
                 },
               ];
@@ -12471,23 +12538,23 @@ export default function MarketplaceApp({
                   0,
                 );
                 cards.push({
-                  label: "People reached",
+                  label: t("People reached"),
                   value: reached,
-                  caption: reached ? "Across your listings" : "Counting from now",
+                  caption: reached ? t("Across your listings") : t("Counting from now"),
                   icon: "analytics" as const,
                   tone: reached ? "" : "muted",
-                  action: "See analytics",
+                  action: t("See analytics"),
                   go: () => goToDashboardSection("dashboard-analytics"),
                 });
               }
               if (paymentTransactions.length) {
                 cards.push({
-                  label: "Payments",
+                  label: t("Payments"),
                   value: paymentTransactions.length,
-                  caption: "Money in motion",
+                  caption: t("Money in motion"),
                   icon: "payments" as const,
                   tone: "muted",
-                  action: "See payment status",
+                  action: t("See payment status"),
                   go: () => goToDashboardSection("dashboard-payments"),
                 });
               }
@@ -12500,7 +12567,7 @@ export default function MarketplaceApp({
                   aria-label={`${card.action}. ${card.label}: ${card.value}, ${card.caption}.`}
                 >
                   <span className="dashboard-stat-top">
-                    <small>{card.label}</small>
+                    <small>{t(card.label)}</small>
                     <span className={`dashboard-stat-icon ${card.tone}`}>
                       <DashboardStatIcon name={card.icon} />
                     </span>
@@ -12549,7 +12616,7 @@ export default function MarketplaceApp({
               const result = Array.isArray(data) ? data[0] : data;
               return Number(result?.awarded_cents ?? 0);
             }}
-            renderDialog={(content, close) => <Modal label="Your balance" onClose={close}>{content}</Modal>}
+            renderDialog={(content, close) => <Modal label={t("Your balance")} onClose={close}>{content}</Modal>}
           />
 
           {profile.role === "business" && (
@@ -12560,18 +12627,17 @@ export default function MarketplaceApp({
             >
               <header className="dashboard-panel-heading">
                 <div>
-                  <p className="eyebrow">Recommended for your campaign</p>
-                  <h2>Creator posts that fit your brief.</h2>
+                  <p className="eyebrow">{t("Recommended for your campaign")}</p>
+                  <h2>{t("Creator posts that fit your brief.")}</h2>
                   <p>
-                    Ranked from your category, goal, platform, timing, and
-                    location preferences.
+                    {t("Ranked from your category, goal, platform, timing, and location preferences.")}
                   </p>
                 </div>
                 <button
                   className="button button-ghost button-small"
                   onClick={openAccountPanel}
                 >
-                  Edit preferences <span>⚙</span>
+                  {t("Edit preferences")}{" "}<span>⚙</span>
                 </button>
               </header>
               {creatorRecommendations.length ? (
@@ -12601,13 +12667,13 @@ export default function MarketplaceApp({
                               openCampaignRequest(recommendation.listing)
                             }
                           >
-                            Make an offer
+                            {t("Make an offer")}
                           </button>
                           <button
                             className="dashboard-text-action"
                             onClick={() => openListing(recommendation.listing)}
                           >
-                            View details
+                            {t("View details")}
                           </button>
                         </div>
                       </div>
@@ -12616,10 +12682,9 @@ export default function MarketplaceApp({
                 </div>
               ) : (
                 <div className="dashboard-panel-empty">
-                  <strong>We’re still building your shortlist.</strong>
+                  <strong>{t("We’re still building your shortlist.")}</strong>
                   <p>
-                    Add a target platform or category in preferences, then
-                    refresh the marketplace as new creators join.
+                    {t("Add a target platform or category in preferences, then refresh the marketplace as new creators join.")}
                   </p>
                 </div>
               )}
@@ -12643,8 +12708,8 @@ export default function MarketplaceApp({
             <li className={profile.onboarding_complete ? "done" : ""}>
               <span>{profile.onboarding_complete ? "✓" : "1"}</span>
               <div>
-                <strong>Complete your profile</strong>
-                <p>Role, city, and a short introduction.</p>
+                <strong>{t("Complete your profile")}</strong>
+                <p>{t("Role, city, and a short introduction.")}</p>
               </div>
               {!profile.onboarding_complete && (
                 <button
@@ -12656,22 +12721,22 @@ export default function MarketplaceApp({
                     setOnboardingOpen(true);
                   }}
                 >
-                  Finish setup
+                  {t("Finish setup")}
                 </button>
               )}
             </li>
             <li className={profile.avatar_url ? "done" : ""}>
               <span>{profile.avatar_url ? "✓" : "2"}</span>
               <div>
-                <strong>Add a profile photo</strong>
-                <p>Profiles with a face or logo get far more replies.</p>
+                <strong>{t("Add a profile photo")}</strong>
+                <p>{t("Profiles with a face or logo get far more replies.")}</p>
               </div>
               {!profile.avatar_url && (
                 <button
                   className="button button-ghost button-small"
                   onClick={() => openProfileEditor(1)}
                 >
-                  Add photo
+                  {t("Add photo")}
                 </button>
               )}
             </li>
@@ -12679,11 +12744,11 @@ export default function MarketplaceApp({
               <li className={ownListings.length ? "done" : ""}>
                 <span>{ownListings.length ? "✓" : "3"}</span>
                 <div>
-                  <strong>Publish your first listing</strong>
+                  <strong>{t("Publish your first listing")}</strong>
                   <p>
                     {onboardingDraft
-                      ? "Everything you typed is still here."
-                      : "Your space or audience cannot be booked until it is listed."}
+                      ? t("Everything you typed is still here.")
+                      : t("Your space or audience cannot be booked until it is listed.")}
                   </p>
                 </div>
                 {!ownListings.length && (
@@ -12695,7 +12760,7 @@ export default function MarketplaceApp({
                     // are still in localStorage and come straight back.
                     onClick={resumeOnboardingDraft}
                   >
-                    {onboardingDraft ? "Finish my listing" : "Create listing"}
+                    {onboardingDraft ? t("Finish my listing") : t("Create listing")}
                   </button>
                 )}
               </li>
@@ -12703,11 +12768,11 @@ export default function MarketplaceApp({
               <li>
                 <span>3</span>
                 <div>
-                  <strong>Find your first placement</strong>
-                  <p>Browse creators and spaces, then message the owner directly.</p>
+                  <strong>{t("Find your first placement")}</strong>
+                  <p>{t("Browse creators and spaces, then message the owner directly.")}</p>
                 </div>
                 <a className="button button-ghost button-small" href="/marketplace">
-                  Browse
+                  {t("Browse")}
                 </a>
               </li>
             )}
@@ -12755,7 +12820,7 @@ export default function MarketplaceApp({
             ...channels.filter((channel) => channel !== "All")].map(
             (channel, index) => (
               <span className="signal-item" key={`${channel}-${index}`}>
-                {channel}
+                {t(channel)}
               </span>
             ),
           )}
@@ -12767,68 +12832,68 @@ export default function MarketplaceApp({
           blocks are still loading rather than announcing counts that are
           about to change under the reader. */}
       {legacyPublicSections && !blocksPending && marketplaceStats.listings > 0 && (
-        <section className="stat-band" aria-label="Marketplace at a glance">
+        <section className="stat-band" aria-label={t("Marketplace at a glance")}>
           <div className="stat-cell">
             <b>{marketplaceStats.listings}</b>
-            <span>Listings live</span>
+            <span>{t("Listings live")}</span>
           </div>
           <div className="stat-cell">
             <b>{marketplaceStats.members}</b>
-            <span>Members offering space</span>
+            <span>{t("Members offering space")}</span>
           </div>
           <div className="stat-cell">
             <b>{marketplaceStats.cities}</b>
-            <span>Cities covered</span>
+            <span>{t("Cities covered")}</span>
           </div>
           <div className="stat-cell">
             <b>{marketplaceStats.channels}</b>
-            <span>Kinds of space</span>
+            <span>{t("Kinds of space")}</span>
           </div>
         </section>
       )}
 
       {legacyPublicSections && (<section className="how-section" id="how">
         <div className="how-intro">
-          <h2>Find it. Message. <em>Make it happen.</em></h2>
+          <h2>{t("Find it. Message.")}{" "}<em>{t("Make it happen.")}</em></h2>
         </div>
         <div className={stepsLive ? "steps steps-live" : "steps"} ref={stepsRef}>
           {[
             {
               icon: "⌕",
-              title: "Find the right fit",
-              copy: "Search local creators, briefs, and physical spaces.",
+              title: t("Find the right fit"),
+              copy: t("Search local creators, briefs, and physical spaces."),
               widget: (
                 <div className="mock mock-search" aria-hidden="true">
                   <div className="mock-field">
                     <span>⌕</span>
-                    <em>cafe window, Brea</em>
+                    <em>{t("cafe window, Brea")}</em>
                     <i className="mock-caret" />
                   </div>
                   <div className="mock-chips">
-                    <b>Storefront</b>
+                    <b>{t("Storefront")}</b>
                     <b>Instagram</b>
-                    <b>Vehicle</b>
+                    <b>{t("Vehicle")}</b>
                   </div>
                   <ul className="mock-results">
                     <li>
                       <span className="mock-thumb" />
                       <div>
-                        <strong>Main Street window</strong>
-                        <small>$4 / week</small>
+                        <strong>{t("Main Street window")}</strong>
+                        <small>{t("$4 / week")}</small>
                       </div>
                     </li>
                     <li>
                       <span className="mock-thumb" />
                       <div>
-                        <strong>Counter card</strong>
-                        <small>$3 / week</small>
+                        <strong>{t("Counter card")}</strong>
+                        <small>{t("$3 / week")}</small>
                       </div>
                     </li>
                     <li>
                       <span className="mock-thumb" />
                       <div>
-                        <strong>Rear-window decal</strong>
-                        <small>$5 / week</small>
+                        <strong>{t("Rear-window decal")}</strong>
+                        <small>{t("$5 / week")}</small>
                       </div>
                     </li>
                   </ul>
@@ -12837,18 +12902,18 @@ export default function MarketplaceApp({
             },
             {
               icon: "@",
-              title: "Talk it through",
-              copy: "Agree on the idea, timing, price, and creative details.",
+              title: t("Talk it through"),
+              copy: t("Agree on the idea, timing, price, and creative details."),
               widget: (
                 <div className="mock mock-chat" aria-hidden="true">
                   <div className="mock-bubble them">
-                    Hi! Is the window free the first week of March?
+                    {t("Hi! Is the window free the first week of March?")}
                   </div>
                   <div className="mock-bubble me">
-                    It is. I can hold it for you.
+                    {t("It is. I can hold it for you.")}
                   </div>
                   <div className="mock-bubble them">
-                    Perfect, sending a request now.
+                    {t("Perfect, sending a request now.")}
                   </div>
                   <div className="mock-typing">
                     <i />
@@ -12860,21 +12925,21 @@ export default function MarketplaceApp({
             },
             {
               icon: "✓",
-              title: "Book the work",
-              copy: "Confirm the plan and put the local campaign in motion.",
+              title: t("Book the work"),
+              copy: t("Confirm the plan and put the local campaign in motion."),
               widget: (
                 <div className="mock mock-deal" aria-hidden="true">
                   <div className="mock-deal-head">
-                    <strong>Spring launch</strong>
-                    <span className="mock-status">Accepted</span>
+                    <strong>{t("Spring launch")}</strong>
+                    <span className="mock-status">{t("Accepted")}</span>
                   </div>
                   <dl className="mock-deal-facts">
                     <div>
-                      <dt>Dates</dt>
-                      <dd>Mar 1 – Mar 8</dd>
+                      <dt>{t("Dates")}</dt>
+                      <dd>{t("Mar 1 – Mar 8")}</dd>
                     </div>
                     <div>
-                      <dt>Agreed</dt>
+                      <dt>{t("Agreed")}</dt>
                       <dd>$32</dd>
                     </div>
                   </dl>
@@ -12911,20 +12976,18 @@ export default function MarketplaceApp({
         <div className="section-top">
           <div>
             <p className="section-label">
-              {listingSort === "popular" ? "Popular listings" : "Marketplace"}
+              {listingSort === "popular" ? t("Popular listings") : t("Marketplace")}
             </p>
-            <h1>Find the right audience or <em>spot.</em></h1>
+            <h1>{t("Find the right audience or")}{" "}<em>{t("spot.")}</em></h1>
           </div>
           <p>
-            Search Instagram, TikTok, newsletters, local audiences, towns, or
-            physical formats. See the details, meet the owner, and start a
-            private conversation.
+            {t("Search Instagram, TikTok, newsletters, local audiences, towns, or physical formats. See the details, meet the owner, and start a private conversation.")}
           </p>
         </div>
 
         {/* Which side of the marketplace someone is on decides what they
             should even be looking at, so ask it plainly first. */}
-        <div className="intent-switch" role="group" aria-label="What are you here for?">
+        <div className="intent-switch" role="group" aria-label={t("What are you here for?")}>
           <button
             type="button"
             className={roleFilter === "supply" ? "active" : ""}
@@ -12934,8 +12997,8 @@ export default function MarketplaceApp({
               setChannelFilter("All");
             }}
           >
-            <strong>I want to advertise</strong>
-            <small>Buy space from local people and creators</small>
+            <strong>{t("I want to advertise")}</strong>
+            <small>{t("Buy space from local people and creators")}</small>
           </button>
           <button
             type="button"
@@ -12946,8 +13009,8 @@ export default function MarketplaceApp({
               setChannelFilter("All");
             }}
           >
-            <strong>I have advertising to offer</strong>
-            <small>List your audience, placement, or sponsorship inventory</small>
+            <strong>{t("I have advertising to offer")}</strong>
+            <small>{t("List your audience, placement, or sponsorship inventory")}</small>
           </button>
           {roleFilter !== "all" && (
             <button
@@ -12955,7 +13018,7 @@ export default function MarketplaceApp({
               className="intent-clear"
               onClick={() => setRoleFilter("all")}
             >
-              Show everything
+              {t("Show everything")}
             </button>
           )}
         </div>
@@ -12965,22 +13028,22 @@ export default function MarketplaceApp({
             <span aria-hidden="true">⌕</span>
             <input
               type="search"
-              aria-label="Search listings by platform, creator, space, or city"
+              aria-label={t("Search listings by platform, creator, space, or city")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search Instagram, creators, spaces, cities..."
+              placeholder={t("Search Instagram, creators, spaces, cities...")}
             />
           </label>
           {/* A group of filters, not tabs: these narrow one grid rather than
               swapping panels, and role="tablist" without role="tab" children
               left the active filter signalled by background colour alone. */}
-          <div className="role-tabs" role="group" aria-label="Listing owner type">
+          <div className="role-tabs" role="group" aria-label={t("Listing owner type")}>
             {(
                 [
-                ["all", "Everything"],
-                ["supply", "Advertising available"],
-                ["creator", "Creators"],
-                ["business", "Space wanted"],
+                ["all", t("Everything")],
+                ["supply", t("Advertising available")],
+                ["creator", t("Creators")],
+                ["business", t("Space wanted")],
               ] as Array<[RoleFilter, string]>
             ).map(([value, label]) => (
               <button
@@ -12996,7 +13059,7 @@ export default function MarketplaceApp({
           </div>
         </div>
 
-        <div className="filter-row" role="group" aria-label="Channel">
+        <div className="filter-row" role="group" aria-label={t("Channel")}>
           {channels.map((channel) => (
             <button
               key={channel}
@@ -13005,28 +13068,28 @@ export default function MarketplaceApp({
               aria-pressed={activeChannel === channel}
               onClick={() => setChannelFilter(channel)}
             >
-              {channel}
+              {t(channel)}
             </button>
           ))}
           {/* Announce the new count when a filter changes, so the result of
               pressing a filter is not visible-only. */}
           <span className="result-count" role="status" aria-live="polite">
             {blocksPending
-              ? "Loading the marketplace"
-              : `${visibleListings.length} listing${visibleListings.length === 1 ? "" : "s"} · ${requestableListingCount} available · ${visibleListings.length - requestableListingCount} view-only`}
+              ? t("Loading the marketplace")
+              : t("{visibleListingsCount} listing{value} · {requestableListingCount} available · {value2} view-only", { visibleListingsCount: visibleListings.length, value: visibleListings.length === 1 ? "" : "s", requestableListingCount, value2: visibleListings.length - requestableListingCount })}
           </span>
         </div>
 
         <div className="listing-discovery-toolbar">
-          <div className="listing-sort" role="group" aria-label="Order listings">
-            <span className="listing-sort-label">Browse by</span>
+          <div className="listing-sort" role="group" aria-label={t("Order listings")}>
+            <span className="listing-sort-label">{t("Browse by")}</span>
             <button
               type="button"
               className={listingSort === "popular" ? "active" : ""}
               aria-pressed={listingSort === "popular"}
               onClick={() => setListingSortAndUrl("popular")}
             >
-              Popular now
+              {t("Popular now")}
             </button>
             <button
               type="button"
@@ -13034,13 +13097,12 @@ export default function MarketplaceApp({
               aria-pressed={listingSort === "latest"}
               onClick={() => setListingSortAndUrl("latest")}
             >
-              Latest
+              {t("Latest")}
             </button>
           </div>
           {listingSort === "popular" && (
             <p className="listing-sort-note">
-              Popularity blends likes, freshness, and listing detail so new
-              opportunities can still break through.
+              {t("Popularity blends likes, freshness, and listing detail so new opportunities can still break through.")}
             </p>
           )}
         </div>
@@ -13049,12 +13111,12 @@ export default function MarketplaceApp({
           <section className="listing-foryou" aria-labelledby="listing-foryou-heading">
             <div className="listing-foryou-head">
               <span className="eyebrow">
-                {forYou.personalised ? "Picked for you" : "Popular right now"}
+                {forYou.personalised ? t("Picked for you") : t("Popular right now")}
               </span>
               <h3 id="listing-foryou-heading">
                 {forYou.personalised
-                  ? "Based on what you have been looking at"
-                  : "What people are opening most"}
+                  ? t("Based on what you have been looking at")
+                  : t("What people are opening most")}
               </h3>
             </div>
             <div className="listing-foryou-row">
@@ -13068,7 +13130,7 @@ export default function MarketplaceApp({
                     type="button"
                     className="listing-foryou-image"
                     onClick={() => openListing(listing)}
-                    aria-label={`Open ${listing.title}`}
+                    aria-label={t("Open {title}", { title: listing.title })}
                   >
                     <ListingCover listing={listing} />
                   </button>
@@ -13114,16 +13176,16 @@ export default function MarketplaceApp({
                 <span
                   className={`listing-channel ${isBrief(listing) ? "is-brief" : ""}`}
                 >
-                  {isBrief(listing) ? "Wanted" : listing.channel}
+                  {isBrief(listing) ? t("Wanted") : listing.channel}
                 </span>
                 {listingPhotos(listing).length > 1 && (
                   <span className="photo-count">
-                    {listingPhotos(listing).length} photos
+                    {t("{listingCount} photos", { listingCount: listingPhotos(listing).length })}
                   </span>
                 )}
                 {listing.tour_kind && (
                   <span className="tour-badge">
-                    {listing.tour_kind === "video" ? "▶ Video" : "360°"}
+                    {listing.tour_kind === "video" ? t("▶ Video") : "360°"}
                   </span>
                 )}
                 {/* A 34px circular heart pill sat here on every card - the
@@ -13133,7 +13195,7 @@ export default function MarketplaceApp({
                     clicked is worse than no control. Restore it alongside a
                     real favorites feature, not before. */}
                 <span className="image-hint" aria-hidden="true">
-                  Click to view{" "}
+                  {t("Click to view")}{" "}
                   <b aria-hidden="true" className="ss-icon-arrow ss-icon-east">
                     →
                   </b>
@@ -13150,9 +13212,9 @@ export default function MarketplaceApp({
                 }
                 disabledReason={
                   listing.owner.is_demo
-                    ? "Likes are unavailable on sample listings"
+                    ? t("Likes are unavailable on sample listings")
                     : profile?.id === listing.owner.id
-                      ? "You cannot like your own listing"
+                      ? t("You cannot like your own listing")
                       : undefined
                 }
                 disabled={
@@ -13169,7 +13231,7 @@ export default function MarketplaceApp({
                       {listing.owner.display_name}
                       {listing.owner.verified && <span className="verified">✓</span>}
                       {listing.owner.is_demo && (
-                        <span className="sample-badge">Demo</span>
+                        <span className="sample-badge">{t("Demo")}</span>
                       )}
                     </strong>
                     <small>
@@ -13186,7 +13248,7 @@ export default function MarketplaceApp({
                 <p className="listing-blurb">{listing.description}</p>
                 <div className="listing-offer">
                   <span className="listing-offer-label">
-                    {isBrief(listing) ? "Looking for" : "You get"}
+                    {isBrief(listing) ? t("Looking for") : t("You get")}
                   </span>
                   <span className="listing-offer-value">
                     {formatOffer(listing.format)}
@@ -13196,7 +13258,7 @@ export default function MarketplaceApp({
                   className="listing-more"
                   onClick={() => openListing(listing)}
                 >
-                  Learn more{" "}
+                  {t("Learn more")}{" "}
                   <span aria-hidden="true" className="ss-icon-arrow ss-icon-east">
                     →
                   </span>
@@ -13204,10 +13266,10 @@ export default function MarketplaceApp({
                 <footer>
                   <div>
                     {isBrief(listing) && (
-                      <span className="price-lead">Budget</span>
+                      <span className="price-lead">{t("Budget")}</span>
                     )}
                     <strong>{priceLabel(listing)}</strong>
-                    <small> / {pricingLabel(listing)}</small>
+                    <small> / {t(pricingLabel(listing))}</small>
                   </div>
                   <button
                     disabled={!isListingRequestable(listing)}
@@ -13220,15 +13282,15 @@ export default function MarketplaceApp({
                       isListingRequestable(listing)
                         ? isBrief(listing)
                           ? undefined
-                          : listing.instant_booking_enabled ? "Choose an open date and check out." : "Make an offer for custom dates."
-                        : "The owner must confirm this listing before requests open."
+                          : listing.instant_booking_enabled ? t("Choose an open date and check out.") : t("Make an offer for custom dates.")
+                        : t("The owner must confirm this listing before requests open.")
                     }
                   >
                     {isListingRequestable(listing)
                       ? isBrief(listing)
-                        ? "Offer my space"
-                        : listing.instant_booking_enabled ? "Choose dates" : "View booking options"
-                      : "View only"}{" "}
+                        ? t("Offer my space")
+                        : listing.instant_booking_enabled ? t("Choose dates") : t("View booking options")
+                      : t("View only")}{" "}
                     <span aria-hidden="true" className="ss-icon-arrow">
                       ↗
                     </span>
@@ -13241,8 +13303,8 @@ export default function MarketplaceApp({
         {!visibleListings.length && !blocksPending && (
           <div className="empty-state">
             <span>⌕</span>
-            <h3>No exact matches yet.</h3>
-            <p>Try a broader search or clear one of the filters.</p>
+            <h3>{t("No exact matches yet.")}</h3>
+            <p>{t("Try a broader search or clear one of the filters.")}</p>
             <button
               className="button button-dark"
               onClick={() => {
@@ -13251,7 +13313,7 @@ export default function MarketplaceApp({
                 setChannelFilter("All");
               }}
             >
-              Clear filters
+              {t("Clear filters")}
             </button>
           </div>
         )}
@@ -13260,20 +13322,19 @@ export default function MarketplaceApp({
       {legacyPublicSections && (<section className="spaces-section" id="spaces">
         <div className="spaces-heading">
           <h2>
-            Every local spot
+            {t("Every local spot")}
             <br />
-            can become <em>reach.</em>
+            {t("can become")}{" "}<em>{t("reach.")}</em>
           </h2>
           <p>
-            A produce stand, barber mirror, bakery window, receipt footer, or
-            local roundup can reach the exact people a nearby business needs.
+            {t("A produce stand, barber mirror, bakery window, receipt footer, or local roundup can reach the exact people a nearby business needs.")}
           </p>
           <div className="spaces-actions">
             <button
               className="button button-light"
               onClick={openListingEditor}
             >
-              List a space <span>↗</span>
+              {t("List a space")}{" "}<span>↗</span>
             </button>
             <button
               className="button button-coral"
@@ -13284,33 +13345,33 @@ export default function MarketplaceApp({
               // the unbookable ghost profile this flow exists to stop.
               onClick={() => requireAccount(() => openProfileEditor(1))}
             >
-              {user ? "Edit my profile" : "Sign up free"} <span>↗</span>
+              {user ? t("Edit my profile") : t("Sign up free")} <span>↗</span>
             </button>
           </div>
         </div>
         <div className="space-collage">
           <figure className="space-tile tile-wide">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/roadside-farm-stand.jpg" alt="Roadside farm stand" loading="lazy" decoding="async" />
+            <img src="/photos/roadside-farm-stand.jpg" alt={t("Roadside farm stand")} loading="lazy" decoding="async" />
             <figcaption>
-              <strong>Roadside farm stand</strong>
-              <span>Dinuba, CA · owner sets the rate</span>
+              <strong>{t("Roadside farm stand")}</strong>
+              <span>{t("Dinuba, CA · owner sets the rate")}</span>
             </figcaption>
           </figure>
           <figure className="space-tile">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/small-town-barber.jpg" alt="Small-town barber shop" loading="lazy" decoding="async" />
+            <img src="/photos/small-town-barber.jpg" alt={t("Small-town barber shop")} loading="lazy" decoding="async" />
             <figcaption>
-              <strong>Barber waiting bench</strong>
-              <span>Lanesboro, MN · $3/week</span>
+              <strong>{t("Barber waiting bench")}</strong>
+              <span>{t("Lanesboro, MN · $3/week")}</span>
             </figcaption>
           </figure>
           <figure className="space-tile">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/rural-market.jpg" alt="Rural Main Street market" loading="lazy" decoding="async" />
+            <img src="/photos/rural-market.jpg" alt={t("Rural Main Street market")} loading="lazy" decoding="async" />
             <figcaption>
-              <strong>Market counter card</strong>
-              <span>Mercer, WI · $4/week</span>
+              <strong>{t("Market counter card")}</strong>
+              <span>{t("Mercer, WI · $4/week")}</span>
             </figcaption>
           </figure>
         </div>
@@ -13319,13 +13380,11 @@ export default function MarketplaceApp({
       {legacyPublicSections && (<section className="people-section" id="creators">
         <div className="section-top">
           <div>
-            <p className="section-label">Creators, hosts and businesses</p>
-            <h2>Small town. <em>Real influence.</em></h2>
+            <p className="section-label">{t("Creators, hosts and businesses")}</p>
+            <h2>{t("Small town.")}{" "}<em>{t("Real influence.")}</em></h2>
           </div>
           <p>
-            Rent a creator’s Instagram Story, TikTok reach, or newsletter. Book
-            a shopkeeper’s window, counter, vehicle, or land. Or meet the
-            businesses looking to buy that space.
+            {t("Rent a creator’s Instagram Story, TikTok reach, or newsletter. Book a shopkeeper’s window, counter, vehicle, or land. Or meet the businesses looking to buy that space.")}
           </p>
         </div>
         <div className="people-row">
@@ -13333,15 +13392,15 @@ export default function MarketplaceApp({
             <article key={person.id} className="person-card">
               <Avatar profile={person} size="large" />
               <span className="person-role">{rolesLabel(person)}</span>
-              {person.is_demo && <span className="person-demo">Demo profile</span>}
+              {person.is_demo && <span className="person-demo">{t("Demo profile")}</span>}
               {!person.is_demo && person.verified && (
-                <span className="person-verified">Verified by SideSpace</span>
+                <span className="person-verified">{t("Verified by SideSpace")}</span>
               )}
               <h3>{person.display_name}</h3>
               <p>{displayHandle(person.handle ?? "") || person.city}</p>
               <SocialLinks profile={person} compact />
               {Boolean(person.gallery_urls?.length) && (
-                <div className="profile-gallery-preview" aria-label={`${person.display_name} photos`}>
+                <div className="profile-gallery-preview" aria-label={t("{display_name} photos", { display_name: person.display_name })}>
                   {person.gallery_urls?.slice(0, 3).map((url, index) => (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img key={`${url}-${index}`} src={url} alt="" loading="lazy" decoding="async" />
@@ -13361,23 +13420,23 @@ export default function MarketplaceApp({
                     <span>
                       <b>{compactNumber(person.followers || person.avg_views)}</b>
                       {person.followers
-                        ? " followers"
-                        : ` ${person.reach_unit || "weekly looks"}`}
+                        ? " " + t("followers")
+                        : " " + t(person.reach_unit || "weekly looks")}
                     </span>
                   )}
                   {Boolean(listingCountByOwner.get(person.id)) && (
                     <span>
                       <b>{listingCountByOwner.get(person.id)}</b>
                       {listingCountByOwner.get(person.id) === 1
-                        ? " listing live"
-                        : " listings live"}
+                        ? t(" listing live")
+                        : t(" listings live")}
                     </span>
                   )}
                   {Boolean(person.audience_age) && <span>{person.audience_age}</span>}
                 </div>
               )}
               <button onClick={() => requireAccount(() => void startConversation(person))}>
-                Say hello ↗
+                {t("Say hello ↗")}
               </button>
             </article>
             ))}
@@ -13391,32 +13450,31 @@ export default function MarketplaceApp({
           loads. */}
       {legacyPublicSections && (<section className="compare-section" aria-labelledby="compare-heading">
         <div className="compare-intro">
-          <p className="eyebrow">Before and after</p>
+          <p className="eyebrow">{t("Before and after")}</p>
           <h2 id="compare-heading">
-            Local advertising, the old way and <em>this way.</em>
+            {t("Local advertising, the old way and")}{" "}<em>{t("this way.")}</em>
           </h2>
           <p className="compare-lede">
-            The same six questions every owner asks on the first call, answered
-            side by side.
+            {t("The same six questions every owner asks on the first call, answered side by side.")}
           </p>
         </div>
         <div className="compare-scroll">
           <table className="compare-table">
             <thead>
               <tr>
-                <th scope="col">Area</th>
-                <th scope="col">Traditional</th>
+                <th scope="col">{t("Area")}</th>
+                <th scope="col">{t("Traditional")}</th>
                 <th scope="col">SideSpace</th>
               </tr>
             </thead>
             <tbody>
               {[
-                ["Getting started", "Call for a rate card, wait", "Post a listing in a minute"],
-                ["Minimum spend", "Hundreds, often more", "None"],
-                ["Who you deal with", "An agency or an ad platform", "The Creator offering the inventory"],
-                ["Setting the price", "Take the rate you are given", "You name it, and you can counter"],
-                ["Local reach", "Sold by postcode, roughly", "A specific window on a specific street"],
-                ["Cost to list", "Not an option for most spaces", "Free"],
+                [t("Getting started"), t("Call for a rate card, wait"), t("Post a listing in a minute")],
+                [t("Minimum spend"), t("Hundreds, often more"), t("None")],
+                [t("Who you deal with"), t("An agency or an ad platform"), t("The Creator offering the inventory")],
+                [t("Setting the price"), t("Take the rate you are given"), t("You name it, and you can counter")],
+                [t("Local reach"), t("Sold by postcode, roughly"), t("A specific window on a specific street")],
+                [t("Cost to list"), t("Not an option for most spaces"), t("Free")],
               ].map(([area, before, after]) => (
                 <tr key={area}>
                   <th scope="row">{area}</th>
@@ -13431,11 +13489,10 @@ export default function MarketplaceApp({
       {legacyPublicSections && (<section className="pricing-section" id="pricing">
         <div className="pricing-intro">
           <div>
-            <p className="eyebrow">Pricing</p>
-            <h2>Start free. Grow when you are ready.</h2>
+            <p className="eyebrow">{t("Pricing")}</p>
+            <h2>{t("Start free. Grow when you are ready.")}</h2>
             <p className="pricing-note">
-              Profiles, listings, browsing, requests, and messages have no
-              subscription. Campaign fees apply only when accepted work is paid.
+              {t("Profiles, listings, browsing, requests, and messages have no subscription. Campaign fees apply only when accepted work is paid.")}
             </p>
           </div>
         </div>
@@ -13443,18 +13500,18 @@ export default function MarketplaceApp({
         <div className="pricing-grid">
           <article className="pricing-card">
             <div>
-              <span className="plan-label">Pay as you go</span>
-              <h3>Free</h3>
+              <span className="plan-label">{t("Pay as you go")}</span>
+              <h3>{t("Free")}</h3>
               <p className="plan-price">
-                <strong>$0</strong><span>/month</span>
+                <strong>$0</strong><span>{t("/month")}</span>
               </p>
-              <p>For small businesses testing their first local campaigns.</p>
+              <p>{t("For small businesses testing their first local campaigns.")}</p>
             </div>
             <ul>
-              <li><b>No subscription</b> or listing fee</li>
-              <li>Browse every creator and space</li>
-              <li>Direct private messaging</li>
-              <li>No minimum campaign spend</li>
+              <li><b>{t("No subscription")}</b>{" "}{t("or listing fee")}</li>
+              <li>{t("Browse every creator and space")}</li>
+              <li>{t("Direct private messaging")}</li>
+              <li>{t("No minimum campaign spend")}</li>
             </ul>
             <button
               className="pricing-button"
@@ -13463,25 +13520,25 @@ export default function MarketplaceApp({
                 setAuthOpen(true);
               }}
             >
-              Create a free account <span>↗</span>
+              {t("Create a free account")}{" "}<span>↗</span>
             </button>
           </article>
 
           <article className="pricing-card pricing-card-featured">
-            <span className="popular-badge">Businesses</span>
+            <span className="popular-badge">{t("Businesses")}</span>
             <div>
-              <span className="plan-label">Paid campaign</span>
+              <span className="plan-label">{t("Paid campaign")}</span>
               <h3>5%</h3>
               <p className="plan-price">
-                <strong>+5%</strong><span>buyer fee</span>
+                <strong>+5%</strong><span>{t("buyer fee")}</span>
               </p>
-              <p>Added to the accepted campaign price before tax.</p>
+              <p>{t("Added to the accepted campaign price before tax.")}</p>
             </div>
             <ul>
-              <li>Hosted Stripe Checkout</li>
-              <li>Tax calculated when applicable</li>
-              <li>One-time invoice receipt</li>
-              <li>No monthly plan</li>
+              <li>{t("Hosted Stripe Checkout")}</li>
+              <li>{t("Tax calculated when applicable")}</li>
+              <li>{t("One-time invoice receipt")}</li>
+              <li>{t("No monthly plan")}</li>
             </ul>
             <button
               className="pricing-button pricing-button-lime"
@@ -13490,24 +13547,24 @@ export default function MarketplaceApp({
                 setAuthOpen(true);
               }}
             >
-              Find a campaign partner <span>↗</span>
+              {t("Find a campaign partner")}{" "}<span>↗</span>
             </button>
           </article>
 
           <article className="pricing-card">
             <div>
-              <span className="plan-label">Creators and hosts</span>
+              <span className="plan-label">{t("Creators and hosts")}</span>
               <h3>5%</h3>
               <p className="plan-price">
-                <strong>−5%</strong><span>creator fee</span>
+                <strong>−5%</strong><span>{t("creator fee")}</span>
               </p>
-              <p>Deducted from the accepted campaign price.</p>
+              <p>{t("Deducted from the accepted campaign price.")}</p>
             </div>
             <ul>
-              <li>Stripe-hosted payout onboarding</li>
-              <li>Clear earnings before acceptance</li>
-              <li>Payment status in SideSpace</li>
-              <li>No subscription or listing fee</li>
+              <li>{t("Stripe-hosted payout onboarding")}</li>
+              <li>{t("Clear earnings before acceptance")}</li>
+              <li>{t("Payment status in SideSpace")}</li>
+              <li>{t("No subscription or listing fee")}</li>
             </ul>
             <button
               className="pricing-button"
@@ -13516,7 +13573,7 @@ export default function MarketplaceApp({
                 setAuthOpen(true);
               }}
             >
-              List your reach <span>↗</span>
+              {t("List your reach")}{" "}<span>↗</span>
             </button>
           </article>
         </div>
@@ -13526,15 +13583,14 @@ export default function MarketplaceApp({
       {legacyPublicSections && (<section className="final-cta">
         <div>
           <h2>
-            Ready for
+            {t("Ready for")}
             <br />
-            <em>liftoff, locally?</em>
+            <em>{t("liftoff, locally?")}</em>
           </h2>
         </div>
         <div>
           <p>
-            Browse the marketplace now, or create a profile to list your
-            audience, storefront, vehicle, land, or any useful local space.
+            {t("Browse the marketplace now, or create a profile to list your audience, storefront, vehicle, land, or any useful local space.")}
           </p>
           <button
             className="button button-coral"
@@ -13543,7 +13599,7 @@ export default function MarketplaceApp({
               setAuthOpen(true);
             }}
           >
-            Create your free profile <span>↗</span>
+            {t("Create your free profile")}{" "}<span>↗</span>
           </button>
         </div>
       </section>)}
@@ -13561,17 +13617,17 @@ export default function MarketplaceApp({
           />
           <span>SideSpace</span>
         </a>
-        <p>Local reach, made bookable.</p>
+        <p>{t("Local reach, made bookable.")}</p>
         <nav>
-          <a href="#how">How it works</a>
-          <a href="#market">Marketplace</a>
-          <a href="#creators">Creator inventory</a>
-          <a href="#pricing">Pricing</a>
-          <a href="/terms">Terms</a>
-          <a href="/privacy">Privacy</a>
-          <button onClick={openInbox}>Messages</button>
+          <a href="#how">{t("How it works")}</a>
+          <a href="#market">{t("Marketplace")}</a>
+          <a href="#creators">{t("Creator inventory")}</a>
+          <a href="#pricing">{t("Pricing")}</a>
+          <a href="/terms">{t("Terms")}</a>
+          <a href="/privacy">{t("Privacy")}</a>
+          <button onClick={openInbox}>{t("Messages")}</button>
         </nav>
-        <small>© {new Date().getFullYear()} SideSpace</small>
+        <small>{t("© {year} SideSpace", { year: new Date().getFullYear() })}</small>
       </footer>)}
 
       <SiteFooter
@@ -13581,40 +13637,40 @@ export default function MarketplaceApp({
       {authOpen && (
         <Modal
           elevated
-          label={authMode === "signup" ? "Join SideSpace" : "Sign in to SideSpace"}
+          label={authMode === "signup" ? t("Join SideSpace") : t("Sign in to SideSpace")}
           onClose={() => setAuthOpen(false)}
         >
           <div className="modal-heading">
-            <p className="eyebrow">Your SideSpace account</p>
+            <p className="eyebrow">{t("Your SideSpace account")}</p>
             <h2>
               {authMode === "signup"
                 ? invite
-                  ? `Set up ${invite.business}.`
-                  : "Join the network."
-                : "Welcome back."}
+                  ? t("Set up {business}.", { business: invite.business })
+                  : t("Join the network.")
+                : t("Welcome back.")}
             </h2>
             <p>
               {authMode !== "signup"
-                ? "Sign in to manage your profile, listings, and conversations."
+                ? t("Sign in to manage your profile, listings, and conversations.")
                 : invite
                   ? // They were written to by name. Landing on "Join the
                     // network" makes the email look like a mail-merge, which
                     // is the one thing the outreach rules exist to avoid.
-                    "One account, then the questions we could not answer for you. Most of it is already filled in."
-                  : "Browse publicly. Create an account when you’re ready to list or message."}
+                    t("One account, then the questions we could not answer for you. Most of it is already filled in.")
+                  : t("Browse publicly. Create an account when you’re ready to list or message.")}
             </p>
           </div>
           {!configured && (
             <div className="setup-notice">
               <strong>
                 {localPreviewAvailable
-                  ? "Local onboarding preview"
-                  : "Backend connection needed"}
+                  ? t("Local onboarding preview")
+                  : t("Backend connection needed")}
               </strong>
               <p>
                 {localPreviewAvailable
-                  ? "Test every onboarding step with seeded data. Preview mode never creates an account or saves anything."
-                  : "This preview is using seeded marketplace data. Add the two Supabase environment variables to activate accounts."}
+                  ? t("Test every onboarding step with seeded data. Preview mode never creates an account or saves anything.")
+                  : t("This preview is using seeded marketplace data. Add the two Supabase environment variables to activate accounts.")}
               </p>
             </div>
           )}
@@ -13623,17 +13679,16 @@ export default function MarketplaceApp({
               (invite && inviteRole(invite) === "business")) && (
             <div className="setup-notice ad-credit-signup-notice">
               <strong>
-                Your {activeBusinessReferralCode(referralCode) ? "referral" : "invite"} includes{" "}
+                {t("Your")}{" "}{activeBusinessReferralCode(referralCode) ? t("referral") : t("invite")}{" "}{t("includes")}{" "}
                 {activeBusinessReferralCode(referralCode)
                   ? referralCreditCents
-                    ? `${formatCents(referralCreditCents)} in `
+                    ? t("{referralCreditCents} in ", { referralCreditCents: formatCents(referralCreditCents) })
                     : ""
-                  : `${formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in `}
-                ad credit
+                  : t("{BUSINESS_SIGNUP_CREDIT_CENTS} in ", { BUSINESS_SIGNUP_CREDIT_CENTS: formatCents(BUSINESS_SIGNUP_CREDIT_CENTS) })}
+                {t("ad credit")}
               </strong>
               <p>
-                Complete the Business setup and it will be applied automatically to advertising
-                checkout. It cannot be withdrawn or transferred.
+                {t("Complete the Business setup and it will be applied automatically to advertising checkout. It cannot be withdrawn or transferred.")}
               </p>
             </div>
           )}
@@ -13643,7 +13698,7 @@ export default function MarketplaceApp({
               className="button button-dark button-full preview-onboarding-button"
               onClick={openOnboardingPreview}
             >
-              Preview onboarding <span>→</span>
+              {t("Preview onboarding")}{" "}<span>→</span>
             </button>
           ) : (
             <>
@@ -13662,34 +13717,34 @@ export default function MarketplaceApp({
                         className="google-button"
                         onClick={signInWithGoogle}
                       >
-                        <b>G</b> Continue with Google
+                        <b>{t("G")}</b>{" "}{t("Continue with Google")}
                       </button>
                     }
                   />
                   <div className="form-divider">
-                    <span>or use email</span>
+                    <span>{t("or use email")}</span>
                   </div>
                 </>
               )}
               <form className="stack-form" onSubmit={handleAuth}>
                 {authMode === "signup" && (
                   <label>
-                    Your name
-                    <input name="name" required placeholder="Alex Morgan" />
+                    {t("Your name")}
+                    <input name="name" required placeholder={t("Alex Morgan")} />
                   </label>
                 )}
                 <label>
-                  Email address
+                  {t("Email address")}
                   <input
                     name="email"
                     type="email"
                     autoComplete="email"
                     required
-                    placeholder="you@example.com"
+                    placeholder={t("you@example.com")}
                   />
                 </label>
                 <label>
-                  Password
+                  {t("Password")}
                   <input
                     name="password"
                     type="password"
@@ -13698,7 +13753,7 @@ export default function MarketplaceApp({
                       authMode === "signup" ? "new-password" : "current-password"
                     }
                     required
-                    placeholder="At least 8 characters"
+                    placeholder={t("At least 8 characters")}
                   />
                 </label>
                 <button
@@ -13706,10 +13761,10 @@ export default function MarketplaceApp({
                   disabled={busy || !configured}
                 >
                   {busy
-                    ? "One moment..."
+                    ? t("One moment...")
                     : authMode === "signup"
-                      ? "Create my account"
-                      : "Sign in"}
+                      ? t("Create my account")
+                      : t("Sign in")}
                   <span>↗</span>
                 </button>
                 {authMode === "signin" && (
@@ -13725,7 +13780,7 @@ export default function MarketplaceApp({
                       void emailPasswordReset(address);
                     }}
                   >
-                    Forgot your password?
+                    {t("Forgot your password?")}
                   </button>
                 )}
               </form>
@@ -13738,12 +13793,11 @@ export default function MarketplaceApp({
                 }
               >
                 {authMode === "signup"
-                  ? "Already a member? Sign in"
-                  : "New here? Create an account"}
+                  ? t("Already a member? Sign in")
+                  : t("New here? Create an account")}
               </button>
               <p className="security-note">
-                Passwords are handled by Supabase Auth and never stored in the
-                SideSpace application database.
+                {t("Passwords are handled by Supabase Auth and never stored in the SideSpace application database.")}
               </p>
             </>
           )}
@@ -13752,7 +13806,7 @@ export default function MarketplaceApp({
 
       {accountOpen && user && profile && (
         <Modal
-          label="Profile and settings"
+          label={t("Profile and settings")}
           onClose={() => setAccountOpen(false)}
           wide
         >
@@ -13760,23 +13814,22 @@ export default function MarketplaceApp({
             <header className="account-hero">
               <Avatar profile={profile} size="large" />
               <div>
-                <p className="eyebrow">Your SideSpace profile</p>
+                <p className="eyebrow">{t("Your SideSpace profile")}</p>
                 <h2>{profile.display_name}</h2>
                 <p>
                   {user.email} <span>•</span> {rolesLabel(profile)} <span>•</span>{" "}
-                  {profile.city || "Location not added"}
+                  {profile.city || t("Location not added")}
                 </p>
               </div>
-              <span className="saved-account-badge">Profile saved</span>
+              <span className="saved-account-badge">{t("Profile saved")}</span>
             </header>
 
             <div className="profile-action-panel">
               <div>
-                <p className="eyebrow">Profile controls</p>
-                <h3>Show up the way you want.</h3>
+                <p className="eyebrow">{t("Profile controls")}</p>
+                <h3>{t("Show up the way you want.")}</h3>
                 <p>
-                  Update the public details businesses and Creators see. Your
-                  listings, campaigns, messages, and payments live in Dashboard.
+                  {t("Update the public details businesses and Creators see. Your listings, campaigns, messages, and payments live in Dashboard.")}
                 </p>
               </div>
               <button
@@ -13786,28 +13839,28 @@ export default function MarketplaceApp({
                   openProfileEditor(1);
                 }}
               >
-                Edit profile <span>↗</span>
+                {t("Edit profile")}{" "}<span>↗</span>
               </button>
             </div>
 
-            <nav className="profile-section-nav" aria-label="Profile settings">
+            <nav className="profile-section-nav" aria-label={t("Profile settings")}>
               {profile.role === "business" && (
-                <a href="#campaign-preferences">Preferences</a>
+                <a href="#campaign-preferences">{t("Preferences")}</a>
               )}
               {stripeConfigured && profileHasRole(profile, "creator") && (
-                <a href="#payouts">Payouts</a>
+                <a href="#payouts">{t("Payouts")}</a>
               )}
               {canonicalRole(profile.role) === "creator" && (
-                <a href="#portfolio">Portfolio</a>
+                <a href="#portfolio">{t("Portfolio")}</a>
               )}
-              <a href="#profile-trust">Trust</a>
-              <a href="#profile-security">Security</a>
+              <a href="#profile-trust">{t("Trust")}</a>
+              <a href="#profile-security">{t("Security")}</a>
               <a
                 className="profile-dashboard-link"
                 href="/dashboard"
                 onClick={() => setAccountOpen(false)}
               >
-                Open Dashboard ↗
+                {t("Open Dashboard ↗")}
               </a>
             </nav>
 
@@ -13818,14 +13871,13 @@ export default function MarketplaceApp({
               >
                 <div className="account-section-heading">
                   <div>
-                    <p className="eyebrow">Campaign preferences</p>
-                    <h3>Tell us what a good creator looks like.</h3>
+                    <p className="eyebrow">{t("Campaign preferences")}</p>
+                    <h3>{t("Tell us what a good creator looks like.")}</h3>
                     <p className="account-section-lede">
-                      These choices shape the creator posts we put first on your
-                      dashboard. Change them whenever your next campaign changes.
+                      {t("These choices shape the creator posts we put first on your dashboard. Change them whenever your next campaign changes.")}
                     </p>
                   </div>
-                  <span className="section-count">Always editable</span>
+                  <span className="section-count">{t("Always editable")}</span>
                 </div>
                 <form
                   className="preferences-form"
@@ -13833,7 +13885,7 @@ export default function MarketplaceApp({
                 >
                   <div className="preferences-grid">
                     <PreferenceChipGroup
-                      label="Your category"
+                      label={t("Your category")}
                       multi
                       options={CATEGORY_CHIPS.map((value) => ({
                         label: value,
@@ -13850,7 +13902,7 @@ export default function MarketplaceApp({
                       }
                     />
                     <PreferenceChipGroup
-                      label="Campaign goal"
+                      label={t("Campaign goal")}
                       options={BUSINESS_GOAL_CHIPS.map(({ label }) => ({
                         label,
                         value: label,
@@ -13867,7 +13919,7 @@ export default function MarketplaceApp({
                       }
                     />
                     <PreferenceChipGroup
-                      label="What you want to book"
+                      label={t("What you want to book")}
                       options={BRIEF_SCOPE_CHIPS.map(({ label, value }) => ({
                         label,
                         value,
@@ -13884,7 +13936,7 @@ export default function MarketplaceApp({
                       }
                     />
                     <PreferenceChipGroup
-                      label="Physical placements"
+                      label={t("Physical placements")}
                       multi
                       options={BRIEF_PHYSICAL_CHIPS.map((value) => ({
                         label: value,
@@ -13901,7 +13953,7 @@ export default function MarketplaceApp({
                       }
                     />
                     <PreferenceChipGroup
-                      label="Creator platforms"
+                      label={t("Creator platforms")}
                       multi
                       options={BRIEF_PLATFORM_CHIPS.map((value) => ({
                         label: value,
@@ -13920,9 +13972,9 @@ export default function MarketplaceApp({
                   </div>
                   <div className="preferences-input-grid">
                     <label>
-                      Preferred area
-                      <span className="optional">optional</span>
-                      <small>Used to prioritize local creators and spaces.</small>
+                      {t("Preferred area")}
+                      <span className="optional">{t("optional")}</span>
+                      <small>{t("Used to prioritize local creators and spaces.")}</small>
                       <input
                         value={businessPreferencesDraft.wantedArea}
                         onChange={(event) =>
@@ -13931,11 +13983,11 @@ export default function MarketplaceApp({
                             wantedArea: event.target.value,
                           }))
                         }
-                        placeholder={profile.city || "Downtown Berkeley"}
+                        placeholder={profile.city || t("Downtown Berkeley")}
                       />
                     </label>
                     <PreferenceChipGroup
-                      label="Timing"
+                      label={t("Timing")}
                       options={BUSINESS_TIMING_CHIPS.map(({ label }) => ({
                         label,
                         value: label,
@@ -13950,12 +14002,12 @@ export default function MarketplaceApp({
                     />
                   </div>
                   <div className="preferences-save-row">
-                    <p>Recommendations refresh as soon as you save.</p>
+                    <p>{t("Recommendations refresh as soon as you save.")}</p>
                     <button
                       className="button button-dark button-small"
                       disabled={preferencesSaving}
                     >
-                      {preferencesSaving ? "Saving…" : "Save preferences"}{" "}
+                      {preferencesSaving ? t("Saving…") : t("Save preferences")}{" "}
                       <span>✓</span>
                     </button>
                   </div>
@@ -13967,26 +14019,25 @@ export default function MarketplaceApp({
               <section className="account-section" id="payouts">
                 <div className="account-section-heading">
                   <div>
-                    <p className="eyebrow">Stripe payouts</p>
-                    <h3>Get paid through a verified account.</h3>
+                    <p className="eyebrow">{t("Stripe payouts")}</p>
+                    <h3>{t("Get paid through a verified account.")}</h3>
                   </div>
                   <span className="section-count">
                     {stripeAccountStatus?.ready
-                      ? "Ready"
+                      ? t("Ready")
                       : stripeAccountStatus?.connected
-                        ? "Needs attention"
-                        : "Not set up"}
+                        ? t("Needs attention")
+                        : t("Not set up")}
                   </span>
                 </div>
                 <div className="account-empty">
                   <strong>
                     {stripeAccountStatus?.ready
-                      ? "Your Stripe account can receive campaign payouts."
-                      : "Finish Stripe's secure onboarding before a business can pay you."}
+                      ? t("Your Stripe account can receive campaign payouts.")
+                      : t("Finish Stripe's secure onboarding before a business can pay you.")}
                   </strong>
                   <p>
-                    Stripe collects identity and bank details on its hosted pages.
-                    SideSpace never stores your bank account information.
+                    {t("Stripe collects identity and bank details on its hosted pages. SideSpace never stores your bank account information.")}
                   </p>
                   <button
                     className="button button-dark button-small"
@@ -14000,10 +14051,10 @@ export default function MarketplaceApp({
                     }
                   >
                     {stripeAccountStatus?.ready
-                      ? "Manage payouts in Stripe"
+                      ? t("Manage payouts in Stripe")
                       : stripeAccountStatus?.connected
-                        ? "Continue Stripe setup"
-                        : "Set up Stripe payouts"}
+                        ? t("Continue Stripe setup")
+                        : t("Set up Stripe payouts")}
                   </button>
                 </div>
               </section>
@@ -14013,14 +14064,13 @@ export default function MarketplaceApp({
               <section className="account-section" id="portfolio">
                 <div className="account-section-heading">
                   <div>
-                    <p className="eyebrow">Public Creator portfolio</p>
-                    <h3>Show businesses work they can trust.</h3>
+                    <p className="eyebrow">{t("Public Creator portfolio")}</p>
+                    <h3>{t("Show businesses work they can trust.")}</h3>
                     <p>
-                      Add campaign examples, videos, case studies, or project links.
-                      Published items appear with your marketplace listings.
+                      {t("Add campaign examples, videos, case studies, or project links. Published items appear with your marketplace listings.")}
                     </p>
                   </div>
-                  <span className="section-count">{creatorPortfolio.length} items</span>
+                  <span className="section-count">{t("{creatorPortfolioCount} items", { creatorPortfolioCount: creatorPortfolio.length })}</span>
                 </div>
                 {creatorPortfolio.length > 0 && (
                   <div className="campaign-request-list">
@@ -14031,7 +14081,7 @@ export default function MarketplaceApp({
                             <small>{item.kind.replaceAll("_", " ")}</small>
                             <h4>{item.title}</h4>
                           </div>
-                          <span className="request-status status-active">Published</span>
+                          <span className="request-status status-active">{t("Published")}</span>
                         </header>
                         {item.description && <p>{item.description}</p>}
                         <div className="campaign-request-actions">
@@ -14042,14 +14092,14 @@ export default function MarketplaceApp({
                               target="_blank"
                               rel="noreferrer"
                             >
-                              View work ↗
+                              {t("View work ↗")}
                             </a>
                           )}
                           <button
                             disabled={busy}
                             onClick={() => void deleteCreatorPortfolioItem(item.id)}
                           >
-                            Remove
+                            {t("Remove")}
                           </button>
                         </div>
                       </article>
@@ -14058,48 +14108,46 @@ export default function MarketplaceApp({
                 )}
                 <form className="field-grid campaign-form" onSubmit={submitCreatorPortfolioItem}>
                   <label>
-                    Work title
+                    {t("Work title")}
                     <input name="title" required minLength={2} maxLength={120} />
                   </label>
                   <label>
-                    Type
+                    {t("Type")}
                     <select name="kind" defaultValue="project">
-                      <option value="video">Video</option>
-                      <option value="campaign">Campaign</option>
-                      <option value="case_study">Case study</option>
-                      <option value="project">Project</option>
-                      <option value="other">Other</option>
+                      <option value="video">{t("Video")}</option>
+                      <option value="campaign">{t("Campaign")}</option>
+                      <option value="case_study">{t("Case study")}</option>
+                      <option value="project">{t("Project")}</option>
+                      <option value="other">{t("Other")}</option>
                     </select>
                   </label>
                   <label>
-                    Media URL
-                    <input name="media_url" type="url" placeholder="https://…" />
+                    {t("Media URL")}
+                    <input name="media_url" type="url" placeholder={t("https://…")} />
                   </label>
                   <label>
-                    Project URL
-                    <input name="project_url" type="url" placeholder="https://…" />
+                    {t("Project URL")}
+                    <input name="project_url" type="url" placeholder={t("https://…")} />
                   </label>
                   <label className="field-wide">
-                    What did you make?
+                    {t("What did you make?")}
                     <textarea
                       name="description"
                       maxLength={1200}
-                      placeholder="Scope, deliverables, result, and your role."
+                      placeholder={t("Scope, deliverables, result, and your role.")}
                     />
                   </label>
                   <button className="button button-dark field-wide" disabled={busy}>
-                    {busy ? "Publishing..." : "Add to public portfolio"}
+                    {busy ? t("Publishing...") : t("Add to public portfolio")}
                   </button>
                 </form>
                 {creatorReviews.length > 0 && (
                   <div className="campaign-request-brief">
-                    <small>Verified campaign reviews</small>
-                    {creatorReviews.length} review{creatorReviews.length === 1 ? "" : "s"} ·{" "}
-                    {(
+                    <small>{t("Verified campaign reviews")}</small>
+                    {creatorReviews.length === 1 ? t("1 review") : t("{count} reviews", { count: creatorReviews.length })}{" "}{t("· {value}/5 average", { value: (
                       creatorReviews.reduce((sum, review) => sum + review.rating, 0) /
                       creatorReviews.length
-                    ).toFixed(1)}
-                    /5 average
+                    ).toFixed(1) })}
                   </div>
                 )}
               </section>
@@ -14108,8 +14156,8 @@ export default function MarketplaceApp({
             <section className="account-section trust-section" id="profile-trust">
               <div className="account-section-heading">
                 <div>
-                  <p className="eyebrow">Profile trust</p>
-                  <h3>Make your identity easier to trust.</h3>
+                  <p className="eyebrow">{t("Profile trust")}</p>
+                  <h3>{t("Make your identity easier to trust.")}</h3>
                 </div>
                 <span
                   className={`trust-state trust-${
@@ -14121,36 +14169,36 @@ export default function MarketplaceApp({
                   }`}
                 >
                   {profile.verified
-                    ? "Verified by SideSpace"
+                    ? t("Verified by SideSpace")
                     : verificationRequest?.status === "pending"
-                      ? "Review pending"
-                      : "Not verified yet"}
+                      ? t("Review pending")
+                      : t("Not verified yet")}
                 </span>
               </div>
               <div className="trust-grid">
                 <div>
                   <span>✓</span>
-                  <strong>Account email active</strong>
+                  <strong>{t("Account email active")}</strong>
                   <p>{user.email}</p>
                 </div>
                 <div>
                   <span>@</span>
-                  <strong>Social links</strong>
+                  <strong>{t("Social links")}</strong>
                   <p>
                     {Object.keys(profile.social_links ?? {}).length
-                      ? `${Object.keys(profile.social_links ?? {}).length} self-reported profile link${Object.keys(profile.social_links ?? {}).length === 1 ? "" : "s"}`
-                      : "Add social profiles from Edit profile"}
+                      ? t("{keysCount} self-reported profile link{value}", { keysCount: Object.keys(profile.social_links ?? {}).length, value: Object.keys(profile.social_links ?? {}).length === 1 ? "" : "s" })
+                      : t("Add social profiles from Edit profile")}
                   </p>
                 </div>
                 <div>
                   <span>{profile.verified ? "✓" : "?"}</span>
-                  <strong>SideSpace review</strong>
+                  <strong>{t("SideSpace review")}</strong>
                   <p>
                     {profile.verified
-                      ? "Evidence reviewed by the SideSpace team"
+                      ? t("Evidence reviewed by the SideSpace team")
                       : verificationRequest?.status === "pending"
-                        ? "Your evidence is waiting for review"
-                        : "Submit public evidence for manual review"}
+                        ? t("Your evidence is waiting for review")
+                        : t("Submit public evidence for manual review")}
                   </p>
                 </div>
               </div>
@@ -14167,14 +14215,14 @@ export default function MarketplaceApp({
                     onClick={() => setVerificationOpen(true)}
                   >
                     {verificationRequest?.status === "rejected"
-                      ? "Resubmit evidence"
-                      : "Request verification"}{" "}
+                      ? t("Resubmit evidence")
+                      : t("Request verification")}{" "}
                     <span>↗</span>
                   </button>
                 )}
               {verificationRequest?.status === "rejected" && (
                 <p className="trust-help">
-                  More information is needed. Contact {SUPPORT_EMAIL} before resubmitting.
+                  {t("More information is needed. Contact {SUPPORT_EMAIL} before resubmitting.", { SUPPORT_EMAIL })}
                 </p>
               )}
             </section>
@@ -14182,77 +14230,75 @@ export default function MarketplaceApp({
             <section className="account-section settings-section" id="profile-security">
               <div className="account-section-heading">
                 <div>
-                  <p className="eyebrow">Login & security</p>
-                  <h3>Keep your account protected.</h3>
+                  <p className="eyebrow">{t("Login & security")}</p>
+                  <h3>{t("Keep your account protected.")}</h3>
                 </div>
                 <div className="account-storage-note">
                   <span>✓</span>
                   <p>
-                    Your login, profile, listings, and messages are stored with
-                    Supabase and follow you across devices.
+                    {t("Your login, profile, listings, and messages are stored with Supabase and follow you across devices.")}
                   </p>
                 </div>
               </div>
 
               <div className="settings-grid">
                 <div className="login-summary">
-                  <small>Signed-in email</small>
+                  <small>{t("Signed-in email")}</small>
                   <strong>{user.email}</strong>
                   <p>
-                    Login method: {String(user.app_metadata.provider ?? "email")}
+                    {t("Login method: {value}", { value: String(user.app_metadata.provider ?? "email") })}
                   </p>
                   <button
                     type="button"
                     onClick={() => void emailPasswordReset(user.email)}
                     disabled={busy}
                   >
-                    Email me a password reset link
+                    {t("Email me a password reset link")}
                   </button>
                 </div>
                 <form className="stack-form account-password-form" onSubmit={updatePassword}>
                   <label>
-                    Current password
+                    {t("Current password")}
                     <input
                       name="current_password"
                       type="password"
                       autoComplete="current-password"
                       required
-                      placeholder="Confirm it's you"
+                      placeholder={t("Confirm it's you")}
                     />
                   </label>
                   <label>
-                    New password
+                    {t("New password")}
                     <input
                       name="new_password"
                       type="password"
                       minLength={8}
                       autoComplete="new-password"
                       required
-                      placeholder="At least 8 characters"
+                      placeholder={t("At least 8 characters")}
                     />
                   </label>
                   <label>
-                    Confirm new password
+                    {t("Confirm new password")}
                     <input
                       name="confirm_password"
                       type="password"
                       minLength={8}
                       autoComplete="new-password"
                       required
-                      placeholder="Type it again"
+                      placeholder={t("Type it again")}
                     />
                   </label>
                   <button className="button button-dark button-full" disabled={busy}>
-                    {busy ? "Saving..." : "Update password"} <span>✓</span>
+                    {busy ? t("Saving...") : t("Update password")} <span>✓</span>
                   </button>
                 </form>
               </div>
 
               <div className="photo-manager">
-                <strong>Your photos</strong>
+                <strong>{t("Your photos")}</strong>
                 <p>
-                  Remove anything you no longer want on your profile. Deleted
-                  photos are erased from storage, not just hidden.
+                  {t("Remove anything you no longer want on your profile. Deleted photos are erased from storage, not just hidden.")}
                 </p>
                 <div className="photo-manager-grid">
                   {profile.avatar_url && (
@@ -14260,17 +14306,17 @@ export default function MarketplaceApp({
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={profile.avatar_url}
-                        alt="Your profile photo"
+                        alt={t("Your profile photo")}
                         loading="lazy"
                         decoding="async"
                       />
-                      <figcaption>Profile photo</figcaption>
+                      <figcaption>{t("Profile photo")}</figcaption>
                       <button
                         type="button"
                         className="saved-media-remove"
                         disabled={busy}
-                        aria-label="Remove profile photo"
-                        title="Remove profile photo"
+                        aria-label={t("Remove profile photo")}
+                        title={t("Remove profile photo")}
                         onClick={() =>
                           void removeProfilePhoto(profile.avatar_url, "avatar")
                         }
@@ -14284,7 +14330,7 @@ export default function MarketplaceApp({
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={url}
-                        alt={`Profile photo ${index + 1}`}
+                        alt={t("Profile photo {value}", { value: index + 1 })}
                         loading="lazy"
                         decoding="async"
                       />
@@ -14292,8 +14338,8 @@ export default function MarketplaceApp({
                         type="button"
                         className="saved-media-remove"
                         disabled={busy}
-                        aria-label={`Remove photo ${index + 1}`}
-                        title="Remove photo"
+                        aria-label={t("Remove photo {value}", { value: index + 1 })}
+                        title={t("Remove photo")}
                         onClick={() => void removeProfilePhoto(url, "gallery")}
                       >
                         ×
@@ -14304,17 +14350,16 @@ export default function MarketplaceApp({
                 {!profile.avatar_url &&
                   !(profile.gallery_urls ?? []).length && (
                     <p className="photo-manager-empty">
-                      No photos yet. Add them from Edit profile.
+                      {t("No photos yet. Add them from Edit profile.")}
                     </p>
                   )}
               </div>
 
               {blockedProfiles.length > 0 && (
                 <div className="blocked-list">
-                  <strong>Blocked members</strong>
+                  <strong>{t("Blocked members")}</strong>
                   <p>
-                    They cannot message you or request your listings, and their
-                    listings stay hidden from you.
+                    {t("They cannot message you or request your listings, and their listings stay hidden from you.")}
                   </p>
                   <ul>
                     {blockedProfiles.map((blocked) => (
@@ -14327,7 +14372,7 @@ export default function MarketplaceApp({
                             void unblockProfile(blocked.id, blocked.display_name)
                           }
                         >
-                          Unblock
+                          {t("Unblock")}
                         </button>
                       </li>
                     ))}
@@ -14339,27 +14384,26 @@ export default function MarketplaceApp({
                 className="button button-dark button-full account-signout-button"
                 onClick={signOut}
               >
-                Log out of SideSpace <span>→</span>
+                {t("Log out of SideSpace")}{" "}<span>→</span>
               </button>
 
               {/* Destructive action sits last, after the everyday one. */}
               <div className="danger-zone">
                 <div>
-                  <strong>Delete account</strong>
+                  <strong>{t("Delete account")}</strong>
                   <p>
-                    Permanently removes your profile, listings, conversations,
-                    and campaign requests. This cannot be undone.
+                    {t("Permanently removes your profile, listings, conversations, and campaign requests. This cannot be undone.")}
                   </p>
                 </div>
                 <button
                   type="button"
                   className="button button-danger button-small"
                   onClick={() => {
-                    setDeleteAccountError("");
+                    setDeleteAccountError(t(""));
                     setDeleteAccountOpen(true);
                   }}
                 >
-                  Delete my account
+                  {t("Delete my account")}
                 </button>
               </div>
             </section>
@@ -14369,19 +14413,16 @@ export default function MarketplaceApp({
 
       {deleteListingTarget && (
         <Modal
-          label="Delete listing"
+          label={t("Delete listing")}
           onClose={() => {
             if (!busy) setDeleteListingTarget(null);
           }}
         >
           <div className="modal-heading">
-            <p className="eyebrow">Delete listing</p>
-            <h2>{`Take \u201c${deleteListingTarget.title}\u201d down for good?`}</h2>
+            <p className="eyebrow">{t("Delete listing")}</p>
+            <h2>{t("Take “{title}” down for good?", { title: deleteListingTarget.title })}</h2>
             <p>
-              It leaves the marketplace right away and its photos are removed.
-              Any open request on it is declined and the business that sent it
-              is told. A listing that has been paid for cannot be deleted -
-              pause it instead. There is no undo.
+              {t("It leaves the marketplace right away and its photos are removed. Any open request on it is declined and the business that sent it is told. A listing that has been paid for cannot be deleted - pause it instead. There is no undo.")}
             </p>
           </div>
           <div className="form-submit">
@@ -14390,7 +14431,7 @@ export default function MarketplaceApp({
               disabled={busy}
               onClick={() => setDeleteListingTarget(null)}
             >
-              Keep it
+              {t("Keep it")}
             </button>
             <button
               type="button"
@@ -14398,7 +14439,7 @@ export default function MarketplaceApp({
               disabled={busy}
               onClick={() => void deleteListing(deleteListingTarget)}
             >
-              {busy ? "Deleting..." : "Delete listing"}
+              {busy ? t("Deleting...") : t("Delete listing")}
             </button>
           </div>
         </Modal>
@@ -14406,21 +14447,19 @@ export default function MarketplaceApp({
 
       {deleteAccountOpen && user && (
         <Modal
-          label="Delete your account"
+          label={t("Delete your account")}
           onClose={() => {
             if (!busy) {
               setDeleteAccountOpen(false);
-              setDeleteAccountError("");
+              setDeleteAccountError(t(""));
             }
           }}
         >
           <div className="modal-heading">
-            <p className="eyebrow">Delete account</p>
-            <h2>This is permanent.</h2>
+            <p className="eyebrow">{t("Delete account")}</p>
+            <h2>{t("This is permanent.")}</h2>
             <p>
-              Deleting your account removes your profile, every listing you
-              have published, your conversations, and your campaign requests.
-              There is no way to recover them afterward.
+              {t("Deleting your account removes your profile, every listing you have published, your conversations, and your campaign requests. There is no way to recover them afterward.")}
             </p>
           </div>
           {deleteAccountError && (
@@ -14431,27 +14470,26 @@ export default function MarketplaceApp({
           <form className="stack-form" onSubmit={deleteAccount}>
             {passwordCapable(user) ? (
               <label>
-                Confirm your password to continue
+                {t("Confirm your password to continue")}
                 <input
                   name="delete_password"
                   type="password"
                   autoComplete="current-password"
                   required
-                  placeholder="Your current password"
+                  placeholder={t("Your current password")}
                 />
               </label>
             ) : (
               <label>
-                Type DELETE to confirm
+                {t("Type DELETE to confirm")}
                 <input
                   name="delete_confirmation"
                   required
                   autoComplete="off"
-                  placeholder="DELETE"
+                  placeholder={t("DELETE")}
                 />
                 <small>
-                  Your account does not use an email + password login, so
-                  typing DELETE confirms it is really you.
+                  {t("Your account does not use an email + password login, so typing DELETE confirms it is really you.")}
                 </small>
               </label>
             )}
@@ -14461,13 +14499,13 @@ export default function MarketplaceApp({
                 disabled={busy}
                 onClick={() => {
                   setDeleteAccountOpen(false);
-                  setDeleteAccountError("");
+                  setDeleteAccountError(t(""));
                 }}
               >
-                Keep my account
+                {t("Keep my account")}
               </button>
               <button className="button button-danger" disabled={busy}>
-                {busy ? "Deleting..." : "Permanently delete"}
+                {busy ? t("Deleting...") : t("Permanently delete")}
               </button>
             </div>
           </form>
@@ -14479,16 +14517,16 @@ export default function MarketplaceApp({
           elevated
           label={
             onboardingPreview
-              ? "Preview SideSpace onboarding"
+              ? t("Preview SideSpace onboarding")
               : onboardingMode === "edit"
-              ? "Edit your SideSpace profile"
-              : "Set up your SideSpace account"
+              ? t("Edit your SideSpace profile")
+              : t("Set up your SideSpace account")
           }
           onClose={() => {
             setOnboardingOpen(false);
             setOnboardingPreview(false);
             setOnboardingStep(1);
-            setOnboardingError("");
+            setOnboardingError(t(""));
             setOnboardingInvalidField("");
             setAvatarCropPending(false);
             resetIgAvatarSync();
@@ -14499,15 +14537,15 @@ export default function MarketplaceApp({
             <div>
               <p className="eyebrow">
                 {onboardingPreview
-                  ? "Local onboarding preview"
+                  ? t("Local onboarding preview")
                   : onboardingMode === "edit"
-                  ? "Edit your profile"
-                  : "Set up your account"}
+                  ? t("Edit your profile")
+                  : t("Set up your account")}
               </p>
               <h2>
                 {onboardingMode === "edit"
-                  ? "Update your details."
-                  : "Let’s get you on the marketplace."}
+                  ? t("Update your details.")
+                  : t("Let’s get you on the marketplace.")}
               </h2>
             </div>
             <div className="step-count">
@@ -14518,7 +14556,7 @@ export default function MarketplaceApp({
                 />
               ))}
               <small>
-                Step {onboardingStep} of {onboardingStepCount()}
+                {t("Step {onboardingStep} of {onboardingStepCount}", { onboardingStep, onboardingStepCount: onboardingStepCount() })}
               </small>
             </div>
           </div>
@@ -14526,10 +14564,9 @@ export default function MarketplaceApp({
           {onboardingMode === "setup" &&
             (onboardingPreview ? (
               <div className="setup-notice preview-mode-notice">
-                <strong>Nothing in this preview is saved.</strong>
+                <strong>{t("Nothing in this preview is saved.")}</strong>
                 <p>
-                  Use any sample answers you like. You are testing the real
-                  five-step flow, validation, transitions, and listing preview.
+                  {t("Use any sample answers you like. You are testing the real five-step flow, validation, transitions, and listing preview.")}
                 </p>
               </div>
             ) : invite && !profile ? (
@@ -14541,20 +14578,18 @@ export default function MarketplaceApp({
               <div className="setup-notice">
                 <strong>
                   {invite.owner_first_name?.trim()
-                    ? `Hi ${invite.owner_first_name.trim()} — we started this for ${invite.business}.`
-                    : `We started this for ${invite.business}.`}
+                    ? t("Hi {owner_first_name} — we started this for {business}.", { owner_first_name: invite.owner_first_name.trim(), business: invite.business })
+                    : t("We started this for {business}.", { business: invite.business })}
                 </strong>
                 <p>
-                  Filled in from your own website, so check it and change
-                  anything that is wrong. Nobody can see you until you finish.
+                  {t("Filled in from your own website, so check it and change anything that is wrong. Nobody can see you until you finish.")}
                 </p>
               </div>
             ) : (
               <div className="setup-notice">
-                <strong>Nobody can see you yet.</strong>
+                <strong>{t("Nobody can see you yet.")}</strong>
                 <p>
-                  Your profile appears in search once you finish. Each screen
-                  asks for one small part of your listing.
+                  {t("Your profile appears in search once you finish. Each screen asks for one small part of your listing.")}
                 </p>
               </div>
             ))}
@@ -14593,20 +14628,20 @@ export default function MarketplaceApp({
               >
                 <h3>
                   {onboardingStep === 1
-                    ? "Which of these is you?"
-                    : "Start with the basics."}
+                    ? t("Which of these is you?")
+                    : t("Start with the basics.")}
                 </h3>
                 <p>
                   {onboardingStep === 1
-                    ? "This changes what we ask next. You can add more later."
-                    : "A few details make the rest of your listing feel personal."}
+                    ? t("This changes what we ask next. You can add more later.")
+                    : t("A few details make the rest of your listing feel personal.")}
                 </p>
                 {onboardingStep === 1 && (
                 <div
                   className="role-choice-grid"
                   data-field="role"
                   role="group"
-                  aria-label="Choose how you will use SideSpace"
+                  aria-label={t("Choose how you will use SideSpace")}
                   tabIndex={-1}
                 >
                   {PICKABLE_ROLES.map((role) => (
@@ -14629,13 +14664,13 @@ export default function MarketplaceApp({
                         // when there is something to lose.
                         if (switching && roleAnswersFilled(answers)) {
                           const ok = window.confirm(
-                            `Switching to ${roleCopy[role].label} clears what you filled in for ${roleCopy[from].label} — the two ask different questions. Your name, city, bio and contact details are kept.`,
+                            t("Switching to {label} clears what you filled in for {label2} — the two ask different questions. Your name, city, bio and contact details are kept.", { label: t(roleCopy[role].label), label2: t(roleCopy[from].label) }),
                           );
                           if (!ok) return;
                         }
                         setSelectedRole(role);
                         setRoleTouched(true);
-                        setOnboardingError("");
+                        setOnboardingError(t(""));
                         setExtraRoles((current) =>
                           current.filter((extra) => extra !== role),
                         );
@@ -14652,9 +14687,9 @@ export default function MarketplaceApp({
                       }}
                     >
                       <span>{roleCopy[role].icon}</span>
-                      <small>{roleCopy[role].eyebrow}</small>
-                      <strong>{roleCopy[role].label}</strong>
-                      <p>{roleCopy[role].short}</p>
+                      <small>{t(roleCopy[role].eyebrow)}</small>
+                      <strong>{t(roleCopy[role].label)}</strong>
+                      <p>{t(roleCopy[role].short)}</p>
                     </button>
                   ))}
                 </div>
@@ -14663,7 +14698,7 @@ export default function MarketplaceApp({
                   {(onboardingMode === "edit" || onboardingStep === 2) && (
                 <div className="field-grid onboarding-identity-fields">
                   <label>
-                    {selectedRole === "business" ? "Business name" : "Your name"}
+                    {selectedRole === "business" ? t("Business name") : t("Your name")}
                     <input
                       autoFocus={onboardingMode === "setup" && onboardingStep === 2}
                       name="display_name"
@@ -14678,21 +14713,21 @@ export default function MarketplaceApp({
                       }
                       placeholder={
                         selectedRole === "business"
-                          ? "Brea Coffee Bar"
-                          : "Maya Alvarez"
+                          ? t("Brea Coffee Bar")
+                          : t("Maya Alvarez")
                       }
                     />
                   </label>
                   {(onboardingMode === "edit" ||
                     Boolean(answers.display_name.trim())) && (
                   <label className="progressive-field">
-                    <span className="location-field-label">Where are you based?</span>
-                    <small>U.S. city and state. This is how buyers filter.</small>
+                    <span className="location-field-label">{t("Where are you based?")}</span>
+                    <small>{t("U.S. city and state. This is how buyers filter.")}</small>
                     <div className="location-input-row">
                       <CityAutocomplete
                         value={answers.city}
                         disabled={busy || locationBusy}
-                        placeholder="Brea, CA"
+                        placeholder={t("Brea, CA")}
                         onChange={(city) => {
                           setLocationError("");
                           setAnswers((current) => ({
@@ -14719,20 +14754,20 @@ export default function MarketplaceApp({
                         disabled={busy || locationBusy}
                         onClick={captureCurrentLocation}
                       >
-                        {locationBusy ? "Finding…" : "Use my location"}
+                        {locationBusy ? t("Finding…") : t("Use my location")}
                       </button>
                     </div>
                     {locationError ? (
                       <small className="location-data-status is-error" role="alert">
-                        {locationError}
+                        {t(locationError)}
                       </small>
                     ) : answers.location ? (
                       <small className="location-data-status" role="status">
-                        ✓ U.S. city-level location saved. Your exact device location is never published.
+                        {t("✓ U.S. city-level location saved. Your exact device location is never published.")}
                       </small>
                     ) : (
                       <small className="location-data-status">
-                        U.S. locations only. Choose a result or use your location to attach an approximate pin.
+                        {t("U.S. locations only. Choose a result or use your location to attach an approximate pin.")}
                       </small>
                     )}
                   </label>
@@ -14741,14 +14776,14 @@ export default function MarketplaceApp({
                     Boolean(answers.city.trim())) && (
                   <label className="field-wide progressive-field">
                     {selectedRole === "business"
-                      ? "One line about your business"
-                      : "One line about you"}
+                      ? t("One line about your business")
+                      : t("One line about you")}
                     <small>
                       {selectedRole === "business"
-                        ? "Describe what you do in at least five words. This sits under your name on the brief."
+                        ? t("Describe what you do in at least five words. This sits under your name on the brief.")
                         : selectedRole === "creator"
-                          ? "Describe what you do in at least five words. It sits under your name on every card."
-                          : "One sentence. It sits under your name on every card."}
+                          ? t("Describe what you do in at least five words. It sits under your name on every card.")
+                          : t("One sentence. It sits under your name on every card.")}
                       {" "}
                       <span
                         className="field-character-count"
@@ -14759,7 +14794,7 @@ export default function MarketplaceApp({
                             : "false"
                         }
                       >
-                        {getBioRequirementHint(answers.bio, selectedRole)}
+                        {getBioRequirementHint(answers.bio, selectedRole, t)}
                       </span>
                     </small>
                     <input
@@ -14775,8 +14810,8 @@ export default function MarketplaceApp({
                       }
                       placeholder={
                         selectedRole === "business"
-                          ? "Third-wave coffee bar on Birch, open since 2019."
-                          : "Analog fashion and honest city guides for East LA."
+                          ? t("Third-wave coffee bar on Birch, open since 2019.")
+                          : t("Analog fashion and honest city guides for East LA.")
                       }
                     />
                   </label>
@@ -14786,7 +14821,7 @@ export default function MarketplaceApp({
                   <>
                   <div className="field-wide media-upload-field progressive-field">
                     <OptionalFieldLabel>
-                      {selectedRole === "business" ? "Add your logo" : "Add a profile photo"}
+                      {selectedRole === "business" ? t("Add your logo") : t("Add a profile photo")}
                     </OptionalFieldLabel>
                     <ProfilePhotoField
                       currentUrl={profile?.avatar_url}
@@ -14796,9 +14831,9 @@ export default function MarketplaceApp({
                       onCropStateChange={setAvatarCropPending}
                     />
                     <small>
-                      Profiles with a face or a logo get far more replies.
+                      {t("Profiles with a face or a logo get far more replies.")}
                       {profile?.avatar_url
-                        ? " Leave empty to keep your current photo."
+                        ? t(" Leave empty to keep your current photo.")
                         : ""}
                     </small>
                   </div>
@@ -14808,8 +14843,8 @@ export default function MarketplaceApp({
                       to the person filling it in. */}
                   {selectedRole === "business" ? (
                     <label className="progressive-field">
-                      <OptionalFieldLabel>Your name</OptionalFieldLabel>
-                      <small>Who a booker is actually writing to.</small>
+                      <OptionalFieldLabel>{t("Your name")}</OptionalFieldLabel>
+                      <small>{t("Who a booker is actually writing to.")}</small>
                       {/* Every other example in this flow is invented -
                           "Maya Alvarez", "Brea Coffee Bar". This placeholder
                           was the founder's own name, shown as ghost text in a
@@ -14825,13 +14860,13 @@ export default function MarketplaceApp({
                             contact_name: event.target.value,
                           }))
                         }
-                        placeholder="Dana Okafor"
+                        placeholder={t("Dana Okafor")}
                       />
                     </label>
                   ) : (
                     <label className="progressive-field">
-                      <OptionalFieldLabel>Email</OptionalFieldLabel>
-                      <small>How people reach you about a booking.</small>
+                      <OptionalFieldLabel>{t("Email")}</OptionalFieldLabel>
+                      <small>{t("How people reach you about a booking.")}</small>
                       <input
                         name="contact_email"
                         data-field="contact_email"
@@ -14846,7 +14881,7 @@ export default function MarketplaceApp({
                             contact_email: event.target.value,
                           }))
                         }
-                        placeholder="you@example.com"
+                        placeholder={t("you@example.com")}
                       />
                     </label>
                   )}
@@ -14865,7 +14900,7 @@ export default function MarketplaceApp({
                         type="button"
                         onClick={() => goToOnboardingStep(1)}
                       >
-                        ← Back
+                        {t("← Back")}
                       </button>
                     ) : (
                       <span />
@@ -14878,12 +14913,10 @@ export default function MarketplaceApp({
                           aria-live="polite"
                         >
                           {missingAnswers().length
-                            ? `${missingAnswers().length} required ${
-                                missingAnswers().length === 1
+                            ? t("{missingAnswersCount} required {value} left", { missingAnswersCount: missingAnswers().length, value: missingAnswers().length === 1
                                   ? "detail"
-                                  : "details"
-                              } left`
-                            : "Ready to continue"}
+                                  : "details" })
+                            : t("Ready to continue")}
                         </span>
                         <button
                           type="button"
@@ -14892,13 +14925,13 @@ export default function MarketplaceApp({
                         >
                           {onboardingStep === 1
                             ? onboardingMode === "edit"
-                              ? "Next: your details"
-                              : "Continue"
+                              ? t("Next: your details")
+                              : t("Continue")
                             : selectedRole === "business"
-                              ? "Continue"
+                              ? t("Continue")
                               : selectedRole === "creator"
-                                ? "Next: what you have to advertise"
-                                : "Next"}{" "}
+                                ? t("Next: what you have to advertise")
+                                : t("Next")}{" "}
                           <span>→</span>
                         </button>
                       </span>
@@ -14922,8 +14955,8 @@ export default function MarketplaceApp({
               >
                 {onboardingMode === "edit" ? (
                   <>
-                    <h3>Your details</h3>
-                    <p>This is what people see on your profile card.</p>
+                    <h3>{t("Your details")}</h3>
+                    <p>{t("This is what people see on your profile card.")}</p>
                     {/* Gated. This block asks which platforms you post on and
                         your follower count, and it used to render for EVERY
                         role - so a barbershop or a robotics team opening their
@@ -14939,11 +14972,10 @@ export default function MarketplaceApp({
                     {showAudienceFields && (
                       <>
                         <div className="form-subsection field-wide">
-                          <span>Your audience</span>
-                          <h4>Where can brands find you?</h4>
+                          <span>{t("Your audience")}</span>
+                          <h4>{t("Where can brands find you?")}</h4>
                           <p>
-                            Choose every platform you use, then add the profiles
-                            you want to show.
+                            {t("Choose every platform you use, then add the profiles you want to show.")}
                           </p>
                         </div>
                         <CreatorAudienceFields
@@ -14960,7 +14992,7 @@ export default function MarketplaceApp({
                     )}
                     <div className="field-grid">
                       <label className="field-wide media-upload-field">
-                        <OptionalFieldLabel>Profile photos</OptionalFieldLabel>
+                        <OptionalFieldLabel>{t("Profile photos")}</OptionalFieldLabel>
                         <input
                           name="gallery_files"
                           type="file"
@@ -14970,16 +15002,16 @@ export default function MarketplaceApp({
                             setGalleryFiles(Array.from(event.target.files ?? []))
                           }
                         />
-                        <small>Up to 6 photos on your profile.</small>
+                        <small>{t("Up to 6 photos on your profile.")}</small>
                       </label>
                     </div>
                     <div className="form-subsection field-wide">
-                      <span>About you</span>
-                      <h4>What kind of work is this?</h4>
+                      <span>{t("About you")}</span>
+                      <h4>{t("What kind of work is this?")}</h4>
                     </div>
                     <ChipRow
                       field="categories"
-                      label="What kind of work"
+                      label={t("What kind of work")}
                       optional
                       multi
                       options={CATEGORY_CHIPS}
@@ -14998,42 +15030,42 @@ export default function MarketplaceApp({
                   <>
                     <h3>
                       {onboardingStep === 5
-                        ? "Review what people will see."
+                        ? t("Review what people will see.")
                         : onboardingStep === 4
                           ? selectedRole === "creator"
                             ? answers.creatorOffer === "physical"
-                              ? "Make the placement bookable."
+                              ? t("Make the placement bookable.")
                               : answers.creatorOffer === "sponsorship"
-                                ? "Build the sponsorship levels."
+                                ? t("Build the sponsorship levels.")
                                 : answers.creatorOffer === "social"
-                                  ? "Build your first offer."
-                                  : "Choose your way to advertise."
-                            : "Set the practical details."
+                                  ? t("Build your first offer.")
+                                  : t("Choose your way to advertise.")
+                            : t("Set the practical details.")
                           : selectedRole === "creator"
                             ? answers.creatorOffer === "physical"
-                              ? "Show us the placement."
+                              ? t("Show us the placement.")
                               : answers.creatorOffer === "sponsorship"
-                                ? "Tell us about the organization."
+                                ? t("Tell us about the organization.")
                                 : answers.creatorOffer === "social"
-                                  ? "Tell us about your audience."
-                                  : "Choose your way to advertise."
+                                  ? t("Tell us about your audience.")
+                                  : t("Choose your way to advertise.")
                             : selectedRole === "business" &&
                                 answers.businessSetupPath !== "campaign"
-                              ? "How do you want to start?"
-                              : "Shape the campaign."}
+                              ? t("How do you want to start?")
+                              : t("Shape the campaign.")}
                     </h3>
                     <p>
                       {onboardingStep === 5
-                        ? "Make any final edits, then publish when it feels right."
+                        ? t("Make any final edits, then publish when it feels right.")
                         : onboardingStep === 4
-                          ? "Clear expectations make the first conversation much easier."
+                          ? t("Clear expectations make the first conversation much easier.")
                           : selectedRole === "business"
                             ? answers.businessSetupPath === "campaign"
-                              ? "A focused brief gets better replies from creators and local spaces."
-                              : "Post a campaign now, or browse listings and come back later."
+                              ? t("A focused brief gets better replies from creators and local spaces.")
+                              : t("Post a campaign now, or browse listings and come back later.")
                             : answers.creatorOffer
-                              ? "A few specific answers make your listing easier to trust."
-                              : "Start by choosing the kind of advertising you have."}
+                              ? t("A few specific answers make your listing easier to trust.")
+                              : t("Start by choosing the kind of advertising you have.")}
                     </p>
                     {selectedRole === "creator" && onboardingStep > 3 && (
                       <CreatorOfferSwitcher
@@ -15055,18 +15087,17 @@ export default function MarketplaceApp({
                         {onboardingStep === 3 && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>Your way to advertise</span>
-                          <h4>What do you have to offer?</h4>
+                          <span>{t("Your way to advertise")}</span>
+                          <h4>{t("What do you have to offer?")}</h4>
                           <p>
-                            Select every kind of reach you want to put to work.
-                            We’ll create one listing for each.
+                            {t("Select every kind of reach you want to put to work. We’ll create one listing for each.")}
                           </p>
                         </div>
                         <div
                           className="scope-grid creator-offer-grid"
                           data-field="creatorOffer"
                           role="group"
-                          aria-label="What kind of advertising you offer"
+                          aria-label={t("What kind of advertising you offer")}
                         >
                           {CREATOR_OFFER_TYPES.map((option) => (
                             <button
@@ -15082,12 +15113,12 @@ export default function MarketplaceApp({
                               }
                               onClick={() => toggleCreatorOffer(option.value)}
                             >
-                              <strong>{option.label}</strong>
-                              <small>{option.help}</small>
+                              <strong>{t(option.label)}</strong>
+                              <small>{t(option.help)}</small>
                               <span className="offer-card-state">
                                 {answers.creatorOffers.includes(option.value)
-                                  ? "✓ Selected"
-                                  : "Select"}
+                                  ? t("✓ Selected")
+                                  : t("Select")}
                               </span>
                             </button>
                           ))}
@@ -15101,11 +15132,10 @@ export default function MarketplaceApp({
                         {answers.creatorOffer === "social" && (
                           <>
                           <div className="form-subsection field-wide">
-                            <span>Your audience</span>
-                            <h4>Where can brands find you?</h4>
+                            <span>{t("Your audience")}</span>
+                            <h4>{t("Where can brands find you?")}</h4>
                             <p>
-                              Choose every platform you use, then add the profiles
-                              you want to show.
+                              {t("Choose every platform you use, then add the profiles you want to show.")}
                             </p>
                           </div>
                           <CreatorAudienceFields
@@ -15127,7 +15157,7 @@ export default function MarketplaceApp({
                         {onboardingStep === 4 && answers.creatorOffer === "social" && (
                         <>
                         <div className="form-subsection field-wide">
-                          <h4>What does a brand actually get?</h4>
+                          <h4>{t("What does a brand actually get?")}</h4>
                         </div>
                         {/* Only when there are any: an empty flex row still
                             takes its margin, leaving a gap under the header
@@ -15137,7 +15167,7 @@ export default function MarketplaceApp({
                         ) && (
                           <>
                             <span className="offer-examples-label field-wide">
-                              Or start from one of these:
+                              {t("Or start from one of these:")}
                             </span>
                             <div className="offer-examples">
                               {answers.platforms
@@ -15162,7 +15192,7 @@ export default function MarketplaceApp({
                         )}
                         <div className="field-grid">
                           <label className="field-wide">
-                            What they get
+                            {t("What they get")}
                             {/* 140 to match the listing editor. At 60 a creator
                                 who wanted "one in-feed post plus three stories
                                 over 48 hours, with a link in bio" found the
@@ -15178,32 +15208,32 @@ export default function MarketplaceApp({
                                   format: event.target.value,
                                 }))
                               }
-                              placeholder="three Instagram stories over 48 hours"
+                              placeholder={t("three Instagram stories over 48 hours")}
                             />
                           </label>
                           {answers.format.trim() && (
                             <p className="offer-preview field-wide">
-                              Your card will read:{" "}
-                              <strong>You get {formatOffer(answers.format)}</strong>
+                              {t("Your card will read:")}{" "}
+                              <strong>{t("You get {format}", { format: formatOffer(answers.format) })}</strong>
                             </p>
                           )}
                         </div>
                         <details className="onboarding-optional-disclosure field-wide">
                           <summary>
                             <span>
-                              What kind of work{" "}
-                              <span className="optional">optional</span>
+                              {t("What kind of work")}{" "}
+                              <span className="optional">{t("optional")}</span>
                             </span>
                             <small>
                               {answers.categories.length
-                                ? `${answers.categories.length} selected`
-                                : "Add categories"}
+                                ? t("{categoriesCount} selected", { categoriesCount: answers.categories.length })
+                                : t("Add categories")}
                             </small>
                           </summary>
                           <div className="onboarding-optional-disclosure-body">
                             <ChipRow
                               field="categories"
-                              label="What kind of work"
+                              label={t("What kind of work")}
                               multi
                               hideLabel
                               options={CATEGORY_CHIPS}
@@ -15222,7 +15252,7 @@ export default function MarketplaceApp({
                         <div className="field-grid">
                           <label className="field-wide media-upload-field">
                             <OptionalFieldLabel>
-                              Photos of your work
+                              {t("Photos of your work")}
                             </OptionalFieldLabel>
                             <input
                               type="file"
@@ -15235,8 +15265,7 @@ export default function MarketplaceApp({
                               }
                             />
                             <small>
-                              Add 1–3 photos. Without one, your card uses your
-                              profile photo.
+                              {t("Add 1–3 photos. Without one, your card uses your profile photo.")}
                             </small>
                           </label>
                         </div>
@@ -15251,12 +15280,12 @@ export default function MarketplaceApp({
                         {onboardingStep === 3 && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>The space</span>
-                          <h4>What kind of space is it?</h4>
+                          <span>{t("The space")}</span>
+                          <h4>{t("What kind of space is it?")}</h4>
                         </div>
                         <ChipRow
                           field="spaceKind"
-                          label="Kind of space"
+                          label={t("Kind of space")}
                           options={SPACE_KIND_CHIPS.map((item) => item.label)}
                           selected={answers.spaceKind ? [answers.spaceKind] : []}
                           onPick={(value) =>
@@ -15268,7 +15297,7 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label className="field-wide">
-                            <OptionalFieldLabel>Exact address</OptionalFieldLabel>
+                            <OptionalFieldLabel>{t("Exact address")}</OptionalFieldLabel>
                             {/* This used to end "listings are fetched whole,
                                 so do not put anything here you would not make
                                 public" - true when written, and false since
@@ -15282,10 +15311,7 @@ export default function MarketplaceApp({
                                 keeps a table-wide grant, and that is the line
                                 the copy now draws. */}
                             <small>
-                              Used for the map link below, so you can check you
-                              picked the right spot. It is never shown on your
-                              card and visitors to the site cannot read it —
-                              though anyone signed in to SideSpace could.
+                              {t("Used for the map link below, so you can check you picked the right spot. It is never shown on your card and visitors to the site cannot read it — though anyone signed in to SideSpace could.")}
                             </small>
                             <input
                               data-field="streetAddress"
@@ -15297,7 +15323,7 @@ export default function MarketplaceApp({
                                   streetAddress: event.target.value,
                                 }))
                               }
-                              placeholder="1398 Solano Ave, Albany, CA 94706"
+                              placeholder={t("1398 Solano Ave, Albany, CA 94706")}
                             />
                             {answers.streetAddress.trim().length > 6 && (
                               /* A plain Maps link, not an embed: the Maps
@@ -15312,17 +15338,16 @@ export default function MarketplaceApp({
                                 target="_blank"
                                 rel="noreferrer noopener"
                               >
-                                See this spot on Google Maps ↗
+                                {t("See this spot on Google Maps ↗")}
                               </a>
                             )}
                           </label>
                           <label>
                             <OptionalFieldLabel>
-                              What buyers see on the card
+                              {t("What buyers see on the card")}
                             </OptionalFieldLabel>
                             <small>
-                              A street or neighborhood. Shown publicly instead of
-                              the full address.
+                              {t("A street or neighborhood. Shown publicly instead of the full address.")}
                             </small>
                             <input
                               data-field="location_area"
@@ -15333,17 +15358,16 @@ export default function MarketplaceApp({
                                   location_area: event.target.value,
                                 }))
                               }
-                              placeholder={answers.city || "Downtown Brea"}
+                              placeholder={answers.city || t("Downtown Brea")}
                             />
                           </label>
                           {/* The description helper has always told owners to
                               "add the size" by hand. This is the form finally
                               asking, so the draft can say it for them. */}
                           <label>
-                            How big is it?
+                            {t("How big is it?")}
                             <small>
-                              Roughly. Width by height is enough — it is the
-                              first thing a buyer asks.
+                              {t("Roughly. Width by height is enough — it is the first thing a buyer asks.")}
                             </small>
                             <input
                               data-field="spaceSize"
@@ -15355,12 +15379,12 @@ export default function MarketplaceApp({
                                   spaceSize: event.target.value,
                                 }))
                               }
-                              placeholder="6 ft × 3 ft"
+                              placeholder={t("6 ft × 3 ft")}
                             />
                           </label>
                           <label className="field-wide media-upload-field">
                             <OptionalFieldLabel>
-                              Photos of the space
+                              {t("Photos of the space")}
                             </OptionalFieldLabel>
                             <input
                               type="file"
@@ -15373,8 +15397,7 @@ export default function MarketplaceApp({
                               }
                             />
                             <small>
-                              One good photo roughly doubles your requests. Take one
-                              now if it’s in front of you.
+                              {t("One good photo roughly doubles your requests. Take one now if it’s in front of you.")}
                             </small>
                           </label>
                         </div>
@@ -15385,17 +15408,15 @@ export default function MarketplaceApp({
                         {onboardingStep === 4 && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>What can go up</span>
-                          <h4>What works here, and who puts it up?</h4>
+                          <span>{t("What can go up")}</span>
+                          <h4>{t("What works here, and who puts it up?")}</h4>
                           <p>
-                            The first thing a buyer asks before they book. Pick
-                            everything you would actually allow — and nothing you
-                            would not.
+                            {t("The first thing a buyer asks before they book. Pick everything you would actually allow — and nothing you would not.")}
                           </p>
                         </div>
                         <ChipRow
                           field="surfaces"
-                          label="Everything you’d allow"
+                          label={t("Everything you’d allow")}
                           multi
                           options={SURFACE_CHIPS}
                           selected={answers.surfaces}
@@ -15422,9 +15443,9 @@ export default function MarketplaceApp({
                         {answers.surfaces.includes(SURFACE_OTHER) && (
                           <div className="field-grid">
                             <label className="field-wide">
-                              What else can go up?
+                              {t("What else can go up?")}
                               <small>
-                                A few words. It joins the list a buyer reads.
+                                {t("A few words. It joins the list a buyer reads.")}
                               </small>
                               <input
                                 data-field="surfaceOther"
@@ -15436,14 +15457,14 @@ export default function MarketplaceApp({
                                     surfaceOther: event.target.value,
                                   }))
                                 }
-                                placeholder="a shelf for product samples"
+                                placeholder={t("a shelf for product samples")}
                               />
                             </label>
                           </div>
                         )}
                         <ChipRow
                           field="installBy"
-                          label="Who puts it up"
+                          label={t("Who puts it up")}
                           options={INSTALL_CHIPS.map((item) => item.label)}
                           selected={
                             INSTALL_CHIPS.filter(
@@ -15463,12 +15484,12 @@ export default function MarketplaceApp({
                         />
 
                         <div className="form-subsection field-wide">
-                          <span>How busy is it?</span>
-                          <h4>People who walk past on a normal day.</h4>
+                          <span>{t("How busy is it?")}</span>
+                          <h4>{t("People who walk past on a normal day.")}</h4>
                         </div>
                         <ChipRow
                           field="traffic"
-                          label="Foot traffic"
+                          label={t("Foot traffic")}
                           options={TRAFFIC_CHIPS.map((item) => item.label)}
                           selected={answers.traffic ? [answers.traffic] : []}
                           onPick={(value) => {
@@ -15489,10 +15510,9 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label>
-                            People a day
+                            {t("People a day")}
                             <small>
-                              Pick a chip to fill this in, or type your own
-                              count. This is what shows on your card.
+                              {t("Pick a chip to fill this in, or type your own count. This is what shows on your card.")}
                             </small>
                             <input
                               type="number"
@@ -15514,12 +15534,12 @@ export default function MarketplaceApp({
                         </div>
 
                         <div className="form-subsection field-wide">
-                          <span>Availability</span>
-                          <h4>When is it free?</h4>
+                          <span>{t("Availability")}</span>
+                          <h4>{t("When is it free?")}</h4>
                         </div>
                         <ChipRow
                           field="availability"
-                          label="Availability"
+                          label={t("Availability")}
                           options={AVAILABILITY_CHIPS.map((item) => item.label)}
                           selected={
                             answers.availability ? [answers.availability] : []
@@ -15537,7 +15557,7 @@ export default function MarketplaceApp({
                           );
                           return free ? (
                             <p className="chip-note field-wide">
-                              {windowNote(free.startDays, free.days)}
+                              {windowNote(free.startDays, free.days, t)}
                             </p>
                           ) : null;
                         })()}
@@ -15560,7 +15580,7 @@ export default function MarketplaceApp({
                             className="button button-dark"
                             onClick={startBusinessCampaign}
                           >
-                            Start a campaign <span>→</span>
+                            {t("Start a campaign")}{" "}<span>→</span>
                           </button>
                           <button
                             type="button"
@@ -15568,7 +15588,7 @@ export default function MarketplaceApp({
                             disabled={busy}
                             onClick={browseBusinessListings}
                           >
-                            {busy ? "Opening…" : "Browse available listings"}{" "}
+                            {busy ? t("Opening…") : t("Browse available listings")}{" "}
                             <span>→</span>
                           </button>
                         </div>
@@ -15577,18 +15597,17 @@ export default function MarketplaceApp({
                           answers.businessSetupPath === "campaign" && (
                         <div className="progressive-field field-wide">
                         <div className="form-subsection field-wide">
-                          <span>What you’re promoting</span>
-                          <h4>What are you actually running this for?</h4>
+                          <span>{t("What you’re promoting")}</span>
+                          <h4>{t("What are you actually running this for?")}</h4>
                           <p>
-                            The specific thing — a product, an opening, a class,
-                            an event. This becomes the headline of your brief.
+                            {t("The specific thing — a product, an opening, a class, an event. This becomes the headline of your brief.")}
                           </p>
                         </div>
                         <div className="field-grid">
                           <label className="field-wide">
-                            In a few words
+                            {t("In a few words")}
                             <small>
-                              Finish the sentence: “We’re promoting…”
+                              {t("Finish the sentence: “We’re promoting…”")}
                             </small>
                             <input
                               data-field="promoting"
@@ -15600,13 +15619,13 @@ export default function MarketplaceApp({
                                   promoting: event.target.value,
                                 }))
                               }
-                              placeholder="our new cold brew"
+                              placeholder={t("our new cold brew")}
                             />
                           </label>
                         </div>
                         <ChipRow
                           field="categories"
-                          label="What kind of business you are"
+                          label={t("What kind of business you are")}
                           optional
                           multi
                           options={CATEGORY_CHIPS}
@@ -15622,12 +15641,12 @@ export default function MarketplaceApp({
                         />
 
                         <div className="form-subsection field-wide">
-                          <span>The goal</span>
-                          <h4>What should this campaign do?</h4>
+                          <span>{t("The goal")}</span>
+                          <h4>{t("What should this campaign do?")}</h4>
                         </div>
                         <ChipRow
                           field="goals"
-                          label="What it should do"
+                          label={t("What it should do")}
                           multi
                           options={BUSINESS_GOAL_CHIPS.map((item) => item.label)}
                           selected={answers.goals}
@@ -15644,14 +15663,14 @@ export default function MarketplaceApp({
                             Physical and no platform is ever mentioned; pick
                             Virtual and nobody is asked what block they want. */}
                         <div className="form-subsection field-wide">
-                          <span>What are you after?</span>
-                          <h4>Physical space, social, or both?</h4>
+                          <span>{t("What are you after?")}</span>
+                          <h4>{t("Physical space, social, or both?")}</h4>
                         </div>
                         <div
                           className="scope-grid"
                           data-field="briefScope"
                           role="group"
-                          aria-label="What kind of space you want"
+                          aria-label={t("What kind of space you want")}
                         >
                           {BRIEF_SCOPE_CHIPS.map((chip) => (
                             <button
@@ -15668,8 +15687,8 @@ export default function MarketplaceApp({
                                 }))
                               }
                             >
-                              <strong>{chip.label}</strong>
-                              <small>{chip.help}</small>
+                              <strong>{t(chip.label)}</strong>
+                              <small>{t(chip.help)}</small>
                             </button>
                           ))}
                         </div>
@@ -15678,12 +15697,12 @@ export default function MarketplaceApp({
                           answers.briefScope !== "virtual" && (
                             <>
                               <div className="form-subsection field-wide">
-                                <span>The space</span>
-                                <h4>What kind, and where?</h4>
+                                <span>{t("The space")}</span>
+                                <h4>{t("What kind, and where?")}</h4>
                               </div>
                               <ChipRow
                                 field="placements"
-                                label="Kinds of space"
+                                label={t("Kinds of space")}
                                 multi
                                 options={BRIEF_PHYSICAL_CHIPS}
                                 selected={answers.placements}
@@ -15701,11 +15720,10 @@ export default function MarketplaceApp({
                               <div className="field-grid">
                                 <label className="field-wide">
                                   <OptionalFieldLabel>
-                                    Where do you want it?
+                                    {t("Where do you want it?")}
                                   </OptionalFieldLabel>
                                   <small>
-                                    The neighborhood or street you want to be
-                                    seen on — not necessarily where you are.
+                                    {t("The neighborhood or street you want to be seen on — not necessarily where you are.")}
                                   </small>
                                   <input
                                     data-field="wantedArea"
@@ -15719,8 +15737,8 @@ export default function MarketplaceApp({
                                     }
                                     placeholder={
                                       answers.city
-                                        ? `Downtown ${answers.city.split(",")[0]}`
-                                        : "Downtown Brea"
+                                        ? t("Downtown {split}", { split: answers.city.split(",")[0] })
+                                        : t("Downtown Brea")
                                     }
                                   />
                                 </label>
@@ -15732,12 +15750,12 @@ export default function MarketplaceApp({
                           answers.briefScope !== "physical" && (
                             <>
                               <div className="form-subsection field-wide">
-                                <span>The audience</span>
-                                <h4>Which platforms should it run on?</h4>
+                                <span>{t("The audience")}</span>
+                                <h4>{t("Which platforms should it run on?")}</h4>
                               </div>
                               <ChipRow
                                 field="targetPlatforms"
-                                label="Platforms to target"
+                                label={t("Platforms to target")}
                                 multi
                                 options={BRIEF_PLATFORM_CHIPS}
                                 selected={answers.targetPlatforms}
@@ -15756,7 +15774,7 @@ export default function MarketplaceApp({
                               <div className="field-grid">
                                 <label className="field-wide">
                                   <OptionalFieldLabel>
-                                    Anything a creator must include?
+                                    {t("Anything a creator must include?")}
                                   </OptionalFieldLabel>
                                   <input
                                     data-field="deliverables"
@@ -15768,14 +15786,14 @@ export default function MarketplaceApp({
                                         deliverables: event.target.value,
                                       }))
                                     }
-                                    placeholder="Tag @us, link in bio for 48h"
+                                    placeholder={t("Tag @us, link in bio for 48h")}
                                   />
                                   {/* Below the box now, not above it: these
                                       fill the field, and every other example
                                       row in the product sits under the thing
                                       it fills. */}
                                   <span className="offer-examples-label">
-                                    Or tap to add one:
+                                    {t("Or tap to add one:")}
                                   </span>
                                   <span className="offer-examples">
                                     {DELIVERABLE_EXAMPLES.map((example) => {
@@ -15829,12 +15847,12 @@ export default function MarketplaceApp({
                             creator or space owner can see exactly what they'd
                             be posting before they answer. */}
                         <div className="form-subsection field-wide">
-                          <span>Your artwork</span>
-                          <h4>What do you need posted?</h4>
+                          <span>{t("Your artwork")}</span>
+                          <h4>{t("What do you need posted?")}</h4>
                         </div>
                         <div className="field-grid">
                           <label className="field-wide media-upload-field">
-                            <OptionalFieldLabel>Flyer, story, or clip</OptionalFieldLabel>
+                            <OptionalFieldLabel>{t("Flyer, story, or clip")}</OptionalFieldLabel>
                             <input
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
@@ -15846,15 +15864,13 @@ export default function MarketplaceApp({
                               }
                             />
                             <small>
-                              Upload the graphic you want in the window or on
-                              the feed. Skip it and pick “I need help making it”
-                              below.
+                              {t("Upload the graphic you want in the window or on the feed. Skip it and pick “I need help making it” below.")}
                             </small>
                           </label>
                         </div>
                         <ChipRow
                           field="artwork"
-                          label="Who makes the artwork"
+                          label={t("Who makes the artwork")}
                           optional
                           options={[
                             "I’ll supply the artwork",
@@ -15886,12 +15902,12 @@ export default function MarketplaceApp({
                         />
 
                         <div className="form-subsection field-wide">
-                          <span>Budget and timing</span>
-                          <h4>What can you spend, and when?</h4>
+                          <span>{t("Budget and timing")}</span>
+                          <h4>{t("What can you spend, and when?")}</h4>
                         </div>
                         <ChipRow
                           field="budgetRange"
-                          label="Budget range"
+                          label={t("Budget range")}
                           options={BUDGET_RANGE_CHIPS.map((item) => item.label)}
                           selected={BUDGET_RANGE_CHIPS.filter(
                             (item) =>
@@ -15912,7 +15928,7 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label>
-                            Budget from
+                            {t("Budget from")}
                             <input
                               type="number"
                               min={1}
@@ -15931,8 +15947,8 @@ export default function MarketplaceApp({
                             />
                           </label>
                           <label>
-                            <OptionalFieldLabel>up to</OptionalFieldLabel>
-                            <small>Leave blank for a flat budget.</small>
+                            <OptionalFieldLabel>{t("up to")}</OptionalFieldLabel>
+                            <small>{t("Leave blank for a flat budget.")}</small>
                             <input
                               type="number"
                               min={1}
@@ -15953,7 +15969,7 @@ export default function MarketplaceApp({
                         </div>
                         <ChipRow
                           field="timing"
-                          label="When it should run"
+                          label={t("When it should run")}
                           options={BUSINESS_TIMING_CHIPS.map((item) => item.label)}
                           selected={answers.timing ? [answers.timing] : []}
                           onPick={(value) =>
@@ -15966,7 +15982,7 @@ export default function MarketplaceApp({
                           );
                           return timing ? (
                             <p className="chip-note field-wide">
-                              {windowNote(0, timing.days)}
+                              {windowNote(0, timing.days, t)}
                             </p>
                           ) : null;
                         })()}
@@ -15981,12 +15997,12 @@ export default function MarketplaceApp({
                         {onboardingStep === 3 && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>Your organization</span>
-                          <h4>What are you?</h4>
+                          <span>{t("Your organization")}</span>
+                          <h4>{t("What are you?")}</h4>
                         </div>
                         <ChipRow
                           field="orgKind"
-                          label="What kind of organization"
+                          label={t("What kind of organization")}
                           options={SPONSOR_ORG_CHIPS}
                           selected={answers.orgKind ? [answers.orgKind] : []}
                           onPick={(value) =>
@@ -16004,10 +16020,9 @@ export default function MarketplaceApp({
                         {answers.orgKind === SPONSOR_ORG_OTHER && (
                           <div className="field-grid">
                             <label className="field-wide">
-                              So what are you?
+                              {t("So what are you?")}
                               <small>
-                                A couple of words. It opens your description and
-                                it is what people searching will find you by.
+                                {t("A couple of words. It opens your description and it is what people searching will find you by.")}
                               </small>
                               <input
                                 data-field="orgOther"
@@ -16019,25 +16034,23 @@ export default function MarketplaceApp({
                                     orgOther: event.target.value,
                                   }))
                                 }
-                                placeholder="Scout troop"
+                                placeholder={t("Scout troop")}
                               />
                             </label>
                           </div>
                         )}
                         <div className="form-subsection field-wide">
-                          <span>What it’s for</span>
-                          <h4>What are you raising money for?</h4>
+                          <span>{t("What it’s for")}</span>
+                          <h4>{t("What are you raising money for?")}</h4>
                           <p>
-                            The championship trip, new kit, competition fees. It
-                            is the line a sponsor actually decides on, and it
-                            becomes the headline of every tier.
+                            {t("The championship trip, new kit, competition fees. It is the line a sponsor actually decides on, and it becomes the headline of every tier.")}
                           </p>
                         </div>
                         <div className="field-grid">
                           <label className="field-wide">
-                            In a few words
+                            {t("In a few words")}
                             <small>
-                              Finish the sentence: “We’re raising for…”
+                              {t("Finish the sentence: “We’re raising for…”")}
                             </small>
                             <input
                               data-field="funding"
@@ -16049,18 +16062,18 @@ export default function MarketplaceApp({
                                   funding: event.target.value,
                                 }))
                               }
-                              placeholder="the championship trip"
+                              placeholder={t("the championship trip")}
                             />
                           </label>
                         </div>
 
                         <div className="form-subsection field-wide">
-                          <span>Your reach</span>
-                          <h4>How many people will see it?</h4>
+                          <span>{t("Your reach")}</span>
+                          <h4>{t("How many people will see it?")}</h4>
                         </div>
                         <ChipRow
                           field="reach"
-                          label="Roughly how many"
+                          label={t("Roughly how many")}
                           options={SPONSOR_REACH_CHIPS.map((item) => item.label)}
                           selected={answers.reach ? [answers.reach] : []}
                           onPick={(value) => {
@@ -16079,10 +16092,9 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label>
-                            How many people
+                            {t("How many people")}
                             <small>
-                              Pick a chip to fill this in, or type your own
-                              number. This is what shows on your card.
+                              {t("Pick a chip to fill this in, or type your own number. This is what shows on your card.")}
                             </small>
                             <input
                               type="number"
@@ -16107,12 +16119,12 @@ export default function MarketplaceApp({
                             people will see it?", so "One event" read as an
                             answer about headcount. */}
                         <div className="form-subsection field-wide">
-                          <span>When it runs</span>
-                          <h4>How long does a sponsorship last?</h4>
+                          <span>{t("When it runs")}</span>
+                          <h4>{t("How long does a sponsorship last?")}</h4>
                         </div>
                         <ChipRow
                           field="season"
-                          label="When it runs"
+                          label={t("When it runs")}
                           options={SPONSOR_SEASON_CHIPS.map((item) => item.label)}
                           selected={answers.season ? [answers.season] : []}
                           onPick={(value) =>
@@ -16125,7 +16137,7 @@ export default function MarketplaceApp({
                           );
                           return season ? (
                             <p className="chip-note field-wide">
-                              {windowNote(0, season.days)}
+                              {windowNote(0, season.days, t)}
                             </p>
                           ) : null;
                         })()}
@@ -16136,16 +16148,15 @@ export default function MarketplaceApp({
                         {onboardingStep === 4 && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>The menu</span>
-                          <h4>What could a sponsor get?</h4>
+                          <span>{t("The menu")}</span>
+                          <h4>{t("What could a sponsor get?")}</h4>
                           <p>
-                            Everything you would ever offer, at any level. You
-                            split it into tiers next.
+                            {t("Everything you would ever offer, at any level. You split it into tiers next.")}
                           </p>
                         </div>
                         <ChipRow
                           field="benefits"
-                          label="Everything you could offer"
+                          label={t("Everything you could offer")}
                           multi
                           options={SPONSOR_BENEFIT_CHIPS}
                           selected={answers.benefits}
@@ -16172,24 +16183,20 @@ export default function MarketplaceApp({
 
                         {/* ---- the tiers, one card each on the marketplace ---- */}
                         <div className="form-subsection field-wide">
-                          <span>Your tiers</span>
-                          <h4>Break it into levels, or keep one.</h4>
+                          <span>{t("Your tiers")}</span>
+                          <h4>{t("Break it into levels, or keep one.")}</h4>
                           <p>
-                            Each tier publishes its own card, so a business can
-                            find you by what it can afford instead of one price
-                            that fits nobody.
+                            {t("Each tier publishes its own card, so a business can find you by what it can afford instead of one price that fits nobody.")}
                           </p>
                         </div>
                         {answers.tiers.map((tier, index) => (
                           <div className="tier-card field-wide" key={index}>
                             <div className="tier-card-head">
-                              <span>Tier {index + 1}</span>
+                              <span>{t("Tier")}{" "}{index + 1}</span>
                               {answers.tiers.length > 1 && (
                                 <button
                                   type="button"
-                                  aria-label={`Remove tier ${index + 1}${
-                                    tier.name.trim() ? `, ${tier.name.trim()}` : ""
-                                  }`}
+                                  aria-label={t("Remove tier {value}{value2}", { value: index + 1, value2: tier.name.trim() ? `, ${tier.name.trim()}` : "" })}
                                   onClick={() => {
                                     // Only ask when there is something to lose.
                                     // A freshly added, still-empty tier should
@@ -16202,9 +16209,7 @@ export default function MarketplaceApp({
                                     if (
                                       filled &&
                                       !window.confirm(
-                                        `Remove ${
-                                          tier.name.trim() || `tier ${index + 1}`
-                                        }? What you filled in for this level is lost.`,
+                                        t("Remove {value}? What you filled in for this level is lost.", { value: tier.name.trim() || `tier ${index + 1}` }),
                                       )
                                     ) {
                                       return;
@@ -16217,13 +16222,13 @@ export default function MarketplaceApp({
                                     }));
                                   }}
                                 >
-                                  Remove
+                                  {t("Remove")}
                                 </button>
                               )}
                             </div>
                             <div className="field-grid">
                               <label>
-                                Name this level
+                                {t("Name this level")}
                                 <input
                                   data-field={`tierName${index}`}
                                   maxLength={40}
@@ -16231,12 +16236,12 @@ export default function MarketplaceApp({
                                   onChange={(event) =>
                                     updateTier(index, { name: event.target.value })
                                   }
-                                  placeholder="Gold"
+                                  placeholder={t("Gold")}
                                 />
                               </label>
                               <label>
-                                <OptionalFieldLabel>Spots at this level</OptionalFieldLabel>
-                                <small>Leave blank if you don’t need a cap.</small>
+                                <OptionalFieldLabel>{t("Spots at this level")}</OptionalFieldLabel>
+                                <small>{t("Leave blank if you don’t need a cap.")}</small>
                                 <input
                                   type="number"
                                   min={1}
@@ -16254,7 +16259,7 @@ export default function MarketplaceApp({
                                 />
                               </label>
                               <label>
-                                What one sponsor pays
+                                {t("What one sponsor pays")}
                                 <input
                                   type="number"
                                   min={1}
@@ -16277,7 +16282,7 @@ export default function MarketplaceApp({
                                     the hardest number in the flow was the only
                                     one offered no help. */}
                                 <span className="offer-examples-label">
-                                  Or tap a common one:
+                                  {t("Or tap a common one:")}
                                 </span>
                                 <span className="offer-examples">
                                   {(PRICE_CHIPS.sponsor_host ?? []).map(
@@ -16299,8 +16304,8 @@ export default function MarketplaceApp({
                                 </span>
                               </label>
                               <label>
-                                <OptionalFieldLabel>up to</OptionalFieldLabel>
-                                <small>Leave blank for a flat tier.</small>
+                                <OptionalFieldLabel>{t("up to")}</OptionalFieldLabel>
+                                <small>{t("Leave blank for a flat tier.")}</small>
                                 <input
                                   type="number"
                                   min={1}
@@ -16321,7 +16326,7 @@ export default function MarketplaceApp({
                             {answers.benefits.length ? (
                               <ChipRow
                                 field={`tierBenefits${index}`}
-                                label={`What ${tier.name || "this level"} includes`}
+                                label={t("What {value} includes", { value: tier.name || "this level" })}
                                 multi
                                 options={answers.benefits}
                                 selected={tier.benefits}
@@ -16337,8 +16342,7 @@ export default function MarketplaceApp({
                               />
                             ) : (
                               <p className="tier-empty">
-                                Pick what a sponsor could get above, then split
-                                it across your levels here.
+                                {t("Pick what a sponsor could get above, then split it across your levels here.")}
                               </p>
                             )}
                           </div>
@@ -16347,9 +16351,7 @@ export default function MarketplaceApp({
                           // The button used to vanish here, so a host who
                           // wanted a fifth level just found the control gone.
                           <p className="chip-note field-wide">
-                            {MAX_TIERS} levels is the most a listing set can
-                            carry — past that a business is reading a price
-                            list rather than browsing.
+                            {t("{MAX_TIERS} levels is the most a listing set can carry — past that a business is reading a price list rather than browsing.", { MAX_TIERS })}
                           </p>
                         )}
                         {answers.tiers.length < MAX_TIERS && (
@@ -16390,12 +16392,12 @@ export default function MarketplaceApp({
                               })
                             }
                           >
-                            + Add another tier
+                            {t("+ Add another tier")}
                           </button>
                         )}
                         <div className="field-grid">
                           <label className="field-wide media-upload-field">
-                            <OptionalFieldLabel>Photos</OptionalFieldLabel>
+                            <OptionalFieldLabel>{t("Photos")}</OptionalFieldLabel>
                             <input
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
@@ -16407,7 +16409,7 @@ export default function MarketplaceApp({
                               }
                             />
                             <small>
-                              A photo of the team, the robot, or last year’s event.
+                              {t("A photo of the team, the robot, or last year’s event.")}
                             </small>
                           </label>
                         </div>
@@ -16422,21 +16424,21 @@ export default function MarketplaceApp({
                     <div className="form-subsection field-wide">
                       <span>
                         {selectedRole === "business"
-                          ? "Your brief"
+                          ? t("Your brief")
                           : answers.creatorOffer === "physical"
-                            ? "Your placement"
+                            ? t("Your placement")
                             : answers.creatorOffer === "sponsorship"
-                              ? "Your sponsorship"
-                              : "Your offer"}
+                              ? t("Your sponsorship")
+                              : t("Your offer")}
                       </span>
                       <h4>
                         {selectedRole === "business"
-                          ? "Name the brief and set the budget."
+                          ? t("Name the brief and set the budget.")
                           : answers.creatorOffer === "physical"
-                            ? "Name the placement and set the rent."
+                            ? t("Name the placement and set the rent.")
                             : answers.creatorOffer === "sponsorship"
-                              ? "Tell them who they’d be backing."
-                              : "Name the offer and set your rate."}
+                              ? t("Tell them who they’d be backing.")
+                              : t("Name the offer and set your rate.")}
                       </h4>
                     </div>
                     <div className="field-grid">
@@ -16444,12 +16446,12 @@ export default function MarketplaceApp({
                         <>
                           <ListingAvailabilityFields key={activeBookingOffer} listing={onboardingSchedule} onChange={(schedule) => updateOnboardingBooking({ schedule })} />
                           {onboardingSchedule.instant_booking_enabled && <>
-                            <label className="field-wide">Exactly what the buyer receives
-                              <small>Include quantities, how long the ad stays up, and proof of delivery.</small>
-                              <textarea value={onboardingDeliverables} maxLength={1000} onChange={(event) => updateOnboardingBooking({ deliverables: event.target.value })} placeholder="One Instagram Reel, live for at least 30 days, plus a performance report after 7 days." />
+                            <label className="field-wide">{t("Exactly what the buyer receives")}
+                              <small>{t("Include quantities, how long the ad stays up, and proof of delivery.")}</small>
+                              <textarea value={onboardingDeliverables} maxLength={1000} onChange={(event) => updateOnboardingBooking({ deliverables: event.target.value })} placeholder={t("One Instagram Reel, live for at least 30 days, plus a performance report after 7 days.")} />
                             </label>
-                            <label className="field-wide">Cancellation terms
-                              <input value={onboardingCancellation} maxLength={1000} onChange={(event) => updateOnboardingBooking({ cancellation: event.target.value })} placeholder="Free cancellation until 48 hours before the start date." />
+                            <label className="field-wide">{t("Cancellation terms")}
+                              <input value={onboardingCancellation} maxLength={1000} onChange={(event) => updateOnboardingBooking({ cancellation: event.target.value })} placeholder={t("Free cancellation until 48 hours before the start date.")} />
                             </label>
                           </>}
                         </>
@@ -16461,10 +16463,10 @@ export default function MarketplaceApp({
                       {!isSponsorshipOffer(selectedRole ?? "creator", answers) && (
                       <label className="field-wide">
                         {selectedRole === "business"
-                          ? "Name this brief"
+                          ? t("Name this brief")
                           : answers.creatorOffer === "physical"
-                            ? "Name this placement"
-                            : "Name this offer"}
+                            ? t("Name this placement")
+                            : t("Name this offer")}
                         <input
                           data-field="title"
                           maxLength={120}
@@ -16493,10 +16495,10 @@ export default function MarketplaceApp({
                           }}
                           placeholder={
                             selectedRole === "business"
-                              ? "Brea Coffee Bar — our new cold brew"
+                              ? t("Brea Coffee Bar — our new cold brew")
                               : answers.creatorOffer === "physical"
-                                ? "Maya’s Barbershop — window in Downtown Brea"
-                                : "Instagram Reel — Maya Alvarez"
+                                ? t("Maya’s Barbershop — window in Downtown Brea")
+                                : t("Instagram Reel — Maya Alvarez")
                           }
                         />
                       </label>
@@ -16507,7 +16509,7 @@ export default function MarketplaceApp({
                       {selectedRole !== "business" &&
                         !isSponsorshipOffer(selectedRole ?? "creator", answers) && (
                       <label>
-                        {answers.creatorOffer === "physical" ? "Price from" : "Price"}
+                        {answers.creatorOffer === "physical" ? t("Price from") : t("Price")}
                         <input
                           type="number"
                           min={1}
@@ -16536,8 +16538,8 @@ export default function MarketplaceApp({
                           since price_max landed. */}
                       {isPhysicalOffer(selectedRole ?? "creator", answers) && (
                         <label>
-                          <OptionalFieldLabel>up to</OptionalFieldLabel>
-                          <small>Leave blank for a flat rate.</small>
+                          <OptionalFieldLabel>{t("up to")}</OptionalFieldLabel>
+                          <small>{t("Leave blank for a flat rate.")}</small>
                           <input
                             type="number"
                             min={1}
@@ -16558,10 +16560,10 @@ export default function MarketplaceApp({
                       )}
                       {isSponsorshipOffer(selectedRole ?? "creator", answers) ? null : selectedRole ===
                         "business" ? (
-                        <p className="offer-preview">Budget is per campaign</p>
+                        <p className="offer-preview">{t("Budget is per campaign")}</p>
                       ) : (
                         <label>
-                          Per
+                          {t("Per")}
                           <select
                             value={
                               answers.price_unit ||
@@ -16592,7 +16594,7 @@ export default function MarketplaceApp({
                       Boolean(PRICE_CHIPS[selectedRole ?? ""]) && (
                       <ChipRow
                         field="price_presets"
-                        label="Or pick a common rate"
+                        label={t("Or pick a common rate")}
                         options={(selectedRole === "creator"
                           ? creatorPricePresets(answers.creatorOffer)
                           : PRICE_CHIPS[selectedRole ?? ""] ?? []
@@ -16611,20 +16613,20 @@ export default function MarketplaceApp({
                     <div className="field-grid">
                       <label className="field-wide">
                         {selectedRole === "business"
-                          ? "What should whoever answers know?"
+                          ? t("What should whoever answers know?")
                           : answers.creatorOffer === "physical"
-                            ? "What is the placement actually like?"
+                            ? t("What is the placement actually like?")
                             : answers.creatorOffer === "sponsorship"
-                              ? "Why should someone sponsor you?"
-                              : "What does a brand get, in your words?"}
+                              ? t("Why should someone sponsor you?")
+                              : t("What does a brand get, in your words?")}
                         <small>
                           {selectedRole === "business"
-                            ? "We drafted this from your answers. Say what the artwork is and anything a creator or space owner must know."
+                            ? t("We drafted this from your answers. Say what the artwork is and anything a creator or space owner must know.")
                             : answers.creatorOffer === "physical"
-                              ? "We drafted this from your answers. Add the size, what sticks to it, and who walks past."
+                              ? t("We drafted this from your answers. Add the size, what sticks to it, and who walks past.")
                               : answers.creatorOffer === "sponsorship"
-                                ? "We drafted this from your answers. Add what the season looks like and who turns up."
-                                : "We drafted this from your answers. Add turnaround, what you will not do, anything a brand should know."}
+                                ? t("We drafted this from your answers. Add what the season looks like and who turns up.")
+                                : t("We drafted this from your answers. Add turnaround, what you will not do, anything a brand should know.")}
                         </small>
                         <textarea
                           data-field="description"
@@ -16661,11 +16663,11 @@ export default function MarketplaceApp({
                             ending up with it on the card twice. */}
                         {isSponsorshipOffer(selectedRole ?? "creator", answers) && (
                           <span className="chip-note">
-                            Each tier card ends with its own perks line
+                            {t("Each tier card ends with its own perks line")}
                             {completeTiers(answers)[0]?.name.trim()
-                              ? ` — “${completeTiers(answers)[0].name.trim()} sponsors get…”`
-                              : " — “Gold sponsors get…”"}
-                            . You don’t need to write it here.
+                              ? t(" — “{name} sponsors get…”", { name: completeTiers(answers)[0].name.trim() })
+                              : t(" — “Gold sponsors get…”")}
+                            {t(". You don’t need to write it here.")}
                           </span>
                         )}
                       </label>
@@ -16689,10 +16691,8 @@ export default function MarketplaceApp({
                       <span>
                         {isSponsorshipOffer(selectedRole ?? "creator", answers) &&
                         completeTiers(answers).length > 1
-                          ? `This is what people will see — ${
-                              completeTiers(answers).length
-                            } cards, top tier shown`
-                          : "This is what people will see"}
+                          ? t("This is what people will see — {answersCount} cards, top tier shown", { answersCount: completeTiers(answers).length })
+                          : t("This is what people will see")}
                       </span>
                       <div className="preview-card">
                         {/* A real card is a photo with text under it. Without
@@ -16709,8 +16709,7 @@ export default function MarketplaceApp({
                           />
                         ) : (
                           <p className="preview-card-photo is-empty">
-                            Add a photo above — it fills the top half of your
-                            card.
+                            {t("Add a photo above — it fills the top half of your card.")}
                           </p>
                         )}
                         <div className="preview-card-top">
@@ -16722,14 +16721,14 @@ export default function MarketplaceApp({
                             }
                           >
                             {selectedRole === "business"
-                              ? "Wanted"
+                              ? t("Wanted")
                               : buildListingDraft(selectedRole ?? "creator", answers, {
                                   title: titleTouched,
                                   description: descriptionTouched,
                                 }).channel}
                           </span>
                           <small className="preview-offer">
-                            {answers.display_name.trim() || "Your name"}
+                            {answers.display_name.trim() || t("Your name")}
                             {answers.city.trim() ? ` · ${answers.city.trim()}` : ""}
                           </small>
                         </div>
@@ -16740,7 +16739,7 @@ export default function MarketplaceApp({
                               answers,
                               { title: titleTouched },
                               completeTiers(answers)[0],
-                            ) || "Untitled listing"}
+                            ) || t("Untitled listing")}
                           </strong>
                           <span className="preview-offer">
                             {(() => {
@@ -16754,10 +16753,10 @@ export default function MarketplaceApp({
                                 completeTiers(answers)[0],
                               );
                               const offer = draft.format.trim();
-                              if (!offer) return "Add what people get above.";
+                              if (!offer) return t("Add what people get above.");
                               return selectedRole === "business"
-                                ? `Looking for ${offer}`
-                                : `You get ${formatOffer(offer)}`;
+                                ? t("Looking for {offer}", { offer })
+                                : t("You get {offer}", { offer: formatOffer(offer) });
                             })()}
                           </span>
                           {/* The description is the longest thing the member
@@ -16769,11 +16768,11 @@ export default function MarketplaceApp({
                               selectedRole ?? "creator",
                               answers,
                               { description: descriptionTouched },
-                            ) || "Your description will show here."}
+                            ) || t("Your description will show here.")}
                           </p>
                           <div className="preview-card-foot">
                             {selectedRole === "business" && (
-                              <span className="preview-lead">Budget</span>
+                              <span className="preview-lead">{t("Budget")}</span>
                             )}
                             <b
                               className={
@@ -16796,7 +16795,7 @@ export default function MarketplaceApp({
                                 // preview showed "$0 / sponsor", which reads as
                                 // an offer to work for free rather than as a
                                 // field still to fill in.
-                                if (!price) return "Add a price";
+                                if (!price) return t("Add a price");
                                 return priceLabel({
                                   price_cents: dollarsToCents(price),
                                   price_max_cents:
@@ -16843,15 +16842,15 @@ export default function MarketplaceApp({
                 {(onboardingMode === "edit" || onboardingStep === 5) && (
                 <>
                 <div className="form-subsection field-wide">
-                  <span>Anything else?</span>
-                  <h4>Do you do more than one of these?</h4>
+                  <span>{t("Anything else?")}</span>
+                  <h4>{t("Do you do more than one of these?")}</h4>
                   <p>
-                    You’ll show up in each of these searches, from one account.
+                    {t("You’ll show up in each of these searches, from one account.")}
                   </p>
                 </div>
                 <ChipRow
                   field="extra_roles"
-                  label="Other things you do"
+                  label={t("Other things you do")}
                   optional
                   multi
                   options={EXTRA_ROLE_OPTIONS.filter(
@@ -16903,7 +16902,7 @@ export default function MarketplaceApp({
                       goToOnboardingStep(onboardingStep - 1);
                     }}
                   >
-                    ← Back
+                    {t("← Back")}
                   </button>
                   {shouldShowOnboardingPrimaryAction() && (
                     <span className="onboarding-primary-action-enter">
@@ -16913,12 +16912,10 @@ export default function MarketplaceApp({
                         aria-live="polite"
                       >
                         {missingAnswers().length
-                          ? `${missingAnswers().length} required ${
-                              missingAnswers().length === 1
+                          ? t("{missingAnswersCount} required {value} left", { missingAnswersCount: missingAnswers().length, value: missingAnswers().length === 1
                                 ? "detail"
-                                : "details"
-                            } left`
-                          : "Ready to continue"}
+                                : "details" })
+                          : t("Ready to continue")}
                       </span>
                       {onboardingMode === "setup" &&
                       (onboardingStep < 5 || Boolean(nextSelectedCreatorOffer())) ? (
@@ -16929,11 +16926,11 @@ export default function MarketplaceApp({
                         >
                           {selectedRole === "creator"
                             ? nextSelectedCreatorOffer()
-                              ? "Next Section"
-                              : "Next"
+                              ? t("Next Section")
+                              : t("Next")
                             : onboardingStep === 3
-                              ? "Next: the details"
-                              : "Next: review"}{" "}
+                              ? t("Next: the details")
+                              : t("Next: review")}{" "}
                           <span>→</span>
                         </button>
                       ) : (
@@ -16947,14 +16944,14 @@ export default function MarketplaceApp({
                           disabled={busy || igAvatarBusy}
                         >
                           {busy
-                            ? "Publishing…"
+                            ? t("Publishing…")
                             : onboardingPreview
-                              ? "Finish preview"
+                              ? t("Finish preview")
                               : onboardingMode === "edit"
-                                ? "Save changes"
+                                ? t("Save changes")
                                 : selectedRole === "business"
-                                  ? "Post my brief"
-                                  : "Publish and finish"}{" "}
+                                  ? t("Post my brief")
+                                  : t("Publish and finish")}{" "}
                           <span>✓</span>
                         </button>
                       )}
@@ -16969,7 +16966,7 @@ export default function MarketplaceApp({
               className="signout-link"
               onClick={signOut}
             >
-              Sign out of this account
+              {t("Sign out of this account")}
             </button>
           )}
         </Modal>
@@ -16977,19 +16974,19 @@ export default function MarketplaceApp({
 
       {listingOpen && (
         <Modal
-          label={editingListing ? "Edit listing" : "Create a listing"}
+          label={editingListing ? t("Edit listing") : t("Create a listing")}
           onClose={() => {
             setListingOpen(false);
             resetAiHelpers();
             setEditingListing(null);
-            setListingFeedback("");
+            setListingFeedback(t(""));
           }}
           wide
         >
-          <div className="modal-heading"><h2>{editingListing ? "Edit listing" : editingListingIsBrief ? "Create a campaign" : "Create a listing"}</h2></div>
+          <div className="modal-heading"><h2>{editingListing ? t("Edit listing") : editingListingIsBrief ? t("Create a campaign") : t("Create a listing")}</h2></div>
           {listingFeedback && (
             <div className="form-feedback" role="alert">
-              <strong>Your listing was not saved yet.</strong>
+              <strong>{t("Your listing was not saved yet.")}</strong>
               <p>{listingFeedback}</p>
             </div>
           )}
@@ -16999,9 +16996,9 @@ export default function MarketplaceApp({
             onInvalidCapture={(event) => revealInvalidField(event.target)}
             onSubmit={saveListing}
           >
-            {!editingListing && !editingListingIsBrief && <div className="composer-kind field-wide" role="group" aria-label="Offer type">
+            {!editingListing && !editingListingIsBrief && <div className="composer-kind field-wide" role="group" aria-label={t("Offer type")}>
               {CREATOR_OFFER_TYPES.map((option) => <button type="button" key={option.value} disabled={busy || aiFilling || listening} aria-pressed={newListingOffer === option.value}
-                onClick={(event) => switchListingFormKind(option.value, event.currentTarget.form)}>{option.label}</button>)}
+                onClick={(event) => switchListingFormKind(option.value, event.currentTarget.form)}>{t(option.label)}</button>)}
             </div>}
             <ListingComposerFields key={`${editingListing?.id ?? newListingOffer}-${composerRevision}`} listing={editingListing ?? newListingDrafts[newListingOffer]?.listing}
               kind={listingFormKind} city={profile?.city || answers.city} audience={profile?.audience_age}
@@ -17009,7 +17006,7 @@ export default function MarketplaceApp({
               draftFiles={newListingDrafts[newListingOffer]?.files} onFilesChange={setPendingListingFiles} onInstantChange={setListingInstantEnabled}
               hasSavedPhotos={Boolean(editingListing && listingImages(editingListing).some((url) => !listingSeedImages.has(url)))}
               aiTools={!editingListingIsBrief ? (<div className="field-wide ai-fill">
-                <p>Describe your offer, price, and audience. Review the draft before publishing.</p>
+                <p>{t("Describe your offer, price, and audience. Review the draft before publishing.")}</p>
 <div className="ai-fill-row">
                   <textarea
                     ref={aiNotesRef}
@@ -17019,10 +17016,10 @@ export default function MarketplaceApp({
                     maxLength={AI_NOTES_MAX}
                     placeholder={
                       listingFormKind === "physical"
-                        ? "Front window on Main Street, about 4 by 6 ft, maybe 300 people walk past on a weekday, $40 a week, posters or decals, I put it up, available now"
+                        ? t("Front window on Main Street, about 4 by 6 ft, maybe 300 people walk past on a weekday, $40 a week, posters or decals, I put it up, available now")
                         : listingFormKind === "sponsorship"
-                          ? "High school robotics team, 40 members, about 200 parents at each of 8 home matches, banner plus a jersey patch, $250 a season, we install"
-                          : "Food and coffee account, 12k followers mostly Bay Area students, one story with a link, $30 per story, two days notice"
+                          ? t("High school robotics team, 40 members, about 200 parents at each of 8 home matches, banner plus a jersey patch, $250 a season, we install")
+                          : t("Food and coffee account, 12k followers mostly Bay Area students, one story with a link, $30 per story, two days notice")
                     }
                   />
                   <button
@@ -17031,8 +17028,8 @@ export default function MarketplaceApp({
                     aria-pressed={listening}
                     aria-label={
                       listening
-                        ? "Stop listening and draft the listing"
-                        : "Describe the space out loud, then draft it"
+                        ? t("Stop listening and draft the listing")
+                        : t("Describe the space out loud, then draft it")
                     }
                     disabled={busy || aiFilling}
                     onClick={() => {
@@ -17040,42 +17037,40 @@ export default function MarketplaceApp({
                       else void startListening();
                     }}
                   >
-                    {listening ? "Stop & fill" : "Speak & fill"}{" "}
+                    {listening ? t("Stop & fill") : t("Speak & fill")}{" "}
                     <span>{listening ? "■" : "🎤"}</span>
                   </button>
                 </div>
                 {listening && (
                   <small className="ai-fill-status" role="status">
                     {voiceMode === "recording"
-                      ? "Recording, up to a minute. Say what it is, where, the price, and who sees it, then tap Stop & fill."
-                      : "Listening. Say what it is, where, the price, and who sees it, then tap Stop & fill."}
+                      ? t("Recording, up to a minute. Say what it is, where, the price, and who sees it, then tap Stop & fill.")
+                      : t("Listening. Say what it is, where, the price, and who sees it, then tap Stop & fill.")}
                   </small>
                 )}
                 {aiObservations.length > 0 && (
                   <div className="ai-fill-questions is-observations" role="status">
-                    <strong>From what it saw - check these are right:</strong>
+                    <strong>{t("From what it saw - check these are right:")}</strong>
                     <ul>
                       {aiObservations.map((item) => (
                         <li key={item}>{item}</li>
                       ))}
                     </ul>
                     <small>
-                      Anything wrong here is wrong in the draft too. Say so in
-                      the box above and fill again.
+                      {t("Anything wrong here is wrong in the draft too. Say so in the box above and fill again.")}
                     </small>
                   </div>
                 )}
                 {aiQuestions.length > 0 && (
                   <div className="ai-fill-questions" role="status">
-                    <strong>Still needed - it will not guess these:</strong>
+                    <strong>{t("Still needed - it will not guess these:")}</strong>
                     <ol>
                       {aiQuestions.map((question) => (
                         <li key={question}>{question}</li>
                       ))}
                     </ol>
                     <small>
-                      Add the answers in the box above, typed or spoken, then
-                      fill again.
+                      {t("Add the answers in the box above, typed or spoken, then fill again.")}
                     </small>
                   </div>
                 )}
@@ -17085,7 +17080,7 @@ export default function MarketplaceApp({
                   disabled={busy || aiFilling}
                   onClick={(event) => fillListingWithAi(event.currentTarget.form)}
                 >
-                  {aiFilling ? "Drafting…" : "Fill with AI"} <span>✦</span>
+                  {aiFilling ? t("Drafting…") : t("Fill with AI")} <span>✦</span>
                 </button>
               </div>) : undefined}
               spaceTools={(<div className="street-view">
@@ -17095,10 +17090,10 @@ export default function MarketplaceApp({
                     onClick={(event) => void importStreetView(event.currentTarget.form)}
                   >
                     {streetViewLoading
-                      ? "Looking up Street View…"
+                      ? t("Looking up Street View…")
                       : streetView
-                        ? "Refresh the Street View"
-                        : "Add a Google Street View of this address"}
+                        ? t("Refresh the Street View")
+                        : t("Add a Google Street View of this address")}
                   </button>
                   {streetView && (
                     <figure className="street-view-card">
@@ -17108,23 +17103,21 @@ export default function MarketplaceApp({
                           streetView.url ??
                           (editingListing ? `/api/listings/${editingListing.id}/street-view` : "")
                         }
-                        alt="Google Street View of the address"
+                        alt={t("Google Street View of the address")}
                       />
                       <figcaption>
-                        Google Street View{streetView.captured ? `, ${streetView.captured}` : ""}.
-                        Shown under your photos, labelled, fetched live from Google
-                        and never stored. It may be out of date.
+                        {t("Google Street View")}{streetView.captured ? `, ${streetView.captured}` : ""}{t(". Shown under your photos, labelled, fetched live from Google and never stored. It may be out of date.")}
                         {streetView.pano && (
                           <a
                             href={streetPanoUrl(streetView.pano)}
                             target="_blank"
                             rel="noreferrer noopener"
                           >
-                            View whole street ↗
+                            {t("View whole street ↗")}
                           </a>
                         )}
                         <button type="button" onClick={clearStreetView}>
-                          Remove
+                          {t("Remove")}
                         </button>
                       </figcaption>
                     </figure>
@@ -17134,10 +17127,9 @@ export default function MarketplaceApp({
             {editingListing &&
               listingImages(editingListing).some((url) => !listingSeedImages.has(url)) && (
                 <div className="listing-photo-manager field-wide">
-                  <strong>Photos on this listing</strong>
+                  <strong>{t("Photos on this listing")}</strong>
                   <p>
-                    The first is the cover. Adding photos keeps these; nothing
-                    comes off unless you remove it here.
+                    {t("The first is the cover. Adding photos keeps these; nothing comes off unless you remove it here.")}
                   </p>
                   <div className="photo-manager-grid">
                     {listingImages(editingListing)
@@ -17147,12 +17139,12 @@ export default function MarketplaceApp({
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={url}
-                            alt={`Listing photo ${index + 1}`}
+                            alt={t("Listing photo {value}", { value: index + 1 })}
                             loading="lazy"
                             decoding="async"
                           />
                           {index === 0 ? (
-                            <figcaption>Cover</figcaption>
+                            <figcaption>{t("Cover")}</figcaption>
                           ) : (
                             <button
                               type="button"
@@ -17160,15 +17152,15 @@ export default function MarketplaceApp({
                               disabled={busy}
                               onClick={() => void makeListingCover(editingListing, url)}
                             >
-                              Make cover
+                              {t("Make cover")}
                             </button>
                           )}
                           <button
                             type="button"
                             className="saved-media-remove"
                             disabled={busy}
-                            aria-label={`Remove photo ${index + 1}`}
-                            title="Remove photo"
+                            aria-label={t("Remove photo {value}", { value: index + 1 })}
+                            title={t("Remove photo")}
                             onClick={() => void removeListingPhoto(editingListing, url)}
                           >
                             ×
@@ -17179,7 +17171,7 @@ export default function MarketplaceApp({
                 </div>
               )}
             <label className="field-wide media-upload-field">
-              {editingListing?.tour_url ? "Replace the walkthrough" : "Add a walkthrough (optional)"}
+              {editingListing?.tour_url ? t("Replace the walkthrough") : t("Add a walkthrough (optional)")}
               <input
                 name="listing_tour"
                 type="file"
@@ -17187,17 +17179,15 @@ export default function MarketplaceApp({
                 onChange={(event) => void onTourPicked(event.currentTarget.files?.[0] ?? null)}
               />
               <small>
-                A short video walking through the space, a 360° video, or a
-                360° photo. Up to 50 MB. Tick 360° after choosing a spherical
-                file so buyers can drag around it.
+                {t("A short video walking through the space, a 360° video, or a 360° photo. Up to 50 MB. Tick 360° after choosing a spherical file so buyers can drag around it.")}
               </small>
             </label>
             {tourPick && (
               <div className="tour-pick field-wide" role="status">
                 <span>
                   {tourPick.kind === "video"
-                    ? `Video · ${Math.round(tourPick.seconds)} s · ${tourPick.width}×${tourPick.height}`
-                    : `Photo · ${tourPick.width}×${tourPick.height}`}
+                    ? t("Video · {round} s · {width}×{height}", { round: Math.round(tourPick.seconds), width: tourPick.width, height: tourPick.height })
+                    : t("Photo · {width}×{height}", { width: tourPick.width, height: tourPick.height })}
                   {` · ${(tourPick.file.size / 1024 / 1024).toFixed(1)} MB`}
                 </span>
                 <label className="chip-check">
@@ -17206,14 +17196,14 @@ export default function MarketplaceApp({
                     checked={tourSpherical}
                     onChange={(event) => setTourSpherical(event.currentTarget.checked)}
                   />
-                  <span>360° (spherical)</span>
+                  <span>{t("360° (spherical)")}</span>
                 </label>
                 <small>
                   {tourSpherical
-                    ? "Opens in the 360° viewer: buyers drag to look around."
+                    ? t("Opens in the 360° viewer: buyers drag to look around.")
                     : tourPick.kind === "photo"
-                      ? "Tick 360° only if this is a spherical panorama."
-                      : "Plays as a plain video. Tick 360° if it came from a 360 camera."}
+                      ? t("Tick 360° only if this is a spherical panorama.")
+                      : t("Plays as a plain video. Tick 360° if it came from a 360 camera.")}
                 </small>
               </div>
             )}
@@ -17221,20 +17211,20 @@ export default function MarketplaceApp({
               <div className="tour-current field-wide">
                 <span>
                   {editingListing.tour_kind === "video"
-                    ? "Walkthrough video attached."
+                    ? t("Walkthrough video attached.")
                     : editingListing.tour_kind === "video360"
-                      ? "360° video attached."
-                      : "360° photo attached."}
+                      ? t("360° video attached.")
+                      : t("360° photo attached.")}
                 </span>
                 <a href={editingListing.tour_url} target="_blank" rel="noreferrer noopener">
-                  Open ↗
+                  {t("Open ↗")}
                 </a>
                 <button
                   type="button"
                   disabled={busy}
                   onClick={() => void removeListingTour(editingListing)}
                 >
-                  Remove
+                  {t("Remove")}
                 </button>
               </div>
             )}
@@ -17245,17 +17235,17 @@ export default function MarketplaceApp({
                   setListingOpen(false);
                   resetAiHelpers();
                   setEditingListing(null);
-                  setListingFeedback("");
+                  setListingFeedback(t(""));
                 }}
               >
-                Cancel
+                {t("Cancel")}
               </button>
               <button className="button button-coral" disabled={busy}>
                 {busy
-                  ? "Saving listing..."
+                  ? t("Saving listing...")
                   : editingListing
-                    ? "Save changes"
-                    : Object.entries(newListingDrafts).some(([kind, draft]) => kind !== newListingOffer && draft?.listing.title) ? "Publish and continue" : editingListingIsBrief ? "Publish campaign" : "Publish listing"}{" "}
+                    ? t("Save changes")
+                    : Object.entries(newListingDrafts).some(([kind, draft]) => kind !== newListingOffer && draft?.listing.title) ? t("Publish and continue") : editingListingIsBrief ? t("Publish campaign") : t("Publish listing")}{" "}
                 <span>↗</span>
               </button>
             </div>
@@ -17273,19 +17263,19 @@ export default function MarketplaceApp({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={detailPhotos[selectedPhotoIndex] || detailPhotos[0]}
-                  alt={`${selectedListing.title} photo ${selectedPhotoIndex + 1}`}
+                  alt={t("{title} photo {value}", { title: selectedListing.title, value: selectedPhotoIndex + 1 })}
                 />
-                <span className="listing-channel">{selectedListing.channel}</span>
+                <span className="listing-channel">{t(selectedListing.channel)}</span>
               </figure>
               )}
               {detailPhotos.length > 1 && (
-                <div className="detail-thumbnails" aria-label="Listing photos">
+                <div className="detail-thumbnails" aria-label={t("Listing photos")}>
                   {detailPhotos.map((url, index) => (
                     <button
                       key={`${url}-${index}`}
                       className={selectedPhotoIndex === index ? "active" : ""}
                       onClick={() => setSelectedPhotoIndex(index)}
-                      aria-label={`View photo ${index + 1}`}
+                      aria-label={t("View photo {value}", { value: index + 1 })}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={url} alt="" loading="lazy" decoding="async" />
@@ -17298,7 +17288,7 @@ export default function MarketplaceApp({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={`/api/listings/${selectedListing.id}/street-view`}
-                    alt="Google Street View of the address"
+                    alt={t("Google Street View of the address")}
                     loading="lazy"
                     decoding="async"
                   />
@@ -17309,7 +17299,7 @@ export default function MarketplaceApp({
                   {streetPanoOpen && STREET_VIEW_EMBED_KEY && selectedListing.street_view_pano && (
                     <iframe
                       className="street-view-embed"
-                      title="Google Street View of the whole street"
+                      title={t("Google Street View of the whole street")}
                       src={`https://www.google.com/maps/embed/v1/streetview?key=${encodeURIComponent(STREET_VIEW_EMBED_KEY)}&pano=${encodeURIComponent(selectedListing.street_view_pano)}`}
                       allowFullScreen
                       loading="lazy"
@@ -17317,8 +17307,7 @@ export default function MarketplaceApp({
                     />
                   )}
                   <figcaption>
-                    Google Street View, {selectedListing.street_view_captured}. The
-                    street outside, as Google last photographed it.
+                    {t("Google Street View, {street_view_captured}. The street outside, as Google last photographed it.", { street_view_captured: selectedListing.street_view_captured })}
                     {selectedListing.street_view_pano &&
                       (STREET_VIEW_EMBED_KEY ? (
                         <button
@@ -17326,7 +17315,7 @@ export default function MarketplaceApp({
                           className="street-view-open"
                           onClick={() => setStreetPanoOpen((open) => !open)}
                         >
-                          {streetPanoOpen ? "Close the street view" : "View whole street"}
+                          {streetPanoOpen ? t("Close the street view") : t("View whole street")}
                         </button>
                       ) : (
                         <a
@@ -17335,7 +17324,7 @@ export default function MarketplaceApp({
                           target="_blank"
                           rel="noreferrer noopener"
                         >
-                          View whole street ↗
+                          {t("View whole street ↗")}
                         </a>
                       ))}
                   </figcaption>
@@ -17353,7 +17342,7 @@ export default function MarketplaceApp({
                   type="button"
                   className="owner-line-link"
                   onClick={() => void openOwnerProfile(selectedListing.owner)}
-                  aria-label={`See ${selectedListing.owner.display_name}'s profile and other listings`}
+                  aria-label={t("See {display_name}'s profile and other listings", { display_name: selectedListing.owner.display_name })}
                 >
                   <Avatar profile={selectedListing.owner} />
                   <div>
@@ -17375,17 +17364,16 @@ export default function MarketplaceApp({
                   }`}
                 >
                   {selectedListing.owner.is_demo
-                    ? "Demo profile"
+                    ? t("Demo profile")
                     : selectedListing.owner.verified
-                      ? "Verified by SideSpace"
-                      : "Unverified profile"}
+                      ? t("Verified by SideSpace")
+                      : t("Unverified profile")}
                 </span>
               </div>
               {!isListingRequestable(selectedListing) && (
                 <div className="listing-provenance-notice is-view-only">
                   <span>
-                    This listing is view-only until its owner confirms it is
-                    still available.
+                    {t("This listing is view-only until its owner confirms it is still available.")}
                   </span>
                 </div>
               )}
@@ -17394,7 +17382,7 @@ export default function MarketplaceApp({
                 <div className="detail-terms">
                   {selectedCreatorReviews.length > 0 && (
                     <div>
-                      <small>Verified SideSpace reviews</small>
+                      <small>{t("Verified SideSpace reviews")}</small>
                       <p>
                         <strong>
                           {(
@@ -17404,16 +17392,16 @@ export default function MarketplaceApp({
                             ) / selectedCreatorReviews.length
                           ).toFixed(1)}
                           /5
-                        </strong>{" "}
-                        from {selectedCreatorReviews.length} completed campaign
-                        {selectedCreatorReviews.length === 1 ? "" : "s"}
+                        </strong>{" "}{selectedCreatorReviews.length === 1
+                          ? t("from 1 completed campaign")
+                          : t("from {count} completed campaigns", { count: selectedCreatorReviews.length })}
                       </p>
                       <p>“{selectedCreatorReviews[0].review_text}”</p>
                     </div>
                   )}
                   {selectedCreatorPortfolio.length > 0 && (
                     <div>
-                      <small>Creator portfolio</small>
+                      <small>{t("Creator portfolio")}</small>
                       {selectedCreatorPortfolio.map((item) => (
                         <p key={item.id}>
                           <strong>{item.title}</strong>
@@ -17424,7 +17412,7 @@ export default function MarketplaceApp({
                               target="_blank"
                               rel="noreferrer"
                             >
-                              View {item.kind.replaceAll("_", " ")} ↗
+                              {t("View {replaceAll} ↗", { replaceAll: item.kind.replaceAll("_", " ") })}
                             </a>
                           )}
                         </p>
@@ -17447,9 +17435,9 @@ export default function MarketplaceApp({
                   }
                   disabledReason={
                     selectedListing.owner.is_demo
-                      ? "Likes are unavailable on sample listings"
+                      ? t("Likes are unavailable on sample listings")
                       : profile?.id === selectedListing.owner.id
-                        ? "You cannot like your own listing"
+                        ? t("You cannot like your own listing")
                         : undefined
                   }
                   disabled={
@@ -17460,43 +17448,43 @@ export default function MarketplaceApp({
                 />
               </div>
               <p className="listing-included">{selectedListing.deliverables || selectedListing.format}</p>
-              <div className="detail-price"><strong>{priceLabel(selectedListing)}</strong><span> / {pricingLabel(selectedListing)}</span></div>
+              <div className="detail-price"><strong>{priceLabel(selectedListing)}</strong><span> / {t(pricingLabel(selectedListing))}</span></div>
               <div className="detail-facts">
-                <div><small>Location</small><strong>{listingCity(selectedListing)}</strong></div>
-                <div><small>Timing</small><strong>{isBrief(selectedListing) ? selectedListing.available_from && selectedListing.available_to ? bookingDateLabel(selectedListing.timing_kind,selectedListing.available_from,selectedListing.available_to) : "Flexible" : selectedListing.timing_kind === "deadline" ? "Choose a delivery deadline" : "Choose your campaign dates"}</strong></div>
-                {!!selectedListing.lead_time_days && <div><small>Notice needed</small><strong>{selectedListing.lead_time_days} days</strong></div>}
-                {selectedListing.timing_kind === "date_range" && selectedListing.pricing_kind !== "fixed" && <div><small>Minimum duration</small><strong>{selectedListing.minimum_duration_days ?? 1} {(selectedListing.minimum_duration_days ?? 1) === 1 ? "day" : "days"}</strong></div>}
+                <div><small>{t("Location")}</small><strong>{listingCity(selectedListing)}</strong></div>
+                <div><small>{t("Timing")}</small><strong>{isBrief(selectedListing) ? selectedListing.available_from && selectedListing.available_to ? bookingDateLabel(selectedListing.timing_kind,selectedListing.available_from,selectedListing.available_to, t) : t("Flexible") : selectedListing.timing_kind === "deadline" ? t("Choose a delivery deadline") : t("Choose your campaign dates")}</strong></div>
+                {!!selectedListing.lead_time_days && <div><small>{t("Notice needed")}</small><strong>{t("{lead_time_days} days", { lead_time_days: selectedListing.lead_time_days })}</strong></div>}
+                {selectedListing.timing_kind === "date_range" && selectedListing.pricing_kind !== "fixed" && <div><small>{t("Minimum duration")}</small><strong>{selectedListing.minimum_duration_days ?? 1} {(selectedListing.minimum_duration_days ?? 1) === 1 ? t("day") : t("days")}</strong></div>}
               </div>
-              <details className="composer-options"><summary>Details and booking terms</summary>
+              <details className="composer-options"><summary>{t("Details and booking terms")}</summary>
                 {selectedListing.description && selectedListing.description !== selectedListing.deliverables && <p>{selectedListing.description}</p>}
-                {selectedListing.space_size && <p><strong>Size: </strong>{selectedListing.space_size}</p>}
-                {!!selectedListing.surface_types?.length && <p><strong>Allowed formats: </strong>{selectedListing.surface_types.join(", ")}</p>}
-                {selectedListing.install_by && <p><strong>Installation: </strong>{INSTALL_CHIPS.find((item) => item.value === selectedListing.install_by)?.label || selectedListing.install_by}</p>}
-                {selectedListing.sponsor_tier && <p><strong>Tier: </strong>{selectedListing.sponsor_tier}</p>}
-                {selectedListing.sponsor_slots != null && <p><strong>Available spots: </strong>{selectedListing.sponsor_slots}</p>}
-                {isBrief(selectedListing) && !!selectedListing.target_platforms?.length && <p><strong>Target platforms: </strong>{selectedListing.target_platforms.join(", ")}</p>}
-                {isBrief(selectedListing) && selectedListing.brief_scope && <p><strong>Placements: </strong>{selectedListing.brief_scope === "both" ? "Physical and online" : selectedListing.brief_scope === "physical" ? "Physical" : "Online"}</p>}
-                {selectedListing.demographics && <p><strong>Audience: </strong>{selectedListing.demographics}</p>}
+                {selectedListing.space_size && <p><strong>{t("Size:")}{" "}</strong>{selectedListing.space_size}</p>}
+                {!!selectedListing.surface_types?.length && <p><strong>{t("Allowed formats:")}{" "}</strong>{selectedListing.surface_types.join(", ")}</p>}
+                {selectedListing.install_by && <p><strong>{t("Installation:")}{" "}</strong>{t(INSTALL_CHIPS.find((item) => item.value === selectedListing.install_by)?.label ?? selectedListing.install_by)}</p>}
+                {selectedListing.sponsor_tier && <p><strong>{t("Tier:")}{" "}</strong>{selectedListing.sponsor_tier}</p>}
+                {selectedListing.sponsor_slots != null && <p><strong>{t("Available spots:")}{" "}</strong>{selectedListing.sponsor_slots}</p>}
+                {isBrief(selectedListing) && !!selectedListing.target_platforms?.length && <p><strong>{t("Target platforms:")}{" "}</strong>{selectedListing.target_platforms.join(", ")}</p>}
+                {isBrief(selectedListing) && selectedListing.brief_scope && <p><strong>{t("Placements:")}{" "}</strong>{selectedListing.brief_scope === "both" ? t("Physical and online") : selectedListing.brief_scope === "physical" ? t("Physical") : t("Online")}</p>}
+                {selectedListing.demographics && <p><strong>{t("Audience:")}{" "}</strong>{selectedListing.demographics}</p>}
                 {selectedListing.availability_notes && <p>{selectedListing.availability_notes}</p>}
-                {(selectedListing.available_from || selectedListing.available_to) && <p>Available {displayDate(selectedListing.available_from)} – {displayDate(selectedListing.available_to)}</p>}
+                {(selectedListing.available_from || selectedListing.available_to) && <p>{t("Available {available_from} – {available_to}", { available_from: displayDate(selectedListing.available_from, t), available_to: displayDate(selectedListing.available_to, t) })}</p>}
                 {selectedListing.minimum_booking && <p>{selectedListing.minimum_booking}</p>}
-                <p><strong>Cancellation: </strong>{selectedListing.cancellation_policy || "Agree with the owner before payment."}</p>
+                <p><strong>{t("Cancellation:")}{" "}</strong>{selectedListing.cancellation_policy || t("Agree with the owner before payment.")}</p>
               </details>
               {!viewingOwnListing && isListingRequestable(selectedListing) && !isBrief(selectedListing) && selectedListing.instant_booking_enabled && selectedListing.price_cents > 0 && (
                 <InstantBookingPanel key={selectedListing.id} listing={selectedListing} busy={busy}
                   onCheckout={(start, end) => startInstantCheckout(selectedListing, start, end)} />
               )}
               {!viewingOwnListing && isListingRequestable(selectedListing) && !isBrief(selectedListing) && <div className="detail-primary-actions">
-                {!selectedListing.instant_booking_enabled && isFixedPriceListing(selectedListing) && <button className="button button-coral" onClick={() => openCampaignFlow(selectedListing,"buy_now")}>Request a booking</button>}
-                <button className={`button ${!selectedListing.instant_booking_enabled && !isFixedPriceListing(selectedListing) ? "button-coral" : "button-ghost"}`} onClick={() => openCampaignFlow(selectedListing,"offer")}>Make a custom offer</button>
+                {!selectedListing.instant_booking_enabled && isFixedPriceListing(selectedListing) && <button className="button button-coral" onClick={() => openCampaignFlow(selectedListing,"buy_now")}>{t("Request a booking")}</button>}
+                <button className={`button ${!selectedListing.instant_booking_enabled && !isFixedPriceListing(selectedListing) ? "button-coral" : "button-ghost"}`} onClick={() => openCampaignFlow(selectedListing,"offer")}>{t("Make a custom offer")}</button>
               </div>}
               {viewingOwnListing ? (
                 <div className="detail-owner-actions">
                   <p>
-                    This is your listing.
+                    {t("This is your listing.")}
                     {selectedListing.status === "active"
-                      ? " It is live in the marketplace."
-                      : " It is paused, so nobody can see it."}
+                      ? t(" It is live in the marketplace.")
+                      : t(" It is paused, so nobody can see it.")}
                   </p>
                   {renderListingFigures(selectedListing.id)}
                   <div className="detail-primary-actions">
@@ -17512,7 +17500,7 @@ export default function MarketplaceApp({
                         openListingEdit(listing);
                       }}
                     >
-                      Edit listing
+                      {t("Edit listing")}
                     </button>
                     <button
                       className="button button-ghost"
@@ -17520,8 +17508,8 @@ export default function MarketplaceApp({
                       onClick={() => void updateListingStatus(selectedListing)}
                     >
                       {selectedListing.status === "active"
-                        ? "Pause listing"
-                        : "Make it live again"}
+                        ? t("Pause listing")
+                        : t("Make it live again")}
                     </button>
                     <button
                       className="button button-ghost is-danger"
@@ -17532,7 +17520,7 @@ export default function MarketplaceApp({
                         setDeleteListingTarget(listing);
                       }}
                     >
-                      Delete listing
+                      {t("Delete listing")}
                     </button>
                   </div>
                 </div>
@@ -17545,8 +17533,8 @@ export default function MarketplaceApp({
                     onClick={() => openCampaignRequest(selectedListing)}
                   >
                     {isListingRequestable(selectedListing)
-                      ? "Offer my space"
-                      : "View only"}{" "}
+                      ? t("Offer my space")
+                      : t("View only")}{" "}
                     <span aria-hidden="true" className="ss-icon-arrow">
                       ↗
                     </span>
@@ -17560,7 +17548,7 @@ export default function MarketplaceApp({
                     openListingChat(listing);
                   }}
                 >
-                  Message owner{" "}
+                  {t("Message owner")}{" "}
                   <span aria-hidden="true" className="ss-icon-arrow">
                     ↗
                   </span>
@@ -17588,7 +17576,7 @@ export default function MarketplaceApp({
                     })();
                   }}
                 >
-                  Share listing
+                  {t("Share listing")}
                 </button>
                 {selectedListing.owner.id !== profile?.id && (
                   <>
@@ -17602,7 +17590,7 @@ export default function MarketplaceApp({
                         )
                       }
                     >
-                      Report listing
+                      {t("Report listing")}
                     </button>
                     <button
                       onClick={() =>
@@ -17610,7 +17598,7 @@ export default function MarketplaceApp({
                           const owner = selectedListing.owner;
                           if (
                             window.confirm(
-                              `Block ${owner.display_name}? They will not be able to message you or request your listings, and their listings will be hidden from you. You can undo this in Profile & settings.`,
+                              t("Block {display_name}? They will not be able to message you or request your listings, and their listings will be hidden from you. You can undo this in Profile & settings.", { display_name: owner.display_name }),
                             )
                           ) {
                             void blockProfile(owner);
@@ -17618,7 +17606,7 @@ export default function MarketplaceApp({
                         })
                       }
                     >
-                      Block member
+                      {t("Block member")}
                     </button>
                   </>
                 )}
@@ -17630,7 +17618,7 @@ export default function MarketplaceApp({
 
       {selectedOwner && (
         <Modal
-          label={`${selectedOwner.display_name}'s profile`}
+          label={t("{display_name}'s profile", { display_name: selectedOwner.display_name })}
           onClose={closeOwnerProfile}
           wide
         >
@@ -17655,10 +17643,10 @@ export default function MarketplaceApp({
                   }`}
                 >
                   {selectedOwner.is_demo
-                    ? "Demo profile"
+                    ? t("Demo profile")
                     : selectedOwner.verified
-                      ? "Verified by SideSpace"
-                      : "Unverified profile"}
+                      ? t("Verified by SideSpace")
+                      : t("Unverified profile")}
                 </span>
               </div>
             </header>
@@ -17682,8 +17670,8 @@ export default function MarketplaceApp({
                       )}
                     </b>
                     {selectedOwner.followers
-                      ? " followers"
-                      : ` ${selectedOwner.reach_unit || "weekly looks"}`}
+                      ? " " + t("followers")
+                      : " " + t(selectedOwner.reach_unit || "weekly looks")}
                   </span>
                 )}
                 {Boolean(selectedOwner.audience_age) && (
@@ -17696,14 +17684,14 @@ export default function MarketplaceApp({
               <div className="seller-profile-listings-head">
                 <strong>
                   {ownerListingsLoading
-                    ? "Everything they have live"
+                    ? t("Everything they have live")
                     : ownerListings.length === 1
-                      ? "1 listing live"
-                      : `${ownerListings.length} listings live`}
+                      ? t("1 listing live")
+                      : t("{ownerListingsCount} listings live", { ownerListingsCount: ownerListings.length })}
                 </strong>
               </div>
               {ownerListingsLoading ? (
-                <p className="seller-profile-empty">Loading their listings…</p>
+                <p className="seller-profile-empty">{t("Loading their listings…")}</p>
               ) : ownerListings.length ? (
                 <div className="seller-listing-grid">
                   {ownerListings.map((listing) => (
@@ -17719,7 +17707,7 @@ export default function MarketplaceApp({
                       <ListingCover listing={listing} />
                       <span className="seller-listing-body">
                         <span className="seller-listing-channel">
-                          {listing.channel}
+                          {t(listing.channel)}
                         </span>
                         <strong>{listing.title}</strong>
                         <span className="seller-listing-price">
@@ -17727,7 +17715,7 @@ export default function MarketplaceApp({
                         </span>
                         {listing.id === selectedListing?.id && (
                           <span className="seller-listing-current">
-                            The one you were reading
+                            {t("The one you were reading")}
                           </span>
                         )}
                       </span>
@@ -17736,7 +17724,7 @@ export default function MarketplaceApp({
                 </div>
               ) : (
                 <p className="seller-profile-empty">
-                  Nothing live right now.
+                  {t("Nothing live right now.")}
                 </p>
               )}
             </div>
@@ -17748,7 +17736,7 @@ export default function MarketplaceApp({
                   requireAccount(() => void startConversation(selectedOwner))
                 }
               >
-                Message {selectedOwner.display_name} <span>↗</span>
+                {t("Message {display_name}", { display_name: selectedOwner.display_name })} <span>↗</span>
               </button>
             )}
           </div>
@@ -17757,30 +17745,30 @@ export default function MarketplaceApp({
 
       {campaignListing && (
         <Modal
-          label={`${campaignRequestMode === "buy_now" ? "Book as listed" : "Make an offer"} on ${campaignListing.title}`}
+          label={t("{value} on {title}", { value: campaignRequestMode === "buy_now" ? "Book as listed" : "Make an offer", title: campaignListing.title })}
           onClose={() => {
             setCampaignListing(null);
             setCampaignRequestMode("offer");
           }}
           wide
         >
-          <div className="modal-heading"><h2>{campaignRequestMode === "buy_now" ? "Request a booking" : "Make a custom offer"}</h2><p>{campaignListing.title}</p></div>
-          {campaignRequestMode === "buy_now" && <div className="booking-terms-summary"><strong>What’s included</strong><p>{campaignListing.deliverables || campaignListing.format}</p>
-            <details><summary>Booking and cancellation terms</summary><p>{campaignListing.cancellation_policy || "Agree cancellation terms with the owner before payment."}</p><p>{campaignListing.minimum_booking}</p></details>
+          <div className="modal-heading"><h2>{campaignRequestMode === "buy_now" ? t("Request a booking") : t("Make a custom offer")}</h2><p>{campaignListing.title}</p></div>
+          {campaignRequestMode === "buy_now" && <div className="booking-terms-summary"><strong>{t("What’s included")}</strong><p>{campaignListing.deliverables || campaignListing.format}</p>
+            <details><summary>{t("Booking and cancellation terms")}</summary><p>{campaignListing.cancellation_policy || t("Agree cancellation terms with the owner before payment.")}</p><p>{campaignListing.minimum_booking}</p></details>
           </div>}
           <form className="field-grid campaign-form" onSubmit={submitCampaignRequest} onInvalidCapture={(event) => revealInvalidField(event.target)}>
             <BookingFields listing={campaignListing} quoteRequired={campaignRequestMode === "buy_now"} />
             {campaignRequestMode !== "buy_now" && <>
-              <label className="field-wide">Offer total ($)<input name="budget" type="number" min="0" step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
-              <label className="field-wide">{isBrief(campaignListing) ? "What you’ll deliver" : "What you need"}<textarea name="requested_deliverables" required minLength={2} maxLength={1000} defaultValue={campaignListing.deliverables || campaignListing.format} /></label>
+              <label className="field-wide">{t("Offer total ($)")}<input name="budget" type="number" min="0" step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
+              <label className="field-wide">{isBrief(campaignListing) ? t("What you’ll deliver") : t("What you need")}<textarea name="requested_deliverables" required minLength={2} maxLength={1000} defaultValue={campaignListing.deliverables || campaignListing.format} /></label>
             </>}
-            <details className="composer-options field-wide"><summary>Campaign details (optional)</summary><div className="field-grid">
-              <label className="field-wide">Campaign name<input name="campaign_name" maxLength={120} defaultValue={campaignListing.title} /></label>
-              <label className="field-wide">What are you promoting?<textarea name="goals" maxLength={1500} /></label>
-              <label className="field-wide">Notes or questions<textarea name="notes" maxLength={2000} /></label>
+            <details className="composer-options field-wide"><summary>{t("Campaign details (optional)")}</summary><div className="field-grid">
+              <label className="field-wide">{t("Campaign name")}<input name="campaign_name" maxLength={120} defaultValue={campaignListing.title} /></label>
+              <label className="field-wide">{t("What are you promoting?")}<textarea name="goals" maxLength={1500} /></label>
+              <label className="field-wide">{t("Notes or questions")}<textarea name="notes" maxLength={2000} /></label>
             </div></details>
             {campaignFeedback && <p className="field-error field-wide" role="alert">{campaignFeedback}</p>}
-            <small className="field-wide">{campaignRequestMode === "buy_now" ? "The owner confirms before you pay." : "Nothing is charged when you send an offer."}</small>
+            <small className="field-wide">{campaignRequestMode === "buy_now" ? t("The owner confirms before you pay.") : t("Nothing is charged when you send an offer.")}</small>
             <div className="form-submit field-wide">
               <button
                 type="button"
@@ -17789,16 +17777,16 @@ export default function MarketplaceApp({
                   setCampaignRequestMode("offer");
                 }}
               >
-                Cancel
+                {t("Cancel")}
               </button>
               <button className="button button-coral" disabled={busy}>
                 {busy
                   ? campaignRequestMode === "buy_now"
-                    ? "Sending booking..."
-                    : "Sending offer..."
+                    ? t("Sending booking...")
+                    : t("Sending offer...")
                   : campaignRequestMode === "buy_now"
-                    ? "Send booking request"
-                    : "Send offer"}{" "}
+                    ? t("Send booking request")
+                    : t("Send offer")}{" "}
                 <span>↗</span>
               </button>
             </div>
@@ -17808,17 +17796,17 @@ export default function MarketplaceApp({
 
       {counteringRequest && (
         <Modal
-          label="Suggest different terms"
+          label={t("Suggest different terms")}
           onClose={() => setCounteringRequest(null)}
         >
           <div className="modal-heading">
-            <p className="eyebrow">Counteroffer</p>
-            <h2>Suggest different terms.</h2>
-            <p>Explain what you can deliver and what needs to change.</p>
+            <p className="eyebrow">{t("Counteroffer")}</p>
+            <h2>{t("Suggest different terms.")}</h2>
+            <p>{t("Explain what you can deliver and what needs to change.")}</p>
           </div>
           <form className="stack-form" onSubmit={submitCounteroffer}>
             <label>
-              Counter budget
+              {t("Counter budget")}
               <input
                 name="counter_budget"
                 type="number"
@@ -17837,16 +17825,16 @@ export default function MarketplaceApp({
               />
             </label>
             <label>
-              Counteroffer details
+              {t("Counteroffer details")}
               <textarea
                 name="counter_message"
                 required
                 minLength={10}
-                placeholder="Explain the revised timing, scope, or deliverables."
+                placeholder={t("Explain the revised timing, scope, or deliverables.")}
               />
             </label>
             <button className="button button-coral button-full" disabled={busy}>
-              {busy ? "Sending..." : "Send counteroffer"} <span>↗</span>
+              {busy ? t("Sending...") : t("Send counteroffer")} <span>↗</span>
             </button>
           </form>
         </Modal>
@@ -17854,51 +17842,50 @@ export default function MarketplaceApp({
 
       {verificationOpen && profile && profile.role !== "consumer" && (
         <Modal
-          label="Submit verification evidence"
+          label={t("Submit verification evidence")}
           onClose={() => setVerificationOpen(false)}
         >
           <div className="modal-heading">
-            <p className="eyebrow">SideSpace verification</p>
-            <h2>Submit evidence for review.</h2>
+            <p className="eyebrow">{t("SideSpace verification")}</p>
+            <h2>{t("Submit evidence for review.")}</h2>
             <p>
-              A social link is self-reported until SideSpace reviews evidence or
-              a supported provider is connected. Approval is never automatic.
+              {t("A social link is self-reported until SideSpace reviews evidence or a supported provider is connected. Approval is never automatic.")}
             </p>
           </div>
           <form className="stack-form" onSubmit={submitVerificationRequest}>
             <label>
-              Public business or portfolio URL
+              {t("Public business or portfolio URL")}
               <input
                 name="evidence_url"
                 type="url"
                 required
-                placeholder="https://yourbusiness.com/about"
+                placeholder={t("https://yourbusiness.com/about")}
               />
             </label>
             <label>
-              Primary social platform
+              {t("Primary social platform")}
               <select name="social_platform" defaultValue="instagram">
                 <option value="instagram">Instagram</option>
                 <option value="tiktok">TikTok</option>
                 <option value="youtube">YouTube</option>
-                <option value="facebook">Facebook</option>
-                <option value="x">X</option>
-                <option value="none">No social account</option>
+                <option value="facebook">{t("Facebook")}</option>
+                <option value="x">{t("X")}</option>
+                <option value="none">{t("No social account")}</option>
               </select>
             </label>
             <label>
-              Social handle or profile URL
-              <input name="social_handle" placeholder="@yourhandle" />
+              {t("Social handle or profile URL")}
+              <input name="social_handle" placeholder={t("@yourhandle")} />
             </label>
             <label>
-              What should we verify?
+              {t("What should we verify?")}
               <textarea
                 name="verification_message"
-                placeholder="Tell us how the website and social profile connect to you or your organization."
+                placeholder={t("Tell us how the website and social profile connect to you or your organization.")}
               />
             </label>
             <button className="button button-dark button-full" disabled={busy}>
-              {busy ? "Submitting..." : "Submit for manual review"}{" "}
+              {busy ? t("Submitting...") : t("Submit for manual review")}{" "}
               <span>↗</span>
             </button>
           </form>
@@ -17907,36 +17894,36 @@ export default function MarketplaceApp({
 
       {reportTarget && (
         <Modal
-          label={`Report ${reportTarget.profile.display_name}`}
+          label={t("Report {display_name}", { display_name: reportTarget.profile.display_name })}
           onClose={() => setReportTarget(null)}
         >
           <div className="modal-heading">
-            <p className="eyebrow">Safety report</p>
-            <h2>Report {reportTarget.profile.display_name}</h2>
-            <p>Reports are private and reviewed by the SideSpace team.</p>
+            <p className="eyebrow">{t("Safety report")}</p>
+            <h2>{t("Report {display_name}", { display_name: reportTarget.profile.display_name })}</h2>
+            <p>{t("Reports are private and reviewed by the SideSpace team.")}</p>
           </div>
           <form className="stack-form" onSubmit={submitProfileReport}>
             <label>
-              Reason
+              {t("Reason")}
               <select name="reason" defaultValue="misleading">
-                <option value="misleading">Misleading listing or metrics</option>
-                <option value="spam">Spam or unwanted promotion</option>
-                <option value="unsafe">Unsafe or prohibited content</option>
-                <option value="impersonation">Impersonation</option>
-                <option value="other">Other</option>
+                <option value="misleading">{t("Misleading listing or metrics")}</option>
+                <option value="spam">{t("Spam or unwanted promotion")}</option>
+                <option value="unsafe">{t("Unsafe or prohibited content")}</option>
+                <option value="impersonation">{t("Impersonation")}</option>
+                <option value="other">{t("Other")}</option>
               </select>
             </label>
             <label>
-              Details
+              {t("Details")}
               <textarea
                 name="details"
                 required
                 minLength={10}
-                placeholder="Describe what happened and what the team should review."
+                placeholder={t("Describe what happened and what the team should review.")}
               />
             </label>
             <button className="button button-dark button-full" disabled={busy}>
-              {busy ? "Submitting..." : "Submit private report"}
+              {busy ? t("Submitting...") : t("Submit private report")}
             </button>
           </form>
         </Modal>
@@ -17949,16 +17936,16 @@ export default function MarketplaceApp({
             className="inbox-drawer"
             role="dialog"
             aria-modal="true"
-            aria-label="Messages"
+            aria-label={t("Messages")}
             tabIndex={-1}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <header>
               <div>
-                <p className="eyebrow">Private conversations</p>
-                <h2>Messages</h2>
+                <p className="eyebrow">{t("Private conversations")}</p>
+                <h2>{t("Messages")}</h2>
               </div>
-              <button onClick={closeInbox} aria-label="Close messages">
+              <button onClick={closeInbox} aria-label={t("Close messages")}>
                 ×
               </button>
             </header>
@@ -17969,20 +17956,20 @@ export default function MarketplaceApp({
                     <span>@</span>
                     <h3>
                       {inboxState === "loading"
-                        ? "Loading your conversations..."
-                        : "We could not load your conversations."}
+                        ? t("Loading your conversations...")
+                        : t("We could not load your conversations.")}
                     </h3>
                     <p>
                       {inboxState === "loading"
-                        ? "One moment."
-                        : "Check your connection and reopen Messages."}
+                        ? t("One moment.")
+                        : t("Check your connection and reopen Messages.")}
                     </p>
                   </div>
                 ) : !visibleThreads.length ? (
                   <div className="inbox-empty">
                     <span>@</span>
-                    <h3>Your inbox is ready.</h3>
-                    <p>Message a listing owner to start a conversation.</p>
+                    <h3>{t("Your inbox is ready.")}</h3>
+                    <p>{t("Message a listing owner to start a conversation.")}</p>
                   </div>
                 ) : (
                   visibleThreads.map((thread) => (
@@ -17994,7 +17981,7 @@ export default function MarketplaceApp({
                       <Avatar profile={thread.other} size="small" />
                       <div>
                         <strong>{thread.other.display_name}</strong>
-                        <small>{roleLabel(thread.other.role)}</small>
+                        <small>{t(roleLabel(thread.other.role))}</small>
                       </div>
                       <span>›</span>
                     </button>
@@ -18007,7 +17994,7 @@ export default function MarketplaceApp({
                     <div className="conversation-head">
                       <button
                         className="mobile-back"
-                        aria-label="Back to conversations"
+                        aria-label={t("Back to conversations")}
                         onClick={() => {
                           setActiveContact(null);
                           setActiveThread(null);
@@ -18019,8 +18006,8 @@ export default function MarketplaceApp({
                       <div>
                         <strong>{activeContact.display_name}</strong>
                         <small>
-                          {roleLabel(activeContact.role)} · {activeContact.city}
-                          {activeContact.is_demo && " · Automated demo replies"}
+                          {t(roleLabel(activeContact.role))} · {activeContact.city}
+                          {activeContact.is_demo && t(" · Automated demo replies")}
                         </small>
                       </div>
                     </div>
@@ -18028,10 +18015,9 @@ export default function MarketplaceApp({
                       {!messages.length && (
                         <div className="message-start">
                           <Avatar profile={activeContact} />
-                          <h3>Start with something specific.</h3>
+                          <h3>{t("Start with something specific.")}</h3>
                           <p>
-                            Mention the listing, your timeline, and what success
-                            would look like.
+                            {t("Mention the listing, your timeline, and what success would look like.")}
                           </p>
                         </div>
                       )}
@@ -18039,8 +18025,8 @@ export default function MarketplaceApp({
                         const mine =
                           message.sender_profile_id === profile?.id;
                         const sender = mine
-                          ? "You"
-                          : activeContact?.display_name ?? "Them";
+                          ? t("You")
+                          : activeContact?.display_name ?? t("Them");
                         return (
                         <div
                           key={message.id}
@@ -18052,7 +18038,7 @@ export default function MarketplaceApp({
                           <span className="sr-only">{sender}: </span>
                           <p>{message.body}</p>
                           <small>
-                            {TIME_FORMAT.format(new Date(message.created_at))}
+                            {timeFormat(t.locale).format(new Date(message.created_at))}
                           </small>
                         </div>
                         );
@@ -18070,17 +18056,17 @@ export default function MarketplaceApp({
                       <textarea
                         name="body"
                         required
-                        placeholder="Write a message..."
+                        placeholder={t("Write a message...")}
                         rows={2}
                       />
-                      <button>Send ↗</button>
+                      <button>{t("Send ↗")}</button>
                     </form>
                   </>
                 ) : (
                   <div className="conversation-placeholder">
                     <span>↗</span>
-                    <h3>Choose a conversation</h3>
-                    <p>Your private messages will appear here.</p>
+                    <h3>{t("Choose a conversation")}</h3>
+                    <p>{t("Your private messages will appear here.")}</p>
                   </div>
                 )}
               </div>

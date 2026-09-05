@@ -87,6 +87,30 @@ Stripe Checkout, Connect return URLs, and same-origin payment checks match
 the public hostname. The generated `*.vercel.app` address can stay as a
 fallback.
 
+## Languages
+
+The interface speaks English, Spanish, Simplified Chinese, Korean, and
+Vietnamese. A first visit follows the browser's `Accept-Language`; the
+switcher in the footer (and at the foot of the mobile menu) stores an explicit
+choice in the `sidespace_locale` cookie for a year and reloads. URLs never
+change with the language. Only the site's own words are translated: listings
+stay in whatever language their owner wrote them, the legal pages are English
+with a notice on top, and the emails the database queues are still English.
+
+English is the key. Components call `t("Sign in")` from `useT()` (client) or
+`getTranslator()` (server); a string defined outside a component is marked
+with `msg("Storefront")` and translated where it is rendered. Placeholders are
+`{name}`. The dictionaries live in `lib/i18n/dictionaries/<locale>.json`, and
+`tests/i18n.test.ts` fails when a dictionary is missing a sentence the source
+can show, carries one it no longer shows, or drops a placeholder.
+
+    node scripts/i18n-keys.mjs --verbose   # what each dictionary is missing
+
+To add a language: add its code, name, and BCP 47 tag in
+`lib/i18n/locales.ts`, a case in `lib/i18n/dictionaries.ts`, and the JSON file.
+The translations were machine-drafted and should be read through by a native
+speaker before they are announced.
+
 ## Security model
 
 Passwords are stored and verified by Supabase Auth, not by the application.

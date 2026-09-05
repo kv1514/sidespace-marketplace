@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * A 360 photo or 360 video of a space, looked around by dragging.
@@ -36,6 +37,7 @@ function clamp(value: number, low: number, high: number) {
 }
 
 export default function PanoramaViewer({ src, kind, label }: Props) {
+  const t = useT();
   const mountRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const movedRef = useRef(false);
@@ -280,12 +282,12 @@ export default function PanoramaViewer({ src, kind, label }: Props) {
       <div ref={mountRef} className="pano-canvas" />
       {status === "loading" && (
         <span className="pano-status" role="status">
-          Loading the 360° view…
+          {t("Loading the 360° view…")}
         </span>
       )}
       {status === "ready" && !moved && (
         <span className="pano-hint" aria-hidden="true">
-          Drag to look around
+          {t("Drag to look around")}
         </span>
       )}
       {kind === "video360" && status === "ready" && (
@@ -293,16 +295,16 @@ export default function PanoramaViewer({ src, kind, label }: Props) {
           <button
             type="button"
             onClick={togglePlay}
-            aria-label={playing ? "Pause the 360° video" : "Play the 360° video"}
+            aria-label={playing ? t("Pause the 360° video") : t("Play the 360° video")}
           >
-            {playing ? "❚❚ Pause" : "▶ Play"}
+            {playing ? t("❚❚ Pause") : t("▶ Play")}
           </button>
           <button
             type="button"
             onClick={toggleMute}
-            aria-label={muted ? "Turn the sound on" : "Turn the sound off"}
+            aria-label={muted ? t("Turn the sound on") : t("Turn the sound off")}
           >
-            {muted ? "Sound off" : "Sound on"}
+            {muted ? t("Sound off") : t("Sound on")}
           </button>
         </div>
       )}
