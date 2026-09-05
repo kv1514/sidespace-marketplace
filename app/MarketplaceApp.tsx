@@ -17,6 +17,7 @@ import {
 } from "react";
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { toastTone, type ToastTone } from "@/lib/toast-tone";
 import {
   loadProfileContacts,
   saveProfileContacts,
@@ -56,6 +57,17 @@ import {
   comparePopularListings,
   normalizeLikeCount,
 } from "@/lib/listings/popularity";
+import {
+  recommendListings,
+  type CooccurrenceIndex,
+} from "@/lib/listings/recommend";
+import {
+  affinityEvents,
+  trackClick,
+  trackLike,
+  trackOffer,
+  watchListingImpressions,
+} from "@/lib/listings/track";
 import type { ListingDraft } from "@/lib/listings/draft";
 import {
   DashboardGate,
@@ -160,6 +172,22 @@ type IgStats = {
 
 /** How a listing's walkthrough shows: a flat video, or one of the two 360 kinds the panorama viewer takes. */
 type TourKind = "video" | "video360" | "photo360";
+
+/**
+ * One row of public.my_listing_analytics: the four numbers an owner is allowed
+ * to see about their own listing, and never anything about who produced them.
+ */
+type ListingAnalytics = {
+  listing_id: string;
+  title: string | null;
+  status: string | null;
+  impressions: number;
+  clicks: number;
+  impressions_7d: number;
+  clicks_7d: number;
+  like_count: number;
+  offers: number;
+};
 
 type Listing = BookingSchedule & {
   id: string;
@@ -4116,17 +4144,6 @@ function friendlyDbError(error: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-// Toasts carry both good news and bad, and a green tick on "Add your city
-// before continuing" reads as if it worked. Every message is authored in this
-// file, so matching our own failure vocabulary is reliable; an unmatched
-// message just keeps the old tick rather than claiming something false.
-const PROBLEM_TOAST =
-  /\b(could not|cannot|can't|failed|unable|must|before continuing|at least|invalid|not available|already|too (large|many|big|long|short)|expired|try again|sorry|no longer|denied|wrong|missing|did not|needs?|add your|enter a|pick a|choose a|keep it|limit|reached|not enough)\b/i;
-
-function toastIsProblem(message: string) {
-  return PROBLEM_TOAST.test(message);
-}
-
 function compactNumber(value: number) {
   return Intl.NumberFormat("en", {
     notation: "compact",
@@ -4257,6 +4274,15 @@ const LISTING_READY_MIN = { title: 8, format: 10, description: 60 };
  * What a listing is still missing, phrased for the person who has to fix it.
  * An empty list means the grid treats it as complete.
  */
+/**
+ * The offer statuses that still need somebody to do something.
+ *
+ * A countered request is still open: the other side can accept, decline or
+ * revise it. Anything else - accepted, confirmed, completed, declined,
+ * cancelled, refunded - is history.
+ */
+const OPEN_REQUEST_STATUSES = ["pending", "countered"];
+
 function listingGaps(
   listing: Pick<Listing, "title" | "format" | "description"> & Partial<Pick<Listing, "timing_kind" | "deliverables">>,
 ) {
@@ -5065,6 +5091,42 @@ function OnboardingPreviewCards({
   );
 }
 
+/**
+ * The dashboard stat icons.
+ *
+ * Drawn on the same 16px grid at the same 1.5 stroke as the arrow in the
+ * tile's action row, so a tile reads as one drawing rather than a font
+ * character next to an SVG.
+ */
+const DASHBOARD_STAT_ICONS = {
+  listings: "M2.75 4.5h10.5M2.75 8h10.5M2.75 11.5h6.5",
+  incoming: "M8 2.75v6.5M5.25 6.5 8 9.25l2.75-2.75M2.75 11.25v1a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1v-1",
+  outgoing: "M8 13.25v-6.5M5.25 9.5 8 6.75l2.75 2.75M2.75 4.75v-1a1 1 0 0 1 1-1h8.5a1 1 0 0 1 1 1v1",
+  messages: "M13.25 8.5c0 2.6-2.35 4.75-5.25 4.75a6 6 0 0 1-1.9-.3l-3.35 1 1-2.75A4.5 4.5 0 0 1 2.75 8.5c0-2.6 2.35-4.75 5.25-4.75s5.25 2.15 5.25 4.75Z",
+  payments: "M2.75 6.25h10.5M3.75 3.75h8.5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-8.5a1 1 0 0 1-1-1v-6.5a1 1 0 0 1 1-1ZM5 9.75h2",
+  analytics: "M3 13V9.5M6.33 13V6M9.67 13V8.25M13 13V3.5",
+  likes: "M8 13.25S2.75 9.9 2.75 6.2a2.7 2.7 0 0 1 5.25-.9 2.7 2.7 0 0 1 5.25.9c0 3.7-5.25 7.05-5.25 7.05Z",
+} as const;
+
+function DashboardStatIcon({
+  name,
+}: {
+  name: keyof typeof DASHBOARD_STAT_ICONS;
+}) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        d={DASHBOARD_STAT_ICONS[name]}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function MarketplaceApp({
   initialProfiles = null,
   initialListings = null,
@@ -5128,6 +5190,10 @@ export default function MarketplaceApp({
   const [listings, setListings] = useState<Listing[]>(seededListings);
   const [ownListings, setOwnListings] = useState<Listing[]>([]);
   const [ownListingsLoading, setOwnListingsLoading] = useState(false);
+  const [listingAnalytics, setListingAnalytics] = useState<ListingAnalytics[]>([]);
+  // Co-visit counts for the listings this browser has shown interest in. Empty
+  // until the site has real traffic, which is exactly when it starts to matter.
+  const [cooccurrence, setCooccurrence] = useState<CooccurrenceIndex | null>(null);
   const [likedListingIds, setLikedListingIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -5499,6 +5565,27 @@ export default function MarketplaceApp({
   const [activeContact, setActiveContact] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [campaignRequests, setCampaignRequests] = useState<CampaignRequest[]>([]);
+  /**
+   * Which side of the offer table the campaigns section is showing.
+   *
+   * The dashboard stat tiles count incoming and outgoing offers separately, so
+   * they need to land somewhere that shows that side alone - otherwise both
+   * tiles scroll to the same undifferentiated list and the count you clicked
+   * is nowhere on screen.
+   */
+  const [campaignSide, setCampaignSide] =
+    useState<"all" | "incoming" | "outgoing">("all");
+  /**
+   * Whether the offers section is narrowed to work that is still open.
+   *
+   * The stat tiles count only pending and countered offers - that is what
+   * "waiting on your reply" means. The section they navigate to listed every
+   * offer ever made, so a member with two open offers and fifteen finished
+   * bookings clicked "2" and landed on a list of seventeen. The tiles set this
+   * so the number they clicked is the number they arrive at; it renders as a
+   * pill the member can clear to see the rest.
+   */
+  const [campaignOpenOnly, setCampaignOpenOnly] = useState(false);
   const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransaction[]>([]);
   const [adCreditBalanceCents, setAdCreditBalanceCents] = useState(0);
   const [creatorPortfolio, setCreatorPortfolio] = useState<CreatorPortfolioItem[]>([]);
@@ -5557,7 +5644,21 @@ export default function MarketplaceApp({
   const [roleFilter, setRoleFilter] = useState<RoleFilter>(initialRoleFilter);
   const [channelFilter, setChannelFilter] = useState(initialChannel);
   const [listingSort, setListingSort] = useState<ListingSort>(initialSort);
-  const [toast, setToast] = useState("");
+  const [toast, setToastState] = useState<{
+    text: string;
+    tone: ToastTone;
+  } | null>(null);
+  /**
+   * Show a toast, and say what kind it is when the words do not.
+   *
+   * The second argument exists for the failures our failure vocabulary does
+   * not recognise - "No microphone was found on this device" has none of it -
+   * which were being announced with a green tick, as if they had worked.
+   * Passing "" clears the toast.
+   */
+  const setToast = useCallback((text: string, tone?: ToastTone) => {
+    setToastState(text ? { text, tone: toastTone(text, tone) } : null);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [googleOAuthEnabled, setGoogleOAuthEnabled] = useState(false);
   // Set once the on-domain token exchange has been refused, so the redirect
@@ -5664,8 +5765,30 @@ export default function MarketplaceApp({
       }
       setOwnListingsLoading(false);
     },
-    [supabase],
+    [setToast, supabase],
   );
+
+  /**
+   * How many people met each of the member's own listings.
+   *
+   * Reads the security-invoker view, so "own" is decided by the listings
+   * policy rather than by a filter written here. Fails soft on purpose: a
+   * dashboard that cannot show a number is worth more than one that shows an
+   * error, and the same instinct governs the like counts on the public grid.
+   */
+  const loadListingAnalytics = useCallback(async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from("my_listing_analytics")
+      .select(
+        "listing_id, title, status, impressions, clicks, impressions_7d, clicks_7d, like_count, offers",
+      );
+    if (error) {
+      console.error("[analytics] own listing analytics unavailable:", error);
+      return;
+    }
+    setListingAnalytics((data as ListingAnalytics[] | null) ?? []);
+  }, [supabase]);
 
   /**
    * Unread count for the badge, scoped to the same conversations the inbox
@@ -5926,6 +6049,7 @@ export default function MarketplaceApp({
         await Promise.all([
           loadOwnListings(own),
           loadAccountMarketplaceState(own),
+          loadListingAnalytics(),
         ]);
       } else {
         setOwnListings([]);
@@ -5940,7 +6064,13 @@ export default function MarketplaceApp({
         setBlockedLoaded(true);
       }
     },
-    [loadAccountMarketplaceState, loadOwnListings, supabase],
+    [
+      loadAccountMarketplaceState,
+      loadListingAnalytics,
+      loadOwnListings,
+      setToast,
+      supabase,
+    ],
   );
 
   useEffect(() => {
@@ -6021,7 +6151,14 @@ export default function MarketplaceApp({
       window.clearTimeout(startup);
       subscription.unsubscribe();
     };
-  }, [loadLikedListings, loadMarketplace, loadOwnProfile, route, supabase]);
+  }, [
+    loadLikedListings,
+    loadMarketplace,
+    loadOwnProfile,
+    route,
+    setToast,
+    supabase,
+  ]);
 
   useEffect(() => {
     if (!configured) return;
@@ -6054,7 +6191,7 @@ export default function MarketplaceApp({
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 3600);
     return () => window.clearTimeout(timer);
-  }, [toast]);
+  }, [setToast, toast]);
 
   // Badge updates whether or not the inbox is open. RLS scopes the stream to
   // conversations this member belongs to.
@@ -6428,6 +6565,102 @@ export default function MarketplaceApp({
     [visibleListings],
   );
 
+  /**
+   * Count a listing as seen only once somebody actually reached it.
+   *
+   * Re-attached whenever the grid changes, because filtering swaps the cards
+   * out underneath. Every card is unobserved the moment it counts, so this
+   * stays cheap however long the page gets.
+   */
+  useEffect(() => {
+    if (route !== "marketplace") return;
+    return watchListingImpressions(document);
+  }, [route, visibleListings]);
+
+  /**
+   * What this browser has looked at lately, read once per marketplace visit.
+   *
+   * Deliberately not reactive: re-reading on every render would re-rank the row
+   * under the member's cursor as they browsed, which is worse than a row that
+   * settles when the page loads.
+   */
+  const [visitorAffinity, setVisitorAffinity] = useState<
+    ReturnType<typeof affinityEvents>
+  >([]);
+  useEffect(() => {
+    if (route !== "marketplace") return;
+    // Deferred rather than set synchronously: localStorage cannot be read
+    // while rendering without the server and the client disagreeing about the
+    // first paint, and setting state straight from an effect makes React
+    // render twice for nothing. The startup effect defers the same way.
+    const timer = window.setTimeout(() => setVisitorAffinity(affinityEvents()), 0);
+    return () => window.clearTimeout(timer);
+  }, [route]);
+
+  /**
+   * "People who looked at that looked at this", fetched for the handful of
+   * listings this visitor has shown interest in.
+   *
+   * Returns nothing until the site has traffic, and the recommender is written
+   * to expect that - so this is a no-op today and an upgrade later, with no
+   * further change here.
+   */
+  useEffect(() => {
+    if (!supabase || route !== "marketplace" || !visitorAffinity.length) return;
+    let cancelled = false;
+    const seeds = [...new Set(visitorAffinity.map((event) => event.listingId))].slice(0, 20);
+    void (async () => {
+      const { data, error } = await supabase.rpc("listing_cooccurrence", {
+        seed_ids: seeds,
+      });
+      if (cancelled || error || !Array.isArray(data)) return;
+      const index: CooccurrenceIndex = new Map();
+      for (const row of data as Array<{
+        listing_id: string;
+        paired_listing_id: string;
+        visitors: number;
+      }>) {
+        const inner = index.get(row.listing_id) ?? new Map<string, number>();
+        inner.set(row.paired_listing_id, Number(row.visitors) || 0);
+        index.set(row.listing_id, inner);
+      }
+      setCooccurrence(index);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [route, supabase, visitorAffinity]);
+
+  /**
+   * The row above the grid.
+   *
+   * Scored over the listings already in memory rather than through a server
+   * ranking call - with a catalogue this size that is both simpler and faster.
+   * Past a few hundred listings it would need to move behind an RPC.
+   */
+  const forYou = useMemo(() => {
+    if (route !== "marketplace" || blocksPending || !listings.length) {
+      return { items: [], personalised: false };
+    }
+    return recommendListings({
+      candidates: listings,
+      events: visitorAffinity,
+      nowMs: Date.now(),
+      viewerProfileId: profile?.id ?? null,
+      blockedProfileIds: new Set(blockedProfileIds),
+      cooccurrence,
+      limit: 4,
+    });
+  }, [
+    blockedProfileIds,
+    blocksPending,
+    cooccurrence,
+    listings,
+    profile?.id,
+    route,
+    visitorAffinity,
+  ]);
+
   const creatorRecommendations = useMemo(
     () =>
       profile?.role === "business" && !blocksPending
@@ -6461,9 +6694,23 @@ export default function MarketplaceApp({
     document.documentElement.classList.add("reveal-ready");
     const observer = new IntersectionObserver(
       (entries) => {
+        // Elements that cross the line in the same callback are one group, so
+        // they get a short stagger and arrive as a sequence rather than a
+        // single slab. `--reveal-delay` had been read by the stylesheet and
+        // never written by anything, which is why every reveal until now
+        // fired in unison.
+        let inBatch = 0;
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            entry.target.classList.add("is-visible");
+            const element = entry.target as HTMLElement;
+            if (inBatch > 0) {
+              element.style.setProperty(
+                "--reveal-delay",
+                `${Math.min(inBatch, 4) * 55}ms`,
+              );
+            }
+            inBatch += 1;
+            element.classList.add("is-visible");
             observer.unobserve(entry.target);
           }
         });
@@ -6476,11 +6723,47 @@ export default function MarketplaceApp({
     const failsafe = window.setTimeout(() => {
       targets.forEach((element) => element.classList.add("is-visible"));
     }, 3000);
+
+    /*
+     * Sections that mount later still get observed.
+     *
+     * `reveal-ready` holds every [data-reveal] at opacity 0 until the observer
+     * says otherwise, and the observer only ever sees the elements that
+     * existed when this effect last ran. A section gated on data that arrives
+     * afterwards - payments on a Stripe round-trip, analytics on the member's
+     * own listings - therefore mounts into a document that hides it and never
+     * looks at it again, and stays invisible for the life of the page.
+     *
+     * That has now happened three times, each time fixed by adding one more
+     * dependency, which only ever fixes the section somebody already noticed.
+     * Watching the tree instead closes the whole class: whatever mounts, gets
+     * observed, gets revealed.
+     */
+    const watchLateArrivals = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          const late = node.matches("[data-reveal]")
+            ? [node]
+            : Array.from(node.querySelectorAll<HTMLElement>("[data-reveal]"));
+          for (const element of late) {
+            if (element.classList.contains("is-visible")) continue;
+            observer.observe(element);
+            // The original failsafe's list was captured before this element
+            // existed, so it needs its own.
+            window.setTimeout(() => element.classList.add("is-visible"), 3000);
+          }
+        }
+      }
+    });
+    watchLateArrivals.observe(document.body, { childList: true, subtree: true });
+
     return () => {
       window.clearTimeout(failsafe);
       observer.disconnect();
+      watchLateArrivals.disconnect();
     };
-  }, [listings, user, profile]);
+  }, [listings, user, profile, paymentTransactions.length]);
 
   // The cycle used to start on mount and never stop, so by the time anyone
   // scrolled this far the band was mid-story - you would arrive at step 02 or
@@ -6551,7 +6834,7 @@ export default function MarketplaceApp({
       setToast("Choose a new password below.");
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [user]);
+  }, [setToast, user]);
 
   // The auth callback redirects here with ?authError=callback when the code
   // exchange fails. Without this the member lands back on the signed-out page
@@ -6572,7 +6855,7 @@ export default function MarketplaceApp({
       setAuthOpen(true);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [setToast]);
 
   // Lightweight public pages hand account actions to the dedicated dashboard
   // instead of shipping this entire marketplace engine in their first bundle.
@@ -6623,7 +6906,7 @@ export default function MarketplaceApp({
       void loadAccountMarketplaceState(profile);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadAccountMarketplaceState, profile, route]);
+  }, [loadAccountMarketplaceState, profile, route, setToast]);
 
   useEffect(() => {
     if (selectedListing || typeof window === "undefined") return;
@@ -6713,6 +6996,7 @@ export default function MarketplaceApp({
     recordListingView,
     selectedListing,
     sessionResolved,
+    setToast,
     supabase,
     user,
   ]);
@@ -7007,7 +7291,7 @@ export default function MarketplaceApp({
   ) {
     event.preventDefault();
     if (!supabase || !profile) {
-      setToast("Sign in to save campaign preferences.");
+      setToast("Sign in to save campaign preferences.", "problem");
       return;
     }
     setPreferencesSaving(true);
@@ -7102,7 +7386,10 @@ export default function MarketplaceApp({
       return;
     }
     if (!configured) {
-      setToast("Connect Supabase to enable public accounts and messaging.");
+      setToast(
+        "Connect Supabase to enable public accounts and messaging.",
+        "problem",
+      );
       return;
     }
     // Every overlay shares one z-index and the listing detail is a later
@@ -7231,13 +7518,13 @@ export default function MarketplaceApp({
     const listingId = listing.id;
     if (likeRequestsRef.current.has(listingId)) return;
     if (!supabase) {
-      setToast("Sign in to like listings.");
+      setToast("Sign in to like listings.", "problem");
       return;
     }
     if (!user) {
       setAuthMode("signin");
       setAuthOpen(true);
-      setToast("Sign in to like listings.");
+      setToast("Sign in to like listings.", "problem");
       return;
     }
     if (listing.owner.is_demo || profile?.id === listing.owner.id) {
@@ -7271,6 +7558,8 @@ export default function MarketplaceApp({
             { onConflict: "listing_id,user_id", ignoreDuplicates: true },
           );
       if (result.error) throw result.error;
+      // Only a like teaches the row anything; taking one back should not.
+      if (!wasLiked) trackLike(listingId);
       await refreshListingLikeCount(listingId);
     } catch (error) {
       if (lastAuthUserIdRef.current === currentUser.id) {
@@ -7302,6 +7591,10 @@ export default function MarketplaceApp({
   }
 
   function openListing(listing: Listing) {
+    // The one place every detail open passes through - card, dashboard,
+    // recommendation row, seller profile - so it is the one place a click has
+    // to be recorded.
+    trackClick(listing.id);
     setSelectedPhotoIndex(0);
     setStreetPanoOpen(false);
     setSelectedCreatorPortfolio([]);
@@ -8691,13 +8984,18 @@ export default function MarketplaceApp({
       if (code === "not-allowed") {
         setToast(
           "The microphone (or speech recognition) is blocked for this site. Allow it - the lock or mic icon in the address bar, or Settings > Safari > Microphone on an iPhone - then tap Speak again.",
+          "problem",
         );
       } else if (code === "no-speech") {
         setToast(
           "Didn't hear anything. Check that the mic isn't muted, tap Speak, and start talking straight away.",
+          "problem",
         );
       } else if (code === "audio-capture") {
-        setToast("No microphone was found on this device. Type a few words instead.");
+        setToast(
+          "No microphone was found on this device. Type a few words instead.",
+          "problem",
+        );
       } else if (code !== "aborted") {
         // network, service-not-allowed, language-not-supported: the
         // recogniser is the problem, not the mic. Record instead, now and
@@ -8740,7 +9038,10 @@ export default function MarketplaceApp({
   async function startRecording(field: HTMLTextAreaElement, afterSpeechFailed: boolean) {
     const type = recordingMimeType();
     if (type === null || !navigator.mediaDevices?.getUserMedia) {
-      setToast("Voice input isn't available in this browser. Type a few words instead.");
+      setToast(
+        "Voice input isn't available in this browser. Type a few words instead.",
+        "problem",
+      );
       return;
     }
     let stream: MediaStream;
@@ -8764,7 +9065,10 @@ export default function MarketplaceApp({
       recorder = type ? new MediaRecorder(stream, { mimeType: type }) : new MediaRecorder(stream);
     } catch {
       stream.getTracks().forEach((track) => track.stop());
-      setToast("Recording isn't available in this browser. Type a few words instead.");
+      setToast(
+        "Recording isn't available in this browser. Type a few words instead.",
+        "problem",
+      );
       return;
     }
     const chunks: Blob[] = [];
@@ -8853,7 +9157,10 @@ export default function MarketplaceApp({
     const address =
       addressField instanceof HTMLInputElement ? addressField.value.trim() : "";
     if (address.length < 5) {
-      setToast("Type the exact street address first, then try Street View again.");
+      setToast(
+        "Type the exact street address first, then try Street View again.",
+        "problem",
+      );
       return;
     }
     setStreetViewLoading(true);
@@ -8910,7 +9217,10 @@ export default function MarketplaceApp({
         ? { kind: editingListing.tour_kind, source: editingListing.tour_url }
         : null;
     if (!file && !notes && !audio && !tourSource) {
-      setToast("Add a photo, a walkthrough, or a few words first, then press Fill with AI.");
+      setToast(
+        "Add a photo, a walkthrough, or a few words first, then press Fill with AI.",
+        "problem",
+      );
       return;
     }
     // Whatever is in the form now - a first draft the owner edited, or
@@ -9023,7 +9333,10 @@ export default function MarketplaceApp({
     }
     if (![...TOUR_VIDEO_TYPES, ...TOUR_PHOTO_TYPES].includes(file.type)) {
       setTourPick(null);
-      setToast("A walkthrough is an MP4, WebM, or .mov video, or a JPG, PNG, or WebP 360° photo.");
+      setToast(
+        "A walkthrough is an MP4, WebM, or .mov video, or a JPG, PNG, or WebP 360° photo.",
+        "problem",
+      );
       return;
     }
     if (file.size > TOUR_MAX_BYTES) {
@@ -9706,18 +10019,30 @@ export default function MarketplaceApp({
       return;
     }
     if (mode === "buy_now" && isBrief(listing)) {
-      setToast("Business briefs use Make an offer so you can propose the right fit.");
+      setToast(
+        "Business briefs use Make an offer so you can propose the right fit.",
+        "problem",
+      );
       return;
     }
     if (mode === "buy_now" && !isFixedPriceListing(listing)) {
-      setToast("This listing has a price range. Make an offer to agree on the exact terms.");
+      setToast(
+        "This listing has a price range. Make an offer to agree on the exact terms.",
+        "problem",
+      );
       return;
     }
     requireAccount(() => {
       if (listing.owner.id === profile?.id) {
-        setToast("This is your listing. Manage incoming requests in Dashboard.");
+        setToast(
+          "This is your listing. Manage incoming requests in Dashboard.",
+          "problem",
+        );
         return;
       }
+      // Opening the offer form is the strongest thing somebody does short of
+      // paying, so it is weighted heaviest in what we show them next.
+      trackOffer(listing.id);
       closeListing();
       setCampaignFeedback("");
       setCampaignRequestMode(mode);
@@ -9978,7 +10303,10 @@ export default function MarketplaceApp({
   function startInstantCheckout(listing: Listing, bookingDate: string, bookingEndDate: string) {
     requireAccount(() => {
       if (listing.owner_profile_id === profile?.id) {
-        setToast("This is your listing. Manage its available dates in Dashboard.");
+        setToast(
+          "This is your listing. Manage its available dates in Dashboard.",
+          "problem",
+        );
         return;
       }
       void (async () => {
@@ -10354,11 +10682,11 @@ export default function MarketplaceApp({
       return;
     }
     if (password !== confirmation) {
-      setToast("The two passwords do not match.");
+      setToast("The two passwords do not match.", "problem");
       return;
     }
     if (!currentPassword) {
-      setToast("Enter your current password to confirm the change.");
+      setToast("Enter your current password to confirm the change.", "problem");
       return;
     }
 
@@ -10379,7 +10707,7 @@ export default function MarketplaceApp({
     });
     if (reauthError) {
       setBusy(false);
-      setToast("That current password is not right.");
+      setToast("That current password is not right.", "problem");
       return;
     }
 
@@ -10397,7 +10725,10 @@ export default function MarketplaceApp({
     if (!supabase) return;
     const address = (explicitEmail ?? user?.email ?? "").trim();
     if (!address) {
-      setToast("Enter your email address first, then choose Forgot password.");
+      setToast(
+        "Enter your email address first, then choose Forgot password.",
+        "problem",
+      );
       return;
     }
     setBusy(true);
@@ -10901,6 +11232,26 @@ export default function MarketplaceApp({
     });
   }
 
+  /**
+   * Move the page to a dashboard section and leave the keyboard there too.
+   *
+   * `scrollIntoView` alone moves the viewport but not focus, so a keyboard or
+   * screen-reader user who activates one of these lands visually on the
+   * section while their next Tab continues from the control they left. The
+   * `tabindex="-1"` on the section headers makes it focusable without adding
+   * it to the tab order.
+   */
+  function goToDashboardSection(id: string) {
+    const target = document.getElementById(id);
+    if (!target) return;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({
+      behavior: still ? "auto" : "smooth",
+      block: "start",
+    });
+    target.focus({ preventScroll: true });
+  }
+
   // The inbox is a full-screen overlay but was the one surface not built on
   // Modal, so it had no dialog role, no focus entry, no Escape and no focus
   // trap: a keyboard user who opened Messages had to tab through the whole
@@ -10969,6 +11320,7 @@ export default function MarketplaceApp({
       if (profile?.role === "consumer") {
         setToast(
           "Finish your Business or Creator profile before publishing a listing.",
+          "problem",
         );
         return;
       }
@@ -11038,7 +11390,7 @@ export default function MarketplaceApp({
     const incoming = campaignRequests.filter(
       (request) =>
         request.owner_profile_id === profile.id &&
-        ["pending", "countered"].includes(request.status),
+        OPEN_REQUEST_STATUSES.includes(request.status),
     ).length;
     // A counteroffer sits with the REQUESTER: they are the only party who can
     // accept it. Counting only owner-side rows meant the dashboard told them
@@ -11062,11 +11414,182 @@ export default function MarketplaceApp({
     if (unreadCount) {
       parts.push(`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`);
     }
+    // A listing with gaps is sorted below complete ones and says so on its own
+    // card. Leaving it out of the status line meant the dashboard could open
+    // with "nothing needs your attention" directly above a listing telling the
+    // member it needs a longer title.
+    const unfinished = ownListings.filter(
+      (listing) =>
+        // Business briefs are excluded: listingGaps measures `format`, which
+        // the brief form derives rather than asks for, so a brief could be
+        // reported unfinished with nothing the member could do about it.
+        listing.channel !== "Business brief" && listingGaps(listing).length > 0,
+    ).length;
+    if (unfinished) {
+      parts.push(
+        `${unfinished} listing${unfinished === 1 ? "" : "s"} to finish`,
+      );
+    }
     if (parts.length) return `You have ${parts.join(" and ")}.`;
     if (profile.role !== "consumer" && !ownListings.length) {
       return "Nothing is listed yet. Add your first space or audience to start getting requests.";
     }
     return "Nothing needs your attention right now.";
+  }
+
+  /**
+   * One listing's figures, or an honest sentence when there are none.
+   *
+   * Four zeroes tell an owner nothing and read like a fault. The same
+   * judgement is already made for the follower row on a person card: it only
+   * appears when there is a number in it.
+   */
+  function renderListingFigures(listingId: string) {
+    const row = listingAnalytics.find((entry) => entry.listing_id === listingId);
+    if (!row) return null;
+    if (!row.impressions && !row.clicks && !row.like_count && !row.offers) {
+      return (
+        <p className="listing-figures-empty">
+          Nobody has reached this one yet.
+        </p>
+      );
+    }
+    return (
+      <div className="listing-figures">
+        <span>
+          <small>Seen by</small>
+          <b>{compactNumber(row.impressions)}</b>
+        </span>
+        <span>
+          <small>Opened</small>
+          <b>{compactNumber(row.clicks)}</b>
+        </span>
+        <span>
+          <small>Likes</small>
+          <b>{compactNumber(row.like_count)}</b>
+        </span>
+        <span>
+          <small>Offers</small>
+          <b>{compactNumber(row.offers)}</b>
+        </span>
+      </div>
+    );
+  }
+
+  /**
+   * Everything the member's listings did, added up.
+   *
+   * "Seen by" is people, not paint count: one row per person per day, so
+   * scrolling a card past twenty times is one. That is why the label says
+   * people rather than views - the number would be a lie the other way round.
+   */
+  function renderDashboardAnalytics() {
+    if (!ownListings.length) return null;
+    const totals = listingAnalytics.reduce(
+      (sum, row) => ({
+        impressions: sum.impressions + row.impressions,
+        clicks: sum.clicks + row.clicks,
+        likes: sum.likes + row.like_count,
+        offers: sum.offers + row.offers,
+        impressions7d: sum.impressions7d + row.impressions_7d,
+      }),
+      { impressions: 0, clicks: 0, likes: 0, offers: 0, impressions7d: 0 },
+    );
+    const anything =
+      totals.impressions || totals.clicks || totals.likes || totals.offers;
+
+    return (
+      <section
+        className="account-section dashboard-work-section"
+        id="dashboard-analytics"
+        aria-label="Analytics"
+        tabIndex={-1}
+        data-reveal
+      >
+        <div className="account-section-heading">
+          <div>
+            <p className="eyebrow">Analytics</p>
+            <h3>How your listings are doing.</h3>
+            <p className="account-section-lede">
+              Counted per person per day, so one member scrolling past your card
+              twice is one. Your own visits are never counted.
+            </p>
+          </div>
+        </div>
+
+        {anything ? (
+          <>
+            <div className="dashboard-grid">
+              <div className="dashboard-stat dashboard-stat-readout">
+                <span className="dashboard-stat-top">
+                  <small>Seen by</small>
+                  <span className="dashboard-stat-icon">
+                    <DashboardStatIcon name="analytics" />
+                  </span>
+                </span>
+                <strong>{compactNumber(totals.impressions)}</strong>
+                <span className="dashboard-stat-caption">
+                  {totals.impressions === 1 ? "person" : "people"}
+                  {totals.impressions7d
+                    ? ` · ${compactNumber(totals.impressions7d)} this week`
+                    : ""}
+                </span>
+              </div>
+              <div className="dashboard-stat dashboard-stat-readout">
+                <span className="dashboard-stat-top">
+                  <small>Opened</small>
+                  <span className="dashboard-stat-icon">
+                    <DashboardStatIcon name="outgoing" />
+                  </span>
+                </span>
+                <strong>{compactNumber(totals.clicks)}</strong>
+                <span className="dashboard-stat-caption">
+                  {totals.impressions
+                    ? `${Math.round((totals.clicks / totals.impressions) * 100)}% of those who saw`
+                    : "Nobody yet"}
+                </span>
+              </div>
+              <div className="dashboard-stat dashboard-stat-readout">
+                <span className="dashboard-stat-top">
+                  <small>Likes</small>
+                  <span className="dashboard-stat-icon">
+                    <DashboardStatIcon name="likes" />
+                  </span>
+                </span>
+                <strong>{compactNumber(totals.likes)}</strong>
+                <span className="dashboard-stat-caption">
+                  {totals.likes === 1 ? "member" : "members"} liked one
+                </span>
+              </div>
+              <div className="dashboard-stat dashboard-stat-readout">
+                <span className="dashboard-stat-top">
+                  <small>Offers</small>
+                  <span className="dashboard-stat-icon">
+                    <DashboardStatIcon name="incoming" />
+                  </span>
+                </span>
+                <strong>{compactNumber(totals.offers)}</strong>
+                <span className="dashboard-stat-caption">
+                  {totals.offers === 1 ? "offer" : "offers"} received
+                </span>
+              </div>
+            </div>
+            <p className="account-section-lede dashboard-analytics-note">
+              Per-listing figures are on each card under Listings below.
+            </p>
+          </>
+        ) : (
+          <div className="dashboard-panel-empty">
+            <strong>Nothing to count yet.</strong>
+            <p>
+              We started counting the moment your listing went live. Come back
+              once people have browsed and you will see how many reached it, how
+              many opened it, and where they stopped.
+            </p>
+          </div>
+        )}
+      </section>
+    );
   }
 
   function renderDashboardListings() {
@@ -11075,12 +11598,14 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-listings-all"
+        aria-label="Listings"
+        tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
             <p className="eyebrow">Listings</p>
-            <h3>Manage what you have published.</h3>
+            <h2>Manage what you have published.</h2>
             <p className="account-section-lede">
               Keep your audience, placement, or sponsorship offer clear and bookable.
             </p>
@@ -11122,6 +11647,7 @@ export default function MarketplaceApp({
                       </p>
                     );
                   })()}
+                  {renderListingFigures(listing.id)}
                   <div className="my-listing-actions">
                     <button onClick={() => openListing(listing)}>View</button>
                     <button onClick={() => openListingEdit(listing)}>Edit</button>
@@ -11165,26 +11691,97 @@ export default function MarketplaceApp({
 
   function renderDashboardCampaigns() {
     if (!profile) return null;
+    const matches = (request: CampaignRequest, side: typeof campaignSide) => {
+      const sideOk =
+        side === "all"
+          ? true
+          : side === "incoming"
+            ? request.owner_profile_id === profile.id
+            : request.requester_profile_id === profile.id;
+      return (
+        sideOk &&
+        (!campaignOpenOnly || OPEN_REQUEST_STATUSES.includes(request.status))
+      );
+    };
+    const sides = [
+      { key: "all" as const, label: "All" },
+      { key: "incoming" as const, label: "To you" },
+      { key: "outgoing" as const, label: "You sent" },
+    ];
+    const sideCount = (key: (typeof sides)[number]["key"]) =>
+      campaignRequests.filter((request) => matches(request, key)).length;
+    const visibleRequests = campaignRequests.filter((request) =>
+      matches(request, campaignSide),
+    );
     return (
       <section
         className="account-section dashboard-work-section"
         id="dashboard-campaigns-all"
+        aria-label="Offers and bookings"
+        tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
             <p className="eyebrow">Offers &amp; bookings</p>
-            <h3>Review every offer and next step.</h3>
+            <h2>Review every offer and next step.</h2>
             <p className="account-section-lede">
               Accept, counter, pay, and keep active work moving from one place.
             </p>
           </div>
-          <span className="section-count">{campaignRequests.length} total</span>
+          <div className="segmented-row">
+          {campaignOpenOnly && (
+            <button
+              type="button"
+              className="filter-pill"
+              onClick={() => setCampaignOpenOnly(false)}
+            >
+              Open only
+              <span aria-hidden="true">×</span>
+              <span className="sr-only">, clear this filter</span>
+            </button>
+          )}
+          <div className="segmented" role="radiogroup" aria-label="Filter offers">
+            {sides.map((side, index) => (
+              <button
+                key={side.key}
+                type="button"
+                role="radio"
+                className="segmented-option"
+                aria-checked={campaignSide === side.key}
+                // Only the selected option is tabbable, and the arrows move
+                // between them: the roving-tabindex half of the radio pattern,
+                // without which a radiogroup is a worse lie than the toggles.
+                tabIndex={campaignSide === side.key ? 0 : -1}
+                onKeyDown={(event) => {
+                  const step =
+                    event.key === "ArrowRight" || event.key === "ArrowDown"
+                      ? 1
+                      : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                        ? -1
+                        : 0;
+                  if (!step) return;
+                  event.preventDefault();
+                  const next = sides[(index + step + sides.length) % sides.length];
+                  setCampaignSide(next.key);
+                  const group = event.currentTarget.parentElement;
+                  const buttons = group?.querySelectorAll("button");
+                  const target = buttons?.[sides.indexOf(next)];
+                  if (target instanceof HTMLElement) target.focus();
+                }}
+                onClick={() => setCampaignSide(side.key)}
+              >
+                {side.label}
+                <b>{sideCount(side.key)}</b>
+              </button>
+            ))}
+          </div>
+          </div>
         </div>
 
-        {campaignRequests.length ? (
+        {visibleRequests.length ? (
           <div className="campaign-request-list">
-            {campaignRequests.map((request) => {
+            {visibleRequests.map((request) => {
               const incoming = request.owner_profile_id === profile.id;
               const other = incoming ? request.requester : request.owner;
               const payment = paymentTransactions.find(
@@ -11330,12 +11927,12 @@ export default function MarketplaceApp({
                     )}
                     {incoming &&
                       request.purchase_mode !== "buy_now" &&
-                      ["pending", "countered"].includes(request.status) && (
+                      OPEN_REQUEST_STATUSES.includes(request.status) && (
                         <button onClick={() => setCounteringRequest(request)}>
                           {request.status === "countered" ? "Revise counteroffer" : "Counteroffer"}
                         </button>
                       )}
-                    {incoming && ["pending", "countered"].includes(request.status) && (
+                    {incoming && OPEN_REQUEST_STATUSES.includes(request.status) && (
                       <button
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "declined")}
@@ -11352,7 +11949,7 @@ export default function MarketplaceApp({
                         Accept counteroffer
                       </button>
                     )}
-                    {!incoming && ["pending", "countered"].includes(request.status) && (
+                    {!incoming && OPEN_REQUEST_STATUSES.includes(request.status) && (
                       <button
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "cancelled")}
@@ -11394,6 +11991,30 @@ export default function MarketplaceApp({
               );
             })}
           </div>
+        ) : campaignRequests.length ? (
+          <div className="account-empty">
+            <strong>
+              {campaignOpenOnly
+                ? "Nothing here needs you right now."
+                : campaignSide === "incoming"
+                  ? "No offers waiting on you."
+                  : "You have not sent any offers."}
+            </strong>
+            <p>
+              You have {campaignRequests.length} offer
+              {campaignRequests.length === 1 ? "" : "s"} outside this filter.
+            </p>
+            <button
+              className="button button-ghost button-small"
+              type="button"
+              onClick={() => {
+                setCampaignSide("all");
+                setCampaignOpenOnly(false);
+              }}
+            >
+              Show all offers <span>→</span>
+            </button>
+          </div>
         ) : (
           <div className="account-empty">
             <strong>No offers or bookings yet.</strong>
@@ -11413,12 +12034,14 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-payments"
+        aria-label="Payments"
+        tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
             <p className="eyebrow">Payments</p>
-            <h3>Track money in motion.</h3>
+            <h2>Track money in motion.</h2>
             <p className="account-section-lede">
               Payment, delivery, review, refund, and payout status stay together here.
             </p>
@@ -11661,7 +12284,12 @@ export default function MarketplaceApp({
       />
 
       {route === "dashboard" && (loading || (user && !profile && !profileChecked) ? (
-        <section className="dashboard" aria-label="Loading your dashboard">
+        <section
+          className="dashboard"
+          id="main-content"
+          tabIndex={-1}
+          aria-label="Loading your dashboard"
+        >
           <div className="dashboard-head">
             <div>
               <p className="eyebrow">Your dashboard</p>
@@ -11673,70 +12301,87 @@ export default function MarketplaceApp({
           </div>
         </section>
       ) : user && profile ? (
-        <section className="dashboard" aria-label="Your SideSpace dashboard">
+        <section
+          className="dashboard"
+          id="main-content"
+          tabIndex={-1}
+          aria-label="Your SideSpace dashboard"
+        >
           <div className="dashboard-head">
             <div>
               <p className="eyebrow">{rolesLabel(profile)} · {profile.city || "Add your city"}</p>
               <h1 className="dashboard-title">
-                {greeting()},{" "}
-                <em>{profile.display_name.split(" ")[0] || "there"}.</em>
+                <em>{greeting()},</em>{" "}
+                {profile.display_name.split(" ")[0] || "there"}.
               </h1>
               <p className="dashboard-sub">{dashboardStatus()}</p>
             </div>
+            {/*
+              * Messages and Profile both live in the sticky site header, which
+              * is on screen at every scroll position and already carries the
+              * unread badge. Repeating them here gave the same number three
+              * formats within one viewport. Only the action you cannot start
+              * from the header stays.
+              */}
             <div className="dashboard-actions">
               {profile.role !== "consumer" && (
                 <button className="button button-dark" onClick={openListingEditor}>
-                  New listing <span>＋</span>
+                  New listing
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path
+                      d="M8 3.5v9M3.5 8h9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
                 </button>
               )}
-              <button className="button button-ghost" onClick={openInbox}>
-                Messages
-                {unreadCount > 0 ? ` (${unreadCount})` : ""} <span>→</span>
-              </button>
-              <button
-                className="button button-ghost"
-                onClick={openAccountPanel}
-              >
-                Profile <span>↗</span>
-              </button>
             </div>
           </div>
 
-          <nav className="dashboard-map" aria-label="Dashboard areas">
-            <span>Work lives here</span>
-            <a href="#dashboard-listings-all">Listings</a>
-            <a href="#dashboard-campaigns-all">Campaigns</a>
-            {paymentTransactions.length > 0 && (
-              <a href="#dashboard-payments">Payments</a>
-            )}
-            <button type="button" onClick={openInbox}>
-              Messages{unreadCount > 0 ? ` · ${unreadCount} new` : ""}
-            </button>
-            <span className="dashboard-map-note">
-              Profile holds your public details and settings.
-            </span>
-          </nav>
-
-          <div className="dashboard-paths" data-reveal>
-            <a
-              className="dashboard-path"
-              href="/marketplace?role=business"
-            >
-              <span>I&rsquo;m a creator or host</span>
-              <strong>Find business briefs</strong>
-              <p>See local campaigns that need your audience or space.</p>
-              <b>Browse briefs →</b>
-            </a>
-            <a
-              className="dashboard-path"
-              href="/marketplace?role=supply"
-            >
-              <span>I&rsquo;m a business</span>
-              <strong>Book local reach</strong>
-              <p>Choose a creator or space, pick an open date, and check out.</p>
-              <b>Browse creators and spaces →</b>
-            </a>
-          </div>
+          {(() => {
+            const supplyPath = (
+              <a
+                className="dashboard-path"
+                href="/marketplace?role=business"
+                key="supply"
+              >
+                <span>I&rsquo;m a creator or host</span>
+                <strong>Find business briefs</strong>
+                <p>See local campaigns that need your audience or space.</p>
+                <b>Browse briefs →</b>
+              </a>
+            );
+            const demandPath = (
+              <a
+                className="dashboard-path"
+                href="/marketplace?role=supply"
+                key="demand"
+              >
+                <span>I&rsquo;m a business</span>
+                <strong>Book local reach</strong>
+                <p>Choose a creator or space, pick an open date, and check out.</p>
+                <b>Browse creators and spaces →</b>
+              </a>
+            );
+            // Both stay: a creator books other creators often enough that
+            // hiding one would be wrong. But leading with the side the member
+            // is not on made half the biggest block on the page address
+            // somebody else.
+            const ownSideFirst =
+              profileHasRole(profile, "creator") ||
+              profileHasRole(profile, "space_owner") ||
+              profileHasRole(profile, "sponsor_host");
+            return (
+              <div className="dashboard-paths" data-reveal>
+                {ownSideFirst
+                  ? [supplyPath, demandPath]
+                  : [demandPath, supplyPath]}
+              </div>
+            );
+          })()}
 
           <div className="dashboard-grid">
             {(() => {
@@ -11749,57 +12394,137 @@ export default function MarketplaceApp({
               const incoming = campaignRequests.filter(
                 (request) =>
                   request.owner_profile_id === profile.id &&
-                  ["pending", "countered"].includes(request.status),
+                  OPEN_REQUEST_STATUSES.includes(request.status),
               ).length;
               const outgoing = campaignRequests.filter(
                 (request) =>
                   request.requester_profile_id === profile.id &&
-                  (request.status === "pending" ||
-                    request.status === "countered"),
+                  OPEN_REQUEST_STATUSES.includes(request.status),
               ).length;
-              const cards = [
+              // Every tile is a way in, not a readout. A number with nowhere
+              // to click is the thing that made this dashboard feel inert:
+              // you could see that three people were waiting on you and still
+              // had to go hunting for them.
+              const cards: Array<{
+                label: string;
+                value: number;
+                caption: string;
+                icon: keyof typeof DASHBOARD_STAT_ICONS;
+                tone: string;
+                action: string;
+                go: () => void;
+              }> = [
                 {
                   label: "Live listings",
                   value: active,
                   caption: paused
                     ? `${paused} paused`
                     : "Visible in the marketplace",
-                  icon: "▤",
+                  icon: "listings" as const,
                   tone: active ? "" : "muted",
+                  action: "Manage listings",
+                  go: () => goToDashboardSection("dashboard-listings-all"),
                 },
                 {
                   label: "Offers to you",
                   value: incoming,
                   caption: incoming ? "Waiting on your reply" : "Nothing pending",
-                  icon: "✉",
+                  icon: "incoming" as const,
                   tone: incoming ? "alert" : "muted",
+                  action: "Review offers",
+                  go: () => {
+                    setCampaignSide("incoming");
+                    // The tile counted open work only; the section has to
+                    // agree, or the number just clicked is nowhere on screen.
+                    setCampaignOpenOnly(true);
+                    goToDashboardSection("dashboard-campaigns-all");
+                  },
                 },
                 {
                   label: "Offers you sent",
                   value: outgoing,
                   caption: outgoing ? "Awaiting a reply" : "None open",
-                  icon: "↗",
-                  tone: "muted",
+                  icon: "outgoing" as const,
+                  tone: outgoing ? "" : "muted",
+                  action: "Track your offers",
+                  go: () => {
+                    setCampaignSide("outgoing");
+                    // The tile counted open work only; the section has to
+                    // agree, or the number just clicked is nowhere on screen.
+                    setCampaignOpenOnly(true);
+                    goToDashboardSection("dashboard-campaigns-all");
+                  },
                 },
                 {
                   label: "Unread messages",
                   value: unreadCount,
                   caption: unreadCount ? "In your inbox" : "All caught up",
-                  icon: "◍",
+                  icon: "messages" as const,
                   tone: unreadCount ? "alert" : "muted",
+                  action: "Open inbox",
+                  go: openInbox,
                 },
               ];
+              if (ownListings.length) {
+                const reached = listingAnalytics.reduce(
+                  (sum, row) => sum + row.impressions,
+                  0,
+                );
+                cards.push({
+                  label: "People reached",
+                  value: reached,
+                  caption: reached ? "Across your listings" : "Counting from now",
+                  icon: "analytics" as const,
+                  tone: reached ? "" : "muted",
+                  action: "See analytics",
+                  go: () => goToDashboardSection("dashboard-analytics"),
+                });
+              }
+              if (paymentTransactions.length) {
+                cards.push({
+                  label: "Payments",
+                  value: paymentTransactions.length,
+                  caption: "Money in motion",
+                  icon: "payments" as const,
+                  tone: "muted",
+                  action: "See payment status",
+                  go: () => goToDashboardSection("dashboard-payments"),
+                });
+              }
               return cards.map((card) => (
-                <div className="dashboard-stat" data-reveal key={card.label}>
-                  <div className="dashboard-stat-top">
+                <button
+                  className="dashboard-stat"
+                  type="button"
+                  key={card.label}
+                  onClick={card.go}
+                  aria-label={`${card.action}. ${card.label}: ${card.value}, ${card.caption}.`}
+                >
+                  <span className="dashboard-stat-top">
                     <small>{card.label}</small>
                     <span className={`dashboard-stat-icon ${card.tone}`}>
-                      {card.icon}
+                      <DashboardStatIcon name={card.icon} />
                     </span>
-                  </div>
+                  </span>
                   <strong>{card.value}</strong>
                   <span className="dashboard-stat-caption">{card.caption}</span>
-                </div>
+                  <span className="dashboard-stat-action">
+                    {card.action}
+                    <svg
+                      viewBox="0 0 16 16"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </button>
               ));
             })()}
           </div>
@@ -11826,226 +12551,6 @@ export default function MarketplaceApp({
             }}
             renderDialog={(content, close) => <Modal label="Your balance" onClose={close}>{content}</Modal>}
           />
-
-          <div className="dashboard-workspace">
-            <section
-              className="dashboard-panel dashboard-inventory-panel"
-              id="dashboard-listings"
-              data-reveal
-            >
-              <header className="dashboard-panel-heading">
-                <div>
-                  <p className="eyebrow">Your inventory</p>
-                  <h2>What people can book.</h2>
-                  <p>Keep your live offers clear, current, and easy to reach.</p>
-                </div>
-                {profile.role !== "consumer" && (
-                  <button
-                    className="button button-dark button-small"
-                    onClick={openListingEditor}
-                  >
-                    New listing <span>＋</span>
-                  </button>
-                )}
-              </header>
-              {ownListingsLoading ? (
-                <div className="dashboard-panel-empty">Loading your listings…</div>
-              ) : ownListings.length ? (
-                <div className="dashboard-listing-list">
-                  {ownListings.slice(0, 4).map((listing) => (
-                    <article className="dashboard-listing-row" key={listing.id}>
-                      <ListingCover listing={listing} />
-                      <div className="dashboard-listing-copy">
-                        <div>
-                          <span
-                            className={
-                              "listing-status status-" + listing.status
-                            }
-                          >
-                            {listing.status}
-                          </span>
-                          <small>{listing.channel}</small>
-                        </div>
-                        <strong>{listing.title}</strong>
-                        <p>
-                          {priceLabel(listing)} / {pricingLabel(listing)}
-                        </p>
-                      </div>
-                      <div className="dashboard-row-actions">
-                        <button onClick={() => openListing(listing)}>View</button>
-                        <button onClick={() => openListingEdit(listing)}>Edit</button>
-                        <button
-                          className="is-danger"
-                          disabled={busy}
-                          onClick={() => setDeleteListingTarget(listing)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                  {ownListings.length > 4 && (
-                    <button
-                      className="dashboard-text-action"
-                      onClick={() =>
-                        document
-                          .getElementById("dashboard-listings-all")
-                          ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                      }
-                    >
-                      View all {ownListings.length} listings →
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="dashboard-panel-empty">
-                  <strong>Your first listing belongs here.</strong>
-                  <p>Put your audience, space, or campaign brief in front of the marketplace.</p>
-                  {profile.role !== "consumer" && (
-                    <button
-                      className="button button-coral button-small"
-                      onClick={openListingEditor}
-                    >
-                      Create a listing <span>↗</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </section>
-
-            <section
-              className="dashboard-panel dashboard-campaigns-panel"
-              id="dashboard-campaigns"
-              data-reveal
-            >
-              {(() => {
-                const activeRequests = campaignRequests
-                  .filter((request) =>
-                    ["pending", "countered", "accepted", "confirmed"].includes(
-                      request.status,
-                    ),
-                  )
-                  .slice(0, 4);
-                return (
-                  <>
-                    <header className="dashboard-panel-heading">
-                      <div>
-                        <p className="eyebrow">Campaigns</p>
-                        <h2>Work in motion.</h2>
-                        <p>Offers, bookings, replies, and next actions in one place.</p>
-                      </div>
-                      <button
-                        className="dashboard-text-action"
-                        onClick={() =>
-                          document
-                            .getElementById("dashboard-campaigns-all")
-                            ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                        }
-                      >
-                        View all →
-                      </button>
-                    </header>
-                    {activeRequests.length ? (
-                      <div className="dashboard-request-list">
-                        {activeRequests.map((request) => {
-                          const incoming =
-                            request.owner_profile_id === profile.id;
-                          const other = incoming
-                            ? request.requester
-                            : request.owner;
-                          return (
-                            <article
-                              className="dashboard-request-row"
-                              key={request.id}
-                            >
-                              <span className="dashboard-request-avatar">
-                                {initials(other.display_name)}
-                              </span>
-                              <div className="dashboard-request-copy">
-                                <div>
-                                  <small>
-                                    {incoming ? "Incoming" : "You sent"} ·{" "}
-                                    {request.instant_booking
-                                      ? "Instant booking · "
-                                      : request.purchase_mode === "buy_now"
-                                      ? "Book as listed · "
-                                      : "Offer · "}
-                                    {request.status}
-                                  </small>
-                                  <b>{formatCents(request.budget_cents)}</b>
-                                </div>
-                                <strong>{request.campaign_name}</strong>
-                                <small>{bookingDateLabel(request.timing_kind,request.start_date,request.end_date)}</small>
-                                <p>
-                                  {request.listing?.title ?? "Listing"} ·{" "}
-                                  {other.display_name}
-                                </p>
-                              </div>
-                              <div className="dashboard-row-actions">
-                                {incoming && request.status === "pending" && (
-                                  <button
-                                    className="dashboard-row-primary"
-                                    disabled={busy}
-                                    onClick={() =>
-                                      void respondToCampaignRequest(
-                                        request,
-                                        "accepted",
-                                      )
-                                    }
-                                  >
-                                    Accept
-                                  </button>
-                                )}
-                                {incoming &&
-                                  request.purchase_mode !== "buy_now" &&
-                                  ["pending", "countered"].includes(
-                                    request.status,
-                                  ) && (
-                                    <button
-                                      onClick={() => setCounteringRequest(request)}
-                                    >
-                                      Counteroffer
-                                    </button>
-                                  )}
-                                {!incoming && request.status === "countered" && (
-                                  <button
-                                    className="dashboard-row-primary"
-                                    disabled={busy}
-                                    onClick={() =>
-                                      void respondToCampaignRequest(
-                                        request,
-                                        "accepted",
-                                      )
-                                    }
-                                  >
-                                    Accept counter
-                                  </button>
-                                )}
-                              </div>
-                            </article>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="dashboard-panel-empty">
-                        <strong>No active campaigns yet.</strong>
-                        <p>
-                          Browse the marketplace, or publish an offer so the
-                          right partner can find you.
-                        </p>
-                        <a
-                          className="button button-ghost button-small"
-                          href="/marketplace"
-                        >
-                          Browse marketplace <span>↗</span>
-                        </a>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </section>
-          </div>
 
           {profile.role === "business" && (
             <section
@@ -12121,7 +12626,20 @@ export default function MarketplaceApp({
             </section>
           )}
 
-          <ol className="dashboard-checklist" data-reveal>
+          {(() => {
+            const setUp =
+              profile.onboarding_complete && Boolean(profile.avatar_url);
+            const listed =
+              profile.role === "consumer" ? true : ownListings.length > 0;
+            // A finished checklist is not a record of achievement, it is a
+            // block of struck-through text where working controls used to be.
+            if (setUp && listed) return null;
+            // ownListings starts empty and fills in a later tick, so a member
+            // with six listings briefly looked like a member with none - the
+            // checklist flashed "Publish your first listing" and vanished.
+            if (setUp && ownListingsLoading) return null;
+            return (
+          <ol className="dashboard-checklist">
             <li className={profile.onboarding_complete ? "done" : ""}>
               <span>{profile.onboarding_complete ? "✓" : "1"}</span>
               <div>
@@ -12194,8 +12712,11 @@ export default function MarketplaceApp({
               </li>
             )}
           </ol>
+            );
+          })()}
 
           <div className="dashboard-work-sections">
+            {renderDashboardAnalytics()}
             {renderDashboardListings()}
             {renderDashboardCampaigns()}
             {renderDashboardPayments()}
@@ -12524,13 +13045,65 @@ export default function MarketplaceApp({
           )}
         </div>
 
+        {forYou.items.length >= 3 && (
+          <section className="listing-foryou" aria-labelledby="listing-foryou-heading">
+            <div className="listing-foryou-head">
+              <span className="eyebrow">
+                {forYou.personalised ? "Picked for you" : "Popular right now"}
+              </span>
+              <h3 id="listing-foryou-heading">
+                {forYou.personalised
+                  ? "Based on what you have been looking at"
+                  : "What people are opening most"}
+              </h3>
+            </div>
+            <div className="listing-foryou-row">
+              {forYou.items.map(({ listing, reasons }) => (
+                <article
+                  className="listing-foryou-card"
+                  key={listing.id}
+                  data-listing-id={listing.id}
+                >
+                  <button
+                    type="button"
+                    className="listing-foryou-image"
+                    onClick={() => openListing(listing)}
+                    aria-label={`Open ${listing.title}`}
+                  >
+                    <ListingCover listing={listing} />
+                  </button>
+                  <div className="listing-foryou-body">
+                    <button
+                      type="button"
+                      className="listing-foryou-title"
+                      onClick={() => openListing(listing)}
+                    >
+                      {listing.title}
+                    </button>
+                    <small>
+                      {listing.owner.display_name} · {listingCity(listing)}
+                    </small>
+                    {reasons.length > 0 && (
+                      <p className="listing-foryou-reason">{reasons.join(" · ")}</p>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
         <div className="listing-grid">
           {blocksPending &&
             Array.from({ length: 6 }, (_, index) => (
               <div className="listing-skeleton" key={`skeleton-${index}`} />
             ))}
           {visibleListings.map((listing) => (
-            <article className="listing-card" key={listing.id}>
+            <article
+              className="listing-card"
+              key={listing.id}
+              data-listing-id={listing.id}
+            >
               <button
                 className={`listing-image${
                   listingCover(listing) ? "" : " is-blank"
@@ -16925,6 +17498,7 @@ export default function MarketplaceApp({
                       ? " It is live in the marketplace."
                       : " It is paused, so nobody can see it."}
                   </p>
+                  {renderListingFigures(selectedListing.id)}
                   <div className="detail-primary-actions">
                     <button
                       className="button button-coral"
@@ -17519,9 +18093,13 @@ export default function MarketplaceApp({
           only honoured on a region that already exists in the DOM. */}
       <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">
         {toast && (
-          <div className={`toast ${toastIsProblem(toast) ? "toast-problem" : ""}`}>
-            <span aria-hidden="true">{toastIsProblem(toast) ? "!" : "✓"}</span>
-            {toast}
+          <div
+            className={`toast ${toast.tone === "problem" ? "toast-problem" : ""}`}
+          >
+            <span aria-hidden="true">
+              {toast.tone === "problem" ? "!" : "✓"}
+            </span>
+            {toast.text}
           </div>
         )}
       </div>
