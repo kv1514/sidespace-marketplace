@@ -2,22 +2,24 @@ import type { Metadata } from "next";
 import PublicSiteApp from "../components/PublicSiteApp";
 import { loadMarketplaceSnapshot } from "@/lib/public-marketplace";
 import { OG_IMAGE } from "@/lib/site-metadata";
+import { getTranslator } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return {
   alternates: { canonical: "/creators" },
-  title: "Creators and local advertising inventory",
-  description:
-    "List social audiences, physical placements, newsletters, teams, events, and other local advertising inventory on SideSpace.",
+  title: t("meta.creatorsTitle"),
+  description: t("meta.creatorsDescription"),
   openGraph: {
     images: OG_IMAGE,
     url: "/creators",
-    title: "Creators and local advertising inventory on SideSpace",
-    description:
-      "Define your offer, set your price, and talk directly with local businesses.",
+    title: t("meta.creatorsOgTitle"),
+    description: t("meta.creatorsOgDescription"),
   },
-};
+  };
+}
 
 export default async function Creators() {
   const snapshot = await loadMarketplaceSnapshot({

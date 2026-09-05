@@ -781,7 +781,7 @@ function HeroInventory({ listings }: { listings: PublicListing[] }) {
       >
         <div className="ss-bookable-top">
           <span>
-            SIDESPACE / {listing ? t("home.inventoryMarketplace") : t("home.inventoryMarketplaceExample")} {t("home.inventoryLabel")}
+            {t("pages.sidespace")}{" "}{listing ? t("home.inventoryMarketplace") : t("home.inventoryMarketplaceExample")} {t("home.inventoryLabel")}
           </span>
           {(!listing || !isListingRequestable(listing)) && (
             <b>● {listing ? t("home.inventoryViewOnly") : t("home.inventoryExample")}</b>
@@ -1189,7 +1189,7 @@ export function LandingPage({
           >
             <span>{t("home.processMakeLabel")}</span>
             <div className="ss-mini-deal" aria-hidden="true">
-              <span>{t("home.processCampaignRequest")}</span><strong>$120 / 2 weeks</strong><b>{t("home.processAgreed")}</b>
+              <span>{t("home.processCampaignRequest")}</span><strong>{t("pages.n1202Weeks")}</strong><b>{t("home.processAgreed")}</b>
             </div>
             <h3>{t("home.processMakeTitle")}</h3>
             <p>{t("home.processMakeCopy")}</p>
@@ -1397,13 +1397,13 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
     if (step === 3) {
       return withCursor(
         <div className="ss-demo-scene is-talking">
-          <div className="ss-thread-person"><span>MC</span><div><strong>Maya Chen</strong><small>{t("how.demo.activeNow")}</small></div><b>•••</b></div>
+          <div className="ss-thread-person"><span>{t("pages.mc")}</span><div><strong>{t("pages.mayaChen")}</strong><small>{t("how.demo.activeNow")}</small></div><b>•••</b></div>
           <div className="ss-scene-thread">
             <p>{t("how.demo.staysInHighlight")}</p>
             <p>{t("how.demo.canIncludeTotal", { amount: money(640) })}</p>
           </div>
           {actionComplete ? (
-            <div className="ss-payout-screen"><span>{t("how.demo.paymentSecured")}</span><strong>{money(640)}</strong><p>{t("how.demo.payoutScheduled")}</p><div><small>{t("how.demo.recipient")}</small><b>Maya Chen</b><small>{t("how.demo.status")}</small><b>{t("how.demo.ready")}</b></div></div>
+            <div className="ss-payout-screen"><span>{t("how.demo.paymentSecured")}</span><strong>{money(640)}</strong><p>{t("how.demo.payoutScheduled")}</p><div><small>{t("how.demo.recipient")}</small><b>{t("pages.mayaChen")}</b><small>{t("how.demo.status")}</small><b>{t("how.demo.ready")}</b></div></div>
           ) : (
             <div className="ss-counter-card"><span>{t("how.demo.counterOffer")}</span><strong>{money(640)}</strong><small>{t("how.demo.storyTwoWeekHighlight")}</small><div><button data-cursor-target onClick={() => setActionComplete(true)} type="button">{t("how.demo.accept")}</button><button onClick={() => setActionComplete(false)} type="button">{t("how.demo.reply")}</button></div></div>
           )}
@@ -1416,7 +1416,7 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
         <div className="ss-agreed-mark">✓</div>
         <small>{t("how.demo.campaignAgreed")}</small>
         <h3>{t("how.demo.neighborhoodLaunch")}</h3>
-        <p>Maya Chen × Little Sun Coffee</p>
+        <p>{t("pages.mayaChenLittleSunCoffee")}</p>
         <div className="ss-agreed-details"><span><small>{t("how.demo.dates")}</small><strong>{sep12To14}</strong></span><span><small>{t("how.demo.agreedTotal")}</small><strong>{money(640)}</strong></span></div>
         <button className={`ss-agreed-next${actionComplete ? " is-open" : ""}`} data-cursor-target={actionComplete ? undefined : true} onClick={() => setActionComplete(true)} type="button"><i>{actionComplete ? "✓" : "01"}</i><span><strong>{actionComplete ? t("how.demo.assetThreadReady") : t("how.demo.nextUp")}</strong>{actionComplete ? t("how.demo.assetThreadCopy") : t("how.demo.shareFinalAssets")}</span></button>
       </div>
@@ -1463,7 +1463,7 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
   if (step === 3) {
     return withCursor(
       <div className="ss-demo-scene is-talking">
-        <div className="ss-thread-person"><span>LS</span><div><strong>Little Sun Coffee</strong><small>{t("how.demo.businessCampaignRequest")}</small></div><b>•••</b></div>
+        <div className="ss-thread-person"><span>{t("pages.ls")}</span><div><strong>{t("pages.littleSunCoffee")}</strong><small>{t("how.demo.businessCampaignRequest")}</small></div><b>•••</b></div>
         <div className="ss-scene-thread"><p>{t("how.demo.includeHighlight")}</p><p>{t("how.demo.totalTo", { amount: money(640) })}</p></div>
         <div className={`ss-counter-compose${actionComplete ? " is-complete" : ""}`}><span>{actionComplete ? t("how.demo.counterSent") : t("how.demo.yourCounter")}</span><strong>{actionComplete ? "✓" : money(640)}</strong><p>{t("how.demo.includesStory")}</p><button data-cursor-target onClick={() => setActionComplete((current) => !current)} type="button">{actionComplete ? t("how.demo.sent") : t("how.demo.sendCounter")}</button></div>
       </div>
@@ -1477,7 +1477,7 @@ function JourneyScene({ side, step }: { side: JourneySide; step: number }) {
         <small>{t("how.demo.payoutDetails")}</small>
         <h3>{money(640)}</h3>
         <p>{t("how.demo.scheduledCompleted")}</p>
-        <div className="ss-payout-breakdown"><span><small>{t("how.demo.from")}</small><strong>Little Sun Coffee</strong></span><span><small>{t("home.processCampaignRequest")}</small><strong>{sep12To14}</strong></span><span><small>{t("how.demo.status")}</small><strong>{t("how.demo.ready")}</strong></span></div>
+        <div className="ss-payout-breakdown"><span><small>{t("how.demo.from")}</small><strong>{t("pages.littleSunCoffee")}</strong></span><span><small>{t("home.processCampaignRequest")}</small><strong>{sep12To14}</strong></span><span><small>{t("how.demo.status")}</small><strong>{t("how.demo.ready")}</strong></span></div>
       </div>
     ) : (
       <div className="ss-demo-scene is-accepting">
@@ -1715,7 +1715,7 @@ export function HowItWorksPage({ onJoin }: { onJoin: () => void }) {
             <header>
               <i /><i /><i />
               <span>
-                SIDESPACE / {side === "advertiser" ? t("how.forBusinesses") : t("how.forCreators")}
+                {t("pages.sidespace")}{" "}{side === "advertiser" ? t("how.forBusinesses") : t("how.forCreators")}
               </span>
               <b>
                 {String(activeStep + 1).padStart(2, "0")} / {String(steps.length).padStart(2, "0")}
@@ -1833,7 +1833,7 @@ export function CreatorsPage({
           </button>
         </div>
         <div className="ss-creator-stack">
-          <article className="is-social" data-ss-parallax="0.1" data-ss-parallax-max="44"><span>{t("creators.socialLabel")}</span><img src="/photos/market-creator.jpg" alt="Local creator at an outdoor market" /><strong>{t("creators.socialTitle")}</strong><p>{t("creators.socialCopy")}</p></article>
+          <article className="is-social" data-ss-parallax="0.1" data-ss-parallax-max="44"><span>{t("creators.socialLabel")}</span><img src="/photos/market-creator.jpg" alt={t("pages.localCreatorAtAnOutdoorMarket")} /><strong>{t("creators.socialTitle")}</strong><p>{t("creators.socialCopy")}</p></article>
           <article className="is-newsletter" data-ss-parallax="0.18" data-ss-parallax-max="62"><span>{t("creators.newsletterLabel")}</span><strong>{t("creators.newsletterTitle")}</strong><p>{t("creators.newsletterCopy")}</p><b>{t("creators.newsletterPrice")}</b></article>
           <article className="is-event" data-ss-parallax="0.14" data-ss-parallax-max="54"><span>{t("creators.eventLabel")}</span><strong>{t("creators.eventTitle")}</strong><p>{t("creators.eventCopy")}</p></article>
         </div>

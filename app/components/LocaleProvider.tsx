@@ -19,6 +19,7 @@ import {
   formatNumber,
   localeTag,
   translate,
+  translateText,
   type TranslationKey,
 } from "@/lib/i18n";
 import {
@@ -48,6 +49,13 @@ type LocaleContextValue = {
     key: TranslationKey,
     variables?: Record<string, string | number>,
   ) => string;
+  /**
+   * For copy that reaches the screen as data rather than as a literal at the
+   * call site: a toast, a validation message, a module-level label, a
+   * sentence the server sent back. Looks the English up by value and
+   * translates it; unknown text is shown as it is.
+   */
+  tx: (text: string, variables?: Record<string, string | number>) => string;
   formatNumber: (
     value: number,
     options?: Intl.NumberFormatOptions,
@@ -62,9 +70,15 @@ type LocaleContextValue = {
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
+function cookieSecurity() {
+  return typeof location !== "undefined" && location.protocol === "https:"
+    ? "; Secure"
+    : "";
+}
+
 function persistLocale(locale: Locale) {
   if (typeof document === "undefined") return;
-  document.cookie = `${LOCALE_COOKIE}=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+  document.cookie = `${LOCALE_COOKIE}=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax${cookieSecurity()}`;
   document.documentElement.lang = localeTag(locale);
   document.documentElement.dir = "ltr";
   document.documentElement.dataset.locale = locale;
@@ -72,7 +86,7 @@ function persistLocale(locale: Locale) {
 
 function persistCurrency(currency: Currency) {
   if (typeof document === "undefined") return;
-  document.cookie = `${CURRENCY_COOKIE}=${encodeURIComponent(currency)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+  document.cookie = `${CURRENCY_COOKIE}=${encodeURIComponent(currency)}; Path=/; Max-Age=31536000; SameSite=Lax${cookieSecurity()}`;
   document.documentElement.dataset.currency = currency;
 }
 
@@ -169,6 +183,7 @@ export default function LocaleProvider({
       currencyRate,
       currencyRateStatus,
       t: (key, variables) => translate(locale, key, variables),
+      tx: (text, variables) => translateText(locale, text, variables),
       formatNumber: (valueToFormat, options) =>
         formatNumber(locale, valueToFormat, options),
       formatCurrency: (cents, currency) =>
@@ -223,6 +238,7 @@ export function LanguageSwitcher() {
     setCurrency,
     formatNumber,
     t,
+    tx,
   } = useLocale();
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<"language" | "currency">("language");
@@ -337,7 +353,7 @@ export function LanguageSwitcher() {
                   >
                     <span>
                       <strong>{option.symbol} {option.code}</strong>
-                      <small>{option.name}</small>
+                      <small>{tx(option.name)}</small>
                     </span>
                     {option.code === currency && <b aria-hidden="true">✓</b>}
                   </button>
@@ -345,7 +361,7 @@ export function LanguageSwitcher() {
               </div>
               <p className="ss-currency-status" role="status" aria-live="polite">
                 {currency === DEFAULT_CURRENCY
-                  ? t("chrome.currencyRate", { rate: "1", currency })
+                  ? t("chrome.pricesShownInUsd")
                   : currencyRateStatus === "loading"
                     ? t("chrome.currencyRateLoading")
                     : currencyRateStatus === "ready" && currencyRate

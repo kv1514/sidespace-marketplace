@@ -1,3 +1,4 @@
+import type { TranslationKey } from "../i18n";
 import { popularityScore, normalizeLikeCount } from "./popularity";
 
 /**
@@ -60,10 +61,18 @@ export type RecommendListing = {
   owner?: RecommendOwner | null;
 };
 
+/** Why a listing is being suggested, as a message key the interface translates. */
+export type RecommendReason = {
+  key: TranslationKey;
+  vars?: Record<string, string>;
+};
+
+const reasonId = (reason: RecommendReason) => `${reason.key}${JSON.stringify(reason.vars ?? {})}`;
+
 export type Recommendation<T> = {
   listing: T;
   score: number;
-  reasons: string[];
+  reasons: RecommendReason[];
 };
 
 /** How much one interaction says about what somebody wants. */
@@ -232,13 +241,13 @@ export function contentSimilarity(
   second: RecommendListing,
   idf: Map<string, number>,
 ) {
-  const reasons: string[] = [];
+  const reasons: RecommendReason[] = [];
   let score = 0;
 
   const channel = normalizeTerm(first.channel);
   if (channel && channel === normalizeTerm(second.channel)) {
     score += CONTENT_WEIGHTS.channel;
-    reasons.push(`Also ${text(first.channel)}`);
+    reasons.push({ key: "reasons.also", vars: { channel: text(first.channel) } });
   }
 
   const firstCategories = categoriesOf(first);
@@ -247,29 +256,33 @@ export function contentSimilarity(
   );
   if (sharedCategories.length) {
     score += Math.min(CONTENT_WEIGHTS.categories, sharedCategories.length * 12);
-    reasons.push(`Shares ${sharedCategories.length > 1 ? "interests" : sharedCategories[0]}`);
+    reasons.push(
+      sharedCategories.length > 1
+        ? { key: "reasons.sharesInterests" }
+        : { key: "reasons.shares", vars: { category: sharedCategories[0] } },
+    );
   }
 
   const city = normalizeCity(first.location_area);
   const otherCity = normalizeCity(second.location_area);
   if (city && city === otherCity) {
     score += CONTENT_WEIGHTS.location;
-    reasons.push(`In ${text(first.location_area).split(",")[0].trim()}`);
+    reasons.push({ key: "reasons.in", vars: { place: text(first.location_area).split(",")[0].trim() } });
   } else if (city && otherCity && (city.startsWith(otherCity) || otherCity.startsWith(city))) {
     score += CONTENT_WEIGHTS.location * 0.55;
-    reasons.push("Nearby");
+    reasons.push({ key: "reasons.nearby" });
   }
 
   const price = priceProximity(first, second);
   if (price > 0.5) {
     score += CONTENT_WEIGHTS.price * price;
-    reasons.push("Similar budget");
+    reasons.push({ key: "reasons.similarBudget" });
   }
 
   const words = textSimilarity(listingTokens(first), listingTokens(second), idf);
   if (words > 0.08) {
     score += CONTENT_WEIGHTS.words * words;
-    reasons.push("Describes something similar");
+    reasons.push({ key: "reasons.describesSomethingSimilar" });
   }
 
   return { score: score / CONTENT_TOTAL, reasons };
@@ -365,7 +378,7 @@ export function recommendListings<T extends RecommendListing>({
   const personalised = seedTotal > 0;
 
   const scored = eligible.map((listing) => {
-    const reasons = new Set<string>();
+    const reasons = new Map<string, RecommendReason>();
     let contentTerm = 0;
     let cooccurrenceTerm = 0;
 
@@ -378,19 +391,19 @@ export function recommendListings<T extends RecommendListing>({
       const similarity = contentSimilarity(listing, seed, idf);
       contentTerm += similarity.score * share;
       if (similarity.score > 0.18) {
-        for (const reason of similarity.reasons) reasons.add(reason);
+        for (const reason of similarity.reasons) reasons.set(reasonId(reason), reason);
       }
 
       const covisit = cooccurrenceScore(listing.id, seedId, cooccurrence);
       cooccurrenceTerm += covisit * share;
-      if (covisit > 0.2) reasons.add("People who looked at that looked at this");
+      if (covisit > 0.2) reasons.set("reasons.peopleWhoLookedAtThat", { key: "reasons.peopleWhoLookedAtThat" });
     }
 
     // popularityScore has no fixed ceiling; 45 is a comfortable strong score,
     // and clamping keeps the quality prior from swamping a real signal.
     const quality = Math.min(1, popularityScore(listing, nowMs) / 45);
     if (!personalised && normalizeLikeCount(listing.like_count) > 0) {
-      reasons.add("Popular right now");
+      reasons.set("reasons.popularRightNow", { key: "reasons.popularRightNow" });
     }
 
     let score =
@@ -401,7 +414,7 @@ export function recommendListings<T extends RecommendListing>({
     // Already seen it: still worth offering, just not first.
     if (affinity.has(listing.id)) score *= SEEN_DEMOTION;
 
-    return { listing, score, reasons: [...reasons].slice(0, 2) };
+    return { listing, score, reasons: [...reasons.values()].slice(0, 2) };
   });
 
   return { items: diversify(scored, idf, limit), personalised };

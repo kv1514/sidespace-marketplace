@@ -144,8 +144,8 @@ describe("content similarity", () => {
   it("explains itself in words a member could read", () => {
     const idf = buildIdf(catalogue());
     const { reasons } = contentSimilarity(catalogue()[0], catalogue()[1], idf);
-    expect(reasons).toContain("Also Instagram");
-    expect(reasons).toContain("In Berkeley");
+    expect(reasons).toContainEqual({ key: "reasons.also", vars: { channel: "Instagram" } });
+    expect(reasons).toContainEqual({ key: "reasons.in", vars: { place: "Berkeley" } });
   });
 });
 
@@ -319,6 +319,6 @@ describe("the collaborative-filtering term", () => {
     });
     expect(
       withCf.items.find((entry) => entry.listing.id === "yt-1")?.reasons,
-    ).toContain("People who looked at that looked at this");
+    ).toContainEqual({ key: "reasons.peopleWhoLookedAtThat" });
   });
 });

@@ -3,6 +3,7 @@ import { isBusinessReferralCode, normalizeBusinessReferralCode } from "@/lib/pay
 import PublicSiteApp from "./components/PublicSiteApp";
 import InviteMarketplaceBridge from "./components/InviteMarketplaceBridge";
 import { OG_IMAGE } from "@/lib/site-metadata";
+import { getTranslator } from "@/lib/i18n-server";
 import {
   isInviteToken,
   loadInvite,
@@ -12,19 +13,20 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return {
   alternates: { canonical: "/" },
-  title: "SideSpace - Local attention, now bookable",
-  description:
-    "Book creators offering social, physical, and sponsorship inventory—or list the way you can advertise.",
+  title: t("meta.siteTitle"),
+  description: t("meta.ogDescription"),
   openGraph: {
     images: OG_IMAGE,
     url: "/",
-    title: "SideSpace - Local attention, now bookable",
-    description:
-      "The marketplace for creators with social audiences, physical placements, sponsorships, and more.",
+    title: t("meta.siteTitle"),
+    description: t("meta.homeOgDescription"),
   },
-};
+  };
+}
 
 export default async function Home({
   searchParams,

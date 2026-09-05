@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import "./account-balance.css";
 import type { AccountBalance as Balance } from "@/lib/payments/balance";
 import { isBusinessReferralCode, normalizeBusinessReferralCode } from "@/lib/payments/ad-credits";
+import { useLocale } from "@/app/components/LocaleProvider";
 
 // Stripe balances can be negative. The checkout formatter deliberately rejects
 // negative prices, so use a signed formatter for this read-only money view.
@@ -23,6 +24,7 @@ export function AccountBalance({ profileId, canEarn, canRedeem, stripeConfigured
   onCreditsChange: (cents: number) => void;
   renderDialog: (content: ReactNode, close: () => void) => ReactNode;
 }) {
+  const { t } = useLocale();
   const [data, setData] = useState<Balance | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -67,32 +69,32 @@ export function AccountBalance({ profileId, canEarn, canRedeem, stripeConfigured
       : stripe?.status === "not_connected" ? "Start earning" : "View balance"
     : data?.promo ? money(data.promo.balanceCents) : "View balance";
   const content = <div className="balance-detail">
-    <header className="balance-heading"><p className="eyebrow">Your SideSpace</p><h2>Balance</h2><p>A little space. Real earnings.</p></header>
-    {data?.livemode === false && <p className="balance-notice">Test mode · These are sandbox balances.</p>}
-    <div className="balance-refresh"><span role="status">{loading ? "Updating your balance…" : "Refresh for the latest amounts"}</span><button type="button" disabled={loading} onClick={() => { setLoading(true); void refresh(); }}>Refresh ↻</button></div>
+    <header className="balance-heading"><p className="eyebrow">{t("balance.yourSidespace")}</p><h2>{t("balance.balance")}</h2><p>{t("balance.aLittleSpaceRealEarnings")}</p></header>
+    {data?.livemode === false && <p className="balance-notice">{t("balance.testModeTheseAreSandboxBalances")}</p>}
+    <div className="balance-refresh"><span role="status">{loading ? t("balance.updatingYourBalance") : t("balance.refreshForTheLatestAmounts")}</span><button type="button" disabled={loading} onClick={() => { setLoading(true); void refresh(); }}>{t("balance.refresh")}</button></div>
     {error && <p className="form-error" role="alert">{error}</p>}
     {canEarn && <>
-      <section className="balance-earned" aria-label="SideSpace earnings">
-        <p className="eyebrow">Total earned on SideSpace</p>
-        {data?.earnings ? (data.earnings.length ? data.earnings : [{ currency: "usd", earnedCents: 0, pendingCents: 0 }]).map((entry) => <div key={entry.currency}><strong>{money(entry.earnedCents, entry.currency)}</strong><p>{money(entry.pendingCents, entry.currency)} awaiting campaign completion or review</p></div>) : <p>{loading ? "Loading earnings…" : "Earnings are temporarily unavailable."}</p>}
-        <small>Net campaign payouts sent to Stripe, including money already paid to your bank. Adjusted for refunds and reversals.</small>
+      <section className="balance-earned" aria-label={t("balance.sidespaceEarnings")}>
+        <p className="eyebrow">{t("balance.totalEarnedOnSidespace")}</p>
+        {data?.earnings ? (data.earnings.length ? data.earnings : [{ currency: "usd", earnedCents: 0, pendingCents: 0 }]).map((entry) => <div key={entry.currency}><strong>{money(entry.earnedCents, entry.currency)}</strong><p>{t("balance.pendingcentsAwaitingCampaignCompletionOrReview", { pendingCents: money(entry.pendingCents, entry.currency) })}</p></div>) : <p>{loading ? t("balance.loadingEarnings") : t("balance.earningsAreTemporarilyUnavailable")}</p>}
+        <small>{t("balance.netCampaignPayoutsSentToStripeIncluding")}</small>
       </section>
-      <section className="balance-section" aria-label="Stripe balance">
-        <div className="balance-section-title"><h3>Stripe balance</h3><span className="balance-badge">{stripe?.status === "connected" ? "Connected" : "Payouts"}</span></div>
+      <section className="balance-section" aria-label={t("balance.stripeBalance")}>
+        <div className="balance-section-title"><h3>{t("balance.stripeBalance")}</h3><span className="balance-badge">{stripe?.status === "connected" ? t("balance.connected") : t("app.payouts")}</span></div>
         {stripe?.status === "connected" ? <>
-          {(available.length ? available : [{ currency: "usd", availableCents: 0, pendingCents: 0 }]).map((entry) => <dl className="balance-amounts" key={entry.currency}><div><dt>Available in Stripe{available.length > 1 ? ` · ${entry.currency.toUpperCase()}` : ""}</dt><dd>{money(entry.availableCents, entry.currency)}</dd></div><div><dt>Pending in Stripe</dt><dd>{money(entry.pendingCents, entry.currency)}</dd></div></dl>)}
-          <p>{stripe.payoutsEnabled ? "Available funds follow your Stripe payout schedule. Pending funds are still settling." : "Complete your Stripe requirements to receive bank payouts."}</p>
-        </> : <p>{loading ? "Loading Stripe balance…" : stripe?.status === "not_connected" ? "Connect Stripe to receive your SideSpace earnings." : "We couldn’t reach your Stripe balance. Refresh to try again."}</p>}
+          {(available.length ? available : [{ currency: "usd", availableCents: 0, pendingCents: 0 }]).map((entry) => <dl className="balance-amounts" key={entry.currency}><div><dt>{t("balance.availableInStripe")}{available.length > 1 ? ` · ${entry.currency.toUpperCase()}` : ""}</dt><dd>{money(entry.availableCents, entry.currency)}</dd></div><div><dt>{t("balance.pendingInStripe")}</dt><dd>{money(entry.pendingCents, entry.currency)}</dd></div></dl>)}
+          <p>{stripe.payoutsEnabled ? t("balance.availableFundsFollowYourStripePayoutSchedule") : t("balance.completeYourStripeRequirementsToReceiveBank")}</p>
+        </> : <p>{loading ? t("balance.loadingStripeBalance") : stripe?.status === "not_connected" ? t("balance.connectStripeToReceiveYourSidespaceEarnings") : t("balance.weCouldntReachYourStripeBalanceRefresh")}</p>}
         {stripeConfigured && stripe?.status !== "unavailable" && stripe && <button className="button button-dark button-small" disabled={busy} onClick={() => onStripe(stripe.status === "connected" && stripe.payoutsEnabled ? "/api/stripe/connect/login" : "/api/stripe/connect/onboard")}>
-          {stripe.status === "connected" ? stripe.payoutsEnabled ? "Manage payouts in Stripe ↗" : "Continue Stripe setup ↗" : "Set up Stripe payouts ↗"}
+          {stripe.status === "connected" ? stripe.payoutsEnabled ? t("balance.managePayoutsInStripe") : t("balance.continueStripeSetup") : t("balance.setUpStripePayouts")}
         </button>}
       </section>
     </>}
-    <section className="balance-section balance-promo" aria-label="Promotional credits">
-      <div className="balance-section-title"><h3>Promo credits</h3><span className="balance-badge">For campaigns</span></div>
-      <strong className="balance-promo-amount">{data?.promo ? money(data.promo.balanceCents) : loading ? "Loading…" : "Unavailable"}</strong>
-      <p>{canRedeem ? "Referral rewards and SideSpace promotions apply automatically at checkout. SideSpace covers the credit; your creator’s payout stays the same." : "Promotional campaign credits are available to Business accounts."}</p>
-      <small>Promo credits cannot be withdrawn or transferred.</small>
+    <section className="balance-section balance-promo" aria-label={t("balance.promotionalCredits")}>
+      <div className="balance-section-title"><h3>{t("balance.promoCredits")}</h3><span className="balance-badge">{t("balance.forCampaigns")}</span></div>
+      <strong className="balance-promo-amount">{data?.promo ? money(data.promo.balanceCents) : loading ? t("balance.loading") : t("balance.unavailable")}</strong>
+      <p>{canRedeem ? t("balance.referralRewardsAndSidespacePromotionsApplyAutomatically") : t("balance.promotionalCampaignCreditsAreAvailableToBusiness")}</p>
+      <small>{t("balance.promoCreditsCannotBeWithdrawnOrTransferred")}</small>
       {canRedeem && <form className="balance-code-form" onSubmit={async (event) => {
         event.preventDefault();
         const normalized = normalizeBusinessReferralCode(code);
@@ -105,14 +107,14 @@ export function AccountBalance({ profileId, canEarn, canRedeem, stripeConfigured
           await refresh();
         } catch { setNotice("We couldn’t apply that code. Please try again."); }
         finally { setRedeeming(false); }
-      }}><label htmlFor="balance-referral-code">Have a referral code?</label><div><input id="balance-referral-code" value={code} onChange={(event) => setCode(event.target.value)} placeholder="Enter code" autoComplete="off" autoCapitalize="characters" spellCheck={false} maxLength={32} disabled={redeeming} /><button className="button button-dark button-small" disabled={redeeming || !code.trim()}>{redeeming ? "Applying…" : "Apply code"}</button></div><small>One referral reward per email.</small>{notice && <p role="status">{notice}</p>}</form>}
-      {!!data?.promo?.activity.length && <div className="balance-activity"><h4>Recent credit activity</h4><ul>{data.promo.activity.map((entry) => <li key={entry.id}><div><span>{activityLabels[entry.type] ?? "Promo adjustment"}</span><small>{new Date(entry.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{entry.amountCents > 0 ? "+" : ""}{money(entry.amountCents)}</b></li>)}</ul></div>}
+      }}><label htmlFor="balance-referral-code">{t("balance.haveAReferralCode")}</label><div><input id="balance-referral-code" value={code} onChange={(event) => setCode(event.target.value)} placeholder={t("balance.enterCode")} autoComplete="off" autoCapitalize="characters" spellCheck={false} maxLength={32} disabled={redeeming} /><button className="button button-dark button-small" disabled={redeeming || !code.trim()}>{redeeming ? t("balance.applying") : t("balance.applyCode")}</button></div><small>{t("balance.oneReferralRewardPerEmail")}</small>{notice && <p role="status">{notice}</p>}</form>}
+      {!!data?.promo?.activity.length && <div className="balance-activity"><h4>{t("balance.recentCreditActivity")}</h4><ul>{data.promo.activity.map((entry) => <li key={entry.id}><div><span>{activityLabels[entry.type] ?? t("balance.promoAdjustment")}</span><small>{new Date(entry.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small></div><b>{entry.amountCents > 0 ? "+" : ""}{money(entry.amountCents)}</b></li>)}</ul></div>}
     </section>
   </div>;
   return <>
     <button type="button" className="dashboard-panel balance-card" id="balance" aria-haspopup="dialog" onClick={() => { setOpen(true); setLoading(true); void refresh(); }}>
-      <span className="balance-card-copy"><span className="eyebrow">Balance</span><strong>{balanceLabel}</strong><span>{canEarn ? "Your Stripe balance, earnings & promo credits" : "Promo credits for your next campaign"}</span></span>
-      <span className="balance-card-action">View balance <span aria-hidden="true">↗</span></span>
+      <span className="balance-card-copy"><span className="eyebrow">{t("balance.balance")}</span><strong>{balanceLabel}</strong><span>{canEarn ? t("balance.yourStripeBalanceEarningsPromoCredits") : t("balance.promoCreditsForYourNextCampaign")}</span></span>
+      <span className="balance-card-action">{t("balance.viewBalance")}{" "}<span aria-hidden="true">↗</span></span>
     </button>
     {open && renderDialog(content, () => setOpen(false))}
   </>;

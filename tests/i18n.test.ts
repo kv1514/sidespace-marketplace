@@ -5,12 +5,15 @@ import {
   LOCALES,
   MESSAGES,
   formatCurrency,
+  keyForText,
   localizeListingUnit,
   localizeRole,
   localeFromAcceptLanguage,
   parseLocale,
   translate,
+  translateText,
 } from "../lib/i18n";
+import { allReferences, checkMessages, placeholders } from "../scripts/i18n-keys.mjs";
 import {
   convertUsdCents,
   currencyFromRequest,
@@ -104,4 +107,56 @@ describe("SideSpace locale resolution", () => {
     expect(formatMinorCurrency("zh", 72000, "CNY")).toContain("720.00");
   });
 
+});
+
+describe("every language the interface can speak", () => {
+  it("offers Korean and Vietnamese alongside the original four", () => {
+    expect(LOCALES.map((locale) => locale.code)).toEqual([
+      "en",
+      "es",
+      "fr",
+      "zh",
+      "ko",
+      "vi",
+    ]);
+    expect(parseLocale("ko-KR")).toBe("ko");
+    expect(parseLocale("vi")).toBe("vi");
+  });
+
+  it("keeps the placeholders of every translation identical to the English", () => {
+    const english = MESSAGES.en as Record<string, string>;
+    const mismatched: string[] = [];
+    for (const locale of LOCALES) {
+      if (locale.code === "en") continue;
+      const table = MESSAGES[locale.code] as Record<string, string>;
+      for (const [key, value] of Object.entries(english)) {
+        if (placeholders(table[key]) !== placeholders(value)) {
+          mismatched.push(`${locale.code}:${key}`);
+        }
+      }
+    }
+    expect(mismatched).toEqual([]);
+  });
+
+  it("translates copy that arrives as data by looking its English up", () => {
+    expect(keyForText("Sign in")).toBe("chrome.signIn");
+    expect(translateText("es", "Sign in")).toBe(translate("es", "chrome.signIn"));
+    expect(translateText("zh", "Nothing anyone wrote")).toBe("Nothing anyone wrote");
+    expect(translateText("en", "Hello {name}", { name: "Ada" })).toBe("Hello Ada");
+  });
+
+  it("has a key for every English sentence the interface can show", () => {
+    // Toasts, validation messages, module-level labels, Error messages, the
+    // `error` an API route returns, and sentences the database raises all
+    // reach the screen as English text and are translated by value. One with
+    // no key is shown untranslated.
+    const references = allReferences();
+    expect(references.keys.size).toBeGreaterThan(1000);
+    const { missing, mismatched } = checkMessages(
+      MESSAGES as Record<string, Record<string, string>>,
+      references,
+    );
+    expect(missing).toEqual([]);
+    expect(mismatched).toEqual([]);
+  });
 });

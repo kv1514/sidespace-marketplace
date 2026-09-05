@@ -342,7 +342,7 @@ export function SiteFooter({ onJoin }: { onJoin: () => void }) {
             ↗
           </span>
         </button>
-        <small>© {new Date().getFullYear()} SideSpace</small>
+        <small>{t("chrome.yearSidespace", { year: new Date().getFullYear() })}</small>
       </div>
     </footer>
   );

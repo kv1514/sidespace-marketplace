@@ -82,6 +82,9 @@ import {
   localizeRole,
   type Locale,
   type TranslationKey,
+  DEFAULT_LOCALE,
+  translateEnglish,
+  type Translate,
 } from "@/lib/i18n";
 import {
   compareLocations,
@@ -746,15 +749,20 @@ const GoogleSignInButton = dynamic(
 );
 
 /** three.js and the viewer arrive only on a listing that has a 360 walkthrough. */
-const PanoramaViewer = dynamic(() => import("./components/PanoramaViewer"), {
-  ssr: false,
-  loading: () => (
+function PanoramaLoading() {
+  const { t } = useLocale();
+  return (
     <div className="pano-viewer">
       <span className="pano-status" role="status">
-        Loading the 360° view…
+        {t("app.loadingThe360View")}
       </span>
     </div>
-  ),
+  );
+}
+
+const PanoramaViewer = dynamic(() => import("./components/PanoramaViewer"), {
+  ssr: false,
+  loading: PanoramaLoading,
 });
 
 /** Google Maps, opened straight on a Street View panorama. Needs no key. */
@@ -767,6 +775,7 @@ function streetPanoUrl(pano: string) {
  * kinds open in the panorama viewer, where a buyer drags to look around.
  */
 function ListingTour({ listing }: { listing: Listing }) {
+  const { t } = useLocale();
   const kind = listing.tour_kind;
   if (!listing.tour_url || !kind) return null;
   return (
@@ -777,22 +786,22 @@ function ListingTour({ listing }: { listing: Listing }) {
           controls
           playsInline
           preload="metadata"
-          aria-label={`Walkthrough video of ${listing.title}`}
+          aria-label={t("app.walkthroughVideoOfTitle", { title: listing.title })}
         />
       ) : (
         <PanoramaViewer
           key={listing.tour_url}
           src={listing.tour_url}
           kind={kind}
-          label={`360° ${kind === "video360" ? "video" : "photo"} of ${listing.title}`}
+          label={t("app.n360ValueOfTitle", { value: kind === "video360" ? "video" : "photo", title: listing.title })}
         />
       )}
       <figcaption>
         {kind === "video"
-          ? "Walkthrough video from the owner: the space as it is, and how people move through it."
+          ? t("app.walkthroughVideoFromTheOwnerTheSpace")
           : kind === "video360"
-            ? "360° walkthrough from the owner. Press play, then drag to look around."
-            : "360° photo from the owner. Drag to look around the whole space."}
+            ? t("app.n360WalkthroughFromTheOwnerPressPlay")
+            : t("app.n360PhotoFromTheOwnerDragTo")}
       </figcaption>
     </figure>
   );
@@ -1512,11 +1521,12 @@ type OnboardingAnswers = {
  * rest on the lime fill alone.
  */
 function OptionalFieldLabel({ children }: { children: ReactNode }) {
+  const { t } = useLocale();
   return (
     <span className="field-label-line">
       {children}
       {" "}
-      <span className="optional">optional</span>
+      <span className="optional">{t("app.optional2")}</span>
     </span>
   );
 }
@@ -1566,6 +1576,7 @@ function ProfilePhotoField({
   onFileChange: (file: File | null) => void;
   onCropStateChange: (pending: boolean) => void;
 }) {
+  const { t, tx } = useLocale();
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceReadyFile, setSourceReadyFile] = useState<File | null>(null);
@@ -1605,12 +1616,12 @@ function ProfilePhotoField({
         });
       };
       image.onerror = () => {
-        if (!cancelled) setCropError("That photo could not be read.");
+        if (!cancelled) setCropError(tx("That photo could not be read."));
       };
       image.src = dataUrl;
     };
     reader.onerror = () => {
-      if (!cancelled) setCropError("That photo could not be read.");
+      if (!cancelled) setCropError(tx("That photo could not be read."));
     };
     reader.readAsDataURL(sourceFile);
 
@@ -1618,7 +1629,7 @@ function ProfilePhotoField({
       cancelled = true;
       reader.abort();
     };
-  }, [sourceFile]);
+  }, [sourceFile, tx]);
 
   useEffect(() => {
     if (!value) return;
@@ -1685,7 +1696,7 @@ function ProfilePhotoField({
       !file.type ||
       !["image/jpeg", "image/png", "image/webp"].includes(file.type)
     ) {
-      setCropError("Choose a JPG, PNG, or WebP image.");
+      setCropError(tx("Choose a JPG, PNG, or WebP image."));
       if (inputRef.current) inputRef.current.value = "";
       return;
     }
@@ -1853,7 +1864,7 @@ function ProfilePhotoField({
       if (inputRef.current) inputRef.current.value = "";
     } catch (error) {
       setCropError(
-        error instanceof Error ? error.message : "That photo could not be cropped.",
+        tx(error instanceof Error ? error.message : "That photo could not be cropped."),
       );
     } finally {
       setCropping(false);
@@ -1883,7 +1894,7 @@ function ProfilePhotoField({
             ref={cropSurfaceRef}
             className={`profile-photo-crop-surface${dragging ? " is-dragging" : ""}`}
             role="region"
-            aria-label="Crop profile photo. Drag the image to reposition it."
+            aria-label={t("app.cropProfilePhotoDragTheImageTo")}
             tabIndex={0}
             onKeyDown={handleCropKeyDown}
             onPointerDown={handlePointerDown}
@@ -1895,7 +1906,7 @@ function ProfilePhotoField({
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={sourceUrl}
-                alt="Profile photo crop preview"
+                alt={t("app.profilePhotoCropPreview")}
                 draggable={false}
                 onLoad={(event) =>
                   setImageDimensions({
@@ -1912,29 +1923,29 @@ function ProfilePhotoField({
                 }}
               />
             ) : (
-              <span className="profile-photo-crop-loading">Loading photo…</span>
+              <span className="profile-photo-crop-loading">{t("app.loadingPhoto")}</span>
             )}
             <span className="profile-photo-crop-outline" aria-hidden="true" />
           </div>
           <div className="profile-photo-crop-controls">
             <label className="profile-photo-zoom">
-              <span>Zoom</span>
+              <span>{t("app.zoom")}</span>
               <input
                 type="range"
                 min="1"
                 max="3"
                 step="0.01"
                 value={zoom}
-                aria-label="Zoom profile photo"
+                aria-label={t("app.zoomProfilePhoto")}
                 onChange={(event) => handleZoomChange(Number(event.target.value))}
               />
               <output>{Math.round(zoom * 100)}%</output>
             </label>
-            <small>Drag the photo to choose what appears in the circle.</small>
+            <small>{t("app.dragThePhotoToChooseWhatAppears")}</small>
           </div>
           <div className="profile-photo-crop-actions">
             <button type="button" onClick={cancelCrop}>
-              Cancel
+              {t("app.cancel")}
             </button>
             <button
               type="button"
@@ -1942,7 +1953,7 @@ function ProfilePhotoField({
               disabled={!imageLayout || cropping}
               onClick={() => void applyCrop()}
             >
-              {cropping ? "Preparing…" : "Use this crop"}
+              {cropping ? t("app.preparing") : t("app.useThisCrop")}
             </button>
           </div>
         </div>
@@ -1954,15 +1965,15 @@ function ProfilePhotoField({
             <img
               className="profile-photo-preview"
               src={value ? valuePreviewUrl : currentUrl}
-              alt={value ? "Selected profile photo" : "Current profile photo"}
+              alt={value ? t("app.selectedProfilePhoto") : t("app.currentProfilePhoto")}
             />
           )}
           <small>
             {value
-              ? "Your cropped photo is ready. Choose another photo to adjust it."
+              ? t("app.yourCroppedPhotoIsReadyChooseAnother")
               : currentUrl
-                ? "Your current photo is shown here. Choose another photo to replace it."
-                : "Choose a photo, then drag it into place."}
+                ? t("app.yourCurrentPhotoIsShownHereChoose")
+                : t("app.chooseAPhotoThenDragItInto")}
           </small>
         </div>
       )}
@@ -1993,24 +2004,24 @@ function bioMeetsRequirement(value: string, role: Role | null) {
     : value.trim().length >= BIO_MIN_CHARACTERS;
 }
 
-function getBioRequirementHint(value: string, role: Role | null) {
+function getBioRequirementHint(value: string, role: Role | null, t: Translate = translateEnglish) {
   if (usesWordBasedBioRequirement(role)) {
     const remaining = Math.max(0, BUSINESS_BIO_MIN_WORDS - countWords(value));
 
     if (remaining === 0) {
-      return "Minimum reached";
+      return t("app.minimumReached");
     }
 
-    return `${remaining} more ${remaining === 1 ? "word" : "words"} needed`;
+    return remaining === 1 ? t("app.oneMoreWordNeeded") : t("app.moreWordsNeeded", { count: remaining });
   }
 
   const remaining = Math.max(0, BIO_MIN_CHARACTERS - value.trim().length);
 
   if (remaining === 0) {
-    return "Minimum reached";
+    return t("app.minimumReached");
   }
 
-  return `${remaining} more ${remaining === 1 ? "character" : "characters"} needed`;
+  return remaining === 1 ? t("app.oneMoreCharacterNeeded") : t("app.moreCharactersNeeded", { count: remaining });
 }
 
 function ChipRow({
@@ -2032,6 +2043,7 @@ function ChipRow({
   optional?: boolean;
   hideLabel?: boolean;
 }) {
+  const { t } = useLocale();
   // The label used to live only in aria-label, so a sighted member met several
   // required chip rows as unheaded rows of pills - "pick what kind of business
   // you are" was never written down anywhere. Rendering it fixes the same gap
@@ -2043,7 +2055,7 @@ function ChipRow({
         <span className="chip-label" id={labelId}>
           {label}
           {" "}
-          {optional && <span className="optional">optional</span>}
+          {optional && <span className="optional">{t("app.optional2")}</span>}
         </span>
       )}
       <div
@@ -2097,6 +2109,7 @@ function CreatorAudienceFields({
   igStats: IgStats | null;
   onCheckInstagram: (handle: string) => void;
 }) {
+  const { t, tx } = useLocale();
   const selectedPlatforms = answers.platforms
     .map((key) => socialPlatforms.find((platform) => platform.key === key))
     .filter((platform): platform is (typeof socialPlatforms)[number] =>
@@ -2132,7 +2145,7 @@ function CreatorAudienceFields({
     <div className="creator-audience-fieldset">
       <ChipRow
         field="platforms"
-        label="Choose all that apply"
+        label={t("app.chooseAllThatApply")}
         multi
         options={CREATOR_PLATFORMS.map(
           (key) =>
@@ -2146,10 +2159,10 @@ function CreatorAudienceFields({
         <div className="audience-profile-list">
           <div className="audience-profile-heading">
             <div>
-              <strong>Add your profiles</strong>
-              <span>Add a handle or link for the ones you want shown.</span>
+              <strong>{t("app.addYourProfiles")}</strong>
+              <span>{t("app.addAHandleOrLinkForThe")}</span>
             </div>
-            <small>{selectedPlatforms.length} selected</small>
+            <small>{t("app.selectedplatformscountSelected", { selectedPlatformsCount: selectedPlatforms.length })}</small>
           </div>
 
           {selectedPlatforms.map((platform) => {
@@ -2169,14 +2182,14 @@ function CreatorAudienceFields({
                 key={platform.key}
               >
                 <div className="audience-platform-id">
-                  <span aria-hidden="true">{platform.short}</span>
-                  <strong>{platform.label}</strong>
+                  <span aria-hidden="true">{tx(platform.short)}</span>
+                  <strong>{tx(platform.label)}</strong>
                 </div>
                 <label
                   className="audience-handle-field"
                   htmlFor={`audience-${platform.key}`}
                 >
-                  <span className="sr-only">{platform.label} handle or link</span>
+                  <span className="sr-only">{t("app.labelHandleOrLink", { label: tx(platform.label) })}</span>
                   <input
                     id={`audience-${platform.key}`}
                     value={value}
@@ -2200,11 +2213,11 @@ function CreatorAudienceFields({
                       disabled={igAvatarBusy || !value.trim()}
                       onClick={() => onCheckInstagram(value)}
                     >
-                      {igAvatarBusy ? "Checking…" : "Check"}
+                      {igAvatarBusy ? t("app.checking") : t("app.check")}
                     </button>
                   )}
                   {isPrimary ? (
-                    <span className="audience-primary-badge">Primary</span>
+                    <span className="audience-primary-badge">{t("app.primary")}</span>
                   ) : (
                     <button
                       type="button"
@@ -2213,11 +2226,11 @@ function CreatorAudienceFields({
                       onClick={() => makePrimary(platform.key)}
                       title={
                         canBePrimary
-                          ? `Use ${platform.label} as your primary channel`
-                          : `Add your ${platform.label} profile first`
+                          ? t("app.useLabelAsYourPrimaryChannel", { label: tx(platform.label) })
+                          : t("app.addYourLabelProfileFirst", { label: tx(platform.label) })
                       }
                     >
-                      Make primary
+                      {t("app.makePrimary")}
                     </button>
                   )}
                 </div>
@@ -2225,9 +2238,9 @@ function CreatorAudienceFields({
                 {platform.key === "instagram" && igAvatar && (
                   <span className="ig-avatar-preview audience-row-result">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={igAvatar} alt="Instagram profile preview" />
+                    <img src={igAvatar} alt={t("app.instagramProfilePreview")} />
                     <small>
-                      Profile found. Upload your own photo in step 1 to replace it.
+                      {t("app.profileFoundUploadYourOwnPhotoIn")}
                     </small>
                   </span>
                 )}
@@ -2237,10 +2250,10 @@ function CreatorAudienceFields({
                     role="status"
                   >
                     {igStats.throttled
-                      ? "Instagram is rate-limiting us. Add your audience size below and carry on."
+                      ? t("app.instagramIsRateLimitingUsAddYour")
                       : igStats.error
-                        ? "We couldn’t read that profile. You can still add your audience size below."
-                        : `Found @${igStats.username} — ${compactNumber(igStats.followers ?? 0)} followers.`}
+                        ? t("app.weCouldntReadThatProfileYouCan")
+                        : t("app.foundUsernameCompactnumberFollowers", { username: igStats.username ?? "", compactNumber: compactNumber(igStats.followers ?? 0) })}
                   </small>
                 )}
               </div>
@@ -2250,11 +2263,11 @@ function CreatorAudienceFields({
           <label className="audience-size-field">
             <span>
               {primaryPlatform
-                ? `${primaryPlatform.label} audience size`
-                : "Audience size"}
-              <small className="optional">Optional</small>
+                ? t("app.labelAudienceSize", { label: tx(primaryPlatform.label) })
+                : t("app.audienceSize")}
+              <small className="optional">{t("app.optional")}</small>
             </span>
-            <small>An estimate is fine. This helps brands compare reach.</small>
+            <small>{t("app.anEstimateIsFineThisHelpsBrands")}</small>
             <input
               type="number"
               inputMode="numeric"
@@ -2276,8 +2289,7 @@ function CreatorAudienceFields({
           <div className="audience-filing-note" aria-live="polite">
             <span aria-hidden="true">↳</span>
             <p>
-              Your card will appear under <b>{creatorChannel(answers)}</b>.
-              Only profiles with a handle or link are shown publicly.
+              {t("app.yourCardWillAppearUnder")}{" "}<b>{creatorChannel(answers)}</b>{t("app.onlyProfilesWithAHandleOrLink")}
             </p>
           </div>
         </div>
@@ -3714,17 +3726,17 @@ function buildListingDrafts(
  * filled in by the time the others could fire, and collecting them all would
  * otherwise produce "Set what one  sponsor pays."
  */
-function tierProblems(answers: OnboardingAnswers): Array<[string, string]> {
+function tierProblems(answers: OnboardingAnswers, t: Translate = translateEnglish): Array<[string, string]> {
   const out: Array<[string, string]> = [];
   for (let i = 0; i < answers.tiers.length; i += 1) {
     const tier = answers.tiers[i];
-    const label = `Tier ${i + 1}`;
+    const label = t("app.tierNumber", { number: i + 1 });
     const named = tier.name.trim() || label.toLowerCase();
     if (!tier.name.trim()) {
-      out.push([`Name ${label} — Gold, Founding Partner, anything.`, `tierName${i}`]);
+      out.push([t("app.nameTier", { tier: label }), `tierName${i}`]);
     }
     if (!tier.price || tier.price < 1) {
-      out.push([`Set what one ${named} sponsor pays.`, `tierPrice${i}`]);
+      out.push([t("app.setTierPrice", { tier: named }), `tierPrice${i}`]);
     }
     // listings_price_max_valid rejects this at the database, where it surfaces
     // as a generic "something went wrong".
@@ -3734,13 +3746,13 @@ function tierProblems(answers: OnboardingAnswers): Array<[string, string]> {
       tier.priceMax < tier.price
     ) {
       out.push([
-        `${named}'s upper price is below its lower one.`,
+        t("app.tierUpperPriceBelowLower", { tier: named }),
         `tierPriceMax${i}`,
       ]);
     }
     if (!tier.benefits.length) {
       out.push([
-        `Pick what a ${named} sponsor actually gets.`,
+        t("app.pickTierBenefits", { tier: named }),
         `tierBenefits${i}`,
       ]);
     }
@@ -3955,6 +3967,7 @@ function creatorPostRecommendations(
   profile: Profile,
   ownListings: Listing[],
   blockedProfileIds: string[],
+  t: Translate = translateEnglish,
 ): CreatorRecommendation[] {
   const preferences = businessPreferencesForProfile(profile, ownListings);
   const targetPlatforms = preferences.targetPlatforms.map(lower);
@@ -3991,14 +4004,14 @@ function creatorPostRecommendations(
       const platformMatch = targetPlatforms.includes(lower(listing.channel));
       if (platformMatch) {
         score += 38;
-        reasons.push("matches your target platform");
+        reasons.push(t("app.reasonMatchesTargetPlatform"));
       }
       if (
         preferences.briefScope === "virtual" ||
         preferences.briefScope === "both"
       ) {
         score += 6;
-        reasons.push("fits your virtual brief");
+        reasons.push(t("app.reasonFitsVirtualBrief"));
       }
       const categoryOverlap = recommendationCategoryOverlap(
         preferences.categories,
@@ -4006,18 +4019,18 @@ function creatorPostRecommendations(
       );
       if (categoryOverlap.length) {
         score += Math.min(30, categoryOverlap.length * 15);
-        reasons.push("fits " + categoryOverlap.slice(0, 2).join(" and "));
+        reasons.push(t("app.reasonFits", { categories: categoryOverlap.slice(0, 2).join(t("app.andJoiner")) }));
       }
       const locationText = lower(listingCity(listing));
       if (wantedArea && locationText.includes(wantedArea)) {
         score += 18;
-        reasons.push("near " + preferences.wantedArea);
+        reasons.push(t("app.reasonNear", { area: String(preferences.wantedArea ?? "") }));
       } else if (
         lower(listingCity(listing)).split(",")[0] ===
         lower(preferences.wantedArea || profile.city).split(",")[0]
       ) {
         score += 12;
-        reasons.push("in your local market");
+        reasons.push(t("app.reasonLocalMarket"));
       }
       const listingText = lower(
         [
@@ -4029,20 +4042,20 @@ function creatorPostRecommendations(
       );
       if (goalWords.some((word) => listingText.includes(word))) {
         score += 10;
-        reasons.push("supports your campaign goal");
+        reasons.push(t("app.reasonSupportsGoal"));
       }
       if (
         preferences.timing &&
         lower(listing.availability_notes).includes(lower(preferences.timing))
       ) {
         score += 8;
-        reasons.push("fits your timing");
+        reasons.push(t("app.reasonFitsTiming"));
       }
       if (listing.owner.verified) {
         score += 5;
-        reasons.push("SideSpace verified");
+        reasons.push(t("app.reasonVerified"));
       }
-      if (!reasons.length) reasons.push("available in your marketplace");
+      if (!reasons.length) reasons.push(t("app.reasonAvailable"));
       return { listing, score, reasons };
     })
     .sort(
@@ -4516,17 +4529,35 @@ const SUPPORT_EMAIL = "sidespacesupport@gmail.com";
 // Constructed once at module scope. Intl.DateTimeFormat is among the most
 // expensive built-ins to construct - locale resolution plus ICU allocation -
 // and these were being rebuilt per row inside render bodies.
-const DATE_FORMAT = new Intl.DateTimeFormat("en", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  timeZone: "UTC",
-});
+const DATE_FORMATS = new Map<Locale, Intl.DateTimeFormat>();
+const TIME_FORMATS = new Map<Locale, Intl.DateTimeFormat>();
 
-const TIME_FORMAT = new Intl.DateTimeFormat("en", {
-  hour: "numeric",
-  minute: "2-digit",
-});
+/** One formatter per language, built the first time that language asks. */
+function dateFormat(locale: Locale) {
+  let format = DATE_FORMATS.get(locale);
+  if (!format) {
+    format = new Intl.DateTimeFormat(localeTag(locale), {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    DATE_FORMATS.set(locale, format);
+  }
+  return format;
+}
+
+function timeFormat(locale: Locale) {
+  let format = TIME_FORMATS.get(locale);
+  if (!format) {
+    format = new Intl.DateTimeFormat(localeTag(locale), {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    TIME_FORMATS.set(locale, format);
+  }
+  return format;
+}
 
 /**
  * What a date chip is about to publish, said out loud.
@@ -4537,25 +4568,26 @@ const TIME_FORMAT = new Intl.DateTimeFormat("en", {
  * never saw. Showing the window here is the difference between a shortcut and
  * a guess published in their name.
  */
-function windowNote(startDays: number | null, days: number) {
+function windowNote(startDays: number | null, days: number, t: Translate = translateEnglish, locale: Locale = DEFAULT_LOCALE) {
   if (startDays === null) {
-    return "No dates go on your card — people will message you to ask.";
+    return t("app.noDatesOnCard");
   }
-  return `Your card will show ${displayDate(
-    isoDaysFromToday(startDays),
-  )} – ${displayDate(isoDaysFromToday(startDays + days))}. You can change the exact dates on your listing any time.`;
+  return t("app.cardWillShowDates", {
+    start: displayDate(isoDaysFromToday(startDays), t, locale),
+    end: displayDate(isoDaysFromToday(startDays + days), t, locale),
+  });
 }
 
-function displayDate(value?: string | null) {
-  if (!value) return "Flexible";
-  return DATE_FORMAT.format(new Date(`${value}T00:00:00Z`));
+function displayDate(value?: string | null, t: Translate = translateEnglish, locale: Locale = DEFAULT_LOCALE) {
+  if (!value) return t("app.flexible");
+  return dateFormat(locale).format(new Date(`${value}T00:00:00Z`));
 }
 
-function displayDateTime(value?: string | null) {
-  if (!value) return "Not set";
+function displayDateTime(value?: string | null, t: Translate = translateEnglish, locale: Locale = DEFAULT_LOCALE) {
+  if (!value) return t("app.notSet");
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(localeTag(locale), {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
@@ -4653,6 +4685,7 @@ function ListingLikeButton({
 }
 
 function SocialLinks({ profile, compact = false }: { profile: Profile; compact?: boolean }) {
+  const { t, tx } = useLocale();
   const links = socialPlatforms
     .map((platform) => ({
       ...platform,
@@ -4663,23 +4696,21 @@ function SocialLinks({ profile, compact = false }: { profile: Profile; compact?:
   if (!links.length) return null;
 
   return (
-    <nav className={`social-links ${compact ? "social-links-compact" : ""}`} aria-label={`${profile.display_name} social profiles`}>
+    <nav className={`social-links ${compact ? "social-links-compact" : ""}`} aria-label={t("app.displayNameSocialProfiles", { display_name: profile.display_name })}>
       {links.map((platform) => (
         <a
           key={platform.key}
           href={platform.url}
           target="_blank"
           rel="noreferrer"
-          aria-label={`${profile.display_name} on ${platform.label}${
-            profile.social_verification?.[platform.key] === "verified"
+          aria-label={t("app.displayNameOnLabelValue", { display_name: profile.display_name, label: tx(platform.label), value: profile.social_verification?.[platform.key] === "verified"
               ? ", connected and verified"
-              : ", self-reported link"
-          }`}
+              : ", self-reported link" })}
         >
-          <b>{platform.short}</b>
-          {!compact && <span>{platform.label}</span>}
+          <b>{tx(platform.short)}</b>
+          {!compact && <span>{tx(platform.label)}</span>}
           {profile.social_verification?.[platform.key] === "verified" && (
-            <i title="Connected and verified">✓</i>
+            <i title={t("app.connectedAndVerified")}>✓</i>
           )}
         </a>
       ))}
@@ -4792,6 +4823,7 @@ function Modal({
   /** Gate dialogs (auth, onboarding) that must outrank any other overlay. */
   elevated?: boolean;
 }) {
+  const { t } = useLocale();
   const cardRef = useRef<HTMLElement | null>(null);
   // The focus effect must run exactly once per modal lifetime, but Escape
   // still needs the freshest onClose closure; a ref bridges the two.
@@ -4894,7 +4926,7 @@ function Modal({
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button className="close-button" onClick={onClose} aria-label="Close">
+        <button className="close-button" onClick={onClose} aria-label={t("app.close")}>
           ×
         </button>
         {children}
@@ -4912,6 +4944,7 @@ function CreatorOfferSwitcher({
   onSelect: (offer: CreatorOfferType) => void;
   isOfferComplete?: (offer: CreatorOfferType) => boolean;
 }) {
+  const { t } = useLocale();
   const offers = selectedCreatorOffers(answers);
   if (!offers.length) return null;
   const isSingleOffer = offers.length === 1;
@@ -4928,19 +4961,19 @@ function CreatorOfferSwitcher({
     >
       <div className="creator-offer-workspace-heading">
         <div>
-          <span>{isSingleOffer ? "Current listing" : "Selected offers"}</span>
+          <span>{isSingleOffer ? t("app.currentListing") : t("app.selectedOffers")}</span>
           <strong>
             {isSingleOffer
               ? creatorOfferLabel(activeOffer)
-              : "Fill in each one before you publish."}
+              : t("app.fillInEachOneBeforeYouPublish")}
           </strong>
         </div>
         <small>
           {isSingleOffer
             ? activeOfferReady
-              ? "Complete"
-              : "Needs details"
-            : `${offers.length} listings planned`}
+              ? t("app.complete")
+              : t("app.needsDetails")
+            : t("app.offerscountListingsPlanned", { offersCount: offers.length })}
         </small>
       </div>
       {!isSingleOffer && (
@@ -4948,7 +4981,7 @@ function CreatorOfferSwitcher({
           <div
             className="creator-offer-tabs"
             role="tablist"
-            aria-label="Choose which offer to edit"
+            aria-label={t("app.chooseWhichOfferToEdit")}
           >
             {offers.map((offer) => {
               const active = answers.creatorOffer === offer;
@@ -4969,16 +5002,14 @@ function CreatorOfferSwitcher({
                   onClick={() => onSelect(offer)}
                 >
                   <span>{creatorOfferLabel(offer)}</span>
-                  <small>{ready ? "Complete" : "Needs details"}</small>
+                  <small>{ready ? t("app.complete") : t("app.needsDetails")}</small>
                 </button>
               );
             })}
           </div>
           <p className="creator-offer-workspace-note">
-            You are editing{" "}
-            <b>{creatorOfferLabel(answers.creatorOffer || offers[0])}</b>. Each
-            selected path gets its own listing, and you can come back to edit any
-            of them later.
+            {t("app.youAreEditing")}{" "}
+            <b>{creatorOfferLabel(answers.creatorOffer || offers[0])}</b>{t("app.eachSelectedPathGetsItsOwnListing")}
           </p>
         </>
       )}
@@ -4999,6 +5030,7 @@ function PreferenceChipGroup({
   multi?: boolean;
   onPick: (value: string) => void;
 }) {
+  const { tx } = useLocale();
   return (
     <fieldset className="preference-chip-group">
       <legend>{label}</legend>
@@ -5016,7 +5048,7 @@ function PreferenceChipGroup({
               onClick={() => onPick(option.value)}
             >
               {multi && active ? "✓ " : ""}
-              {option.label}
+              {tx(option.label)}
             </button>
           );
         })}
@@ -5036,6 +5068,7 @@ function OnboardingPreviewCards({
   touched: { title: boolean; description: boolean };
   previewPhotoUrl: string;
 }) {
+  const { t } = useLocale();
   const drafts = buildListingDrafts(role, answers, touched);
   const isMulti = drafts.length > 1;
   return (
@@ -5046,10 +5079,10 @@ function OnboardingPreviewCards({
         <span>
           {isMulti
             ? "These are the " + drafts.length + " listings people will see"
-            : "This is what people will see"}
+            : t("app.thisIsWhatPeopleWillSee")}
         </span>
         {isMulti && (
-          <small>One card per selected offer or sponsorship tier.</small>
+          <small>{t("app.oneCardPerSelectedOfferOrSponsorship")}</small>
         )}
       </div>
       <div className="preview-card-grid">
@@ -5069,7 +5102,7 @@ function OnboardingPreviewCards({
                 />
               ) : (
                 <p className="preview-card-photo is-empty">
-                  Add a photo above — it fills the top half of your card.
+                  {t("app.addAPhotoAboveItFillsThe")}
                 </p>
               )}
               <div className="preview-card-top">
@@ -5080,31 +5113,31 @@ function OnboardingPreviewCards({
                       : "preview-chip"
                   }
                 >
-                  {role === "business" ? "Wanted" : draft.channel}
+                  {role === "business" ? t("market.wanted") : draft.channel}
                 </span>
                 <small className="preview-offer">
-                  {answers.display_name.trim() || "Your name"}
+                  {answers.display_name.trim() || t("app.yourName")}
                   {answers.city.trim() ? " · " + answers.city.trim() : ""}
                 </small>
               </div>
               <div className="preview-card-body">
-                <strong>{draft.title || "Untitled listing"}</strong>
+                <strong>{draft.title || t("app.untitledListing")}</strong>
                 <span className="preview-offer">
                   {draft.format.trim()
                     ? role === "business"
                       ? "Looking for " + draft.format.trim()
                       : "You get " + formatOffer(draft.format)
-                    : "Add what people get above."}
+                    : t("app.addWhatPeopleGetAbove")}
                 </span>
                 <p className="preview-card-blurb">
-                  {draft.description || "Your description will show here."}
+                  {draft.description || t("app.yourDescriptionWillShowHere")}
                 </p>
                 <div className="preview-card-foot">
                   {role === "business" && (
-                    <span className="preview-lead">Budget</span>
+                    <span className="preview-lead">{t("market.budget")}</span>
                   )}
                   <b className={hasPrice ? undefined : "preview-price-empty"}>
-                    {hasPrice ? priceLabel(draft) : "Add a price"}
+                    {hasPrice ? priceLabel(draft) : t("app.addAPrice")}
                   </b>
                   <small>/ {draft.price_unit}</small>
                 </div>
@@ -5197,6 +5230,7 @@ export default function MarketplaceApp({
     formatNumber: formatLocalizedNumber,
     formatListingPrice,
     t,
+    tx,
   } = useLocale();
   const seededProfiles = useMemo(() => {
     const loaded = safeProfiles(initialProfiles);
@@ -5693,9 +5727,16 @@ export default function MarketplaceApp({
    * which were being announced with a green tick, as if they had worked.
    * Passing "" clears the toast.
    */
-  const setToast = useCallback((text: string, tone?: ToastTone) => {
-    setToastState(text ? { text, tone: toastTone(text, tone) } : null);
-  }, []);
+  const setToast = useCallback(
+    (text: string, tone?: ToastTone, vars?: Record<string, string | number>) => {
+      // The tone is read from the English before it is translated: the
+      // failure vocabulary the inference knows is English.
+      setToastState(
+        text ? { text: tx(text, vars), tone: toastTone(text, tone) } : null,
+      );
+    },
+    [tx],
+  );
   const [busy, setBusy] = useState(false);
   const [googleOAuthEnabled, setGoogleOAuthEnabled] = useState(false);
   // Set once the on-domain token exchange has been refused, so the redirect
@@ -6736,10 +6777,10 @@ export default function MarketplaceApp({
             listings,
             profile,
             ownListings,
-            blockedProfileIds,
+            blockedProfileIds, t,
           )
         : [],
-    [blocksPending, blockedProfileIds, listings, ownListings, profile],
+    [blocksPending, blockedProfileIds, listings, ownListings, profile, t],
   );
 
   // Reveal widgets as they scroll into view, and cycle the how-it-works steps
@@ -7072,7 +7113,7 @@ export default function MarketplaceApp({
   function captureCurrentLocation() {
     if (!navigator.geolocation) {
       setLocationError(
-        "This browser cannot share a U.S. location. Choose a U.S. city and state instead.",
+        tx("This browser cannot share a U.S. location. Choose a U.S. city and state instead."),
       );
       return;
     }
@@ -7088,7 +7129,7 @@ export default function MarketplaceApp({
         if (!location) {
           setLocationBusy(false);
           setLocationError(
-            "We could not read a usable location. Type your city and state instead.",
+            tx("We could not read a usable location. Type your city and state instead."),
           );
           return;
         }
@@ -7115,7 +7156,7 @@ export default function MarketplaceApp({
           })
           .catch(() => {
             setLocationError(
-              "SideSpace currently supports U.S. locations only. Choose a U.S. city and state instead.",
+              tx("SideSpace currently supports U.S. locations only. Choose a U.S. city and state instead."),
             );
           })
           .finally(() => {
@@ -7125,11 +7166,11 @@ export default function MarketplaceApp({
       (error) => {
         setLocationBusy(false);
         setLocationError(
-          error.code === 1
+          tx(error.code === 1
             ? "Location permission was not granted. Choose a U.S. city and state instead."
             : error.code === 2
               ? "We could not find your location. Choose a U.S. city and state instead."
-              : "Finding your location took too long. Choose a U.S. city and state instead.",
+              : "Finding your location took too long. Choose a U.S. city and state instead."),
         );
       },
       {
@@ -7946,7 +7987,7 @@ export default function MarketplaceApp({
             field("benefits"),
           );
           out.push(
-            ...tierProblems(view).map(
+            ...tierProblems(view, t).map(
               ([message, tierField]) =>
                 [message, field(tierField)] as [string, string],
             ),
@@ -8339,12 +8380,12 @@ export default function MarketplaceApp({
       window.requestAnimationFrame(() => scrollToField(fieldName));
     }
     setOnboardingInvalidField(fieldName);
-    setOnboardingError(message);
+    setOnboardingError(tx(message));
   }
 
   function advanceOnboarding() {
     if (avatarCropPending) {
-      setOnboardingError("Finish positioning your photo, or cancel the crop, before continuing.");
+      setOnboardingError(tx("Finish positioning your photo, or cancel the crop, before continuing."));
       return;
     }
     const problem = firstMissingAnswer();
@@ -8458,7 +8499,7 @@ export default function MarketplaceApp({
       (selectedRole === "business" && answers.businessSetupPath === "browse");
 
     if (avatarCropPending) {
-      setOnboardingError("Finish positioning your photo, or cancel the crop, before saving.");
+      setOnboardingError(tx("Finish positioning your photo, or cancel the crop, before saving."));
       return;
     }
 
@@ -8494,7 +8535,7 @@ export default function MarketplaceApp({
           setup.cancellation.trim().length < 2 || setup.cancellation.trim().length > 1000);
       });
       if (invalid) {
-        setOnboardingError(`For “${invalid.title}”, add a fixed price, open dates, deliverables, and cancellation terms to enable instant booking.`);
+        setOnboardingError(tx("For “{title}”, add a fixed price, open dates, deliverables, and cancellation terms to enable instant booking.", { title: invalid.title }));
         setOnboardingStep(5);
         return;
       }
@@ -8928,7 +8969,7 @@ export default function MarketplaceApp({
         // read as an unexplained failure and Publish looped on the same value.
         const why = friendlyDbError(error);
         setToast(
-          `Your profile is saved, but the listing didn’t post.${why ? ` ${why}` : ""} Nothing you typed is lost — open it again from your dashboard.`,
+          "Your profile is saved, but the listing didn’t post.{value} Nothing you typed is lost — open it again from your dashboard.", undefined, { value: why ? ` ${why}` : "" },
         );
       } else if ((error as { code?: string })?.code === "23505") {
         // A duplicate @handle. profiles_handle_unique is a unique index on
@@ -8941,7 +8982,7 @@ export default function MarketplaceApp({
         );
       } else {
         setOnboardingError(
-          friendlyDbError(error) || "Could not save your profile.",
+          tx(friendlyDbError(error) || "Could not save your profile."),
         );
       }
     } finally {
@@ -9430,7 +9471,7 @@ export default function MarketplaceApp({
     if (file.size > TOUR_MAX_BYTES) {
       setTourPick(null);
       setToast(
-        `${file.name} is ${Math.round(file.size / 1024 / 1024)} MB and the limit is 50 MB. Trim it, or export it smaller, and pick it again.`,
+        "{name} is {round} MB and the limit is 50 MB. Trim it, or export it smaller, and pick it again.", undefined, { name: file.name, round: Math.round(file.size / 1024 / 1024) },
       );
       return;
     }
@@ -9492,7 +9533,7 @@ export default function MarketplaceApp({
   /** Take the walkthrough off a listing, at the owner's request and only then. The file goes too. */
   async function removeListingTour(listing: Listing) {
     if (!supabase || !profile || !listing.tour_url) return;
-    if (!window.confirm("Remove the walkthrough from this listing? The file is deleted too.")) {
+    if (!window.confirm(t("app.removeTheWalkthroughFromThisListingThe"))) {
       return;
     }
     setBusy(true);
@@ -9530,7 +9571,7 @@ export default function MarketplaceApp({
    */
   async function removeListingPhoto(listing: Listing, url: string) {
     if (!supabase || !profile) return;
-    if (!window.confirm("Remove this photo from the listing?")) return;
+    if (!window.confirm(t("app.removeThisPhotoFromTheListing"))) return;
     setBusy(true);
     try {
       const remaining = listingImages(listing).filter((item) => item !== url);
@@ -9612,14 +9653,14 @@ export default function MarketplaceApp({
 
   async function saveListing(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (listingPreview) { setListingFeedback("Preview complete. Nothing was saved."); return; }
+    if (listingPreview) { setListingFeedback(tx("Preview complete. Nothing was saved.")); return; }
     if (!supabase) return;
     if (!profile) {
       // The session ended while they were typing. The form is uncontrolled and
       // still mounted, so everything they wrote is intact - say so and offer
       // the way back, rather than letting Publish do nothing forever.
       setListingFeedback(
-        "Your session ended. Sign in again, then press Publish — everything you typed is still here.",
+        tx("Your session ended. Sign in again, then press Publish — everything you typed is still here."),
       );
       setAuthMode("signin");
       setAuthOpen(true);
@@ -9917,7 +9958,7 @@ export default function MarketplaceApp({
     } catch (error) {
       const message =
         friendlyDbError(error) || "Could not save your listing. Please try again.";
-      setListingFeedback(message);
+      setListingFeedback(tx(message));
       setToast(message);
     } finally {
       setBusy(false);
@@ -10148,7 +10189,7 @@ export default function MarketplaceApp({
     if (!profile) {
       // Session ended mid-offer; the form still holds everything they wrote.
       setCampaignFeedback(
-        "Your session ended. Sign in again, then send it — your details are still here.",
+        tx("Your session ended. Sign in again, then send it — your details are still here."),
       );
       setAuthMode("signin");
       setAuthOpen(true);
@@ -10160,11 +10201,11 @@ export default function MarketplaceApp({
     const startDate = String(values.get("start_date") ?? "");
     const endDate = String(values.get("end_date") ?? "");
     if (!startDate || !endDate) {
-      setCampaignFeedback("Choose your delivery date or campaign dates.");
+      setCampaignFeedback(tx("Choose your delivery date or campaign dates."));
       return;
     }
     if (endDate < startDate) {
-      setCampaignFeedback("Choose an end date on or after the start date.");
+      setCampaignFeedback(tx("Choose an end date on or after the start date."));
       return;
     }
     // A window that has already elapsed cannot be run. The common way in is a
@@ -10172,7 +10213,7 @@ export default function MarketplaceApp({
     // sides to negotiating a campaign that can never happen.
     if (endDate < calendarToday(campaignListing.booking_timezone)) {
       setCampaignFeedback(
-        "That campaign window has already ended. Pick dates that run today or later.",
+        tx("That campaign window has already ended. Pick dates that run today or later."),
       );
       return;
     }
@@ -10180,13 +10221,13 @@ export default function MarketplaceApp({
       const minimumDate = listingBookingMinDate(campaignListing);
       if (startDate < minimumDate) {
         setCampaignFeedback(
-          `This listing needs dates starting ${displayDate(minimumDate)} or later.`,
+          tx("This listing needs dates starting {displayDate} or later.", { displayDate: displayDate(minimumDate, t, locale) }),
         );
         return;
       }
       if (campaignListing.available_to && endDate > campaignListing.available_to) {
         setCampaignFeedback(
-          `Choose an end date on or before ${displayDate(campaignListing.available_to)}.`,
+          tx("Choose an end date on or before {displayDate}.", { displayDate: displayDate(campaignListing.available_to, t, locale) }),
         );
         return;
       }
@@ -10214,35 +10255,35 @@ export default function MarketplaceApp({
     // after the conversation had already been created.
     if (charCount(campaignName) < 2 || charCount(campaignName) > 120) {
       setBusy(false);
-      return setCampaignFeedback("Give the campaign a name between 2 and 120 characters.");
+      return setCampaignFeedback(tx("Give the campaign a name between 2 and 120 characters."));
     }
     if (charCount(goals) > 1500) {
       setBusy(false);
       return setCampaignFeedback(
-        "Keep campaign details under 1,500 characters.",
+        tx("Keep campaign details under 1,500 characters."),
       );
     }
     if (charCount(deliverables) < 2 || charCount(deliverables) > 1000) {
       setBusy(false);
-      return setCampaignFeedback("Say what you are asking for (2 to 1000 characters).");
+      return setCampaignFeedback(tx("Say what you are asking for (2 to 1000 characters)."));
     }
     if (charCount(notes) > 2000) {
       setBusy(false);
-      return setCampaignFeedback("Notes are limited to 2000 characters.");
+      return setCampaignFeedback(tx("Notes are limited to 2000 characters."));
     }
     if (
       !isBookAsListed &&
       (!budgetInput || !Number.isFinite(proposedBudget) || proposedBudget < 0)
     ) {
       setBusy(false);
-      return setCampaignFeedback("Enter a budget of 0 or more.");
+      return setCampaignFeedback(tx("Enter a budget of 0 or more."));
     }
 
     let budgetCents = campaignListing.price_cents;
     if (isBookAsListed) {
       const quoted = Number(values.get("quote_subtotal"));
       if (!Number.isSafeInteger(quoted) || quoted <= 0 || !values.get("quote_version")) {
-        setBusy(false); setCampaignFeedback("Choose available dates and wait for the price before sending."); return;
+        setBusy(false); setCampaignFeedback(tx("Choose available dates and wait for the price before sending.")); return;
       }
       budgetCents = quoted;
     }
@@ -10252,9 +10293,9 @@ export default function MarketplaceApp({
       } catch (error) {
         setBusy(false);
         return setCampaignFeedback(
-          error instanceof Error
+          tx(error instanceof Error
             ? error.message
-            : "Enter a dollar amount with no more than two decimals.",
+            : "Enter a dollar amount with no more than two decimals."),
         );
       }
     }
@@ -10288,7 +10329,7 @@ export default function MarketplaceApp({
 
     if (inserted.error) {
       setBusy(false);
-      setCampaignFeedback(friendlyDbError(inserted.error));
+      setCampaignFeedback(tx(friendlyDbError(inserted.error)));
       return;
     }
 
@@ -10310,7 +10351,7 @@ export default function MarketplaceApp({
           // Not fatal: the request and the thread both exist, they are just not
           // cross-linked. Say so rather than pretending it all worked.
           setToast(
-            `${isBookAsListed ? "Booking request" : "Offer"} sent, but we could not attach it to the message thread.`,
+            "{value} sent, but we could not attach it to the message thread.", undefined, { value: isBookAsListed ? "Booking request" : "Offer" },
           );
         }
       }
@@ -10681,7 +10722,7 @@ export default function MarketplaceApp({
     // appear anywhere on screen.
     await reconcileUnreadCount(profile);
     setToast(
-      `${target.display_name} is now hidden. You can undo this in Profile & settings.`,
+      "{display_name} is now hidden. You can undo this in Profile & settings.", undefined, { display_name: target.display_name },
     );
   }
 
@@ -10705,7 +10746,7 @@ export default function MarketplaceApp({
     setBlockedProfiles((current) =>
       current.filter((item) => item.id !== blockedId),
     );
-    setToast(`${name} is visible again.`);
+    setToast("{name} is visible again.", undefined, { name });
     await loadMarketplace();
   }
 
@@ -10830,7 +10871,7 @@ export default function MarketplaceApp({
       setToast(friendlyDbError(error));
       return;
     }
-    setToast(`A secure reset link was sent to ${address}.`);
+    setToast("A secure reset link was sent to {address}.", undefined, { address });
   }
 
   async function updateListingStatus(listing: Listing) {
@@ -11270,7 +11311,7 @@ export default function MarketplaceApp({
 
     setDeleteAccountError("");
     if (!usesPassword && body.confirmation !== "DELETE") {
-      setDeleteAccountError("Type DELETE exactly to confirm.");
+      setDeleteAccountError(tx("Type DELETE exactly to confirm."));
       return;
     }
 
@@ -11304,9 +11345,9 @@ export default function MarketplaceApp({
       await loadMarketplace();
     } catch (error) {
       setDeleteAccountError(
-        error instanceof Error
+        tx(error instanceof Error
           ? error.message
-          : "Could not delete your account. Please try again.",
+          : "Could not delete your account. Please try again."),
       );
     } finally {
       setBusy(false);
@@ -11538,26 +11579,26 @@ export default function MarketplaceApp({
     if (!row.impressions && !row.clicks && !row.like_count && !row.offers) {
       return (
         <p className="listing-figures-empty">
-          Nobody has reached this one yet.
+          {t("app.nobodyHasReachedThisOneYet")}
         </p>
       );
     }
     return (
       <div className="listing-figures">
         <span>
-          <small>Seen by</small>
+          <small>{t("app.seenBy")}</small>
           <b>{compactNumber(row.impressions)}</b>
         </span>
         <span>
-          <small>Opened</small>
+          <small>{t("app.opened")}</small>
           <b>{compactNumber(row.clicks)}</b>
         </span>
         <span>
-          <small>Likes</small>
+          <small>{t("app.likes")}</small>
           <b>{compactNumber(row.like_count)}</b>
         </span>
         <span>
-          <small>Offers</small>
+          <small>{t("app.offers")}</small>
           <b>{compactNumber(row.offers)}</b>
         </span>
       </div>
@@ -11590,17 +11631,16 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-analytics"
-        aria-label="Analytics"
+        aria-label={t("app.analytics")}
         tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
-            <p className="eyebrow">Analytics</p>
-            <h3>How your listings are doing.</h3>
+            <p className="eyebrow">{t("app.analytics")}</p>
+            <h3>{t("app.howYourListingsAreDoing")}</h3>
             <p className="account-section-lede">
-              Counted per person per day, so one member scrolling past your card
-              twice is one. Your own visits are never counted.
+              {t("app.countedPerPersonPerDaySoOne")}
             </p>
           </div>
         </div>
@@ -11610,22 +11650,22 @@ export default function MarketplaceApp({
             <div className="dashboard-grid">
               <div className="dashboard-stat dashboard-stat-readout">
                 <span className="dashboard-stat-top">
-                  <small>Seen by</small>
+                  <small>{t("app.seenBy")}</small>
                   <span className="dashboard-stat-icon">
                     <DashboardStatIcon name="analytics" />
                   </span>
                 </span>
                 <strong>{compactNumber(totals.impressions)}</strong>
                 <span className="dashboard-stat-caption">
-                  {totals.impressions === 1 ? "person" : "people"}
+                  {totals.impressions === 1 ? t("app.person") : t("app.people")}
                   {totals.impressions7d
-                    ? ` · ${compactNumber(totals.impressions7d)} this week`
+                    ? t("app.impressions7dThisWeek", { impressions7d: compactNumber(totals.impressions7d) })
                     : ""}
                 </span>
               </div>
               <div className="dashboard-stat dashboard-stat-readout">
                 <span className="dashboard-stat-top">
-                  <small>Opened</small>
+                  <small>{t("app.opened")}</small>
                   <span className="dashboard-stat-icon">
                     <DashboardStatIcon name="outgoing" />
                   </span>
@@ -11633,46 +11673,44 @@ export default function MarketplaceApp({
                 <strong>{compactNumber(totals.clicks)}</strong>
                 <span className="dashboard-stat-caption">
                   {totals.impressions
-                    ? `${Math.round((totals.clicks / totals.impressions) * 100)}% of those who saw`
-                    : "Nobody yet"}
+                    ? t("app.roundOfThoseWhoSaw", { round: Math.round((totals.clicks / totals.impressions) * 100) })
+                    : t("app.nobodyYet")}
                 </span>
               </div>
               <div className="dashboard-stat dashboard-stat-readout">
                 <span className="dashboard-stat-top">
-                  <small>Likes</small>
+                  <small>{t("app.likes")}</small>
                   <span className="dashboard-stat-icon">
                     <DashboardStatIcon name="likes" />
                   </span>
                 </span>
                 <strong>{compactNumber(totals.likes)}</strong>
                 <span className="dashboard-stat-caption">
-                  {totals.likes === 1 ? "member" : "members"} liked one
+                  {totals.likes === 1 ? t("app.member") : t("app.members")}{" "}{t("app.likedOne")}
                 </span>
               </div>
               <div className="dashboard-stat dashboard-stat-readout">
                 <span className="dashboard-stat-top">
-                  <small>Offers</small>
+                  <small>{t("app.offers")}</small>
                   <span className="dashboard-stat-icon">
                     <DashboardStatIcon name="incoming" />
                   </span>
                 </span>
                 <strong>{compactNumber(totals.offers)}</strong>
                 <span className="dashboard-stat-caption">
-                  {totals.offers === 1 ? "offer" : "offers"} received
+                  {totals.offers === 1 ? t("app.offer2") : t("app.offers2")}{" "}{t("app.received")}
                 </span>
               </div>
             </div>
             <p className="account-section-lede dashboard-analytics-note">
-              Per-listing figures are on each card under Listings below.
+              {t("app.perListingFiguresAreOnEachCard")}
             </p>
           </>
         ) : (
           <div className="dashboard-panel-empty">
-            <strong>Nothing to count yet.</strong>
+            <strong>{t("app.nothingToCountYet")}</strong>
             <p>
-              We started counting the moment your listing went live. Come back
-              once people have browsed and you will see how many reached it, how
-              many opened it, and where they stopped.
+              {t("app.weStartedCountingTheMomentYourListing")}
             </p>
           </div>
         )}
@@ -11686,16 +11724,16 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-listings-all"
-        aria-label="Listings"
+        aria-label={t("app.listings")}
         tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
-            <p className="eyebrow">Listings</p>
-            <h2>Manage what you have published.</h2>
+            <p className="eyebrow">{t("app.listings")}</p>
+            <h2>{t("app.manageWhatYouHavePublished")}</h2>
             <p className="account-section-lede">
-              Keep your audience, placement, or sponsorship offer clear and bookable.
+              {t("app.keepYourAudiencePlacementOrSponsorshipOffer")}
             </p>
           </div>
           {profile.role !== "consumer" && (
@@ -11703,13 +11741,13 @@ export default function MarketplaceApp({
               className="button button-dark button-small"
               onClick={openListingEditor}
             >
-              New listing <span>＋</span>
+              {t("app.newListing")}{" "}<span>＋</span>
             </button>
           )}
         </div>
 
         {ownListingsLoading ? (
-          <div className="account-empty">Loading your saved listings…</div>
+          <div className="account-empty">{t("app.loadingYourSavedListings")}</div>
         ) : ownListings.length ? (
             <div className="my-listings-grid">
             {ownListings.map((listing) => {
@@ -11736,26 +11774,26 @@ export default function MarketplaceApp({
                     if (!gaps.length) return null;
                     return (
                       <p className="listing-gap">
-                        Sorted below complete listings — it needs {joinList(gaps)}.
+                        {t("app.sortedBelowCompleteListingsItNeedsGaps", { gaps: joinList(gaps) })}
                       </p>
                     );
                   })()}
                   {renderListingFigures(listing.id)}
                   <div className="my-listing-actions">
-                    <button onClick={() => openListing(listing)}>View</button>
-                    <button onClick={() => openListingEdit(listing)}>Edit</button>
+                    <button onClick={() => openListing(listing)}>{t("app.view")}</button>
+                    <button onClick={() => openListingEdit(listing)}>{t("app.edit")}</button>
                     <button
                       disabled={busy}
                       onClick={() => void updateListingStatus(listing)}
                     >
-                      {listing.status === "active" ? "Pause" : "Make active"}
+                      {listing.status === "active" ? t("app.pause") : t("app.makeActive")}
                     </button>
                     <button
                       className="is-danger"
                       disabled={busy}
                       onClick={() => setDeleteListingTarget(listing)}
                     >
-                      Delete
+                      {t("app.delete2")}
                     </button>
                   </div>
                 </div>
@@ -11765,16 +11803,16 @@ export default function MarketplaceApp({
           </div>
         ) : (
           <div className="account-empty">
-            <strong>No listings yet.</strong>
+            <strong>{t("app.noListingsYet")}</strong>
             <p>
-              Your first listing will appear here immediately after you publish it.
+              {t("app.yourFirstListingWillAppearHereImmediately")}
             </p>
             {profile.role !== "consumer" && (
               <button
                 className="button button-coral button-small"
                 onClick={openListingEditor}
               >
-                Create my first listing <span>↗</span>
+                {t("app.createMyFirstListing")}{" "}<span>↗</span>
               </button>
             )}
           </div>
@@ -11811,16 +11849,16 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-campaigns-all"
-        aria-label="Offers and bookings"
+        aria-label={t("app.offersAndBookings")}
         tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
-            <p className="eyebrow">Offers &amp; bookings</p>
-            <h2>Review every offer and next step.</h2>
+            <p className="eyebrow">{t("app.offersBookings")}</p>
+            <h2>{t("app.reviewEveryOfferAndNextStep")}</h2>
             <p className="account-section-lede">
-              Accept, counter, pay, and keep active work moving from one place.
+              {t("app.acceptCounterPayAndKeepActiveWork")}
             </p>
           </div>
           <div className="segmented-row">
@@ -11830,12 +11868,12 @@ export default function MarketplaceApp({
               className="filter-pill"
               onClick={() => setCampaignOpenOnly(false)}
             >
-              Open only
+              {t("app.openOnly")}
               <span aria-hidden="true">×</span>
-              <span className="sr-only">, clear this filter</span>
+              <span className="sr-only">{t("app.clearThisFilter")}</span>
             </button>
           )}
-          <div className="segmented" role="radiogroup" aria-label="Filter offers">
+          <div className="segmented" role="radiogroup" aria-label={t("app.filterOffers")}>
             {sides.map((side, index) => (
               <button
                 key={side.key}
@@ -11865,7 +11903,7 @@ export default function MarketplaceApp({
                 }}
                 onClick={() => setCampaignSide(side.key)}
               >
-                {side.label}
+                {tx(side.label)}
                 <b>{sideCount(side.key)}</b>
               </button>
             ))}
@@ -11895,14 +11933,14 @@ export default function MarketplaceApp({
                   <header>
                     <div>
                       <small>
-                        {incoming ? "Incoming" : "You sent"} · {request.instant_booking ? "Instant booking" : isBookAsListed ? "Book as listed" : "Offer"}
+                        {incoming ? t("app.incoming") : t("app.youSent")} · {request.instant_booking ? t("app.instantBooking") : isBookAsListed ? t("app.bookAsListed") : t("app.offer")}
                       </small>
                       <h4>{request.campaign_name}</h4>
                       <p>
                         {request.listing?.title ??
                           (request.status === "accepted" || request.status === "completed"
-                            ? "This listing is not currently public"
-                            : "Listing no longer available")}
+                            ? t("app.thisListingIsNotCurrentlyPublic")
+                            : t("app.listingNoLongerAvailable"))}
                         {" · "}
                         {other.display_name}
                       </p>
@@ -11915,30 +11953,30 @@ export default function MarketplaceApp({
                   </header>
                   <div className="campaign-request-facts">
                     <span>
-                      <small>Dates</small>
+                      <small>{t("app.dates")}</small>
                       <b>
-                        {bookingDateLabel(request.timing_kind, request.start_date, request.end_date)}
+                        {bookingDateLabel(request.timing_kind, request.start_date, request.end_date, t, locale)}
                       </b>
                     </span>
                     <span>
-                      <small>{isBookAsListed ? "Listed price" : "Budget"}</small>
+                      <small>{isBookAsListed ? t("app.listedPrice") : t("market.budget")}</small>
                       <b>{formatCents(request.budget_cents)}</b>
                     </span>
                     <span>
-                      <small>{isBookAsListed ? "Listed deliverables" : "Requested"}</small>
+                      <small>{isBookAsListed ? t("app.listedDeliverables") : t("app.requested")}</small>
                       <b>{request.requested_deliverables}</b>
                     </span>
                   </div>
-                  {request.listing_terms?.cancellation_policy && <details className="composer-options"><summary>Agreed cancellation terms</summary><p>{request.listing_terms.cancellation_policy}</p></details>}
+                  {request.listing_terms?.cancellation_policy && <details className="composer-options"><summary>{t("app.agreedCancellationTerms")}</summary><p>{request.listing_terms.cancellation_policy}</p></details>}
                   {request.goals && (
                     <p className="campaign-request-brief">
-                      <small>Goal</small>
+                      <small>{t("app.goal")}</small>
                       {request.goals}
                     </p>
                   )}
                   {request.notes && (
                     <p className="campaign-request-brief">
-                      <small>Notes</small>
+                      <small>{t("app.notes")}</small>
                       {request.notes}
                     </p>
                   )}
@@ -11946,8 +11984,8 @@ export default function MarketplaceApp({
                     <div className="counter-summary">
                       <strong>
                         {request.status === "accepted"
-                          ? `Agreed at ${formatCents(request.counter_budget_cents)}`
-                          : `Counteroffer: ${formatCents(request.counter_budget_cents)}`}
+                          ? t("app.agreedAtCounterBudgetCents", { counter_budget_cents: formatCents(request.counter_budget_cents) })
+                          : t("app.counterofferCounterBudgetCents", { counter_budget_cents: formatCents(request.counter_budget_cents) })}
                       </strong>
                       {request.counter_message && <p>{request.counter_message}</p>}
                     </div>
@@ -11955,15 +11993,15 @@ export default function MarketplaceApp({
                   {acceptedMoney && isPayer && (
                     <div className="campaign-request-facts">
                       <span>
-                        <small>Campaign</small>
+                        <small>{t("app.campaign")}</small>
                         <b>{formatCents(acceptedMoney.subtotalCents)}</b>
                       </span>
                       <span>
-                        <small>SideSpace buyer fee (5%)</small>
+                        <small>{t("app.sidespaceBuyerFee5")}</small>
                         <b>{formatCents(acceptedMoney.buyerFeeCents)}</b>
                       </span>
                       <span>
-                        <small>{promoPreview ? "Estimated total before tax" : "Total before tax"}</small>
+                        <small>{promoPreview ? t("app.estimatedTotalBeforeTax") : t("app.totalBeforeTax")}</small>
                         <b>
                           {formatCents(
                             payment?.charged_total_cents ?? promoPreview?.chargedTotalCents ?? acceptedMoney.customerTotalCents,
@@ -11972,7 +12010,7 @@ export default function MarketplaceApp({
                       </span>
                       {(payment?.ad_credit_cents ?? promoPreview?.adCreditCents ?? 0) > 0 && (
                         <span>
-                          <small>Promo credit</small>
+                          <small>{t("app.promoCredit")}</small>
                           <b>−{formatCents(payment?.ad_credit_cents ?? promoPreview?.adCreditCents ?? 0)}</b>
                         </span>
                       )}
@@ -11980,32 +12018,31 @@ export default function MarketplaceApp({
                   )}
                   {acceptedMoney && isPayer && !payment && adCreditBalanceCents > 0 && (
                     <p className="campaign-request-brief">
-                      <small>Available ad credit</small>
-                      {formatCents(applyAdCreditToCheckout({
+                      <small>{t("app.availableAdCredit")}</small>
+                      {t("app.adcreditcentsCanApplyAtCheckoutAnyRemaining", { adCreditCents: formatCents(applyAdCreditToCheckout({
                         ...acceptedMoney, availableCents: adCreditBalanceCents,
-                      }).adCreditCents)} can apply at checkout. Any remaining promo
-                      credit stays in your balance. Your creator receives their normal payout.
+                      }).adCreditCents) })}
                     </p>
                   )}
                   {acceptedMoney && isPayee && (
                     <div className="campaign-request-facts">
                       <span>
-                        <small>Campaign</small>
+                        <small>{t("app.campaign")}</small>
                         <b>{formatCents(acceptedMoney.subtotalCents)}</b>
                       </span>
                       <span>
-                        <small>SideSpace creator fee (5%)</small>
+                        <small>{t("app.sidespaceCreatorFee5")}</small>
                         <b>−{formatCents(acceptedMoney.creatorFeeCents)}</b>
                       </span>
                       <span>
-                        <small>Your earnings</small>
+                        <small>{t("app.yourEarnings")}</small>
                         <b>{formatCents(acceptedMoney.creatorPayoutCents)}</b>
                       </span>
                     </div>
                   )}
                   {(payment?.tax_cents ?? 0) > 0 && isPayer && (
                     <p className="campaign-request-brief">
-                      <small>Tax collected by Stripe</small>
+                      <small>{t("app.taxCollectedByStripe")}</small>
                       {formatCents(payment?.tax_cents ?? 0)}
                     </p>
                   )}
@@ -12016,14 +12053,14 @@ export default function MarketplaceApp({
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "accepted")}
                       >
-                        Accept
+                        {t("app.accept")}
                       </button>
                     )}
                     {incoming &&
                       request.purchase_mode !== "buy_now" &&
                       OPEN_REQUEST_STATUSES.includes(request.status) && (
                         <button onClick={() => setCounteringRequest(request)}>
-                          {request.status === "countered" ? "Revise counteroffer" : "Counteroffer"}
+                          {request.status === "countered" ? t("app.reviseCounteroffer") : t("app.counteroffer")}
                         </button>
                       )}
                     {incoming && OPEN_REQUEST_STATUSES.includes(request.status) && (
@@ -12031,7 +12068,7 @@ export default function MarketplaceApp({
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "declined")}
                       >
-                        Decline
+                        {t("app.decline")}
                       </button>
                     )}
                     {!incoming && request.status === "countered" && (
@@ -12040,7 +12077,7 @@ export default function MarketplaceApp({
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "accepted")}
                       >
-                        Accept counteroffer
+                        {t("app.acceptCounteroffer")}
                       </button>
                     )}
                     {!incoming && OPEN_REQUEST_STATUSES.includes(request.status) && (
@@ -12048,7 +12085,7 @@ export default function MarketplaceApp({
                         disabled={busy}
                         onClick={() => void respondToCampaignRequest(request, "cancelled")}
                       >
-                        {isBookAsListed ? "Cancel booking" : "Cancel offer"}
+                        {isBookAsListed ? t("app.cancelBooking") : t("app.cancelOffer")}
                       </button>
                     )}
                     {request.status === "accepted" && (
@@ -12060,8 +12097,8 @@ export default function MarketplaceApp({
                             onClick={() => void startCampaignCheckout(request.id)}
                           >
                             {payment?.status === "checkout_open"
-                              ? "Continue secure checkout"
-                              : "Pay securely with Stripe"}
+                              ? t("app.continueSecureCheckout")
+                              : t("app.paySecurelyWithStripe")}
                           </button>
                         )}
                         {isPayee &&
@@ -12074,10 +12111,10 @@ export default function MarketplaceApp({
                                 void openStripeFlow("/api/stripe/connect/onboard")
                               }
                             >
-                              Finish payout setup
+                              {t("app.finishPayoutSetup")}
                             </button>
                           )}
-                        <button onClick={openInbox}>Continue in Messages</button>
+                        <button onClick={openInbox}>{t("app.continueInMessages")}</button>
                       </>
                     )}
                   </div>
@@ -12089,14 +12126,15 @@ export default function MarketplaceApp({
           <div className="account-empty">
             <strong>
               {campaignOpenOnly
-                ? "Nothing here needs you right now."
+                ? t("app.nothingHereNeedsYouRightNow")
                 : campaignSide === "incoming"
-                  ? "No offers waiting on you."
-                  : "You have not sent any offers."}
+                  ? t("app.noOffersWaitingOnYou")
+                  : t("app.youHaveNotSentAnyOffers")}
             </strong>
             <p>
-              You have {campaignRequests.length} offer
-              {campaignRequests.length === 1 ? "" : "s"} outside this filter.
+              {campaignRequests.length === 1
+                ? t("app.oneOfferOutsideThisFilter")
+                : t("app.offersOutsideThisFilter", { count: campaignRequests.length })}
             </p>
             <button
               className="button button-ghost button-small"
@@ -12106,15 +12144,15 @@ export default function MarketplaceApp({
                 setCampaignOpenOnly(false);
               }}
             >
-              Show all offers <span>→</span>
+              {t("app.showAllOffers")}{" "}<span>→</span>
             </button>
           </div>
         ) : (
           <div className="account-empty">
-            <strong>No offers or bookings yet.</strong>
-            <p>Open a listing to book an available date or make a custom offer.</p>
+            <strong>{t("app.noOffersOrBookingsYet")}</strong>
+            <p>{t("app.openAListingToBookAnAvailable")}</p>
             <a className="button button-ghost button-small" href="/marketplace">
-              Browse marketplace <span>↗</span>
+              {t("home.finalBrowse")}{" "}<span>↗</span>
             </a>
           </div>
         )}
@@ -12128,19 +12166,19 @@ export default function MarketplaceApp({
       <section
         className="account-section dashboard-work-section"
         id="dashboard-payments"
-        aria-label="Payments"
+        aria-label={t("app.payments")}
         tabIndex={-1}
         data-reveal
       >
         <div className="account-section-heading">
           <div>
-            <p className="eyebrow">Payments</p>
-            <h2>Track money in motion.</h2>
+            <p className="eyebrow">{t("app.payments")}</p>
+            <h2>{t("app.trackMoneyInMotion")}</h2>
             <p className="account-section-lede">
-              Payment, delivery, review, refund, and payout status stay together here.
+              {t("app.paymentDeliveryReviewRefundAndPayoutStatus")}
             </p>
           </div>
-          <span className="section-count">{paymentTransactions.length} total</span>
+          <span className="section-count">{t("app.paymenttransactionscountTotal", { paymentTransactionsCount: paymentTransactions.length })}</span>
         </div>
         <div className="campaign-request-list">
           {paymentTransactions.map((transaction) => {
@@ -12168,7 +12206,7 @@ export default function MarketplaceApp({
               <article className="campaign-request-card" key={transaction.id}>
                 <header>
                   <div>
-                    <small>{buyer ? "Business payment" : "Creator earnings"}</small>
+                    <small>{buyer ? t("app.businessPayment") : t("app.creatorEarnings")}</small>
                     <h4>{transaction.campaign_name}</h4>
                     <p>{transaction.listing_title}</p>
                   </div>
@@ -12178,11 +12216,11 @@ export default function MarketplaceApp({
                 </header>
                 <div className="campaign-request-facts">
                   <span>
-                    <small>{buyer ? "Campaign" : "Gross campaign"}</small>
+                    <small>{buyer ? t("app.campaign") : t("app.grossCampaign")}</small>
                     <b>{formatCents(transaction.subtotal_cents)}</b>
                   </span>
                   <span>
-                    <small>{buyer ? "Buyer fee" : "Creator fee"}</small>
+                    <small>{buyer ? t("app.buyerFee") : t("app.creatorFee")}</small>
                     <b>
                       {buyer ? "" : "−"}
                       {formatCents(
@@ -12191,7 +12229,7 @@ export default function MarketplaceApp({
                     </b>
                   </span>
                   <span>
-                    <small>{buyer ? "Total before tax" : "Your earnings"}</small>
+                    <small>{buyer ? t("app.totalBeforeTax") : t("app.yourEarnings")}</small>
                     <b>
                       {formatCents(
                         buyer
@@ -12203,82 +12241,77 @@ export default function MarketplaceApp({
                 </div>
                 {buyer && (transaction.ad_credit_cents ?? 0) > 0 && (
                   <p className="campaign-request-brief">
-                    <small>Ad credit applied</small>
-                    −{formatCents(transaction.ad_credit_cents ?? 0)} promotional credit. It
-                    cannot be withdrawn or transferred.
+                    <small>{t("app.adCreditApplied")}</small>
+                    {t("app.formatcentsPromotionalCreditItCannotBeWithdrawn", { formatCents: formatCents(transaction.ad_credit_cents ?? 0) })}
                   </p>
                 )}
                 {transaction.refunded_cents > 0 && (
                   <p className="campaign-request-brief">
-                    <small>Refunded</small>
+                    <small>{t("app.refunded")}</small>
                     {formatCents(transaction.refunded_cents)}
                   </p>
                 )}
                 {transaction.payout_status === "pending" &&
                   transaction.workflow_status === "paid_payout_pending" && (
                     <div className="campaign-request-brief">
-                      <small>{buyer ? "Creator payout" : "Payment pending"}</small>
+                      <small>{buyer ? t("app.creatorPayout") : t("app.paymentPending")}</small>
                       {buyer
-                        ? "Your payment is verified. The Creator can begin work; their payout stays pending until delivery is reviewed."
-                        : "The customer paid in full. Your earnings remain pending until you mark the campaign delivered and the review period ends."}
+                        ? t("app.yourPaymentIsVerifiedTheCreatorCan")
+                        : t("app.theCustomerPaidInFullYourEarnings")}
                     </div>
                   )}
                 {transaction.delivered_at && transaction.review_deadline && (
                   <div className="campaign-request-brief">
                     <small>
-                      {buyer ? "Creator marked this campaign delivered" : "Review period ends"}
+                      {buyer ? t("app.creatorMarkedThisCampaignDelivered") : t("app.reviewPeriodEnds")}
                     </small>
-                    {buyer && `Delivered ${displayDateTime(transaction.delivered_at)}. `}
-                    Review deadline: {displayDateTime(transaction.review_deadline)}.
+                    {buyer && t("app.deliveredDeliveredAt", { delivered_at: displayDateTime(transaction.delivered_at, t, locale) })}
+                    {t("app.reviewDeadlineReviewDeadline", { review_deadline: displayDateTime(transaction.review_deadline, t, locale) })}
                     {!buyer &&
-                      " Payout is expected after that time unless the payer reports an issue."}
+                      t("app.payoutIsExpectedAfterThatTimeUnless")}
                     {reviewExpired &&
                       transaction.payout_status !== "released" &&
                       transaction.issue_status === "none" &&
-                      " The deadline has passed; automatic release is processing server-side."}
+                      t("app.theDeadlineHasPassedAutomaticReleaseIs")}
                   </div>
                 )}
                 {transaction.issue_status !== "none" && transaction.issue && (
                   <div className="counter-summary">
                     <strong>
                       {transaction.issue_status === "escalated"
-                        ? "Issue escalated to SideSpace"
+                        ? t("app.issueEscalatedToSidespace")
                         : transaction.issue_status === "resolved"
-                          ? "Issue resolved"
-                          : "Resolve with the Creator"}
+                          ? t("app.issueResolved")
+                          : t("app.resolveWithTheCreator")}
                     </strong>
                     <p>{transaction.issue.details}</p>
                     {transaction.issue_status === "open" && (
                       <p>
-                        Payout remains pending. Use Messages to try to resolve the issue
-                        directly before escalating it.
+                        {t("app.payoutRemainsPendingUseMessagesToTry")}
                       </p>
                     )}
                   </div>
                 )}
                 {transaction.payout_status === "released" && (
                   <div className="campaign-request-brief">
-                    <small>Payout released</small>
+                    <small>{t("app.payoutReleased")}</small>
                     {buyer
-                      ? "The Creator payout has been released and this campaign is complete."
-                      : `${formatCents(transaction.payout_amount_cents)} was released${
-                          transaction.payout_released_at
-                            ? ` on ${displayDateTime(transaction.payout_released_at)}`
-                            : ""
-                        }.`}
+                      ? t("app.theCreatorPayoutHasBeenReleasedAnd")
+                      : t("app.payoutAmountCentsWasReleasedValue", { payout_amount_cents: formatCents(transaction.payout_amount_cents), value: transaction.payout_released_at
+                            ? ` on ${displayDateTime(transaction.payout_released_at, t, locale)}`
+                            : "" })}
                   </div>
                 )}
                 {transaction.review && (
                   <div className="campaign-request-brief">
-                    <small>Creator review · {transaction.review.rating}/5</small>
+                    <small>{t("app.creatorReviewRating5", { rating: transaction.review.rating })}</small>
                     {transaction.review.review_text}
                   </div>
                 )}
                 {transaction.payout_issue && (
                   <div className="campaign-request-brief">
-                    <small>Payout release needs attention</small>
-                    SideSpace could not finish the transfer yet. It is safe to retry; no
-                    duplicate payout will be created.
+                    <small>{t("app.payoutReleaseNeedsAttention")}</small>
+                    {t("app.sidespaceCouldNotFinishTheTransferYet")}
                   </div>
                 )}
                 <div className="campaign-request-actions">
@@ -12290,7 +12323,7 @@ export default function MarketplaceApp({
                         disabled={busy}
                         onClick={() => void runCampaignPaymentAction(transaction, "deliver")}
                       >
-                        {busy ? "Updating…" : "Mark campaign delivered"}
+                        {busy ? t("app.updating") : t("app.markCampaignDelivered")}
                       </button>
                     )}
                   {buyer &&
@@ -12304,7 +12337,7 @@ export default function MarketplaceApp({
                           disabled={busy}
                           onClick={() => void runCampaignPaymentAction(transaction, "confirm")}
                         >
-                          {busy ? "Releasing…" : "Confirm work completed"}
+                          {busy ? t("app.releasing") : t("app.confirmWorkCompleted")}
                         </button>
                         <button
                           disabled={busy}
@@ -12312,19 +12345,19 @@ export default function MarketplaceApp({
                             void runCampaignPaymentAction(transaction, "report_issue")
                           }
                         >
-                          Report an issue
+                          {t("app.reportAnIssue")}
                         </button>
                       </>
                     )}
                   {transaction.issue_status === "open" && (
-                    <button onClick={openInbox}>Resolve with the Creator</button>
+                    <button onClick={openInbox}>{t("app.resolveWithTheCreator")}</button>
                   )}
                   {buyer && transaction.issue_status === "open" && (
                     <button
                       disabled={busy}
                       onClick={() => void runCampaignPaymentAction(transaction, "escalate")}
                     >
-                      Escalate to SideSpace
+                      {t("app.escalateToSidespace")}
                     </button>
                   )}
                   {buyer && transaction.payout_status === "released" && !transaction.review && (
@@ -12333,7 +12366,7 @@ export default function MarketplaceApp({
                       disabled={busy}
                       onClick={() => void submitCreatorReview(transaction)}
                     >
-                      Review Creator
+                      {t("app.reviewCreator")}
                     </button>
                   )}
                 </div>
@@ -12354,7 +12387,7 @@ export default function MarketplaceApp({
   return (
     <main>
       <a className="ss-skip-link" href="#main-content">
-        Skip to main content
+        {t("chrome.skipToMain")}
       </a>
       <SiteHeader
         route={route}
@@ -12382,15 +12415,15 @@ export default function MarketplaceApp({
           className="dashboard"
           id="main-content"
           tabIndex={-1}
-          aria-label="Loading your dashboard"
+          aria-label={t("app.loadingYourDashboard")}
         >
           <div className="dashboard-head">
             <div>
-              <p className="eyebrow">Your dashboard</p>
+              <p className="eyebrow">{t("app.yourDashboard")}</p>
               <h1 className="dashboard-title">
-                Setting things <em>up...</em>
+                {t("app.settingThings")}{" "}<em>{t("app.up")}</em>
               </h1>
-              <p className="dashboard-sub">One moment while we load your dashboard.</p>
+              <p className="dashboard-sub">{t("app.oneMomentWhileWeLoadYourDashboard")}</p>
             </div>
           </div>
         </section>
@@ -12399,14 +12432,14 @@ export default function MarketplaceApp({
           className="dashboard"
           id="main-content"
           tabIndex={-1}
-          aria-label="Your SideSpace dashboard"
+          aria-label={t("app.yourSidespaceDashboard")}
         >
           <div className="dashboard-head">
             <div>
-              <p className="eyebrow">{rolesLabel(profile, locale)} · {profile.city || "Add your city"}</p>
+              <p className="eyebrow">{rolesLabel(profile, locale)} · {profile.city || t("app.addYourCity")}</p>
               <h1 className="dashboard-title">
                 <em>{greeting()},</em>{" "}
-                {profile.display_name.split(" ")[0] || "there"}.
+                {profile.display_name.split(" ")[0] || t("app.there")}.
               </h1>
               <p className="dashboard-sub">{dashboardStatus()}</p>
             </div>
@@ -12420,7 +12453,7 @@ export default function MarketplaceApp({
             <div className="dashboard-actions">
               {profile.role !== "consumer" && (
                 <button className="button button-dark" onClick={openListingEditor}>
-                  New listing
+                  {t("app.newListing")}
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path
                       d="M8 3.5v9M3.5 8h9"
@@ -12442,10 +12475,10 @@ export default function MarketplaceApp({
                 href="/marketplace?role=business"
                 key="supply"
               >
-                <span>I&rsquo;m a creator or host</span>
-                <strong>Find business briefs</strong>
-                <p>See local campaigns that need your audience or space.</p>
-                <b>Browse briefs →</b>
+                <span>{t("app.imACreatorOrHost")}</span>
+                <strong>{t("app.findBusinessBriefs")}</strong>
+                <p>{t("app.seeLocalCampaignsThatNeedYourAudience")}</p>
+                <b>{t("app.browseBriefs")}</b>
               </a>
             );
             const demandPath = (
@@ -12454,10 +12487,10 @@ export default function MarketplaceApp({
                 href="/marketplace?role=supply"
                 key="demand"
               >
-                <span>I&rsquo;m a business</span>
-                <strong>Book local reach</strong>
-                <p>Choose a creator or space, pick an open date, and check out.</p>
-                <b>Browse creators and spaces →</b>
+                <span>{t("app.imABusiness")}</span>
+                <strong>{t("app.bookLocalReach")}</strong>
+                <p>{t("app.chooseACreatorOrSpacePickAn")}</p>
+                <b>{t("app.browseCreatorsAndSpaces")}</b>
               </a>
             );
             // Both stay: a creator books other creators often enough that
@@ -12594,7 +12627,7 @@ export default function MarketplaceApp({
                   aria-label={`${card.action}. ${card.label}: ${card.value}, ${card.caption}.`}
                 >
                   <span className="dashboard-stat-top">
-                    <small>{card.label}</small>
+                    <small>{tx(card.label)}</small>
                     <span className={`dashboard-stat-icon ${card.tone}`}>
                       <DashboardStatIcon name={card.icon} />
                     </span>
@@ -12643,7 +12676,7 @@ export default function MarketplaceApp({
               const result = Array.isArray(data) ? data[0] : data;
               return Number(result?.awarded_cents ?? 0);
             }}
-            renderDialog={(content, close) => <Modal label="Your balance" onClose={close}>{content}</Modal>}
+            renderDialog={(content, close) => <Modal label={t("app.yourBalance")} onClose={close}>{content}</Modal>}
           />
 
           {profile.role === "business" && (
@@ -12654,18 +12687,17 @@ export default function MarketplaceApp({
             >
               <header className="dashboard-panel-heading">
                 <div>
-                  <p className="eyebrow">Recommended for your campaign</p>
-                  <h2>Creator posts that fit your brief.</h2>
+                  <p className="eyebrow">{t("app.recommendedForYourCampaign")}</p>
+                  <h2>{t("app.creatorPostsThatFitYourBrief")}</h2>
                   <p>
-                    Ranked from your category, goal, platform, timing, and
-                    location preferences.
+                    {t("app.rankedFromYourCategoryGoalPlatformTiming")}
                   </p>
                 </div>
                 <button
                   className="button button-ghost button-small"
                   onClick={openAccountPanel}
                 >
-                  Edit preferences <span>⚙</span>
+                  {t("app.editPreferences")}{" "}<span>⚙</span>
                 </button>
               </header>
               {creatorRecommendations.length ? (
@@ -12701,13 +12733,13 @@ export default function MarketplaceApp({
                               openCampaignRequest(recommendation.listing)
                             }
                           >
-                            Make an offer
+                            {t("app.makeAnOffer")}
                           </button>
                           <button
                             className="dashboard-text-action"
                             onClick={() => openListing(recommendation.listing)}
                           >
-                            View details
+                            {t("app.viewDetails")}
                           </button>
                         </div>
                       </div>
@@ -12717,10 +12749,9 @@ export default function MarketplaceApp({
                 </div>
               ) : (
                 <div className="dashboard-panel-empty">
-                  <strong>We’re still building your shortlist.</strong>
+                  <strong>{t("app.wereStillBuildingYourShortlist")}</strong>
                   <p>
-                    Add a target platform or category in preferences, then
-                    refresh the marketplace as new creators join.
+                    {t("app.addATargetPlatformOrCategoryIn")}
                   </p>
                 </div>
               )}
@@ -12744,8 +12775,8 @@ export default function MarketplaceApp({
             <li className={profile.onboarding_complete ? "done" : ""}>
               <span>{profile.onboarding_complete ? "✓" : "1"}</span>
               <div>
-                <strong>Complete your profile</strong>
-                <p>Role, city, and a short introduction.</p>
+                <strong>{t("app.completeYourProfile")}</strong>
+                <p>{t("app.roleCityAndAShortIntroduction")}</p>
               </div>
               {!profile.onboarding_complete && (
                 <button
@@ -12757,22 +12788,22 @@ export default function MarketplaceApp({
                     setOnboardingOpen(true);
                   }}
                 >
-                  Finish setup
+                  {t("app.finishSetup")}
                 </button>
               )}
             </li>
             <li className={profile.avatar_url ? "done" : ""}>
               <span>{profile.avatar_url ? "✓" : "2"}</span>
               <div>
-                <strong>Add a profile photo</strong>
-                <p>Profiles with a face or logo get far more replies.</p>
+                <strong>{t("app.addAProfilePhoto")}</strong>
+                <p>{t("app.profilesWithAFaceOrLogoGet")}</p>
               </div>
               {!profile.avatar_url && (
                 <button
                   className="button button-ghost button-small"
                   onClick={() => openProfileEditor(1)}
                 >
-                  Add photo
+                  {t("app.addPhoto")}
                 </button>
               )}
             </li>
@@ -12780,11 +12811,11 @@ export default function MarketplaceApp({
               <li className={ownListings.length ? "done" : ""}>
                 <span>{ownListings.length ? "✓" : "3"}</span>
                 <div>
-                  <strong>Publish your first listing</strong>
+                  <strong>{t("app.publishYourFirstListing")}</strong>
                   <p>
                     {onboardingDraft
-                      ? "Everything you typed is still here."
-                      : "Your space or audience cannot be booked until it is listed."}
+                      ? t("app.everythingYouTypedIsStillHere")
+                      : t("app.yourSpaceOrAudienceCannotBeBooked")}
                   </p>
                 </div>
                 {!ownListings.length && (
@@ -12796,7 +12827,7 @@ export default function MarketplaceApp({
                     // are still in localStorage and come straight back.
                     onClick={resumeOnboardingDraft}
                   >
-                    {onboardingDraft ? "Finish my listing" : "Create listing"}
+                    {onboardingDraft ? t("app.finishMyListing") : t("app.createListing")}
                   </button>
                 )}
               </li>
@@ -12804,11 +12835,11 @@ export default function MarketplaceApp({
               <li>
                 <span>3</span>
                 <div>
-                  <strong>Find your first placement</strong>
-                  <p>Browse creators and spaces, then message the owner directly.</p>
+                  <strong>{t("app.findYourFirstPlacement")}</strong>
+                  <p>{t("app.browseCreatorsAndSpacesThenMessageThe")}</p>
                 </div>
                 <a className="button button-ghost button-small" href="/marketplace">
-                  Browse
+                  {t("app.browse")}
                 </a>
               </li>
             )}
@@ -12868,29 +12899,29 @@ export default function MarketplaceApp({
           blocks are still loading rather than announcing counts that are
           about to change under the reader. */}
       {legacyPublicSections && !blocksPending && marketplaceStats.listings > 0 && (
-        <section className="stat-band" aria-label="Marketplace at a glance">
+        <section className="stat-band" aria-label={t("app.marketplaceAtAGlance")}>
           <div className="stat-cell">
             <b>{marketplaceStats.listings}</b>
-            <span>Listings live</span>
+            <span>{t("app.listingsLive2")}</span>
           </div>
           <div className="stat-cell">
             <b>{marketplaceStats.members}</b>
-            <span>Members offering space</span>
+            <span>{t("app.membersOfferingSpace")}</span>
           </div>
           <div className="stat-cell">
             <b>{marketplaceStats.cities}</b>
-            <span>Cities covered</span>
+            <span>{t("app.citiesCovered")}</span>
           </div>
           <div className="stat-cell">
             <b>{marketplaceStats.channels}</b>
-            <span>Kinds of space</span>
+            <span>{t("app.kindsOfSpace")}</span>
           </div>
         </section>
       )}
 
       {legacyPublicSections && (<section className="how-section" id="how">
         <div className="how-intro">
-          <h2>Find it. Message. <em>Make it happen.</em></h2>
+          <h2>{t("app.findItMessage")}{" "}<em>{t("home.howTitleAccent")}</em></h2>
         </div>
         <div className={stepsLive ? "steps steps-live" : "steps"} ref={stepsRef}>
           {[
@@ -12902,34 +12933,34 @@ export default function MarketplaceApp({
                 <div className="mock mock-search" aria-hidden="true">
                   <div className="mock-field">
                     <span>⌕</span>
-                    <em>cafe window, Brea</em>
+                    <em>{t("app.cafeWindowBrea")}</em>
                     <i className="mock-caret" />
                   </div>
                   <div className="mock-chips">
-                    <b>Storefront</b>
+                    <b>{t("home.inventoryStorefront")}</b>
                     <b>Instagram</b>
-                    <b>Vehicle</b>
+                    <b>{t("home.inventoryVehicle")}</b>
                   </div>
                   <ul className="mock-results">
                     <li>
                       <span className="mock-thumb" />
                       <div>
-                        <strong>Main Street window</strong>
-                        <small>$4 / week</small>
+                        <strong>{t("app.mainStreetWindow")}</strong>
+                        <small>{t("app.n4Week")}</small>
                       </div>
                     </li>
                     <li>
                       <span className="mock-thumb" />
                       <div>
-                        <strong>Counter card</strong>
-                        <small>$3 / week</small>
+                        <strong>{t("market.channelCounterCard")}</strong>
+                        <small>{t("app.n3Week")}</small>
                       </div>
                     </li>
                     <li>
                       <span className="mock-thumb" />
                       <div>
-                        <strong>Rear-window decal</strong>
-                        <small>$5 / week</small>
+                        <strong>{t("app.rearWindowDecal")}</strong>
+                        <small>{t("app.n5Week")}</small>
                       </div>
                     </li>
                   </ul>
@@ -12943,13 +12974,13 @@ export default function MarketplaceApp({
               widget: (
                 <div className="mock mock-chat" aria-hidden="true">
                   <div className="mock-bubble them">
-                    Hi! Is the window free the first week of March?
+                    {t("app.hiIsTheWindowFreeTheFirst")}
                   </div>
                   <div className="mock-bubble me">
-                    It is. I can hold it for you.
+                    {t("app.itIsICanHoldItFor")}
                   </div>
                   <div className="mock-bubble them">
-                    Perfect, sending a request now.
+                    {t("app.perfectSendingARequestNow")}
                   </div>
                   <div className="mock-typing">
                     <i />
@@ -12966,16 +12997,16 @@ export default function MarketplaceApp({
               widget: (
                 <div className="mock mock-deal" aria-hidden="true">
                   <div className="mock-deal-head">
-                    <strong>Spring launch</strong>
-                    <span className="mock-status">Accepted</span>
+                    <strong>{t("app.springLaunch")}</strong>
+                    <span className="mock-status">{t("app.accepted")}</span>
                   </div>
                   <dl className="mock-deal-facts">
                     <div>
-                      <dt>Dates</dt>
-                      <dd>Mar 1 – Mar 8</dd>
+                      <dt>{t("app.dates")}</dt>
+                      <dd>{t("app.mar1Mar8")}</dd>
                     </div>
                     <div>
-                      <dt>Agreed</dt>
+                      <dt>{t("app.agreed")}</dt>
                       <dd>$32</dd>
                     </div>
                   </dl>
@@ -13250,7 +13281,7 @@ export default function MarketplaceApp({
                         {listing.owner.display_name} · {listingCity(listing)}
                       </small>
                       {reasons.length > 0 && (
-                        <p className="listing-foryou-reason">{reasons.join(" · ")}</p>
+                        <p className="listing-foryou-reason">{reasons.map((reason) => t(reason.key, reason.vars)).join(" · ")}</p>
                       )}
                     </div>
                   </article>
@@ -13439,20 +13470,19 @@ export default function MarketplaceApp({
       {legacyPublicSections && (<section className="spaces-section" id="spaces">
         <div className="spaces-heading">
           <h2>
-            Every local spot
+            {t("app.everyLocalSpot")}
             <br />
-            can become <em>reach.</em>
+            {t("app.canBecome")}{" "}<em>{t("app.reach")}</em>
           </h2>
           <p>
-            A produce stand, barber mirror, bakery window, receipt footer, or
-            local roundup can reach the exact people a nearby business needs.
+            {t("app.aProduceStandBarberMirrorBakeryWindow")}
           </p>
           <div className="spaces-actions">
             <button
               className="button button-light"
               onClick={openListingEditor}
             >
-              List a space <span>↗</span>
+              {t("app.listASpace")}{" "}<span>↗</span>
             </button>
             <button
               className="button button-coral"
@@ -13463,33 +13493,33 @@ export default function MarketplaceApp({
               // the unbookable ghost profile this flow exists to stop.
               onClick={() => requireAccount(() => openProfileEditor(1))}
             >
-              {user ? "Edit my profile" : "Sign up free"} <span>↗</span>
+              {user ? t("app.editMyProfile") : t("app.signUpFree")} <span>↗</span>
             </button>
           </div>
         </div>
         <div className="space-collage">
           <figure className="space-tile tile-wide">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/roadside-farm-stand.jpg" alt="Roadside farm stand" loading="lazy" decoding="async" />
+            <img src="/photos/roadside-farm-stand.jpg" alt={t("app.roadsideFarmStand")} loading="lazy" decoding="async" />
             <figcaption>
-              <strong>Roadside farm stand</strong>
-              <span>Dinuba, CA · owner sets the rate</span>
+              <strong>{t("app.roadsideFarmStand")}</strong>
+              <span>{t("app.dinubaCaOwnerSetsTheRate")}</span>
             </figcaption>
           </figure>
           <figure className="space-tile">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/small-town-barber.jpg" alt="Small-town barber shop" loading="lazy" decoding="async" />
+            <img src="/photos/small-town-barber.jpg" alt={t("app.smallTownBarberShop")} loading="lazy" decoding="async" />
             <figcaption>
-              <strong>Barber waiting bench</strong>
-              <span>Lanesboro, MN · $3/week</span>
+              <strong>{t("app.barberWaitingBench")}</strong>
+              <span>{t("app.lanesboroMn3Week")}</span>
             </figcaption>
           </figure>
           <figure className="space-tile">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/rural-market.jpg" alt="Rural Main Street market" loading="lazy" decoding="async" />
+            <img src="/photos/rural-market.jpg" alt={t("app.ruralMainStreetMarket")} loading="lazy" decoding="async" />
             <figcaption>
-              <strong>Market counter card</strong>
-              <span>Mercer, WI · $4/week</span>
+              <strong>{t("app.marketCounterCard")}</strong>
+              <span>{t("app.mercerWi4Week")}</span>
             </figcaption>
           </figure>
         </div>
@@ -13498,13 +13528,11 @@ export default function MarketplaceApp({
       {legacyPublicSections && (<section className="people-section" id="creators">
         <div className="section-top">
           <div>
-            <p className="section-label">Creators, hosts and businesses</p>
-            <h2>Small town. <em>Real influence.</em></h2>
+            <p className="section-label">{t("app.creatorsHostsAndBusinesses")}</p>
+            <h2>{t("app.smallTown")}{" "}<em>{t("app.realInfluence")}</em></h2>
           </div>
           <p>
-            Rent a creator’s Instagram Story, TikTok reach, or newsletter. Book
-            a shopkeeper’s window, counter, vehicle, or land. Or meet the
-            businesses looking to buy that space.
+            {t("app.rentACreatorsInstagramStoryTiktokReach")}
           </p>
         </div>
         <div className="people-row">
@@ -13512,15 +13540,15 @@ export default function MarketplaceApp({
             <article key={person.id} className="person-card">
               <Avatar profile={person} size="large" />
               <span className="person-role">{rolesLabel(person, locale)}</span>
-              {person.is_demo && <span className="person-demo">Demo profile</span>}
+              {person.is_demo && <span className="person-demo">{t("app.demoProfile")}</span>}
               {!person.is_demo && person.verified && (
-                <span className="person-verified">Verified by SideSpace</span>
+                <span className="person-verified">{t("app.verifiedBySidespace")}</span>
               )}
               <h3>{person.display_name}</h3>
               <p>{displayHandle(person.handle ?? "") || person.city}</p>
               <SocialLinks profile={person} compact />
               {Boolean(person.gallery_urls?.length) && (
-                <div className="profile-gallery-preview" aria-label={`${person.display_name} photos`}>
+                <div className="profile-gallery-preview" aria-label={t("app.displayNamePhotos", { display_name: person.display_name })}>
                   {person.gallery_urls?.slice(0, 3).map((url, index) => (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img key={`${url}-${index}`} src={url} alt="" loading="lazy" decoding="async" />
@@ -13540,7 +13568,7 @@ export default function MarketplaceApp({
                     <span>
                       <b>{compactNumber(person.followers || person.avg_views)}</b>
                       {person.followers
-                        ? " followers"
+                        ? t("app.followers")
                         : ` ${person.reach_unit || "weekly looks"}`}
                     </span>
                   )}
@@ -13548,15 +13576,15 @@ export default function MarketplaceApp({
                     <span>
                       <b>{listingCountByOwner.get(person.id)}</b>
                       {listingCountByOwner.get(person.id) === 1
-                        ? " listing live"
-                        : " listings live"}
+                        ? t("app.listingLive")
+                        : t("app.listingsLive")}
                     </span>
                   )}
                   {Boolean(person.audience_age) && <span>{person.audience_age}</span>}
                 </div>
               )}
               <button onClick={() => requireAccount(() => void startConversation(person))}>
-                Say hello ↗
+                {t("app.sayHello")}
               </button>
             </article>
             ))}
@@ -13570,21 +13598,20 @@ export default function MarketplaceApp({
           loads. */}
       {legacyPublicSections && (<section className="compare-section" aria-labelledby="compare-heading">
         <div className="compare-intro">
-          <p className="eyebrow">Before and after</p>
+          <p className="eyebrow">{t("app.beforeAndAfter")}</p>
           <h2 id="compare-heading">
-            Local advertising, the old way and <em>this way.</em>
+            {t("app.localAdvertisingTheOldWayAnd")}{" "}<em>{t("app.thisWay")}</em>
           </h2>
           <p className="compare-lede">
-            The same six questions every owner asks on the first call, answered
-            side by side.
+            {t("app.theSameSixQuestionsEveryOwnerAsks")}
           </p>
         </div>
         <div className="compare-scroll">
           <table className="compare-table">
             <thead>
               <tr>
-                <th scope="col">Area</th>
-                <th scope="col">Traditional</th>
+                <th scope="col">{t("app.area")}</th>
+                <th scope="col">{t("app.traditional")}</th>
                 <th scope="col">SideSpace</th>
               </tr>
             </thead>
@@ -13610,11 +13637,10 @@ export default function MarketplaceApp({
       {legacyPublicSections && (<section className="pricing-section" id="pricing">
         <div className="pricing-intro">
           <div>
-            <p className="eyebrow">Pricing</p>
-            <h2>Start free. Grow when you are ready.</h2>
+            <p className="eyebrow">{t("chrome.pricing")}</p>
+            <h2>{t("app.startFreeGrowWhenYouAreReady")}</h2>
             <p className="pricing-note">
-              Profiles, listings, browsing, requests, and messages have no
-              subscription. Campaign fees apply only when accepted work is paid.
+              {t("app.profilesListingsBrowsingRequestsAndMessagesHave")}
             </p>
           </div>
         </div>
@@ -13622,18 +13648,18 @@ export default function MarketplaceApp({
         <div className="pricing-grid">
           <article className="pricing-card">
             <div>
-              <span className="plan-label">Pay as you go</span>
-              <h3>Free</h3>
+              <span className="plan-label">{t("app.payAsYouGo")}</span>
+              <h3>{t("app.free")}</h3>
               <p className="plan-price">
-                <strong>$0</strong><span>/month</span>
+                <strong>$0</strong><span>{t("app.month")}</span>
               </p>
-              <p>For small businesses testing their first local campaigns.</p>
+              <p>{t("app.forSmallBusinessesTestingTheirFirstLocal")}</p>
             </div>
             <ul>
-              <li><b>No subscription</b> or listing fee</li>
-              <li>Browse every creator and space</li>
-              <li>Direct private messaging</li>
-              <li>No minimum campaign spend</li>
+              <li><b>{t("app.noSubscription")}</b>{" "}{t("app.orListingFee")}</li>
+              <li>{t("app.browseEveryCreatorAndSpace")}</li>
+              <li>{t("app.directPrivateMessaging")}</li>
+              <li>{t("app.noMinimumCampaignSpend")}</li>
             </ul>
             <button
               className="pricing-button"
@@ -13642,25 +13668,25 @@ export default function MarketplaceApp({
                 setAuthOpen(true);
               }}
             >
-              Create a free account <span>↗</span>
+              {t("pricing.heroButton")}{" "}<span>↗</span>
             </button>
           </article>
 
           <article className="pricing-card pricing-card-featured">
-            <span className="popular-badge">Businesses</span>
+            <span className="popular-badge">{t("app.businesses")}</span>
             <div>
-              <span className="plan-label">Paid campaign</span>
+              <span className="plan-label">{t("app.paidCampaign")}</span>
               <h3>5%</h3>
               <p className="plan-price">
-                <strong>+5%</strong><span>buyer fee</span>
+                <strong>+5%</strong><span>{t("app.buyerFee2")}</span>
               </p>
-              <p>Added to the accepted campaign price before tax.</p>
+              <p>{t("app.addedToTheAcceptedCampaignPriceBefore")}</p>
             </div>
             <ul>
-              <li>Hosted Stripe Checkout</li>
-              <li>Tax calculated when applicable</li>
-              <li>One-time invoice receipt</li>
-              <li>No monthly plan</li>
+              <li>{t("app.hostedStripeCheckout")}</li>
+              <li>{t("app.taxCalculatedWhenApplicable")}</li>
+              <li>{t("app.oneTimeInvoiceReceipt")}</li>
+              <li>{t("app.noMonthlyPlan")}</li>
             </ul>
             <button
               className="pricing-button pricing-button-lime"
@@ -13669,24 +13695,24 @@ export default function MarketplaceApp({
                 setAuthOpen(true);
               }}
             >
-              Find a campaign partner <span>↗</span>
+              {t("app.findACampaignPartner")}{" "}<span>↗</span>
             </button>
           </article>
 
           <article className="pricing-card">
             <div>
-              <span className="plan-label">Creators and hosts</span>
+              <span className="plan-label">{t("app.creatorsAndHosts")}</span>
               <h3>5%</h3>
               <p className="plan-price">
-                <strong>−5%</strong><span>creator fee</span>
+                <strong>−5%</strong><span>{t("app.creatorFee2")}</span>
               </p>
-              <p>Deducted from the accepted campaign price.</p>
+              <p>{t("app.deductedFromTheAcceptedCampaignPrice")}</p>
             </div>
             <ul>
-              <li>Stripe-hosted payout onboarding</li>
-              <li>Clear earnings before acceptance</li>
-              <li>Payment status in SideSpace</li>
-              <li>No subscription or listing fee</li>
+              <li>{t("app.stripeHostedPayoutOnboarding")}</li>
+              <li>{t("app.clearEarningsBeforeAcceptance")}</li>
+              <li>{t("app.paymentStatusInSidespace")}</li>
+              <li>{t("app.noSubscriptionOrListingFee")}</li>
             </ul>
             <button
               className="pricing-button"
@@ -13695,7 +13721,7 @@ export default function MarketplaceApp({
                 setAuthOpen(true);
               }}
             >
-              List your reach <span>↗</span>
+              {t("app.listYourReach")}{" "}<span>↗</span>
             </button>
           </article>
         </div>
@@ -13705,15 +13731,14 @@ export default function MarketplaceApp({
       {legacyPublicSections && (<section className="final-cta">
         <div>
           <h2>
-            Ready for
+            {t("app.readyFor")}
             <br />
-            <em>liftoff, locally?</em>
+            <em>{t("app.liftoffLocally")}</em>
           </h2>
         </div>
         <div>
           <p>
-            Browse the marketplace now, or create a profile to list your
-            audience, storefront, vehicle, land, or any useful local space.
+            {t("app.browseTheMarketplaceNowOrCreateA")}
           </p>
           <button
             className="button button-coral"
@@ -13722,7 +13747,7 @@ export default function MarketplaceApp({
               setAuthOpen(true);
             }}
           >
-            Create your free profile <span>↗</span>
+            {t("app.createYourFreeProfile")}{" "}<span>↗</span>
           </button>
         </div>
       </section>)}
@@ -13740,17 +13765,17 @@ export default function MarketplaceApp({
           />
           <span>SideSpace</span>
         </a>
-        <p>Local reach, made bookable.</p>
+        <p>{t("app.localReachMadeBookable")}</p>
         <nav>
-          <a href="#how">How it works</a>
-          <a href="#market">Marketplace</a>
-          <a href="#creators">Creator inventory</a>
-          <a href="#pricing">Pricing</a>
-          <a href="/terms">Terms</a>
-          <a href="/privacy">Privacy</a>
-          <button onClick={openInbox}>Messages</button>
+          <a href="#how">{t("chrome.howItWorks")}</a>
+          <a href="#market">{t("chrome.marketplace")}</a>
+          <a href="#creators">{t("app.creatorInventory")}</a>
+          <a href="#pricing">{t("chrome.pricing")}</a>
+          <a href="/terms">{t("chrome.terms")}</a>
+          <a href="/privacy">{t("chrome.privacy")}</a>
+          <button onClick={openInbox}>{t("chrome.messages")}</button>
         </nav>
-        <small>© {new Date().getFullYear()} SideSpace</small>
+        <small>{t("chrome.yearSidespace", { year: new Date().getFullYear() })}</small>
       </footer>)}
 
       <SiteFooter
@@ -13760,40 +13785,40 @@ export default function MarketplaceApp({
       {authOpen && (
         <Modal
           elevated
-          label={authMode === "signup" ? "Join SideSpace" : "Sign in to SideSpace"}
+          label={authMode === "signup" ? t("chrome.joinSideSpace") : t("app.signInToSidespace")}
           onClose={() => setAuthOpen(false)}
         >
           <div className="modal-heading">
-            <p className="eyebrow">Your SideSpace account</p>
+            <p className="eyebrow">{t("app.yourSidespaceAccount")}</p>
             <h2>
               {authMode === "signup"
                 ? invite
-                  ? `Set up ${invite.business}.`
-                  : "Join the network."
-                : "Welcome back."}
+                  ? t("app.setUpBusiness", { business: invite.business })
+                  : t("app.joinTheNetwork")
+                : t("app.welcomeBack")}
             </h2>
             <p>
               {authMode !== "signup"
-                ? "Sign in to manage your profile, listings, and conversations."
+                ? t("app.signInToManageYourProfileListings")
                 : invite
                   ? // They were written to by name. Landing on "Join the
                     // network" makes the email look like a mail-merge, which
                     // is the one thing the outreach rules exist to avoid.
-                    "One account, then the questions we could not answer for you. Most of it is already filled in."
-                  : "Browse publicly. Create an account when you’re ready to list or message."}
+                    t("app.oneAccountThenTheQuestionsWeCould")
+                  : t("app.browsePubliclyCreateAnAccountWhenYoure")}
             </p>
           </div>
           {!configured && (
             <div className="setup-notice">
               <strong>
                 {localPreviewAvailable
-                  ? "Local onboarding preview"
-                  : "Backend connection needed"}
+                  ? t("app.localOnboardingPreview")
+                  : t("app.backendConnectionNeeded")}
               </strong>
               <p>
                 {localPreviewAvailable
-                  ? "Test every onboarding step with seeded data. Preview mode never creates an account or saves anything."
-                  : "This preview is using seeded marketplace data. Add the two Supabase environment variables to activate accounts."}
+                  ? t("app.testEveryOnboardingStepWithSeededData")
+                  : t("app.thisPreviewIsUsingSeededMarketplaceData")}
               </p>
             </div>
           )}
@@ -13802,17 +13827,16 @@ export default function MarketplaceApp({
               (invite && inviteRole(invite) === "business")) && (
             <div className="setup-notice ad-credit-signup-notice">
               <strong>
-                Your {activeBusinessReferralCode(referralCode) ? "referral" : "invite"} includes{" "}
+                {t("app.your")}{" "}{activeBusinessReferralCode(referralCode) ? t("app.referral") : t("app.invite")}{" "}{t("app.includes")}{" "}
                 {activeBusinessReferralCode(referralCode)
                   ? referralCreditCents
-                    ? `${formatCents(referralCreditCents)} in `
+                    ? t("app.referralcreditcentsIn", { referralCreditCents: formatCents(referralCreditCents) })
                     : ""
-                  : `${formatCents(BUSINESS_SIGNUP_CREDIT_CENTS)} in `}
-                ad credit
+                  : t("app.businessSignupCreditCentsIn", { BUSINESS_SIGNUP_CREDIT_CENTS: formatCents(BUSINESS_SIGNUP_CREDIT_CENTS) })}
+                {t("app.adCredit")}
               </strong>
               <p>
-                Complete the Business setup and it will be applied automatically to advertising
-                checkout. It cannot be withdrawn or transferred.
+                {t("app.completeTheBusinessSetupAndItWill")}
               </p>
             </div>
           )}
@@ -13822,7 +13846,7 @@ export default function MarketplaceApp({
               className="button button-dark button-full preview-onboarding-button"
               onClick={openOnboardingPreview}
             >
-              Preview onboarding <span>→</span>
+              {t("app.previewOnboarding")}{" "}<span>→</span>
             </button>
           ) : (
             <>
@@ -13841,34 +13865,34 @@ export default function MarketplaceApp({
                         className="google-button"
                         onClick={signInWithGoogle}
                       >
-                        <b>G</b> Continue with Google
+                        <b>{t("app.g")}</b>{" "}{t("app.continueWithGoogle")}
                       </button>
                     }
                   />
                   <div className="form-divider">
-                    <span>or use email</span>
+                    <span>{t("app.orUseEmail")}</span>
                   </div>
                 </>
               )}
               <form className="stack-form" onSubmit={handleAuth}>
                 {authMode === "signup" && (
                   <label>
-                    Your name
-                    <input name="name" required placeholder="Alex Morgan" />
+                    {t("app.yourName")}
+                    <input name="name" required placeholder={t("app.alexMorgan")} />
                   </label>
                 )}
                 <label>
-                  Email address
+                  {t("app.emailAddress")}
                   <input
                     name="email"
                     type="email"
                     autoComplete="email"
                     required
-                    placeholder="you@example.com"
+                    placeholder={t("app.youExampleCom")}
                   />
                 </label>
                 <label>
-                  Password
+                  {t("app.password")}
                   <input
                     name="password"
                     type="password"
@@ -13877,7 +13901,7 @@ export default function MarketplaceApp({
                       authMode === "signup" ? "new-password" : "current-password"
                     }
                     required
-                    placeholder="At least 8 characters"
+                    placeholder={t("app.atLeast8Characters")}
                   />
                 </label>
                 <button
@@ -13885,10 +13909,10 @@ export default function MarketplaceApp({
                   disabled={busy || !configured}
                 >
                   {busy
-                    ? "One moment..."
+                    ? t("app.oneMoment2")
                     : authMode === "signup"
-                      ? "Create my account"
-                      : "Sign in"}
+                      ? t("app.createMyAccount")
+                      : t("chrome.signIn")}
                   <span>↗</span>
                 </button>
                 {authMode === "signin" && (
@@ -13904,7 +13928,7 @@ export default function MarketplaceApp({
                       void emailPasswordReset(address);
                     }}
                   >
-                    Forgot your password?
+                    {t("app.forgotYourPassword")}
                   </button>
                 )}
               </form>
@@ -13917,12 +13941,11 @@ export default function MarketplaceApp({
                 }
               >
                 {authMode === "signup"
-                  ? "Already a member? Sign in"
-                  : "New here? Create an account"}
+                  ? t("app.alreadyAMemberSignIn")
+                  : t("app.newHereCreateAnAccount")}
               </button>
               <p className="security-note">
-                Passwords are handled by Supabase Auth and never stored in the
-                SideSpace application database.
+                {t("app.passwordsAreHandledBySupabaseAuthAnd")}
               </p>
             </>
           )}
@@ -13931,7 +13954,7 @@ export default function MarketplaceApp({
 
       {accountOpen && user && profile && (
         <Modal
-          label="Profile and settings"
+          label={t("app.profileAndSettings")}
           onClose={() => setAccountOpen(false)}
           wide
         >
@@ -13939,23 +13962,22 @@ export default function MarketplaceApp({
             <header className="account-hero">
               <Avatar profile={profile} size="large" />
               <div>
-                <p className="eyebrow">Your SideSpace profile</p>
+                <p className="eyebrow">{t("app.yourSidespaceProfile")}</p>
                 <h2>{profile.display_name}</h2>
                 <p>
                   {user.email} <span>•</span> {rolesLabel(profile, locale)} <span>•</span>{" "}
-                  {profile.city || "Location not added"}
+                  {profile.city || t("app.locationNotAdded")}
                 </p>
               </div>
-              <span className="saved-account-badge">Profile saved</span>
+              <span className="saved-account-badge">{t("app.profileSaved")}</span>
             </header>
 
             <div className="profile-action-panel">
               <div>
-                <p className="eyebrow">Profile controls</p>
-                <h3>Show up the way you want.</h3>
+                <p className="eyebrow">{t("app.profileControls")}</p>
+                <h3>{t("app.showUpTheWayYouWant")}</h3>
                 <p>
-                  Update the public details businesses and Creators see. Your
-                  listings, campaigns, messages, and payments live in Dashboard.
+                  {t("app.updateThePublicDetailsBusinessesAndCreators")}
                 </p>
               </div>
               <button
@@ -13965,28 +13987,28 @@ export default function MarketplaceApp({
                   openProfileEditor(1);
                 }}
               >
-                Edit profile <span>↗</span>
+                {t("app.editProfile")}{" "}<span>↗</span>
               </button>
             </div>
 
-            <nav className="profile-section-nav" aria-label="Profile settings">
+            <nav className="profile-section-nav" aria-label={t("app.profileSettings")}>
               {profile.role === "business" && (
-                <a href="#campaign-preferences">Preferences</a>
+                <a href="#campaign-preferences">{t("app.preferences")}</a>
               )}
               {stripeConfigured && profileHasRole(profile, "creator") && (
-                <a href="#payouts">Payouts</a>
+                <a href="#payouts">{t("app.payouts")}</a>
               )}
               {canonicalRole(profile.role) === "creator" && (
-                <a href="#portfolio">Portfolio</a>
+                <a href="#portfolio">{t("app.portfolio")}</a>
               )}
-              <a href="#profile-trust">Trust</a>
-              <a href="#profile-security">Security</a>
+              <a href="#profile-trust">{t("app.trust")}</a>
+              <a href="#profile-security">{t("app.security")}</a>
               <a
                 className="profile-dashboard-link"
                 href="/dashboard"
                 onClick={() => setAccountOpen(false)}
               >
-                Open Dashboard ↗
+                {t("app.openDashboard")}
               </a>
             </nav>
 
@@ -13997,14 +14019,13 @@ export default function MarketplaceApp({
               >
                 <div className="account-section-heading">
                   <div>
-                    <p className="eyebrow">Campaign preferences</p>
-                    <h3>Tell us what a good creator looks like.</h3>
+                    <p className="eyebrow">{t("app.campaignPreferences")}</p>
+                    <h3>{t("app.tellUsWhatAGoodCreatorLooks")}</h3>
                     <p className="account-section-lede">
-                      These choices shape the creator posts we put first on your
-                      dashboard. Change them whenever your next campaign changes.
+                      {t("app.theseChoicesShapeTheCreatorPostsWe")}
                     </p>
                   </div>
-                  <span className="section-count">Always editable</span>
+                  <span className="section-count">{t("app.alwaysEditable")}</span>
                 </div>
                 <form
                   className="preferences-form"
@@ -14012,7 +14033,7 @@ export default function MarketplaceApp({
                 >
                   <div className="preferences-grid">
                     <PreferenceChipGroup
-                      label="Your category"
+                      label={t("app.yourCategory")}
                       multi
                       options={CATEGORY_CHIPS.map((value) => ({
                         label: value,
@@ -14029,7 +14050,7 @@ export default function MarketplaceApp({
                       }
                     />
                     <PreferenceChipGroup
-                      label="Campaign goal"
+                      label={t("app.campaignGoal")}
                       options={BUSINESS_GOAL_CHIPS.map(({ label }) => ({
                         label,
                         value: label,
@@ -14046,7 +14067,7 @@ export default function MarketplaceApp({
                       }
                     />
                     <PreferenceChipGroup
-                      label="What you want to book"
+                      label={t("app.whatYouWantToBook")}
                       options={BRIEF_SCOPE_CHIPS.map(({ label, value }) => ({
                         label,
                         value,
@@ -14063,7 +14084,7 @@ export default function MarketplaceApp({
                       }
                     />
                     <PreferenceChipGroup
-                      label="Physical placements"
+                      label={t("app.physicalPlacements")}
                       multi
                       options={BRIEF_PHYSICAL_CHIPS.map((value) => ({
                         label: value,
@@ -14080,7 +14101,7 @@ export default function MarketplaceApp({
                       }
                     />
                     <PreferenceChipGroup
-                      label="Creator platforms"
+                      label={t("app.creatorPlatforms")}
                       multi
                       options={BRIEF_PLATFORM_CHIPS.map((value) => ({
                         label: value,
@@ -14099,9 +14120,9 @@ export default function MarketplaceApp({
                   </div>
                   <div className="preferences-input-grid">
                     <label>
-                      Preferred area
-                      <span className="optional">optional</span>
-                      <small>Used to prioritize local creators and spaces.</small>
+                      {t("app.preferredArea")}
+                      <span className="optional">{t("app.optional2")}</span>
+                      <small>{t("app.usedToPrioritizeLocalCreatorsAndSpaces")}</small>
                       <input
                         value={businessPreferencesDraft.wantedArea}
                         onChange={(event) =>
@@ -14110,11 +14131,11 @@ export default function MarketplaceApp({
                             wantedArea: event.target.value,
                           }))
                         }
-                        placeholder={profile.city || "Downtown Berkeley"}
+                        placeholder={profile.city || t("app.downtownBerkeley")}
                       />
                     </label>
                     <PreferenceChipGroup
-                      label="Timing"
+                      label={t("app.timing")}
                       options={BUSINESS_TIMING_CHIPS.map(({ label }) => ({
                         label,
                         value: label,
@@ -14129,12 +14150,12 @@ export default function MarketplaceApp({
                     />
                   </div>
                   <div className="preferences-save-row">
-                    <p>Recommendations refresh as soon as you save.</p>
+                    <p>{t("app.recommendationsRefreshAsSoonAsYouSave")}</p>
                     <button
                       className="button button-dark button-small"
                       disabled={preferencesSaving}
                     >
-                      {preferencesSaving ? "Saving…" : "Save preferences"}{" "}
+                      {preferencesSaving ? t("app.saving2") : t("app.savePreferences")}{" "}
                       <span>✓</span>
                     </button>
                   </div>
@@ -14146,26 +14167,25 @@ export default function MarketplaceApp({
               <section className="account-section" id="payouts">
                 <div className="account-section-heading">
                   <div>
-                    <p className="eyebrow">Stripe payouts</p>
-                    <h3>Get paid through a verified account.</h3>
+                    <p className="eyebrow">{t("app.stripePayouts")}</p>
+                    <h3>{t("app.getPaidThroughAVerifiedAccount")}</h3>
                   </div>
                   <span className="section-count">
                     {stripeAccountStatus?.ready
-                      ? "Ready"
+                      ? t("app.ready")
                       : stripeAccountStatus?.connected
-                        ? "Needs attention"
-                        : "Not set up"}
+                        ? t("app.needsAttention")
+                        : t("app.notSetUp")}
                   </span>
                 </div>
                 <div className="account-empty">
                   <strong>
                     {stripeAccountStatus?.ready
-                      ? "Your Stripe account can receive campaign payouts."
-                      : "Finish Stripe's secure onboarding before a business can pay you."}
+                      ? t("app.yourStripeAccountCanReceiveCampaignPayouts")
+                      : t("app.finishStripesSecureOnboardingBeforeABusiness")}
                   </strong>
                   <p>
-                    Stripe collects identity and bank details on its hosted pages.
-                    SideSpace never stores your bank account information.
+                    {t("app.stripeCollectsIdentityAndBankDetailsOn")}
                   </p>
                   <button
                     className="button button-dark button-small"
@@ -14179,10 +14199,10 @@ export default function MarketplaceApp({
                     }
                   >
                     {stripeAccountStatus?.ready
-                      ? "Manage payouts in Stripe"
+                      ? t("app.managePayoutsInStripe")
                       : stripeAccountStatus?.connected
-                        ? "Continue Stripe setup"
-                        : "Set up Stripe payouts"}
+                        ? t("app.continueStripeSetup")
+                        : t("app.setUpStripePayouts")}
                   </button>
                 </div>
               </section>
@@ -14192,14 +14212,13 @@ export default function MarketplaceApp({
               <section className="account-section" id="portfolio">
                 <div className="account-section-heading">
                   <div>
-                    <p className="eyebrow">Public Creator portfolio</p>
-                    <h3>Show businesses work they can trust.</h3>
+                    <p className="eyebrow">{t("app.publicCreatorPortfolio")}</p>
+                    <h3>{t("app.showBusinessesWorkTheyCanTrust")}</h3>
                     <p>
-                      Add campaign examples, videos, case studies, or project links.
-                      Published items appear with your marketplace listings.
+                      {t("app.addCampaignExamplesVideosCaseStudiesOr")}
                     </p>
                   </div>
-                  <span className="section-count">{creatorPortfolio.length} items</span>
+                  <span className="section-count">{t("app.creatorportfoliocountItems", { creatorPortfolioCount: creatorPortfolio.length })}</span>
                 </div>
                 {creatorPortfolio.length > 0 && (
                   <div className="campaign-request-list">
@@ -14210,7 +14229,7 @@ export default function MarketplaceApp({
                             <small>{item.kind.replaceAll("_", " ")}</small>
                             <h4>{item.title}</h4>
                           </div>
-                          <span className="request-status status-active">Published</span>
+                          <span className="request-status status-active">{t("app.published")}</span>
                         </header>
                         {item.description && <p>{item.description}</p>}
                         <div className="campaign-request-actions">
@@ -14221,14 +14240,14 @@ export default function MarketplaceApp({
                               target="_blank"
                               rel="noreferrer"
                             >
-                              View work ↗
+                              {t("app.viewWork")}
                             </a>
                           )}
                           <button
                             disabled={busy}
                             onClick={() => void deleteCreatorPortfolioItem(item.id)}
                           >
-                            Remove
+                            {t("app.remove")}
                           </button>
                         </div>
                       </article>
@@ -14237,48 +14256,46 @@ export default function MarketplaceApp({
                 )}
                 <form className="field-grid campaign-form" onSubmit={submitCreatorPortfolioItem}>
                   <label>
-                    Work title
+                    {t("app.workTitle")}
                     <input name="title" required minLength={2} maxLength={120} />
                   </label>
                   <label>
-                    Type
+                    {t("app.type")}
                     <select name="kind" defaultValue="project">
-                      <option value="video">Video</option>
-                      <option value="campaign">Campaign</option>
-                      <option value="case_study">Case study</option>
-                      <option value="project">Project</option>
-                      <option value="other">Other</option>
+                      <option value="video">{t("market.video")}</option>
+                      <option value="campaign">{t("app.campaign")}</option>
+                      <option value="case_study">{t("app.caseStudy")}</option>
+                      <option value="project">{t("app.project")}</option>
+                      <option value="other">{t("app.other")}</option>
                     </select>
                   </label>
                   <label>
-                    Media URL
-                    <input name="media_url" type="url" placeholder="https://…" />
+                    {t("app.mediaUrl")}
+                    <input name="media_url" type="url" placeholder={t("app.https")} />
                   </label>
                   <label>
-                    Project URL
-                    <input name="project_url" type="url" placeholder="https://…" />
+                    {t("app.projectUrl")}
+                    <input name="project_url" type="url" placeholder={t("app.https")} />
                   </label>
                   <label className="field-wide">
-                    What did you make?
+                    {t("app.whatDidYouMake")}
                     <textarea
                       name="description"
                       maxLength={1200}
-                      placeholder="Scope, deliverables, result, and your role."
+                      placeholder={t("app.scopeDeliverablesResultAndYourRole")}
                     />
                   </label>
                   <button className="button button-dark field-wide" disabled={busy}>
-                    {busy ? "Publishing..." : "Add to public portfolio"}
+                    {busy ? t("app.publishing") : t("app.addToPublicPortfolio")}
                   </button>
                 </form>
                 {creatorReviews.length > 0 && (
                   <div className="campaign-request-brief">
-                    <small>Verified campaign reviews</small>
-                    {creatorReviews.length} review{creatorReviews.length === 1 ? "" : "s"} ·{" "}
-                    {(
+                    <small>{t("app.verifiedCampaignReviews")}</small>
+                    {creatorReviews.length === 1 ? t("app.oneReview") : t("app.countReviews", { count: creatorReviews.length })}{" "}{t("app.value5Average", { value: (
                       creatorReviews.reduce((sum, review) => sum + review.rating, 0) /
                       creatorReviews.length
-                    ).toFixed(1)}
-                    /5 average
+                    ).toFixed(1) })}
                   </div>
                 )}
               </section>
@@ -14287,8 +14304,8 @@ export default function MarketplaceApp({
             <section className="account-section trust-section" id="profile-trust">
               <div className="account-section-heading">
                 <div>
-                  <p className="eyebrow">Profile trust</p>
-                  <h3>Make your identity easier to trust.</h3>
+                  <p className="eyebrow">{t("app.profileTrust")}</p>
+                  <h3>{t("app.makeYourIdentityEasierToTrust")}</h3>
                 </div>
                 <span
                   className={`trust-state trust-${
@@ -14300,36 +14317,36 @@ export default function MarketplaceApp({
                   }`}
                 >
                   {profile.verified
-                    ? "Verified by SideSpace"
+                    ? t("app.verifiedBySidespace")
                     : verificationRequest?.status === "pending"
-                      ? "Review pending"
-                      : "Not verified yet"}
+                      ? t("app.reviewPending")
+                      : t("app.notVerifiedYet")}
                 </span>
               </div>
               <div className="trust-grid">
                 <div>
                   <span>✓</span>
-                  <strong>Account email active</strong>
+                  <strong>{t("app.accountEmailActive")}</strong>
                   <p>{user.email}</p>
                 </div>
                 <div>
                   <span>@</span>
-                  <strong>Social links</strong>
+                  <strong>{t("app.socialLinks")}</strong>
                   <p>
                     {Object.keys(profile.social_links ?? {}).length
-                      ? `${Object.keys(profile.social_links ?? {}).length} self-reported profile link${Object.keys(profile.social_links ?? {}).length === 1 ? "" : "s"}`
-                      : "Add social profiles from Edit profile"}
+                      ? t("app.keyscountSelfReportedProfileLinkValue", { keysCount: Object.keys(profile.social_links ?? {}).length, value: Object.keys(profile.social_links ?? {}).length === 1 ? "" : "s" })
+                      : t("app.addSocialProfilesFromEditProfile")}
                   </p>
                 </div>
                 <div>
                   <span>{profile.verified ? "✓" : "?"}</span>
-                  <strong>SideSpace review</strong>
+                  <strong>{t("app.sidespaceReview")}</strong>
                   <p>
                     {profile.verified
-                      ? "Evidence reviewed by the SideSpace team"
+                      ? t("app.evidenceReviewedByTheSidespaceTeam")
                       : verificationRequest?.status === "pending"
-                        ? "Your evidence is waiting for review"
-                        : "Submit public evidence for manual review"}
+                        ? t("app.yourEvidenceIsWaitingForReview")
+                        : t("app.submitPublicEvidenceForManualReview")}
                   </p>
                 </div>
               </div>
@@ -14346,14 +14363,14 @@ export default function MarketplaceApp({
                     onClick={() => setVerificationOpen(true)}
                   >
                     {verificationRequest?.status === "rejected"
-                      ? "Resubmit evidence"
-                      : "Request verification"}{" "}
+                      ? t("app.resubmitEvidence")
+                      : t("app.requestVerification")}{" "}
                     <span>↗</span>
                   </button>
                 )}
               {verificationRequest?.status === "rejected" && (
                 <p className="trust-help">
-                  More information is needed. Contact {SUPPORT_EMAIL} before resubmitting.
+                  {t("app.moreInformationIsNeededContactSupportEmail", { SUPPORT_EMAIL })}
                 </p>
               )}
             </section>
@@ -14361,77 +14378,75 @@ export default function MarketplaceApp({
             <section className="account-section settings-section" id="profile-security">
               <div className="account-section-heading">
                 <div>
-                  <p className="eyebrow">Login & security</p>
-                  <h3>Keep your account protected.</h3>
+                  <p className="eyebrow">{t("app.loginSecurity")}</p>
+                  <h3>{t("app.keepYourAccountProtected")}</h3>
                 </div>
                 <div className="account-storage-note">
                   <span>✓</span>
                   <p>
-                    Your login, profile, listings, and messages are stored with
-                    Supabase and follow you across devices.
+                    {t("app.yourLoginProfileListingsAndMessagesAre")}
                   </p>
                 </div>
               </div>
 
               <div className="settings-grid">
                 <div className="login-summary">
-                  <small>Signed-in email</small>
+                  <small>{t("app.signedInEmail")}</small>
                   <strong>{user.email}</strong>
                   <p>
-                    Login method: {String(user.app_metadata.provider ?? "email")}
+                    {t("app.loginMethodValue", { value: String(user.app_metadata.provider ?? "email") })}
                   </p>
                   <button
                     type="button"
                     onClick={() => void emailPasswordReset(user.email)}
                     disabled={busy}
                   >
-                    Email me a password reset link
+                    {t("app.emailMeAPasswordResetLink")}
                   </button>
                 </div>
                 <form className="stack-form account-password-form" onSubmit={updatePassword}>
                   <label>
-                    Current password
+                    {t("app.currentPassword")}
                     <input
                       name="current_password"
                       type="password"
                       autoComplete="current-password"
                       required
-                      placeholder="Confirm it's you"
+                      placeholder={t("app.confirmItsYou")}
                     />
                   </label>
                   <label>
-                    New password
+                    {t("app.newPassword")}
                     <input
                       name="new_password"
                       type="password"
                       minLength={8}
                       autoComplete="new-password"
                       required
-                      placeholder="At least 8 characters"
+                      placeholder={t("app.atLeast8Characters")}
                     />
                   </label>
                   <label>
-                    Confirm new password
+                    {t("app.confirmNewPassword")}
                     <input
                       name="confirm_password"
                       type="password"
                       minLength={8}
                       autoComplete="new-password"
                       required
-                      placeholder="Type it again"
+                      placeholder={t("app.typeItAgain")}
                     />
                   </label>
                   <button className="button button-dark button-full" disabled={busy}>
-                    {busy ? "Saving..." : "Update password"} <span>✓</span>
+                    {busy ? t("app.saving") : t("app.updatePassword")} <span>✓</span>
                   </button>
                 </form>
               </div>
 
               <div className="photo-manager">
-                <strong>Your photos</strong>
+                <strong>{t("app.yourPhotos")}</strong>
                 <p>
-                  Remove anything you no longer want on your profile. Deleted
-                  photos are erased from storage, not just hidden.
+                  {t("app.removeAnythingYouNoLongerWantOn")}
                 </p>
                 <div className="photo-manager-grid">
                   {profile.avatar_url && (
@@ -14439,17 +14454,17 @@ export default function MarketplaceApp({
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={profile.avatar_url}
-                        alt="Your profile photo"
+                        alt={t("app.yourProfilePhoto")}
                         loading="lazy"
                         decoding="async"
                       />
-                      <figcaption>Profile photo</figcaption>
+                      <figcaption>{t("app.profilePhoto")}</figcaption>
                       <button
                         type="button"
                         className="saved-media-remove"
                         disabled={busy}
-                        aria-label="Remove profile photo"
-                        title="Remove profile photo"
+                        aria-label={t("app.removeProfilePhoto")}
+                        title={t("app.removeProfilePhoto")}
                         onClick={() =>
                           void removeProfilePhoto(profile.avatar_url, "avatar")
                         }
@@ -14463,7 +14478,7 @@ export default function MarketplaceApp({
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={url}
-                        alt={`Profile photo ${index + 1}`}
+                        alt={t("app.profilePhotoValue", { value: index + 1 })}
                         loading="lazy"
                         decoding="async"
                       />
@@ -14471,8 +14486,8 @@ export default function MarketplaceApp({
                         type="button"
                         className="saved-media-remove"
                         disabled={busy}
-                        aria-label={`Remove photo ${index + 1}`}
-                        title="Remove photo"
+                        aria-label={t("app.removePhotoValue", { value: index + 1 })}
+                        title={t("app.removePhoto")}
                         onClick={() => void removeProfilePhoto(url, "gallery")}
                       >
                         ×
@@ -14483,17 +14498,16 @@ export default function MarketplaceApp({
                 {!profile.avatar_url &&
                   !(profile.gallery_urls ?? []).length && (
                     <p className="photo-manager-empty">
-                      No photos yet. Add them from Edit profile.
+                      {t("app.noPhotosYetAddThemFromEdit")}
                     </p>
                   )}
               </div>
 
               {blockedProfiles.length > 0 && (
                 <div className="blocked-list">
-                  <strong>Blocked members</strong>
+                  <strong>{t("app.blockedMembers")}</strong>
                   <p>
-                    They cannot message you or request your listings, and their
-                    listings stay hidden from you.
+                    {t("app.theyCannotMessageYouOrRequestYour")}
                   </p>
                   <ul>
                     {blockedProfiles.map((blocked) => (
@@ -14506,7 +14520,7 @@ export default function MarketplaceApp({
                             void unblockProfile(blocked.id, blocked.display_name)
                           }
                         >
-                          Unblock
+                          {t("app.unblock")}
                         </button>
                       </li>
                     ))}
@@ -14518,16 +14532,15 @@ export default function MarketplaceApp({
                 className="button button-dark button-full account-signout-button"
                 onClick={signOut}
               >
-                Log out of SideSpace <span>→</span>
+                {t("app.logOutOfSidespace")}{" "}<span>→</span>
               </button>
 
               {/* Destructive action sits last, after the everyday one. */}
               <div className="danger-zone">
                 <div>
-                  <strong>Delete account</strong>
+                  <strong>{t("app.deleteAccount")}</strong>
                   <p>
-                    Permanently removes your profile, listings, conversations,
-                    and campaign requests. This cannot be undone.
+                    {t("app.permanentlyRemovesYourProfileListingsConversationsAnd")}
                   </p>
                 </div>
                 <button
@@ -14538,7 +14551,7 @@ export default function MarketplaceApp({
                     setDeleteAccountOpen(true);
                   }}
                 >
-                  Delete my account
+                  {t("app.deleteMyAccount")}
                 </button>
               </div>
             </section>
@@ -14548,19 +14561,16 @@ export default function MarketplaceApp({
 
       {deleteListingTarget && (
         <Modal
-          label="Delete listing"
+          label={t("app.deleteListing")}
           onClose={() => {
             if (!busy) setDeleteListingTarget(null);
           }}
         >
           <div className="modal-heading">
-            <p className="eyebrow">Delete listing</p>
+            <p className="eyebrow">{t("app.deleteListing")}</p>
             <h2>{`Take \u201c${deleteListingTarget.title}\u201d down for good?`}</h2>
             <p>
-              It leaves the marketplace right away and its photos are removed.
-              Any open request on it is declined and the business that sent it
-              is told. A listing that has been paid for cannot be deleted -
-              pause it instead. There is no undo.
+              {t("app.itLeavesTheMarketplaceRightAwayAnd")}
             </p>
           </div>
           <div className="form-submit">
@@ -14569,7 +14579,7 @@ export default function MarketplaceApp({
               disabled={busy}
               onClick={() => setDeleteListingTarget(null)}
             >
-              Keep it
+              {t("app.keepIt")}
             </button>
             <button
               type="button"
@@ -14577,7 +14587,7 @@ export default function MarketplaceApp({
               disabled={busy}
               onClick={() => void deleteListing(deleteListingTarget)}
             >
-              {busy ? "Deleting..." : "Delete listing"}
+              {busy ? t("app.deleting") : t("app.deleteListing")}
             </button>
           </div>
         </Modal>
@@ -14585,7 +14595,7 @@ export default function MarketplaceApp({
 
       {deleteAccountOpen && user && (
         <Modal
-          label="Delete your account"
+          label={t("app.deleteYourAccount")}
           onClose={() => {
             if (!busy) {
               setDeleteAccountOpen(false);
@@ -14594,12 +14604,10 @@ export default function MarketplaceApp({
           }}
         >
           <div className="modal-heading">
-            <p className="eyebrow">Delete account</p>
-            <h2>This is permanent.</h2>
+            <p className="eyebrow">{t("app.deleteAccount")}</p>
+            <h2>{t("app.thisIsPermanent")}</h2>
             <p>
-              Deleting your account removes your profile, every listing you
-              have published, your conversations, and your campaign requests.
-              There is no way to recover them afterward.
+              {t("app.deletingYourAccountRemovesYourProfileEvery")}
             </p>
           </div>
           {deleteAccountError && (
@@ -14610,27 +14618,26 @@ export default function MarketplaceApp({
           <form className="stack-form" onSubmit={deleteAccount}>
             {passwordCapable(user) ? (
               <label>
-                Confirm your password to continue
+                {t("app.confirmYourPasswordToContinue")}
                 <input
                   name="delete_password"
                   type="password"
                   autoComplete="current-password"
                   required
-                  placeholder="Your current password"
+                  placeholder={t("app.yourCurrentPassword")}
                 />
               </label>
             ) : (
               <label>
-                Type DELETE to confirm
+                {t("app.typeDeleteToConfirm")}
                 <input
                   name="delete_confirmation"
                   required
                   autoComplete="off"
-                  placeholder="DELETE"
+                  placeholder={t("app.delete")}
                 />
                 <small>
-                  Your account does not use an email + password login, so
-                  typing DELETE confirms it is really you.
+                  {t("app.yourAccountDoesNotUseAnEmail")}
                 </small>
               </label>
             )}
@@ -14643,10 +14650,10 @@ export default function MarketplaceApp({
                   setDeleteAccountError("");
                 }}
               >
-                Keep my account
+                {t("app.keepMyAccount")}
               </button>
               <button className="button button-danger" disabled={busy}>
-                {busy ? "Deleting..." : "Permanently delete"}
+                {busy ? t("app.deleting") : t("app.permanentlyDelete")}
               </button>
             </div>
           </form>
@@ -14658,10 +14665,10 @@ export default function MarketplaceApp({
           elevated
           label={
             onboardingPreview
-              ? "Preview SideSpace onboarding"
+              ? t("app.previewSidespaceOnboarding")
               : onboardingMode === "edit"
-              ? "Edit your SideSpace profile"
-              : "Set up your SideSpace account"
+              ? t("app.editYourSidespaceProfile")
+              : t("app.setUpYourSidespaceAccount")
           }
           onClose={() => {
             setOnboardingOpen(false);
@@ -14678,15 +14685,15 @@ export default function MarketplaceApp({
             <div>
               <p className="eyebrow">
                 {onboardingPreview
-                  ? "Local onboarding preview"
+                  ? t("app.localOnboardingPreview")
                   : onboardingMode === "edit"
-                  ? "Edit your profile"
-                  : "Set up your account"}
+                  ? t("app.editYourProfile")
+                  : t("app.setUpYourAccount")}
               </p>
               <h2>
                 {onboardingMode === "edit"
-                  ? "Update your details."
-                  : "Let’s get you on the marketplace."}
+                  ? t("app.updateYourDetails")
+                  : t("app.letsGetYouOnTheMarketplace")}
               </h2>
             </div>
             <div className="step-count">
@@ -14697,7 +14704,7 @@ export default function MarketplaceApp({
                 />
               ))}
               <small>
-                Step {onboardingStep} of {onboardingStepCount()}
+                {t("app.stepOnboardingstepOfOnboardingstepcount", { onboardingStep, onboardingStepCount: onboardingStepCount() })}
               </small>
             </div>
           </div>
@@ -14705,10 +14712,9 @@ export default function MarketplaceApp({
           {onboardingMode === "setup" &&
             (onboardingPreview ? (
               <div className="setup-notice preview-mode-notice">
-                <strong>Nothing in this preview is saved.</strong>
+                <strong>{t("app.nothingInThisPreviewIsSaved")}</strong>
                 <p>
-                  Use any sample answers you like. You are testing the real
-                  five-step flow, validation, transitions, and listing preview.
+                  {t("app.useAnySampleAnswersYouLikeYou")}
                 </p>
               </div>
             ) : invite && !profile ? (
@@ -14720,20 +14726,18 @@ export default function MarketplaceApp({
               <div className="setup-notice">
                 <strong>
                   {invite.owner_first_name?.trim()
-                    ? `Hi ${invite.owner_first_name.trim()} — we started this for ${invite.business}.`
-                    : `We started this for ${invite.business}.`}
+                    ? t("app.hiOwnerFirstNameWeStartedThis", { owner_first_name: invite.owner_first_name.trim(), business: invite.business })
+                    : t("app.weStartedThisForBusiness", { business: invite.business })}
                 </strong>
                 <p>
-                  Filled in from your own website, so check it and change
-                  anything that is wrong. Nobody can see you until you finish.
+                  {t("app.filledInFromYourOwnWebsiteSo")}
                 </p>
               </div>
             ) : (
               <div className="setup-notice">
-                <strong>Nobody can see you yet.</strong>
+                <strong>{t("app.nobodyCanSeeYouYet")}</strong>
                 <p>
-                  Your profile appears in search once you finish. Each screen
-                  asks for one small part of your listing.
+                  {t("app.yourProfileAppearsInSearchOnceYou")}
                 </p>
               </div>
             ))}
@@ -14772,20 +14776,20 @@ export default function MarketplaceApp({
               >
                 <h3>
                   {onboardingStep === 1
-                    ? "Which of these is you?"
-                    : "Start with the basics."}
+                    ? t("app.whichOfTheseIsYou")
+                    : t("app.startWithTheBasics")}
                 </h3>
                 <p>
                   {onboardingStep === 1
-                    ? "This changes what we ask next. You can add more later."
-                    : "A few details make the rest of your listing feel personal."}
+                    ? t("app.thisChangesWhatWeAskNextYou")
+                    : t("app.aFewDetailsMakeTheRestOf")}
                 </p>
                 {onboardingStep === 1 && (
                 <div
                   className="role-choice-grid"
                   data-field="role"
                   role="group"
-                  aria-label="Choose how you will use SideSpace"
+                  aria-label={t("app.chooseHowYouWillUseSidespace")}
                   tabIndex={-1}
                 >
                   {PICKABLE_ROLES.map((role) => (
@@ -14808,7 +14812,7 @@ export default function MarketplaceApp({
                         // when there is something to lose.
                         if (switching && roleAnswersFilled(answers)) {
                           const ok = window.confirm(
-                            `Switching to ${roleCopy[role].label} clears what you filled in for ${roleCopy[from].label} — the two ask different questions. Your name, city, bio and contact details are kept.`,
+                            t("app.switchingToLabelClearsWhatYouFilled", { label: tx(roleCopy[role].label), label2: tx(roleCopy[from].label) }),
                           );
                           if (!ok) return;
                         }
@@ -14831,9 +14835,9 @@ export default function MarketplaceApp({
                       }}
                     >
                       <span>{roleCopy[role].icon}</span>
-                      <small>{roleCopy[role].eyebrow}</small>
-                      <strong>{roleCopy[role].label}</strong>
-                      <p>{roleCopy[role].short}</p>
+                      <small>{tx(roleCopy[role].eyebrow)}</small>
+                      <strong>{tx(roleCopy[role].label)}</strong>
+                      <p>{tx(roleCopy[role].short)}</p>
                     </button>
                   ))}
                 </div>
@@ -14842,7 +14846,7 @@ export default function MarketplaceApp({
                   {(onboardingMode === "edit" || onboardingStep === 2) && (
                 <div className="field-grid onboarding-identity-fields">
                   <label>
-                    {selectedRole === "business" ? "Business name" : "Your name"}
+                    {selectedRole === "business" ? t("app.businessName") : t("app.yourName")}
                     <input
                       autoFocus={onboardingMode === "setup" && onboardingStep === 2}
                       name="display_name"
@@ -14857,21 +14861,21 @@ export default function MarketplaceApp({
                       }
                       placeholder={
                         selectedRole === "business"
-                          ? "Brea Coffee Bar"
-                          : "Maya Alvarez"
+                          ? t("app.breaCoffeeBar")
+                          : t("app.mayaAlvarez")
                       }
                     />
                   </label>
                   {(onboardingMode === "edit" ||
                     Boolean(answers.display_name.trim())) && (
                   <label className="progressive-field">
-                    <span className="location-field-label">Where are you based?</span>
-                    <small>U.S. city and state. This is how buyers filter.</small>
+                    <span className="location-field-label">{t("app.whereAreYouBased")}</span>
+                    <small>{t("app.uSCityAndStateThisIs")}</small>
                     <div className="location-input-row">
                       <CityAutocomplete
                         value={answers.city}
                         disabled={busy || locationBusy}
-                        placeholder="Brea, CA"
+                        placeholder={t("app.breaCa")}
                         onChange={(city) => {
                           setLocationError("");
                           setAnswers((current) => ({
@@ -14898,7 +14902,7 @@ export default function MarketplaceApp({
                         disabled={busy || locationBusy}
                         onClick={captureCurrentLocation}
                       >
-                        {locationBusy ? "Finding…" : "Use my location"}
+                        {locationBusy ? t("app.finding") : t("app.useMyLocation")}
                       </button>
                     </div>
                     {locationError ? (
@@ -14907,11 +14911,11 @@ export default function MarketplaceApp({
                       </small>
                     ) : answers.location ? (
                       <small className="location-data-status" role="status">
-                        ✓ U.S. city-level location saved. Your exact device location is never published.
+                        {t("app.uSCityLevelLocationSavedYour")}
                       </small>
                     ) : (
                       <small className="location-data-status">
-                        U.S. locations only. Choose a result or use your location to attach an approximate pin.
+                        {t("app.uSLocationsOnlyChooseAResult")}
                       </small>
                     )}
                   </label>
@@ -14920,14 +14924,14 @@ export default function MarketplaceApp({
                     Boolean(answers.city.trim())) && (
                   <label className="field-wide progressive-field">
                     {selectedRole === "business"
-                      ? "One line about your business"
-                      : "One line about you"}
+                      ? t("app.oneLineAboutYourBusiness")
+                      : t("app.oneLineAboutYou")}
                     <small>
                       {selectedRole === "business"
-                        ? "Describe what you do in at least five words. This sits under your name on the brief."
+                        ? t("app.describeWhatYouDoInAtLeast2")
                         : selectedRole === "creator"
-                          ? "Describe what you do in at least five words. It sits under your name on every card."
-                          : "One sentence. It sits under your name on every card."}
+                          ? t("app.describeWhatYouDoInAtLeast")
+                          : t("app.oneSentenceItSitsUnderYourName")}
                       {" "}
                       <span
                         className="field-character-count"
@@ -14938,7 +14942,7 @@ export default function MarketplaceApp({
                             : "false"
                         }
                       >
-                        {getBioRequirementHint(answers.bio, selectedRole)}
+                        {getBioRequirementHint(answers.bio, selectedRole, t)}
                       </span>
                     </small>
                     <input
@@ -14954,8 +14958,8 @@ export default function MarketplaceApp({
                       }
                       placeholder={
                         selectedRole === "business"
-                          ? "Third-wave coffee bar on Birch, open since 2019."
-                          : "Analog fashion and honest city guides for East LA."
+                          ? t("app.thirdWaveCoffeeBarOnBirchOpen")
+                          : t("app.analogFashionAndHonestCityGuidesFor")
                       }
                     />
                   </label>
@@ -14965,7 +14969,7 @@ export default function MarketplaceApp({
                   <>
                   <div className="field-wide media-upload-field progressive-field">
                     <OptionalFieldLabel>
-                      {selectedRole === "business" ? "Add your logo" : "Add a profile photo"}
+                      {selectedRole === "business" ? t("app.addYourLogo") : t("app.addAProfilePhoto")}
                     </OptionalFieldLabel>
                     <ProfilePhotoField
                       currentUrl={profile?.avatar_url}
@@ -14975,9 +14979,9 @@ export default function MarketplaceApp({
                       onCropStateChange={setAvatarCropPending}
                     />
                     <small>
-                      Profiles with a face or a logo get far more replies.
+                      {t("app.profilesWithAFaceOrALogo")}
                       {profile?.avatar_url
-                        ? " Leave empty to keep your current photo."
+                        ? t("app.leaveEmptyToKeepYourCurrentPhoto")
                         : ""}
                     </small>
                   </div>
@@ -14987,8 +14991,8 @@ export default function MarketplaceApp({
                       to the person filling it in. */}
                   {selectedRole === "business" ? (
                     <label className="progressive-field">
-                      <OptionalFieldLabel>Your name</OptionalFieldLabel>
-                      <small>Who a booker is actually writing to.</small>
+                      <OptionalFieldLabel>{t("app.yourName")}</OptionalFieldLabel>
+                      <small>{t("app.whoABookerIsActuallyWritingTo")}</small>
                       {/* Every other example in this flow is invented -
                           "Maya Alvarez", "Brea Coffee Bar". This placeholder
                           was the founder's own name, shown as ghost text in a
@@ -15004,13 +15008,13 @@ export default function MarketplaceApp({
                             contact_name: event.target.value,
                           }))
                         }
-                        placeholder="Dana Okafor"
+                        placeholder={t("app.danaOkafor")}
                       />
                     </label>
                   ) : (
                     <label className="progressive-field">
-                      <OptionalFieldLabel>Email</OptionalFieldLabel>
-                      <small>How people reach you about a booking.</small>
+                      <OptionalFieldLabel>{t("app.email")}</OptionalFieldLabel>
+                      <small>{t("app.howPeopleReachYouAboutABooking")}</small>
                       <input
                         name="contact_email"
                         data-field="contact_email"
@@ -15025,7 +15029,7 @@ export default function MarketplaceApp({
                             contact_email: event.target.value,
                           }))
                         }
-                        placeholder="you@example.com"
+                        placeholder={t("app.youExampleCom")}
                       />
                     </label>
                   )}
@@ -15044,7 +15048,7 @@ export default function MarketplaceApp({
                         type="button"
                         onClick={() => goToOnboardingStep(1)}
                       >
-                        ← Back
+                        {t("app.back")}
                       </button>
                     ) : (
                       <span />
@@ -15057,12 +15061,10 @@ export default function MarketplaceApp({
                           aria-live="polite"
                         >
                           {missingAnswers().length
-                            ? `${missingAnswers().length} required ${
-                                missingAnswers().length === 1
+                            ? t("app.missinganswerscountRequiredValueLeft", { missingAnswersCount: missingAnswers().length, value: missingAnswers().length === 1
                                   ? "detail"
-                                  : "details"
-                              } left`
-                            : "Ready to continue"}
+                                  : "details" })
+                            : t("app.readyToContinue")}
                         </span>
                         <button
                           type="button"
@@ -15071,13 +15073,13 @@ export default function MarketplaceApp({
                         >
                           {onboardingStep === 1
                             ? onboardingMode === "edit"
-                              ? "Next: your details"
-                              : "Continue"
+                              ? t("app.nextYourDetails")
+                              : t("app.continue")
                             : selectedRole === "business"
-                              ? "Continue"
+                              ? t("app.continue")
                               : selectedRole === "creator"
-                                ? "Next: what you have to advertise"
-                                : "Next"}{" "}
+                                ? t("app.nextWhatYouHaveToAdvertise")
+                                : t("app.next")}{" "}
                           <span>→</span>
                         </button>
                       </span>
@@ -15101,8 +15103,8 @@ export default function MarketplaceApp({
               >
                 {onboardingMode === "edit" ? (
                   <>
-                    <h3>Your details</h3>
-                    <p>This is what people see on your profile card.</p>
+                    <h3>{t("app.yourDetails")}</h3>
+                    <p>{t("app.thisIsWhatPeopleSeeOnYour")}</p>
                     {/* Gated. This block asks which platforms you post on and
                         your follower count, and it used to render for EVERY
                         role - so a barbershop or a robotics team opening their
@@ -15118,11 +15120,10 @@ export default function MarketplaceApp({
                     {showAudienceFields && (
                       <>
                         <div className="form-subsection field-wide">
-                          <span>Your audience</span>
-                          <h4>Where can brands find you?</h4>
+                          <span>{t("app.yourAudience")}</span>
+                          <h4>{t("app.whereCanBrandsFindYou")}</h4>
                           <p>
-                            Choose every platform you use, then add the profiles
-                            you want to show.
+                            {t("app.chooseEveryPlatformYouUseThenAdd")}
                           </p>
                         </div>
                         <CreatorAudienceFields
@@ -15139,7 +15140,7 @@ export default function MarketplaceApp({
                     )}
                     <div className="field-grid">
                       <label className="field-wide media-upload-field">
-                        <OptionalFieldLabel>Profile photos</OptionalFieldLabel>
+                        <OptionalFieldLabel>{t("app.profilePhotos")}</OptionalFieldLabel>
                         <input
                           name="gallery_files"
                           type="file"
@@ -15149,16 +15150,16 @@ export default function MarketplaceApp({
                             setGalleryFiles(Array.from(event.target.files ?? []))
                           }
                         />
-                        <small>Up to 6 photos on your profile.</small>
+                        <small>{t("app.upTo6PhotosOnYourProfile")}</small>
                       </label>
                     </div>
                     <div className="form-subsection field-wide">
-                      <span>About you</span>
-                      <h4>What kind of work is this?</h4>
+                      <span>{t("app.aboutYou")}</span>
+                      <h4>{t("app.whatKindOfWorkIsThis")}</h4>
                     </div>
                     <ChipRow
                       field="categories"
-                      label="What kind of work"
+                      label={t("app.whatKindOfWork")}
                       optional
                       multi
                       options={CATEGORY_CHIPS}
@@ -15177,42 +15178,42 @@ export default function MarketplaceApp({
                   <>
                     <h3>
                       {onboardingStep === 5
-                        ? "Review what people will see."
+                        ? t("app.reviewWhatPeopleWillSee")
                         : onboardingStep === 4
                           ? selectedRole === "creator"
                             ? answers.creatorOffer === "physical"
-                              ? "Make the placement bookable."
+                              ? t("app.makeThePlacementBookable")
                               : answers.creatorOffer === "sponsorship"
-                                ? "Build the sponsorship levels."
+                                ? t("app.buildTheSponsorshipLevels")
                                 : answers.creatorOffer === "social"
-                                  ? "Build your first offer."
-                                  : "Choose your way to advertise."
-                            : "Set the practical details."
+                                  ? t("app.buildYourFirstOffer")
+                                  : t("app.chooseYourWayToAdvertise")
+                            : t("app.setThePracticalDetails")
                           : selectedRole === "creator"
                             ? answers.creatorOffer === "physical"
-                              ? "Show us the placement."
+                              ? t("app.showUsThePlacement")
                               : answers.creatorOffer === "sponsorship"
-                                ? "Tell us about the organization."
+                                ? t("app.tellUsAboutTheOrganization")
                                 : answers.creatorOffer === "social"
-                                  ? "Tell us about your audience."
-                                  : "Choose your way to advertise."
+                                  ? t("app.tellUsAboutYourAudience")
+                                  : t("app.chooseYourWayToAdvertise")
                             : selectedRole === "business" &&
                                 answers.businessSetupPath !== "campaign"
-                              ? "How do you want to start?"
-                              : "Shape the campaign."}
+                              ? t("app.howDoYouWantToStart")
+                              : t("app.shapeTheCampaign")}
                     </h3>
                     <p>
                       {onboardingStep === 5
-                        ? "Make any final edits, then publish when it feels right."
+                        ? t("app.makeAnyFinalEditsThenPublishWhen")
                         : onboardingStep === 4
-                          ? "Clear expectations make the first conversation much easier."
+                          ? t("app.clearExpectationsMakeTheFirstConversationMuch")
                           : selectedRole === "business"
                             ? answers.businessSetupPath === "campaign"
-                              ? "A focused brief gets better replies from creators and local spaces."
-                              : "Post a campaign now, or browse listings and come back later."
+                              ? t("app.aFocusedBriefGetsBetterRepliesFrom")
+                              : t("app.postACampaignNowOrBrowseListings")
                             : answers.creatorOffer
-                              ? "A few specific answers make your listing easier to trust."
-                              : "Start by choosing the kind of advertising you have."}
+                              ? t("app.aFewSpecificAnswersMakeYourListing")
+                              : t("app.startByChoosingTheKindOfAdvertising")}
                     </p>
                     {selectedRole === "creator" && onboardingStep > 3 && (
                       <CreatorOfferSwitcher
@@ -15234,18 +15235,17 @@ export default function MarketplaceApp({
                         {onboardingStep === 3 && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>Your way to advertise</span>
-                          <h4>What do you have to offer?</h4>
+                          <span>{t("app.yourWayToAdvertise")}</span>
+                          <h4>{t("app.whatDoYouHaveToOffer")}</h4>
                           <p>
-                            Select every kind of reach you want to put to work.
-                            We’ll create one listing for each.
+                            {t("app.selectEveryKindOfReachYouWant")}
                           </p>
                         </div>
                         <div
                           className="scope-grid creator-offer-grid"
                           data-field="creatorOffer"
                           role="group"
-                          aria-label="What kind of advertising you offer"
+                          aria-label={t("app.whatKindOfAdvertisingYouOffer")}
                         >
                           {CREATOR_OFFER_TYPES.map((option) => (
                             <button
@@ -15261,12 +15261,12 @@ export default function MarketplaceApp({
                               }
                               onClick={() => toggleCreatorOffer(option.value)}
                             >
-                              <strong>{option.label}</strong>
-                              <small>{option.help}</small>
+                              <strong>{tx(option.label)}</strong>
+                              <small>{tx(option.help)}</small>
                               <span className="offer-card-state">
                                 {answers.creatorOffers.includes(option.value)
-                                  ? "✓ Selected"
-                                  : "Select"}
+                                  ? t("app.selected")
+                                  : t("app.select")}
                               </span>
                             </button>
                           ))}
@@ -15280,11 +15280,10 @@ export default function MarketplaceApp({
                         {answers.creatorOffer === "social" && (
                           <>
                           <div className="form-subsection field-wide">
-                            <span>Your audience</span>
-                            <h4>Where can brands find you?</h4>
+                            <span>{t("app.yourAudience")}</span>
+                            <h4>{t("app.whereCanBrandsFindYou")}</h4>
                             <p>
-                              Choose every platform you use, then add the profiles
-                              you want to show.
+                              {t("app.chooseEveryPlatformYouUseThenAdd")}
                             </p>
                           </div>
                           <CreatorAudienceFields
@@ -15306,7 +15305,7 @@ export default function MarketplaceApp({
                         {onboardingStep === 4 && answers.creatorOffer === "social" && (
                         <>
                         <div className="form-subsection field-wide">
-                          <h4>What does a brand actually get?</h4>
+                          <h4>{t("app.whatDoesABrandActuallyGet")}</h4>
                         </div>
                         {/* Only when there are any: an empty flex row still
                             takes its margin, leaving a gap under the header
@@ -15316,7 +15315,7 @@ export default function MarketplaceApp({
                         ) && (
                           <>
                             <span className="offer-examples-label field-wide">
-                              Or start from one of these:
+                              {t("app.orStartFromOneOfThese")}
                             </span>
                             <div className="offer-examples">
                               {answers.platforms
@@ -15341,7 +15340,7 @@ export default function MarketplaceApp({
                         )}
                         <div className="field-grid">
                           <label className="field-wide">
-                            What they get
+                            {t("app.whatTheyGet")}
                             {/* 140 to match the listing editor. At 60 a creator
                                 who wanted "one in-feed post plus three stories
                                 over 48 hours, with a link in bio" found the
@@ -15357,32 +15356,32 @@ export default function MarketplaceApp({
                                   format: event.target.value,
                                 }))
                               }
-                              placeholder="three Instagram stories over 48 hours"
+                              placeholder={t("app.threeInstagramStoriesOver48Hours")}
                             />
                           </label>
                           {answers.format.trim() && (
                             <p className="offer-preview field-wide">
-                              Your card will read:{" "}
-                              <strong>You get {formatOffer(answers.format)}</strong>
+                              {t("app.yourCardWillRead")}{" "}
+                              <strong>{t("app.youGetFormat", { format: formatOffer(answers.format) })}</strong>
                             </p>
                           )}
                         </div>
                         <details className="onboarding-optional-disclosure field-wide">
                           <summary>
                             <span>
-                              What kind of work{" "}
-                              <span className="optional">optional</span>
+                              {t("app.whatKindOfWork")}{" "}
+                              <span className="optional">{t("app.optional2")}</span>
                             </span>
                             <small>
                               {answers.categories.length
-                                ? `${answers.categories.length} selected`
-                                : "Add categories"}
+                                ? t("app.categoriescountSelected", { categoriesCount: answers.categories.length })
+                                : t("app.addCategories")}
                             </small>
                           </summary>
                           <div className="onboarding-optional-disclosure-body">
                             <ChipRow
                               field="categories"
-                              label="What kind of work"
+                              label={t("app.whatKindOfWork")}
                               multi
                               hideLabel
                               options={CATEGORY_CHIPS}
@@ -15401,7 +15400,7 @@ export default function MarketplaceApp({
                         <div className="field-grid">
                           <label className="field-wide media-upload-field">
                             <OptionalFieldLabel>
-                              Photos of your work
+                              {t("app.photosOfYourWork")}
                             </OptionalFieldLabel>
                             <input
                               type="file"
@@ -15414,8 +15413,7 @@ export default function MarketplaceApp({
                               }
                             />
                             <small>
-                              Add 1–3 photos. Without one, your card uses your
-                              profile photo.
+                              {t("app.add13PhotosWithoutOneYour")}
                             </small>
                           </label>
                         </div>
@@ -15430,12 +15428,12 @@ export default function MarketplaceApp({
                         {onboardingStep === 3 && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>The space</span>
-                          <h4>What kind of space is it?</h4>
+                          <span>{t("app.theSpace")}</span>
+                          <h4>{t("app.whatKindOfSpaceIsIt")}</h4>
                         </div>
                         <ChipRow
                           field="spaceKind"
-                          label="Kind of space"
+                          label={t("app.kindOfSpace")}
                           options={SPACE_KIND_CHIPS.map((item) => item.label)}
                           selected={answers.spaceKind ? [answers.spaceKind] : []}
                           onPick={(value) =>
@@ -15447,7 +15445,7 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label className="field-wide">
-                            <OptionalFieldLabel>Exact address</OptionalFieldLabel>
+                            <OptionalFieldLabel>{t("app.exactAddress")}</OptionalFieldLabel>
                             {/* This used to end "listings are fetched whole,
                                 so do not put anything here you would not make
                                 public" - true when written, and false since
@@ -15461,10 +15459,7 @@ export default function MarketplaceApp({
                                 keeps a table-wide grant, and that is the line
                                 the copy now draws. */}
                             <small>
-                              Used for the map link below, so you can check you
-                              picked the right spot. It is never shown on your
-                              card and visitors to the site cannot read it —
-                              though anyone signed in to SideSpace could.
+                              {t("app.usedForTheMapLinkBelowSo")}
                             </small>
                             <input
                               data-field="streetAddress"
@@ -15476,7 +15471,7 @@ export default function MarketplaceApp({
                                   streetAddress: event.target.value,
                                 }))
                               }
-                              placeholder="1398 Solano Ave, Albany, CA 94706"
+                              placeholder={t("app.n1398SolanoAveAlbanyCa94706")}
                             />
                             {answers.streetAddress.trim().length > 6 && (
                               /* A plain Maps link, not an embed: the Maps
@@ -15491,17 +15486,16 @@ export default function MarketplaceApp({
                                 target="_blank"
                                 rel="noreferrer noopener"
                               >
-                                See this spot on Google Maps ↗
+                                {t("app.seeThisSpotOnGoogleMaps")}
                               </a>
                             )}
                           </label>
                           <label>
                             <OptionalFieldLabel>
-                              What buyers see on the card
+                              {t("app.whatBuyersSeeOnTheCard")}
                             </OptionalFieldLabel>
                             <small>
-                              A street or neighborhood. Shown publicly instead of
-                              the full address.
+                              {t("app.aStreetOrNeighborhoodShownPubliclyInstead")}
                             </small>
                             <input
                               data-field="location_area"
@@ -15512,17 +15506,16 @@ export default function MarketplaceApp({
                                   location_area: event.target.value,
                                 }))
                               }
-                              placeholder={answers.city || "Downtown Brea"}
+                              placeholder={answers.city || t("app.downtownBrea")}
                             />
                           </label>
                           {/* The description helper has always told owners to
                               "add the size" by hand. This is the form finally
                               asking, so the draft can say it for them. */}
                           <label>
-                            How big is it?
+                            {t("app.howBigIsIt")}
                             <small>
-                              Roughly. Width by height is enough — it is the
-                              first thing a buyer asks.
+                              {t("app.roughlyWidthByHeightIsEnoughIt")}
                             </small>
                             <input
                               data-field="spaceSize"
@@ -15534,12 +15527,12 @@ export default function MarketplaceApp({
                                   spaceSize: event.target.value,
                                 }))
                               }
-                              placeholder="6 ft × 3 ft"
+                              placeholder={t("app.n6Ft3Ft")}
                             />
                           </label>
                           <label className="field-wide media-upload-field">
                             <OptionalFieldLabel>
-                              Photos of the space
+                              {t("app.photosOfTheSpace")}
                             </OptionalFieldLabel>
                             <input
                               type="file"
@@ -15552,8 +15545,7 @@ export default function MarketplaceApp({
                               }
                             />
                             <small>
-                              One good photo roughly doubles your requests. Take one
-                              now if it’s in front of you.
+                              {t("app.oneGoodPhotoRoughlyDoublesYourRequests")}
                             </small>
                           </label>
                         </div>
@@ -15564,17 +15556,15 @@ export default function MarketplaceApp({
                         {onboardingStep === 4 && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>What can go up</span>
-                          <h4>What works here, and who puts it up?</h4>
+                          <span>{t("app.whatCanGoUp")}</span>
+                          <h4>{t("app.whatWorksHereAndWhoPutsIt")}</h4>
                           <p>
-                            The first thing a buyer asks before they book. Pick
-                            everything you would actually allow — and nothing you
-                            would not.
+                            {t("app.theFirstThingABuyerAsksBefore")}
                           </p>
                         </div>
                         <ChipRow
                           field="surfaces"
-                          label="Everything you’d allow"
+                          label={t("app.everythingYoudAllow")}
                           multi
                           options={SURFACE_CHIPS}
                           selected={answers.surfaces}
@@ -15601,9 +15591,9 @@ export default function MarketplaceApp({
                         {answers.surfaces.includes(SURFACE_OTHER) && (
                           <div className="field-grid">
                             <label className="field-wide">
-                              What else can go up?
+                              {t("app.whatElseCanGoUp")}
                               <small>
-                                A few words. It joins the list a buyer reads.
+                                {t("app.aFewWordsItJoinsTheList")}
                               </small>
                               <input
                                 data-field="surfaceOther"
@@ -15615,14 +15605,14 @@ export default function MarketplaceApp({
                                     surfaceOther: event.target.value,
                                   }))
                                 }
-                                placeholder="a shelf for product samples"
+                                placeholder={t("app.aShelfForProductSamples")}
                               />
                             </label>
                           </div>
                         )}
                         <ChipRow
                           field="installBy"
-                          label="Who puts it up"
+                          label={t("app.whoPutsItUp")}
                           options={INSTALL_CHIPS.map((item) => item.label)}
                           selected={
                             INSTALL_CHIPS.filter(
@@ -15642,12 +15632,12 @@ export default function MarketplaceApp({
                         />
 
                         <div className="form-subsection field-wide">
-                          <span>How busy is it?</span>
-                          <h4>People who walk past on a normal day.</h4>
+                          <span>{t("app.howBusyIsIt")}</span>
+                          <h4>{t("app.peopleWhoWalkPastOnANormal")}</h4>
                         </div>
                         <ChipRow
                           field="traffic"
-                          label="Foot traffic"
+                          label={t("app.footTraffic")}
                           options={TRAFFIC_CHIPS.map((item) => item.label)}
                           selected={answers.traffic ? [answers.traffic] : []}
                           onPick={(value) => {
@@ -15668,10 +15658,9 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label>
-                            People a day
+                            {t("app.peopleADay")}
                             <small>
-                              Pick a chip to fill this in, or type your own
-                              count. This is what shows on your card.
+                              {t("app.pickAChipToFillThisIn")}
                             </small>
                             <input
                               type="number"
@@ -15693,12 +15682,12 @@ export default function MarketplaceApp({
                         </div>
 
                         <div className="form-subsection field-wide">
-                          <span>Availability</span>
-                          <h4>When is it free?</h4>
+                          <span>{t("app.availability")}</span>
+                          <h4>{t("app.whenIsItFree")}</h4>
                         </div>
                         <ChipRow
                           field="availability"
-                          label="Availability"
+                          label={t("app.availability")}
                           options={AVAILABILITY_CHIPS.map((item) => item.label)}
                           selected={
                             answers.availability ? [answers.availability] : []
@@ -15716,7 +15705,7 @@ export default function MarketplaceApp({
                           );
                           return free ? (
                             <p className="chip-note field-wide">
-                              {windowNote(free.startDays, free.days)}
+                              {windowNote(free.startDays, free.days, t, locale)}
                             </p>
                           ) : null;
                         })()}
@@ -15739,7 +15728,7 @@ export default function MarketplaceApp({
                             className="button button-dark"
                             onClick={startBusinessCampaign}
                           >
-                            Start a campaign <span>→</span>
+                            {t("app.startACampaign")}{" "}<span>→</span>
                           </button>
                           <button
                             type="button"
@@ -15747,7 +15736,7 @@ export default function MarketplaceApp({
                             disabled={busy}
                             onClick={browseBusinessListings}
                           >
-                            {busy ? "Opening…" : "Browse available listings"}{" "}
+                            {busy ? t("app.opening") : t("app.browseAvailableListings")}{" "}
                             <span>→</span>
                           </button>
                         </div>
@@ -15756,18 +15745,17 @@ export default function MarketplaceApp({
                           answers.businessSetupPath === "campaign" && (
                         <div className="progressive-field field-wide">
                         <div className="form-subsection field-wide">
-                          <span>What you’re promoting</span>
-                          <h4>What are you actually running this for?</h4>
+                          <span>{t("app.whatYourePromoting")}</span>
+                          <h4>{t("app.whatAreYouActuallyRunningThisFor")}</h4>
                           <p>
-                            The specific thing — a product, an opening, a class,
-                            an event. This becomes the headline of your brief.
+                            {t("app.theSpecificThingAProductAnOpening")}
                           </p>
                         </div>
                         <div className="field-grid">
                           <label className="field-wide">
-                            In a few words
+                            {t("app.inAFewWords")}
                             <small>
-                              Finish the sentence: “We’re promoting…”
+                              {t("app.finishTheSentenceWerePromoting")}
                             </small>
                             <input
                               data-field="promoting"
@@ -15779,13 +15767,13 @@ export default function MarketplaceApp({
                                   promoting: event.target.value,
                                 }))
                               }
-                              placeholder="our new cold brew"
+                              placeholder={t("app.ourNewColdBrew")}
                             />
                           </label>
                         </div>
                         <ChipRow
                           field="categories"
-                          label="What kind of business you are"
+                          label={t("app.whatKindOfBusinessYouAre")}
                           optional
                           multi
                           options={CATEGORY_CHIPS}
@@ -15801,12 +15789,12 @@ export default function MarketplaceApp({
                         />
 
                         <div className="form-subsection field-wide">
-                          <span>The goal</span>
-                          <h4>What should this campaign do?</h4>
+                          <span>{t("app.theGoal")}</span>
+                          <h4>{t("app.whatShouldThisCampaignDo")}</h4>
                         </div>
                         <ChipRow
                           field="goals"
-                          label="What it should do"
+                          label={t("app.whatItShouldDo")}
                           multi
                           options={BUSINESS_GOAL_CHIPS.map((item) => item.label)}
                           selected={answers.goals}
@@ -15823,14 +15811,14 @@ export default function MarketplaceApp({
                             Physical and no platform is ever mentioned; pick
                             Virtual and nobody is asked what block they want. */}
                         <div className="form-subsection field-wide">
-                          <span>What are you after?</span>
-                          <h4>Physical space, social, or both?</h4>
+                          <span>{t("app.whatAreYouAfter")}</span>
+                          <h4>{t("app.physicalSpaceSocialOrBoth")}</h4>
                         </div>
                         <div
                           className="scope-grid"
                           data-field="briefScope"
                           role="group"
-                          aria-label="What kind of space you want"
+                          aria-label={t("app.whatKindOfSpaceYouWant")}
                         >
                           {BRIEF_SCOPE_CHIPS.map((chip) => (
                             <button
@@ -15847,8 +15835,8 @@ export default function MarketplaceApp({
                                 }))
                               }
                             >
-                              <strong>{chip.label}</strong>
-                              <small>{chip.help}</small>
+                              <strong>{tx(chip.label)}</strong>
+                              <small>{tx(chip.help)}</small>
                             </button>
                           ))}
                         </div>
@@ -15857,12 +15845,12 @@ export default function MarketplaceApp({
                           answers.briefScope !== "virtual" && (
                             <>
                               <div className="form-subsection field-wide">
-                                <span>The space</span>
-                                <h4>What kind, and where?</h4>
+                                <span>{t("app.theSpace")}</span>
+                                <h4>{t("app.whatKindAndWhere")}</h4>
                               </div>
                               <ChipRow
                                 field="placements"
-                                label="Kinds of space"
+                                label={t("app.kindsOfSpace")}
                                 multi
                                 options={BRIEF_PHYSICAL_CHIPS}
                                 selected={answers.placements}
@@ -15880,11 +15868,10 @@ export default function MarketplaceApp({
                               <div className="field-grid">
                                 <label className="field-wide">
                                   <OptionalFieldLabel>
-                                    Where do you want it?
+                                    {t("app.whereDoYouWantIt")}
                                   </OptionalFieldLabel>
                                   <small>
-                                    The neighborhood or street you want to be
-                                    seen on — not necessarily where you are.
+                                    {t("app.theNeighborhoodOrStreetYouWantTo")}
                                   </small>
                                   <input
                                     data-field="wantedArea"
@@ -15898,8 +15885,8 @@ export default function MarketplaceApp({
                                     }
                                     placeholder={
                                       answers.city
-                                        ? `Downtown ${answers.city.split(",")[0]}`
-                                        : "Downtown Brea"
+                                        ? t("app.downtownSplit", { split: answers.city.split(",")[0] })
+                                        : t("app.downtownBrea")
                                     }
                                   />
                                 </label>
@@ -15911,12 +15898,12 @@ export default function MarketplaceApp({
                           answers.briefScope !== "physical" && (
                             <>
                               <div className="form-subsection field-wide">
-                                <span>The audience</span>
-                                <h4>Which platforms should it run on?</h4>
+                                <span>{t("app.theAudience")}</span>
+                                <h4>{t("app.whichPlatformsShouldItRunOn")}</h4>
                               </div>
                               <ChipRow
                                 field="targetPlatforms"
-                                label="Platforms to target"
+                                label={t("app.platformsToTarget")}
                                 multi
                                 options={BRIEF_PLATFORM_CHIPS}
                                 selected={answers.targetPlatforms}
@@ -15935,7 +15922,7 @@ export default function MarketplaceApp({
                               <div className="field-grid">
                                 <label className="field-wide">
                                   <OptionalFieldLabel>
-                                    Anything a creator must include?
+                                    {t("app.anythingACreatorMustInclude")}
                                   </OptionalFieldLabel>
                                   <input
                                     data-field="deliverables"
@@ -15947,14 +15934,14 @@ export default function MarketplaceApp({
                                         deliverables: event.target.value,
                                       }))
                                     }
-                                    placeholder="Tag @us, link in bio for 48h"
+                                    placeholder={t("app.tagUsLinkInBioFor48h")}
                                   />
                                   {/* Below the box now, not above it: these
                                       fill the field, and every other example
                                       row in the product sits under the thing
                                       it fills. */}
                                   <span className="offer-examples-label">
-                                    Or tap to add one:
+                                    {t("app.orTapToAddOne")}
                                   </span>
                                   <span className="offer-examples">
                                     {DELIVERABLE_EXAMPLES.map((example) => {
@@ -16008,12 +15995,12 @@ export default function MarketplaceApp({
                             creator or space owner can see exactly what they'd
                             be posting before they answer. */}
                         <div className="form-subsection field-wide">
-                          <span>Your artwork</span>
-                          <h4>What do you need posted?</h4>
+                          <span>{t("app.yourArtwork")}</span>
+                          <h4>{t("app.whatDoYouNeedPosted")}</h4>
                         </div>
                         <div className="field-grid">
                           <label className="field-wide media-upload-field">
-                            <OptionalFieldLabel>Flyer, story, or clip</OptionalFieldLabel>
+                            <OptionalFieldLabel>{t("app.flyerStoryOrClip")}</OptionalFieldLabel>
                             <input
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
@@ -16025,15 +16012,13 @@ export default function MarketplaceApp({
                               }
                             />
                             <small>
-                              Upload the graphic you want in the window or on
-                              the feed. Skip it and pick “I need help making it”
-                              below.
+                              {t("app.uploadTheGraphicYouWantInThe")}
                             </small>
                           </label>
                         </div>
                         <ChipRow
                           field="artwork"
-                          label="Who makes the artwork"
+                          label={t("app.whoMakesTheArtwork")}
                           optional
                           options={[
                             "I’ll supply the artwork",
@@ -16065,12 +16050,12 @@ export default function MarketplaceApp({
                         />
 
                         <div className="form-subsection field-wide">
-                          <span>Budget and timing</span>
-                          <h4>What can you spend, and when?</h4>
+                          <span>{t("app.budgetAndTiming")}</span>
+                          <h4>{t("app.whatCanYouSpendAndWhen")}</h4>
                         </div>
                         <ChipRow
                           field="budgetRange"
-                          label="Budget range"
+                          label={t("app.budgetRange")}
                           options={BUDGET_RANGE_CHIPS.map((item) => item.label)}
                           selected={BUDGET_RANGE_CHIPS.filter(
                             (item) =>
@@ -16091,7 +16076,7 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label>
-                            Budget from
+                            {t("app.budgetFrom")}
                             <input
                               type="number"
                               min={1}
@@ -16110,8 +16095,8 @@ export default function MarketplaceApp({
                             />
                           </label>
                           <label>
-                            <OptionalFieldLabel>up to</OptionalFieldLabel>
-                            <small>Leave blank for a flat budget.</small>
+                            <OptionalFieldLabel>{t("app.upTo")}</OptionalFieldLabel>
+                            <small>{t("app.leaveBlankForAFlatBudget")}</small>
                             <input
                               type="number"
                               min={1}
@@ -16132,7 +16117,7 @@ export default function MarketplaceApp({
                         </div>
                         <ChipRow
                           field="timing"
-                          label="When it should run"
+                          label={t("app.whenItShouldRun")}
                           options={BUSINESS_TIMING_CHIPS.map((item) => item.label)}
                           selected={answers.timing ? [answers.timing] : []}
                           onPick={(value) =>
@@ -16145,7 +16130,7 @@ export default function MarketplaceApp({
                           );
                           return timing ? (
                             <p className="chip-note field-wide">
-                              {windowNote(0, timing.days)}
+                              {windowNote(0, timing.days, t, locale)}
                             </p>
                           ) : null;
                         })()}
@@ -16160,12 +16145,12 @@ export default function MarketplaceApp({
                         {onboardingStep === 3 && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>Your organization</span>
-                          <h4>What are you?</h4>
+                          <span>{t("app.yourOrganization")}</span>
+                          <h4>{t("app.whatAreYou")}</h4>
                         </div>
                         <ChipRow
                           field="orgKind"
-                          label="What kind of organization"
+                          label={t("app.whatKindOfOrganization")}
                           options={SPONSOR_ORG_CHIPS}
                           selected={answers.orgKind ? [answers.orgKind] : []}
                           onPick={(value) =>
@@ -16183,10 +16168,9 @@ export default function MarketplaceApp({
                         {answers.orgKind === SPONSOR_ORG_OTHER && (
                           <div className="field-grid">
                             <label className="field-wide">
-                              So what are you?
+                              {t("app.soWhatAreYou")}
                               <small>
-                                A couple of words. It opens your description and
-                                it is what people searching will find you by.
+                                {t("app.aCoupleOfWordsItOpensYour")}
                               </small>
                               <input
                                 data-field="orgOther"
@@ -16198,25 +16182,23 @@ export default function MarketplaceApp({
                                     orgOther: event.target.value,
                                   }))
                                 }
-                                placeholder="Scout troop"
+                                placeholder={t("app.scoutTroop")}
                               />
                             </label>
                           </div>
                         )}
                         <div className="form-subsection field-wide">
-                          <span>What it’s for</span>
-                          <h4>What are you raising money for?</h4>
+                          <span>{t("app.whatItsFor")}</span>
+                          <h4>{t("app.whatAreYouRaisingMoneyFor")}</h4>
                           <p>
-                            The championship trip, new kit, competition fees. It
-                            is the line a sponsor actually decides on, and it
-                            becomes the headline of every tier.
+                            {t("app.theChampionshipTripNewKitCompetitionFees")}
                           </p>
                         </div>
                         <div className="field-grid">
                           <label className="field-wide">
-                            In a few words
+                            {t("app.inAFewWords")}
                             <small>
-                              Finish the sentence: “We’re raising for…”
+                              {t("app.finishTheSentenceWereRaisingFor")}
                             </small>
                             <input
                               data-field="funding"
@@ -16228,18 +16210,18 @@ export default function MarketplaceApp({
                                   funding: event.target.value,
                                 }))
                               }
-                              placeholder="the championship trip"
+                              placeholder={t("app.theChampionshipTrip")}
                             />
                           </label>
                         </div>
 
                         <div className="form-subsection field-wide">
-                          <span>Your reach</span>
-                          <h4>How many people will see it?</h4>
+                          <span>{t("app.yourReach")}</span>
+                          <h4>{t("app.howManyPeopleWillSeeIt")}</h4>
                         </div>
                         <ChipRow
                           field="reach"
-                          label="Roughly how many"
+                          label={t("app.roughlyHowMany")}
                           options={SPONSOR_REACH_CHIPS.map((item) => item.label)}
                           selected={answers.reach ? [answers.reach] : []}
                           onPick={(value) => {
@@ -16258,10 +16240,9 @@ export default function MarketplaceApp({
                         />
                         <div className="field-grid">
                           <label>
-                            How many people
+                            {t("app.howManyPeople")}
                             <small>
-                              Pick a chip to fill this in, or type your own
-                              number. This is what shows on your card.
+                              {t("app.pickAChipToFillThisIn2")}
                             </small>
                             <input
                               type="number"
@@ -16286,12 +16267,12 @@ export default function MarketplaceApp({
                             people will see it?", so "One event" read as an
                             answer about headcount. */}
                         <div className="form-subsection field-wide">
-                          <span>When it runs</span>
-                          <h4>How long does a sponsorship last?</h4>
+                          <span>{t("app.whenItRuns")}</span>
+                          <h4>{t("app.howLongDoesASponsorshipLast")}</h4>
                         </div>
                         <ChipRow
                           field="season"
-                          label="When it runs"
+                          label={t("app.whenItRuns")}
                           options={SPONSOR_SEASON_CHIPS.map((item) => item.label)}
                           selected={answers.season ? [answers.season] : []}
                           onPick={(value) =>
@@ -16304,7 +16285,7 @@ export default function MarketplaceApp({
                           );
                           return season ? (
                             <p className="chip-note field-wide">
-                              {windowNote(0, season.days)}
+                              {windowNote(0, season.days, t, locale)}
                             </p>
                           ) : null;
                         })()}
@@ -16315,16 +16296,15 @@ export default function MarketplaceApp({
                         {onboardingStep === 4 && (
                         <>
                         <div className="form-subsection field-wide">
-                          <span>The menu</span>
-                          <h4>What could a sponsor get?</h4>
+                          <span>{t("app.theMenu")}</span>
+                          <h4>{t("app.whatCouldASponsorGet")}</h4>
                           <p>
-                            Everything you would ever offer, at any level. You
-                            split it into tiers next.
+                            {t("app.everythingYouWouldEverOfferAtAny")}
                           </p>
                         </div>
                         <ChipRow
                           field="benefits"
-                          label="Everything you could offer"
+                          label={t("app.everythingYouCouldOffer")}
                           multi
                           options={SPONSOR_BENEFIT_CHIPS}
                           selected={answers.benefits}
@@ -16351,24 +16331,20 @@ export default function MarketplaceApp({
 
                         {/* ---- the tiers, one card each on the marketplace ---- */}
                         <div className="form-subsection field-wide">
-                          <span>Your tiers</span>
-                          <h4>Break it into levels, or keep one.</h4>
+                          <span>{t("app.yourTiers")}</span>
+                          <h4>{t("app.breakItIntoLevelsOrKeepOne")}</h4>
                           <p>
-                            Each tier publishes its own card, so a business can
-                            find you by what it can afford instead of one price
-                            that fits nobody.
+                            {t("app.eachTierPublishesItsOwnCardSo")}
                           </p>
                         </div>
                         {answers.tiers.map((tier, index) => (
                           <div className="tier-card field-wide" key={index}>
                             <div className="tier-card-head">
-                              <span>Tier {index + 1}</span>
+                              <span>{t("app.tier")}{" "}{index + 1}</span>
                               {answers.tiers.length > 1 && (
                                 <button
                                   type="button"
-                                  aria-label={`Remove tier ${index + 1}${
-                                    tier.name.trim() ? `, ${tier.name.trim()}` : ""
-                                  }`}
+                                  aria-label={t("app.removeTierValueValue2", { value: index + 1, value2: tier.name.trim() ? `, ${tier.name.trim()}` : "" })}
                                   onClick={() => {
                                     // Only ask when there is something to lose.
                                     // A freshly added, still-empty tier should
@@ -16381,9 +16357,7 @@ export default function MarketplaceApp({
                                     if (
                                       filled &&
                                       !window.confirm(
-                                        `Remove ${
-                                          tier.name.trim() || `tier ${index + 1}`
-                                        }? What you filled in for this level is lost.`,
+                                        t("app.removeValueWhatYouFilledInFor", { value: tier.name.trim() || `tier ${index + 1}` }),
                                       )
                                     ) {
                                       return;
@@ -16396,13 +16370,13 @@ export default function MarketplaceApp({
                                     }));
                                   }}
                                 >
-                                  Remove
+                                  {t("app.remove")}
                                 </button>
                               )}
                             </div>
                             <div className="field-grid">
                               <label>
-                                Name this level
+                                {t("app.nameThisLevel")}
                                 <input
                                   data-field={`tierName${index}`}
                                   maxLength={40}
@@ -16410,12 +16384,12 @@ export default function MarketplaceApp({
                                   onChange={(event) =>
                                     updateTier(index, { name: event.target.value })
                                   }
-                                  placeholder="Gold"
+                                  placeholder={t("app.gold")}
                                 />
                               </label>
                               <label>
-                                <OptionalFieldLabel>Spots at this level</OptionalFieldLabel>
-                                <small>Leave blank if you don’t need a cap.</small>
+                                <OptionalFieldLabel>{t("app.spotsAtThisLevel")}</OptionalFieldLabel>
+                                <small>{t("app.leaveBlankIfYouDontNeedA")}</small>
                                 <input
                                   type="number"
                                   min={1}
@@ -16433,7 +16407,7 @@ export default function MarketplaceApp({
                                 />
                               </label>
                               <label>
-                                What one sponsor pays
+                                {t("app.whatOneSponsorPays")}
                                 <input
                                   type="number"
                                   min={1}
@@ -16456,7 +16430,7 @@ export default function MarketplaceApp({
                                     the hardest number in the flow was the only
                                     one offered no help. */}
                                 <span className="offer-examples-label">
-                                  Or tap a common one:
+                                  {t("app.orTapACommonOne")}
                                 </span>
                                 <span className="offer-examples">
                                   {(PRICE_CHIPS.sponsor_host ?? []).map(
@@ -16478,8 +16452,8 @@ export default function MarketplaceApp({
                                 </span>
                               </label>
                               <label>
-                                <OptionalFieldLabel>up to</OptionalFieldLabel>
-                                <small>Leave blank for a flat tier.</small>
+                                <OptionalFieldLabel>{t("app.upTo")}</OptionalFieldLabel>
+                                <small>{t("app.leaveBlankForAFlatTier")}</small>
                                 <input
                                   type="number"
                                   min={1}
@@ -16500,7 +16474,7 @@ export default function MarketplaceApp({
                             {answers.benefits.length ? (
                               <ChipRow
                                 field={`tierBenefits${index}`}
-                                label={`What ${tier.name || "this level"} includes`}
+                                label={t("app.whatValueIncludes", { value: tier.name || "this level" })}
                                 multi
                                 options={answers.benefits}
                                 selected={tier.benefits}
@@ -16516,8 +16490,7 @@ export default function MarketplaceApp({
                               />
                             ) : (
                               <p className="tier-empty">
-                                Pick what a sponsor could get above, then split
-                                it across your levels here.
+                                {t("app.pickWhatASponsorCouldGetAbove")}
                               </p>
                             )}
                           </div>
@@ -16526,9 +16499,7 @@ export default function MarketplaceApp({
                           // The button used to vanish here, so a host who
                           // wanted a fifth level just found the control gone.
                           <p className="chip-note field-wide">
-                            {MAX_TIERS} levels is the most a listing set can
-                            carry — past that a business is reading a price
-                            list rather than browsing.
+                            {t("app.maxTiersLevelsIsTheMostA", { MAX_TIERS })}
                           </p>
                         )}
                         {answers.tiers.length < MAX_TIERS && (
@@ -16569,12 +16540,12 @@ export default function MarketplaceApp({
                               })
                             }
                           >
-                            + Add another tier
+                            {t("app.addAnotherTier")}
                           </button>
                         )}
                         <div className="field-grid">
                           <label className="field-wide media-upload-field">
-                            <OptionalFieldLabel>Photos</OptionalFieldLabel>
+                            <OptionalFieldLabel>{t("app.photos")}</OptionalFieldLabel>
                             <input
                               type="file"
                               accept="image/jpeg,image/png,image/webp"
@@ -16586,7 +16557,7 @@ export default function MarketplaceApp({
                               }
                             />
                             <small>
-                              A photo of the team, the robot, or last year’s event.
+                              {t("app.aPhotoOfTheTeamTheRobot")}
                             </small>
                           </label>
                         </div>
@@ -16601,21 +16572,21 @@ export default function MarketplaceApp({
                     <div className="form-subsection field-wide">
                       <span>
                         {selectedRole === "business"
-                          ? "Your brief"
+                          ? t("app.yourBrief")
                           : answers.creatorOffer === "physical"
-                            ? "Your placement"
+                            ? t("app.yourPlacement")
                             : answers.creatorOffer === "sponsorship"
-                              ? "Your sponsorship"
-                              : "Your offer"}
+                              ? t("app.yourSponsorship")
+                              : t("app.yourOffer")}
                       </span>
                       <h4>
                         {selectedRole === "business"
-                          ? "Name the brief and set the budget."
+                          ? t("app.nameTheBriefAndSetTheBudget")
                           : answers.creatorOffer === "physical"
-                            ? "Name the placement and set the rent."
+                            ? t("app.nameThePlacementAndSetTheRent")
                             : answers.creatorOffer === "sponsorship"
-                              ? "Tell them who they’d be backing."
-                              : "Name the offer and set your rate."}
+                              ? t("app.tellThemWhoTheydBeBacking")
+                              : t("app.nameTheOfferAndSetYourRate")}
                       </h4>
                     </div>
                     <div className="field-grid">
@@ -16623,12 +16594,12 @@ export default function MarketplaceApp({
                         <>
                           <ListingAvailabilityFields key={activeBookingOffer} listing={onboardingSchedule} onChange={(schedule) => updateOnboardingBooking({ schedule })} />
                           {onboardingSchedule.instant_booking_enabled && <>
-                            <label className="field-wide">Exactly what the buyer receives
-                              <small>Include quantities, how long the ad stays up, and proof of delivery.</small>
-                              <textarea value={onboardingDeliverables} maxLength={1000} onChange={(event) => updateOnboardingBooking({ deliverables: event.target.value })} placeholder="One Instagram Reel, live for at least 30 days, plus a performance report after 7 days." />
+                            <label className="field-wide">{t("app.exactlyWhatTheBuyerReceives")}
+                              <small>{t("app.includeQuantitiesHowLongTheAdStays")}</small>
+                              <textarea value={onboardingDeliverables} maxLength={1000} onChange={(event) => updateOnboardingBooking({ deliverables: event.target.value })} placeholder={t("app.oneInstagramReelLiveForAtLeast")} />
                             </label>
-                            <label className="field-wide">Cancellation terms
-                              <input value={onboardingCancellation} maxLength={1000} onChange={(event) => updateOnboardingBooking({ cancellation: event.target.value })} placeholder="Free cancellation until 48 hours before the start date." />
+                            <label className="field-wide">{t("app.cancellationTerms")}
+                              <input value={onboardingCancellation} maxLength={1000} onChange={(event) => updateOnboardingBooking({ cancellation: event.target.value })} placeholder={t("app.freeCancellationUntil48HoursBeforeThe")} />
                             </label>
                           </>}
                         </>
@@ -16640,10 +16611,10 @@ export default function MarketplaceApp({
                       {!isSponsorshipOffer(selectedRole ?? "creator", answers) && (
                       <label className="field-wide">
                         {selectedRole === "business"
-                          ? "Name this brief"
+                          ? t("app.nameThisBrief")
                           : answers.creatorOffer === "physical"
-                            ? "Name this placement"
-                            : "Name this offer"}
+                            ? t("app.nameThisPlacement")
+                            : t("app.nameThisOffer")}
                         <input
                           data-field="title"
                           maxLength={120}
@@ -16672,10 +16643,10 @@ export default function MarketplaceApp({
                           }}
                           placeholder={
                             selectedRole === "business"
-                              ? "Brea Coffee Bar — our new cold brew"
+                              ? t("app.breaCoffeeBarOurNewColdBrew")
                               : answers.creatorOffer === "physical"
-                                ? "Maya’s Barbershop — window in Downtown Brea"
-                                : "Instagram Reel — Maya Alvarez"
+                                ? t("app.mayasBarbershopWindowInDowntownBrea")
+                                : t("app.instagramReelMayaAlvarez")
                           }
                         />
                       </label>
@@ -16686,7 +16657,7 @@ export default function MarketplaceApp({
                       {selectedRole !== "business" &&
                         !isSponsorshipOffer(selectedRole ?? "creator", answers) && (
                       <label>
-                        {answers.creatorOffer === "physical" ? "Price from" : "Price"}
+                        {answers.creatorOffer === "physical" ? t("app.priceFrom") : t("app.price")}
                         <input
                           type="number"
                           min={1}
@@ -16715,8 +16686,8 @@ export default function MarketplaceApp({
                           since price_max landed. */}
                       {isPhysicalOffer(selectedRole ?? "creator", answers) && (
                         <label>
-                          <OptionalFieldLabel>up to</OptionalFieldLabel>
-                          <small>Leave blank for a flat rate.</small>
+                          <OptionalFieldLabel>{t("app.upTo")}</OptionalFieldLabel>
+                          <small>{t("app.leaveBlankForAFlatRate")}</small>
                           <input
                             type="number"
                             min={1}
@@ -16737,10 +16708,10 @@ export default function MarketplaceApp({
                       )}
                       {isSponsorshipOffer(selectedRole ?? "creator", answers) ? null : selectedRole ===
                         "business" ? (
-                        <p className="offer-preview">Budget is per campaign</p>
+                        <p className="offer-preview">{t("app.budgetIsPerCampaign")}</p>
                       ) : (
                         <label>
-                          Per
+                          {t("app.per")}
                           <select
                             value={
                               answers.price_unit ||
@@ -16771,7 +16742,7 @@ export default function MarketplaceApp({
                       Boolean(PRICE_CHIPS[selectedRole ?? ""]) && (
                       <ChipRow
                         field="price_presets"
-                        label="Or pick a common rate"
+                        label={t("app.orPickACommonRate")}
                         options={(selectedRole === "creator"
                           ? creatorPricePresets(answers.creatorOffer)
                           : PRICE_CHIPS[selectedRole ?? ""] ?? []
@@ -16790,20 +16761,20 @@ export default function MarketplaceApp({
                     <div className="field-grid">
                       <label className="field-wide">
                         {selectedRole === "business"
-                          ? "What should whoever answers know?"
+                          ? t("app.whatShouldWhoeverAnswersKnow")
                           : answers.creatorOffer === "physical"
-                            ? "What is the placement actually like?"
+                            ? t("app.whatIsThePlacementActuallyLike")
                             : answers.creatorOffer === "sponsorship"
-                              ? "Why should someone sponsor you?"
-                              : "What does a brand get, in your words?"}
+                              ? t("app.whyShouldSomeoneSponsorYou")
+                              : t("app.whatDoesABrandGetInYour")}
                         <small>
                           {selectedRole === "business"
-                            ? "We drafted this from your answers. Say what the artwork is and anything a creator or space owner must know."
+                            ? t("app.weDraftedThisFromYourAnswersSay")
                             : answers.creatorOffer === "physical"
-                              ? "We drafted this from your answers. Add the size, what sticks to it, and who walks past."
+                              ? t("app.weDraftedThisFromYourAnswersAdd")
                               : answers.creatorOffer === "sponsorship"
-                                ? "We drafted this from your answers. Add what the season looks like and who turns up."
-                                : "We drafted this from your answers. Add turnaround, what you will not do, anything a brand should know."}
+                                ? t("app.weDraftedThisFromYourAnswersAdd3")
+                                : t("app.weDraftedThisFromYourAnswersAdd2")}
                         </small>
                         <textarea
                           data-field="description"
@@ -16840,11 +16811,11 @@ export default function MarketplaceApp({
                             ending up with it on the card twice. */}
                         {isSponsorshipOffer(selectedRole ?? "creator", answers) && (
                           <span className="chip-note">
-                            Each tier card ends with its own perks line
+                            {t("app.eachTierCardEndsWithItsOwn")}
                             {completeTiers(answers)[0]?.name.trim()
-                              ? ` — “${completeTiers(answers)[0].name.trim()} sponsors get…”`
-                              : " — “Gold sponsors get…”"}
-                            . You don’t need to write it here.
+                              ? t("app.nameSponsorsGet", { name: completeTiers(answers)[0].name.trim() })
+                              : t("app.goldSponsorsGet")}
+                            {t("app.youDontNeedToWriteItHere")}
                           </span>
                         )}
                       </label>
@@ -16868,10 +16839,8 @@ export default function MarketplaceApp({
                       <span>
                         {isSponsorshipOffer(selectedRole ?? "creator", answers) &&
                         completeTiers(answers).length > 1
-                          ? `This is what people will see — ${
-                              completeTiers(answers).length
-                            } cards, top tier shown`
-                          : "This is what people will see"}
+                          ? t("app.thisIsWhatPeopleWillSeeAnswerscount", { answersCount: completeTiers(answers).length })
+                          : t("app.thisIsWhatPeopleWillSee")}
                       </span>
                       <div className="preview-card">
                         {/* A real card is a photo with text under it. Without
@@ -16888,8 +16857,7 @@ export default function MarketplaceApp({
                           />
                         ) : (
                           <p className="preview-card-photo is-empty">
-                            Add a photo above — it fills the top half of your
-                            card.
+                            {t("app.addAPhotoAboveItFillsThe")}
                           </p>
                         )}
                         <div className="preview-card-top">
@@ -16901,14 +16869,14 @@ export default function MarketplaceApp({
                             }
                           >
                             {selectedRole === "business"
-                              ? "Wanted"
+                              ? t("market.wanted")
                               : buildListingDraft(selectedRole ?? "creator", answers, {
                                   title: titleTouched,
                                   description: descriptionTouched,
                                 }).channel}
                           </span>
                           <small className="preview-offer">
-                            {answers.display_name.trim() || "Your name"}
+                            {answers.display_name.trim() || t("app.yourName")}
                             {answers.city.trim() ? ` · ${answers.city.trim()}` : ""}
                           </small>
                         </div>
@@ -16919,7 +16887,7 @@ export default function MarketplaceApp({
                               answers,
                               { title: titleTouched },
                               completeTiers(answers)[0],
-                            ) || "Untitled listing"}
+                            ) || t("app.untitledListing")}
                           </strong>
                           <span className="preview-offer">
                             {(() => {
@@ -16948,11 +16916,11 @@ export default function MarketplaceApp({
                               selectedRole ?? "creator",
                               answers,
                               { description: descriptionTouched },
-                            ) || "Your description will show here."}
+                            ) || t("app.yourDescriptionWillShowHere")}
                           </p>
                           <div className="preview-card-foot">
                             {selectedRole === "business" && (
-                              <span className="preview-lead">Budget</span>
+                              <span className="preview-lead">{t("market.budget")}</span>
                             )}
                             <b
                               className={
@@ -17022,15 +16990,15 @@ export default function MarketplaceApp({
                 {(onboardingMode === "edit" || onboardingStep === 5) && (
                 <>
                 <div className="form-subsection field-wide">
-                  <span>Anything else?</span>
-                  <h4>Do you do more than one of these?</h4>
+                  <span>{t("app.anythingElse")}</span>
+                  <h4>{t("app.doYouDoMoreThanOneOf")}</h4>
                   <p>
-                    You’ll show up in each of these searches, from one account.
+                    {t("app.youllShowUpInEachOfThese")}
                   </p>
                 </div>
                 <ChipRow
                   field="extra_roles"
-                  label="Other things you do"
+                  label={t("app.otherThingsYouDo")}
                   optional
                   multi
                   options={EXTRA_ROLE_OPTIONS.filter(
@@ -17082,7 +17050,7 @@ export default function MarketplaceApp({
                       goToOnboardingStep(onboardingStep - 1);
                     }}
                   >
-                    ← Back
+                    {t("app.back")}
                   </button>
                   {shouldShowOnboardingPrimaryAction() && (
                     <span className="onboarding-primary-action-enter">
@@ -17092,12 +17060,10 @@ export default function MarketplaceApp({
                         aria-live="polite"
                       >
                         {missingAnswers().length
-                          ? `${missingAnswers().length} required ${
-                              missingAnswers().length === 1
+                          ? t("app.missinganswerscountRequiredValueLeft", { missingAnswersCount: missingAnswers().length, value: missingAnswers().length === 1
                                 ? "detail"
-                                : "details"
-                            } left`
-                          : "Ready to continue"}
+                                : "details" })
+                          : t("app.readyToContinue")}
                       </span>
                       {onboardingMode === "setup" &&
                       (onboardingStep < 5 || Boolean(nextSelectedCreatorOffer())) ? (
@@ -17108,11 +17074,11 @@ export default function MarketplaceApp({
                         >
                           {selectedRole === "creator"
                             ? nextSelectedCreatorOffer()
-                              ? "Next Section"
-                              : "Next"
+                              ? t("app.nextSection")
+                              : t("app.next")
                             : onboardingStep === 3
-                              ? "Next: the details"
-                              : "Next: review"}{" "}
+                              ? t("app.nextTheDetails")
+                              : t("app.nextReview")}{" "}
                           <span>→</span>
                         </button>
                       ) : (
@@ -17126,14 +17092,14 @@ export default function MarketplaceApp({
                           disabled={busy || igAvatarBusy}
                         >
                           {busy
-                            ? "Publishing…"
+                            ? t("app.publishing2")
                             : onboardingPreview
-                              ? "Finish preview"
+                              ? t("app.finishPreview")
                               : onboardingMode === "edit"
-                                ? "Save changes"
+                                ? t("app.saveChanges")
                                 : selectedRole === "business"
-                                  ? "Post my brief"
-                                  : "Publish and finish"}{" "}
+                                  ? t("app.postMyBrief")
+                                  : t("app.publishAndFinish")}{" "}
                           <span>✓</span>
                         </button>
                       )}
@@ -17148,7 +17114,7 @@ export default function MarketplaceApp({
               className="signout-link"
               onClick={signOut}
             >
-              Sign out of this account
+              {t("app.signOutOfThisAccount")}
             </button>
           )}
         </Modal>
@@ -17156,7 +17122,7 @@ export default function MarketplaceApp({
 
       {listingOpen && (
         <Modal
-          label={editingListing ? "Edit listing" : "Create a listing"}
+          label={editingListing ? t("app.editListing") : t("app.createAListing")}
           onClose={() => {
             setListingOpen(false);
             resetAiHelpers();
@@ -17165,10 +17131,10 @@ export default function MarketplaceApp({
           }}
           wide
         >
-          <div className="modal-heading"><h2>{editingListing ? "Edit listing" : editingListingIsBrief ? "Create a campaign" : "Create a listing"}</h2></div>
+          <div className="modal-heading"><h2>{editingListing ? t("app.editListing") : editingListingIsBrief ? t("app.createACampaign") : t("app.createAListing")}</h2></div>
           {listingFeedback && (
             <div className="form-feedback" role="alert">
-              <strong>Your listing was not saved yet.</strong>
+              <strong>{t("app.yourListingWasNotSavedYet")}</strong>
               <p>{listingFeedback}</p>
             </div>
           )}
@@ -17178,9 +17144,9 @@ export default function MarketplaceApp({
             onInvalidCapture={(event) => revealInvalidField(event.target)}
             onSubmit={saveListing}
           >
-            {!editingListing && !editingListingIsBrief && <div className="composer-kind field-wide" role="group" aria-label="Offer type">
+            {!editingListing && !editingListingIsBrief && <div className="composer-kind field-wide" role="group" aria-label={t("app.offerType")}>
               {CREATOR_OFFER_TYPES.map((option) => <button type="button" key={option.value} disabled={busy || aiFilling || listening} aria-pressed={newListingOffer === option.value}
-                onClick={(event) => switchListingFormKind(option.value, event.currentTarget.form)}>{option.label}</button>)}
+                onClick={(event) => switchListingFormKind(option.value, event.currentTarget.form)}>{tx(option.label)}</button>)}
             </div>}
             <ListingComposerFields key={`${editingListing?.id ?? newListingOffer}-${composerRevision}`} listing={editingListing ?? newListingDrafts[newListingOffer]?.listing}
               kind={listingFormKind} city={profile?.city || answers.city} audience={profile?.audience_age}
@@ -17188,7 +17154,7 @@ export default function MarketplaceApp({
               draftFiles={newListingDrafts[newListingOffer]?.files} onFilesChange={setPendingListingFiles} onInstantChange={setListingInstantEnabled}
               hasSavedPhotos={Boolean(editingListing && listingImages(editingListing).some((url) => !listingSeedImages.has(url)))}
               aiTools={!editingListingIsBrief ? (<div className="field-wide ai-fill">
-                <p>Describe your offer, price, and audience. Review the draft before publishing.</p>
+                <p>{t("app.describeYourOfferPriceAndAudienceReview")}</p>
 <div className="ai-fill-row">
                   <textarea
                     ref={aiNotesRef}
@@ -17198,10 +17164,10 @@ export default function MarketplaceApp({
                     maxLength={AI_NOTES_MAX}
                     placeholder={
                       listingFormKind === "physical"
-                        ? "Front window on Main Street, about 4 by 6 ft, maybe 300 people walk past on a weekday, $40 a week, posters or decals, I put it up, available now"
+                        ? t("app.frontWindowOnMainStreetAbout4")
                         : listingFormKind === "sponsorship"
-                          ? "High school robotics team, 40 members, about 200 parents at each of 8 home matches, banner plus a jersey patch, $250 a season, we install"
-                          : "Food and coffee account, 12k followers mostly Bay Area students, one story with a link, $30 per story, two days notice"
+                          ? t("app.highSchoolRoboticsTeam40MembersAbout")
+                          : t("app.foodAndCoffeeAccount12kFollowersMostly")
                     }
                   />
                   <button
@@ -17210,8 +17176,8 @@ export default function MarketplaceApp({
                     aria-pressed={listening}
                     aria-label={
                       listening
-                        ? "Stop listening and draft the listing"
-                        : "Describe the space out loud, then draft it"
+                        ? t("app.stopListeningAndDraftTheListing")
+                        : t("app.describeTheSpaceOutLoudThenDraft")
                     }
                     disabled={busy || aiFilling}
                     onClick={() => {
@@ -17219,42 +17185,40 @@ export default function MarketplaceApp({
                       else void startListening();
                     }}
                   >
-                    {listening ? "Stop & fill" : "Speak & fill"}{" "}
+                    {listening ? t("app.stopFill") : t("app.speakFill")}{" "}
                     <span>{listening ? "■" : "🎤"}</span>
                   </button>
                 </div>
                 {listening && (
                   <small className="ai-fill-status" role="status">
                     {voiceMode === "recording"
-                      ? "Recording, up to a minute. Say what it is, where, the price, and who sees it, then tap Stop & fill."
-                      : "Listening. Say what it is, where, the price, and who sees it, then tap Stop & fill."}
+                      ? t("app.recordingUpToAMinuteSayWhat")
+                      : t("app.listeningSayWhatItIsWhereThe")}
                   </small>
                 )}
                 {aiObservations.length > 0 && (
                   <div className="ai-fill-questions is-observations" role="status">
-                    <strong>From what it saw - check these are right:</strong>
+                    <strong>{t("app.fromWhatItSawCheckTheseAre")}</strong>
                     <ul>
                       {aiObservations.map((item) => (
                         <li key={item}>{item}</li>
                       ))}
                     </ul>
                     <small>
-                      Anything wrong here is wrong in the draft too. Say so in
-                      the box above and fill again.
+                      {t("app.anythingWrongHereIsWrongInThe")}
                     </small>
                   </div>
                 )}
                 {aiQuestions.length > 0 && (
                   <div className="ai-fill-questions" role="status">
-                    <strong>Still needed - it will not guess these:</strong>
+                    <strong>{t("app.stillNeededItWillNotGuessThese")}</strong>
                     <ol>
                       {aiQuestions.map((question) => (
                         <li key={question}>{question}</li>
                       ))}
                     </ol>
                     <small>
-                      Add the answers in the box above, typed or spoken, then
-                      fill again.
+                      {t("app.addTheAnswersInTheBoxAbove")}
                     </small>
                   </div>
                 )}
@@ -17264,7 +17228,7 @@ export default function MarketplaceApp({
                   disabled={busy || aiFilling}
                   onClick={(event) => fillListingWithAi(event.currentTarget.form)}
                 >
-                  {aiFilling ? "Drafting…" : "Fill with AI"} <span>✦</span>
+                  {aiFilling ? t("app.drafting") : t("app.fillWithAi")} <span>✦</span>
                 </button>
               </div>) : undefined}
               spaceTools={(<div className="street-view">
@@ -17274,10 +17238,10 @@ export default function MarketplaceApp({
                     onClick={(event) => void importStreetView(event.currentTarget.form)}
                   >
                     {streetViewLoading
-                      ? "Looking up Street View…"
+                      ? t("app.lookingUpStreetView")
                       : streetView
-                        ? "Refresh the Street View"
-                        : "Add a Google Street View of this address"}
+                        ? t("app.refreshTheStreetView")
+                        : t("app.addAGoogleStreetViewOfThis")}
                   </button>
                   {streetView && (
                     <figure className="street-view-card">
@@ -17287,23 +17251,21 @@ export default function MarketplaceApp({
                           streetView.url ??
                           (editingListing ? `/api/listings/${editingListing.id}/street-view` : "")
                         }
-                        alt="Google Street View of the address"
+                        alt={t("app.googleStreetViewOfTheAddress")}
                       />
                       <figcaption>
-                        Google Street View{streetView.captured ? `, ${streetView.captured}` : ""}.
-                        Shown under your photos, labelled, fetched live from Google
-                        and never stored. It may be out of date.
+                        {t("app.googleStreetView")}{streetView.captured ? `, ${streetView.captured}` : ""}{t("app.shownUnderYourPhotosLabelledFetchedLive")}
                         {streetView.pano && (
                           <a
                             href={streetPanoUrl(streetView.pano)}
                             target="_blank"
                             rel="noreferrer noopener"
                           >
-                            View whole street ↗
+                            {t("app.viewWholeStreet2")}
                           </a>
                         )}
                         <button type="button" onClick={clearStreetView}>
-                          Remove
+                          {t("app.remove")}
                         </button>
                       </figcaption>
                     </figure>
@@ -17313,10 +17275,9 @@ export default function MarketplaceApp({
             {editingListing &&
               listingImages(editingListing).some((url) => !listingSeedImages.has(url)) && (
                 <div className="listing-photo-manager field-wide">
-                  <strong>Photos on this listing</strong>
+                  <strong>{t("app.photosOnThisListing")}</strong>
                   <p>
-                    The first is the cover. Adding photos keeps these; nothing
-                    comes off unless you remove it here.
+                    {t("app.theFirstIsTheCoverAddingPhotos")}
                   </p>
                   <div className="photo-manager-grid">
                     {listingImages(editingListing)
@@ -17326,12 +17287,12 @@ export default function MarketplaceApp({
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={url}
-                            alt={`Listing photo ${index + 1}`}
+                            alt={t("app.listingPhotoValue", { value: index + 1 })}
                             loading="lazy"
                             decoding="async"
                           />
                           {index === 0 ? (
-                            <figcaption>Cover</figcaption>
+                            <figcaption>{t("app.cover")}</figcaption>
                           ) : (
                             <button
                               type="button"
@@ -17339,15 +17300,15 @@ export default function MarketplaceApp({
                               disabled={busy}
                               onClick={() => void makeListingCover(editingListing, url)}
                             >
-                              Make cover
+                              {t("app.makeCover")}
                             </button>
                           )}
                           <button
                             type="button"
                             className="saved-media-remove"
                             disabled={busy}
-                            aria-label={`Remove photo ${index + 1}`}
-                            title="Remove photo"
+                            aria-label={t("app.removePhotoValue", { value: index + 1 })}
+                            title={t("app.removePhoto")}
                             onClick={() => void removeListingPhoto(editingListing, url)}
                           >
                             ×
@@ -17358,7 +17319,7 @@ export default function MarketplaceApp({
                 </div>
               )}
             <label className="field-wide media-upload-field">
-              {editingListing?.tour_url ? "Replace the walkthrough" : "Add a walkthrough (optional)"}
+              {editingListing?.tour_url ? t("app.replaceTheWalkthrough") : t("app.addAWalkthroughOptional")}
               <input
                 name="listing_tour"
                 type="file"
@@ -17366,17 +17327,15 @@ export default function MarketplaceApp({
                 onChange={(event) => void onTourPicked(event.currentTarget.files?.[0] ?? null)}
               />
               <small>
-                A short video walking through the space, a 360° video, or a
-                360° photo. Up to 50 MB. Tick 360° after choosing a spherical
-                file so buyers can drag around it.
+                {t("app.aShortVideoWalkingThroughTheSpace")}
               </small>
             </label>
             {tourPick && (
               <div className="tour-pick field-wide" role="status">
                 <span>
                   {tourPick.kind === "video"
-                    ? `Video · ${Math.round(tourPick.seconds)} s · ${tourPick.width}×${tourPick.height}`
-                    : `Photo · ${tourPick.width}×${tourPick.height}`}
+                    ? t("app.videoRoundSWidthHeight", { round: Math.round(tourPick.seconds), width: tourPick.width, height: tourPick.height })
+                    : t("app.photoWidthHeight", { width: tourPick.width, height: tourPick.height })}
                   {` · ${(tourPick.file.size / 1024 / 1024).toFixed(1)} MB`}
                 </span>
                 <label className="chip-check">
@@ -17385,14 +17344,14 @@ export default function MarketplaceApp({
                     checked={tourSpherical}
                     onChange={(event) => setTourSpherical(event.currentTarget.checked)}
                   />
-                  <span>360° (spherical)</span>
+                  <span>{t("app.n360Spherical")}</span>
                 </label>
                 <small>
                   {tourSpherical
-                    ? "Opens in the 360° viewer: buyers drag to look around."
+                    ? t("app.opensInThe360ViewerBuyersDrag")
                     : tourPick.kind === "photo"
-                      ? "Tick 360° only if this is a spherical panorama."
-                      : "Plays as a plain video. Tick 360° if it came from a 360 camera."}
+                      ? t("app.tick360OnlyIfThisIsA")
+                      : t("app.playsAsAPlainVideoTick360")}
                 </small>
               </div>
             )}
@@ -17400,20 +17359,20 @@ export default function MarketplaceApp({
               <div className="tour-current field-wide">
                 <span>
                   {editingListing.tour_kind === "video"
-                    ? "Walkthrough video attached."
+                    ? t("app.walkthroughVideoAttached")
                     : editingListing.tour_kind === "video360"
-                      ? "360° video attached."
-                      : "360° photo attached."}
+                      ? t("app.n360VideoAttached")
+                      : t("app.n360PhotoAttached")}
                 </span>
                 <a href={editingListing.tour_url} target="_blank" rel="noreferrer noopener">
-                  Open ↗
+                  {t("app.open")}
                 </a>
                 <button
                   type="button"
                   disabled={busy}
                   onClick={() => void removeListingTour(editingListing)}
                 >
-                  Remove
+                  {t("app.remove")}
                 </button>
               </div>
             )}
@@ -17427,14 +17386,14 @@ export default function MarketplaceApp({
                   setListingFeedback("");
                 }}
               >
-                Cancel
+                {t("app.cancel")}
               </button>
               <button className="button button-coral" disabled={busy}>
                 {busy
-                  ? "Saving listing..."
+                  ? t("app.savingListing")
                   : editingListing
-                    ? "Save changes"
-                    : Object.entries(newListingDrafts).some(([kind, draft]) => kind !== newListingOffer && draft?.listing.title) ? "Publish and continue" : editingListingIsBrief ? "Publish campaign" : "Publish listing"}{" "}
+                    ? t("app.saveChanges")
+                    : Object.entries(newListingDrafts).some(([kind, draft]) => kind !== newListingOffer && draft?.listing.title) ? t("app.publishAndContinue") : editingListingIsBrief ? t("app.publishCampaign") : t("app.publishListing")}{" "}
                 <span>↗</span>
               </button>
             </div>
@@ -17456,7 +17415,7 @@ export default function MarketplaceApp({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={detailPhotos[selectedPhotoIndex] || detailPhotos[0]}
-                  alt={`${detailCopy?.title ?? selectedListing.title} photo ${selectedPhotoIndex + 1}`}
+                  alt={t("app.valuePhotoValue2", { value: detailCopy?.title ?? selectedListing.title, value2: selectedPhotoIndex + 1 })}
                 />
                 <span className="listing-channel">
                   {isBrief(selectedListing)
@@ -17466,13 +17425,13 @@ export default function MarketplaceApp({
               </figure>
               )}
               {detailPhotos.length > 1 && (
-                <div className="detail-thumbnails" aria-label="Listing photos">
+                <div className="detail-thumbnails" aria-label={t("app.listingPhotos")}>
                   {detailPhotos.map((url, index) => (
                     <button
                       key={`${url}-${index}`}
                       className={selectedPhotoIndex === index ? "active" : ""}
                       onClick={() => setSelectedPhotoIndex(index)}
-                      aria-label={`View photo ${index + 1}`}
+                      aria-label={t("app.viewPhotoValue", { value: index + 1 })}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={url} alt="" loading="lazy" decoding="async" />
@@ -17485,7 +17444,7 @@ export default function MarketplaceApp({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={`/api/listings/${selectedListing.id}/street-view`}
-                    alt="Google Street View of the address"
+                    alt={t("app.googleStreetViewOfTheAddress")}
                     loading="lazy"
                     decoding="async"
                   />
@@ -17496,7 +17455,7 @@ export default function MarketplaceApp({
                   {streetPanoOpen && STREET_VIEW_EMBED_KEY && selectedListing.street_view_pano && (
                     <iframe
                       className="street-view-embed"
-                      title="Google Street View of the whole street"
+                      title={t("app.googleStreetViewOfTheWholeStreet")}
                       src={`https://www.google.com/maps/embed/v1/streetview?key=${encodeURIComponent(STREET_VIEW_EMBED_KEY)}&pano=${encodeURIComponent(selectedListing.street_view_pano)}`}
                       allowFullScreen
                       loading="lazy"
@@ -17504,8 +17463,7 @@ export default function MarketplaceApp({
                     />
                   )}
                   <figcaption>
-                    Google Street View, {selectedListing.street_view_captured}. The
-                    street outside, as Google last photographed it.
+                    {t("app.googleStreetViewStreetViewCapturedThe", { street_view_captured: selectedListing.street_view_captured })}
                     {selectedListing.street_view_pano &&
                       (STREET_VIEW_EMBED_KEY ? (
                         <button
@@ -17513,7 +17471,7 @@ export default function MarketplaceApp({
                           className="street-view-open"
                           onClick={() => setStreetPanoOpen((open) => !open)}
                         >
-                          {streetPanoOpen ? "Close the street view" : "View whole street"}
+                          {streetPanoOpen ? t("app.closeTheStreetView") : t("app.viewWholeStreet")}
                         </button>
                       ) : (
                         <a
@@ -17522,7 +17480,7 @@ export default function MarketplaceApp({
                           target="_blank"
                           rel="noreferrer noopener"
                         >
-                          View whole street ↗
+                          {t("app.viewWholeStreet2")}
                         </a>
                       ))}
                   </figcaption>
@@ -17540,7 +17498,7 @@ export default function MarketplaceApp({
                   type="button"
                   className="owner-line-link"
                   onClick={() => void openOwnerProfile(selectedListing.owner)}
-                  aria-label={`See ${selectedListing.owner.display_name}'s profile and other listings`}
+                  aria-label={t("app.seeDisplayNameSProfileAndOther", { display_name: selectedListing.owner.display_name })}
                 >
                   <Avatar profile={selectedListing.owner} />
                   <div>
@@ -17562,17 +17520,16 @@ export default function MarketplaceApp({
                   }`}
                 >
                   {selectedListing.owner.is_demo
-                    ? "Demo profile"
+                    ? t("app.demoProfile")
                     : selectedListing.owner.verified
-                      ? "Verified by SideSpace"
-                      : "Unverified profile"}
+                      ? t("app.verifiedBySidespace")
+                      : t("app.unverifiedProfile")}
                 </span>
               </div>
               {!isListingRequestable(selectedListing) && (
                 <div className="listing-provenance-notice is-view-only">
                   <span>
-                    This listing is view-only until its owner confirms it is
-                    still available.
+                    {t("app.thisListingIsViewOnlyUntilIts")}
                   </span>
                 </div>
               )}
@@ -17581,7 +17538,7 @@ export default function MarketplaceApp({
                 <div className="detail-terms">
                   {selectedCreatorReviews.length > 0 && (
                     <div>
-                      <small>Verified SideSpace reviews</small>
+                      <small>{t("app.verifiedSidespaceReviews")}</small>
                       <p>
                         <strong>
                           {(
@@ -17591,16 +17548,16 @@ export default function MarketplaceApp({
                             ) / selectedCreatorReviews.length
                           ).toFixed(1)}
                           /5
-                        </strong>{" "}
-                        from {selectedCreatorReviews.length} completed campaign
-                        {selectedCreatorReviews.length === 1 ? "" : "s"}
+                        </strong>{" "}{selectedCreatorReviews.length === 1
+                          ? t("app.fromOneCompletedCampaign")
+                          : t("app.fromCompletedCampaigns", { count: selectedCreatorReviews.length })}
                       </p>
                       <p>“{selectedCreatorReviews[0].review_text}”</p>
                     </div>
                   )}
                   {selectedCreatorPortfolio.length > 0 && (
                     <div>
-                      <small>Creator portfolio</small>
+                      <small>{t("app.creatorPortfolio")}</small>
                       {selectedCreatorPortfolio.map((item) => (
                         <p key={item.id}>
                           <strong>{item.title}</strong>
@@ -17611,7 +17568,7 @@ export default function MarketplaceApp({
                               target="_blank"
                               rel="noreferrer"
                             >
-                              View {item.kind.replaceAll("_", " ")} ↗
+                              {t("app.viewReplaceall", { replaceAll: item.kind.replaceAll("_", " ") })}
                             </a>
                           )}
                         </p>
@@ -17651,41 +17608,41 @@ export default function MarketplaceApp({
               </p>
               <div className="detail-price"><strong>{priceLabel(selectedListing, locale, formatListingPrice)}</strong><span> / {localizeListingUnit(locale, pricingLabel(selectedListing))}</span></div>
               <div className="detail-facts">
-                <div><small>Location</small><strong>{listingCity(selectedListing)}</strong></div>
-                <div><small>Timing</small><strong>{isBrief(selectedListing) ? selectedListing.available_from && selectedListing.available_to ? bookingDateLabel(selectedListing.timing_kind,selectedListing.available_from,selectedListing.available_to) : "Flexible" : selectedListing.timing_kind === "deadline" ? "Choose a delivery deadline" : "Choose your campaign dates"}</strong></div>
-                {!!selectedListing.lead_time_days && <div><small>Notice needed</small><strong>{selectedListing.lead_time_days} days</strong></div>}
-                {selectedListing.timing_kind === "date_range" && selectedListing.pricing_kind !== "fixed" && <div><small>Minimum duration</small><strong>{selectedListing.minimum_duration_days ?? 1} {(selectedListing.minimum_duration_days ?? 1) === 1 ? "day" : "days"}</strong></div>}
+                <div><small>{t("market.locationSort")}</small><strong>{listingCity(selectedListing)}</strong></div>
+                <div><small>{t("app.timing")}</small><strong>{isBrief(selectedListing) ? selectedListing.available_from && selectedListing.available_to ? bookingDateLabel(selectedListing.timing_kind,selectedListing.available_from,selectedListing.available_to, t, locale) : t("app.flexible") : selectedListing.timing_kind === "deadline" ? t("app.chooseADeliveryDeadline") : t("app.chooseYourCampaignDates")}</strong></div>
+                {!!selectedListing.lead_time_days && <div><small>{t("app.noticeNeeded")}</small><strong>{t("app.leadTimeDaysDays", { lead_time_days: selectedListing.lead_time_days })}</strong></div>}
+                {selectedListing.timing_kind === "date_range" && selectedListing.pricing_kind !== "fixed" && <div><small>{t("app.minimumDuration")}</small><strong>{selectedListing.minimum_duration_days ?? 1} {(selectedListing.minimum_duration_days ?? 1) === 1 ? t("home.unitDay") : t("app.days")}</strong></div>}
               </div>
-              <details className="composer-options"><summary>Details and booking terms</summary>
+              <details className="composer-options"><summary>{t("app.detailsAndBookingTerms")}</summary>
                 {detailCopy?.description && detailCopy.description !== detailCopy.deliverables && <p>{detailCopy.description}</p>}
-                {selectedListing.space_size && <p><strong>Size: </strong>{selectedListing.space_size}</p>}
-                {!!selectedListing.surface_types?.length && <p><strong>Allowed formats: </strong>{selectedListing.surface_types.join(", ")}</p>}
-                {selectedListing.install_by && <p><strong>Installation: </strong>{INSTALL_CHIPS.find((item) => item.value === selectedListing.install_by)?.label || selectedListing.install_by}</p>}
-                {selectedListing.sponsor_tier && <p><strong>Tier: </strong>{selectedListing.sponsor_tier}</p>}
-                {selectedListing.sponsor_slots != null && <p><strong>Available spots: </strong>{selectedListing.sponsor_slots}</p>}
-                {isBrief(selectedListing) && !!selectedListing.target_platforms?.length && <p><strong>Target platforms: </strong>{selectedListing.target_platforms.join(", ")}</p>}
-                {isBrief(selectedListing) && selectedListing.brief_scope && <p><strong>Placements: </strong>{selectedListing.brief_scope === "both" ? "Physical and online" : selectedListing.brief_scope === "physical" ? "Physical" : "Online"}</p>}
-                {detailCopy?.demographics && <p><strong>Audience: </strong>{detailCopy.demographics}</p>}
+                {selectedListing.space_size && <p><strong>{t("app.size")}{" "}</strong>{selectedListing.space_size}</p>}
+                {!!selectedListing.surface_types?.length && <p><strong>{t("app.allowedFormats")}{" "}</strong>{selectedListing.surface_types.join(", ")}</p>}
+                {selectedListing.install_by && <p><strong>{t("app.installation")}{" "}</strong>{tx(INSTALL_CHIPS.find((item) => item.value === selectedListing.install_by)?.label ?? "") || selectedListing.install_by}</p>}
+                {selectedListing.sponsor_tier && <p><strong>{t("app.tier2")}{" "}</strong>{selectedListing.sponsor_tier}</p>}
+                {selectedListing.sponsor_slots != null && <p><strong>{t("app.availableSpots")}{" "}</strong>{selectedListing.sponsor_slots}</p>}
+                {isBrief(selectedListing) && !!selectedListing.target_platforms?.length && <p><strong>{t("app.targetPlatforms")}{" "}</strong>{selectedListing.target_platforms.join(", ")}</p>}
+                {isBrief(selectedListing) && selectedListing.brief_scope && <p><strong>{t("app.placements")}{" "}</strong>{selectedListing.brief_scope === "both" ? t("app.physicalAndOnline") : selectedListing.brief_scope === "physical" ? t("app.physical") : t("app.online")}</p>}
+                {detailCopy?.demographics && <p><strong>{t("app.audience")}{" "}</strong>{detailCopy.demographics}</p>}
                 {detailCopy?.availability_notes && <p>{detailCopy.availability_notes}</p>}
-                {(selectedListing.available_from || selectedListing.available_to) && <p>Available {displayDate(selectedListing.available_from)} – {displayDate(selectedListing.available_to)}</p>}
+                {(selectedListing.available_from || selectedListing.available_to) && <p>{t("app.availableAvailableFromAvailableTo", { available_from: displayDate(selectedListing.available_from, t, locale), available_to: displayDate(selectedListing.available_to, t, locale) })}</p>}
                 {detailCopy?.minimum_booking && <p>{detailCopy.minimum_booking}</p>}
-                <p><strong>Cancellation: </strong>{detailCopy?.cancellation_policy || "Agree with the owner before payment."}</p>
+                <p><strong>{t("app.cancellation")}{" "}</strong>{detailCopy?.cancellation_policy || t("app.agreeWithTheOwnerBeforePayment")}</p>
               </details>
               {!viewingOwnListing && isListingRequestable(selectedListing) && !isBrief(selectedListing) && selectedListing.instant_booking_enabled && selectedListing.price_cents > 0 && (
                 <InstantBookingPanel key={selectedListing.id} listing={selectedListing} busy={busy}
                   onCheckout={(start, end) => startInstantCheckout(selectedListing, start, end)} />
               )}
               {!viewingOwnListing && isListingRequestable(selectedListing) && !isBrief(selectedListing) && <div className="detail-primary-actions">
-                {!selectedListing.instant_booking_enabled && isFixedPriceListing(selectedListing) && <button className="button button-coral" onClick={() => openCampaignFlow(selectedListing,"buy_now")}>Request a booking</button>}
-                <button className={`button ${!selectedListing.instant_booking_enabled && !isFixedPriceListing(selectedListing) ? "button-coral" : "button-ghost"}`} onClick={() => openCampaignFlow(selectedListing,"offer")}>Make a custom offer</button>
+                {!selectedListing.instant_booking_enabled && isFixedPriceListing(selectedListing) && <button className="button button-coral" onClick={() => openCampaignFlow(selectedListing,"buy_now")}>{t("app.requestABooking")}</button>}
+                <button className={`button ${!selectedListing.instant_booking_enabled && !isFixedPriceListing(selectedListing) ? "button-coral" : "button-ghost"}`} onClick={() => openCampaignFlow(selectedListing,"offer")}>{t("app.makeACustomOffer")}</button>
               </div>}
               {viewingOwnListing ? (
                 <div className="detail-owner-actions">
                   <p>
-                    This is your listing.
+                    {t("app.thisIsYourListing")}
                     {selectedListing.status === "active"
-                      ? " It is live in the marketplace."
-                      : " It is paused, so nobody can see it."}
+                      ? t("app.itIsLiveInTheMarketplace")
+                      : t("app.itIsPausedSoNobodyCanSee")}
                   </p>
                   {renderListingFigures(selectedListing.id)}
                   <div className="detail-primary-actions">
@@ -17701,7 +17658,7 @@ export default function MarketplaceApp({
                         openListingEdit(listing);
                       }}
                     >
-                      Edit listing
+                      {t("app.editListing")}
                     </button>
                     <button
                       className="button button-ghost"
@@ -17709,8 +17666,8 @@ export default function MarketplaceApp({
                       onClick={() => void updateListingStatus(selectedListing)}
                     >
                       {selectedListing.status === "active"
-                        ? "Pause listing"
-                        : "Make it live again"}
+                        ? t("app.pauseListing")
+                        : t("app.makeItLiveAgain")}
                     </button>
                     <button
                       className="button button-ghost is-danger"
@@ -17721,7 +17678,7 @@ export default function MarketplaceApp({
                         setDeleteListingTarget(listing);
                       }}
                     >
-                      Delete listing
+                      {t("app.deleteListing")}
                     </button>
                   </div>
                 </div>
@@ -17734,8 +17691,8 @@ export default function MarketplaceApp({
                     onClick={() => openCampaignRequest(selectedListing)}
                   >
                     {isListingRequestable(selectedListing)
-                      ? "Offer my space"
-                      : "View only"}{" "}
+                      ? t("market.offerMySpace")
+                      : t("market.viewOnlyButton")}{" "}
                     <span aria-hidden="true" className="ss-icon-arrow">
                       ↗
                     </span>
@@ -17749,7 +17706,7 @@ export default function MarketplaceApp({
                     openListingChat(listing);
                   }}
                 >
-                  Message owner{" "}
+                  {t("app.messageOwner")}{" "}
                   <span aria-hidden="true" className="ss-icon-arrow">
                     ↗
                   </span>
@@ -17777,7 +17734,7 @@ export default function MarketplaceApp({
                     })();
                   }}
                 >
-                  Share listing
+                  {t("app.shareListing")}
                 </button>
                 {selectedListing.owner.id !== profile?.id && (
                   <>
@@ -17791,7 +17748,7 @@ export default function MarketplaceApp({
                         )
                       }
                     >
-                      Report listing
+                      {t("app.reportListing")}
                     </button>
                     <button
                       onClick={() =>
@@ -17799,7 +17756,7 @@ export default function MarketplaceApp({
                           const owner = selectedListing.owner;
                           if (
                             window.confirm(
-                              `Block ${owner.display_name}? They will not be able to message you or request your listings, and their listings will be hidden from you. You can undo this in Profile & settings.`,
+                              t("app.blockDisplayNameTheyWillNotBe", { display_name: owner.display_name }),
                             )
                           ) {
                             void blockProfile(owner);
@@ -17807,7 +17764,7 @@ export default function MarketplaceApp({
                         })
                       }
                     >
-                      Block member
+                      {t("app.blockMember")}
                     </button>
                   </>
                 )}
@@ -17819,7 +17776,7 @@ export default function MarketplaceApp({
 
       {selectedOwner && (
         <Modal
-          label={`${selectedOwner.display_name}'s profile`}
+          label={t("app.displayNameSProfile", { display_name: selectedOwner.display_name })}
           onClose={closeOwnerProfile}
           wide
         >
@@ -17844,10 +17801,10 @@ export default function MarketplaceApp({
                   }`}
                 >
                   {selectedOwner.is_demo
-                    ? "Demo profile"
+                    ? t("app.demoProfile")
                     : selectedOwner.verified
-                      ? "Verified by SideSpace"
-                      : "Unverified profile"}
+                      ? t("app.verifiedBySidespace")
+                      : t("app.unverifiedProfile")}
                 </span>
               </div>
             </header>
@@ -17871,7 +17828,7 @@ export default function MarketplaceApp({
                       )}
                     </b>
                     {selectedOwner.followers
-                      ? " followers"
+                      ? t("app.followers")
                       : ` ${selectedOwner.reach_unit || "weekly looks"}`}
                   </span>
                 )}
@@ -17885,14 +17842,14 @@ export default function MarketplaceApp({
               <div className="seller-profile-listings-head">
                 <strong>
                   {ownerListingsLoading
-                    ? "Everything they have live"
+                    ? t("app.everythingTheyHaveLive")
                     : ownerListings.length === 1
-                      ? "1 listing live"
-                      : `${ownerListings.length} listings live`}
+                      ? t("app.n1ListingLive")
+                      : t("app.ownerlistingscountListingsLive", { ownerListingsCount: ownerListings.length })}
                 </strong>
               </div>
               {ownerListingsLoading ? (
-                <p className="seller-profile-empty">Loading their listings…</p>
+                <p className="seller-profile-empty">{t("app.loadingTheirListings")}</p>
               ) : ownerListings.length ? (
                 <div className="seller-listing-grid">
                   {ownerListings.map((listing) => {
@@ -17920,7 +17877,7 @@ export default function MarketplaceApp({
                           </span>
                           {listing.id === selectedListing?.id && (
                             <span className="seller-listing-current">
-                              The one you were reading
+                              {t("app.theOneYouWereReading")}
                             </span>
                           )}
                         </span>
@@ -17930,7 +17887,7 @@ export default function MarketplaceApp({
                 </div>
               ) : (
                 <p className="seller-profile-empty">
-                  Nothing live right now.
+                  {t("app.nothingLiveRightNow")}
                 </p>
               )}
             </div>
@@ -17942,7 +17899,7 @@ export default function MarketplaceApp({
                   requireAccount(() => void startConversation(selectedOwner))
                 }
               >
-                Message {selectedOwner.display_name} <span>↗</span>
+                {t("app.messageDisplayName", { display_name: selectedOwner.display_name })} <span>↗</span>
               </button>
             )}
           </div>
@@ -17951,30 +17908,30 @@ export default function MarketplaceApp({
 
       {campaignListing && (
         <Modal
-          label={`${campaignRequestMode === "buy_now" ? "Book as listed" : "Make an offer"} on ${campaignListingCopy?.title ?? campaignListing.title}`}
+          label={t("app.valueOnValue2", { value: campaignRequestMode === "buy_now" ? "Book as listed" : "Make an offer", value2: campaignListingCopy?.title ?? campaignListing.title })}
           onClose={() => {
             setCampaignListing(null);
             setCampaignRequestMode("offer");
           }}
           wide
         >
-          <div className="modal-heading"><h2>{campaignRequestMode === "buy_now" ? "Request a booking" : "Make a custom offer"}</h2><p>{campaignListingCopy?.title ?? campaignListing.title}</p></div>
-          {campaignRequestMode === "buy_now" && <div className="booking-terms-summary"><strong>What’s included</strong><p>{campaignListingCopy?.deliverables || campaignListingCopy?.format}</p>
-            <details><summary>Booking and cancellation terms</summary><p>{campaignListingCopy?.cancellation_policy || "Agree cancellation terms with the owner before payment."}</p><p>{campaignListingCopy?.minimum_booking}</p></details>
+          <div className="modal-heading"><h2>{campaignRequestMode === "buy_now" ? t("app.requestABooking") : t("app.makeACustomOffer")}</h2><p>{campaignListingCopy?.title ?? campaignListing.title}</p></div>
+          {campaignRequestMode === "buy_now" && <div className="booking-terms-summary"><strong>{t("app.whatsIncluded")}</strong><p>{campaignListingCopy?.deliverables || campaignListingCopy?.format}</p>
+            <details><summary>{t("app.bookingAndCancellationTerms")}</summary><p>{campaignListingCopy?.cancellation_policy || t("app.agreeCancellationTermsWithTheOwnerBefore")}</p><p>{campaignListingCopy?.minimum_booking}</p></details>
           </div>}
           <form className="field-grid campaign-form" onSubmit={submitCampaignRequest} onInvalidCapture={(event) => revealInvalidField(event.target)}>
             <BookingFields listing={campaignListing} quoteRequired={campaignRequestMode === "buy_now"} />
             {campaignRequestMode !== "buy_now" && <>
-              <label className="field-wide">Offer total ($)<input name="budget" type="number" min="0" step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
-            <label className="field-wide">{isBrief(campaignListing) ? "What you’ll deliver" : "What you need"}<textarea name="requested_deliverables" required minLength={2} maxLength={1000} defaultValue={campaignListingCopy?.deliverables || campaignListingCopy?.format} /></label>
+              <label className="field-wide">{t("app.offerTotal")}<input name="budget" type="number" min="0" step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
+            <label className="field-wide">{isBrief(campaignListing) ? t("app.whatYoullDeliver") : t("app.whatYouNeed")}<textarea name="requested_deliverables" required minLength={2} maxLength={1000} defaultValue={campaignListingCopy?.deliverables || campaignListingCopy?.format} /></label>
             </>}
-            <details className="composer-options field-wide"><summary>Campaign details (optional)</summary><div className="field-grid">
-              <label className="field-wide">Campaign name<input name="campaign_name" maxLength={120} defaultValue={campaignListingCopy?.title ?? campaignListing.title} /></label>
-              <label className="field-wide">What are you promoting?<textarea name="goals" maxLength={1500} /></label>
-              <label className="field-wide">Notes or questions<textarea name="notes" maxLength={2000} /></label>
+            <details className="composer-options field-wide"><summary>{t("app.campaignDetailsOptional")}</summary><div className="field-grid">
+              <label className="field-wide">{t("app.campaignName")}<input name="campaign_name" maxLength={120} defaultValue={campaignListingCopy?.title ?? campaignListing.title} /></label>
+              <label className="field-wide">{t("app.whatAreYouPromoting")}<textarea name="goals" maxLength={1500} /></label>
+              <label className="field-wide">{t("app.notesOrQuestions")}<textarea name="notes" maxLength={2000} /></label>
             </div></details>
             {campaignFeedback && <p className="field-error field-wide" role="alert">{campaignFeedback}</p>}
-            <small className="field-wide">{campaignRequestMode === "buy_now" ? "The owner confirms before you pay." : "Nothing is charged when you send an offer."}</small>
+            <small className="field-wide">{campaignRequestMode === "buy_now" ? t("app.theOwnerConfirmsBeforeYouPay") : t("app.nothingIsChargedWhenYouSendAn")}</small>
             <div className="form-submit field-wide">
               <button
                 type="button"
@@ -17983,16 +17940,16 @@ export default function MarketplaceApp({
                   setCampaignRequestMode("offer");
                 }}
               >
-                Cancel
+                {t("app.cancel")}
               </button>
               <button className="button button-coral" disabled={busy}>
                 {busy
                   ? campaignRequestMode === "buy_now"
-                    ? "Sending booking..."
-                    : "Sending offer..."
+                    ? t("app.sendingBooking")
+                    : t("app.sendingOffer")
                   : campaignRequestMode === "buy_now"
-                    ? "Send booking request"
-                    : "Send offer"}{" "}
+                    ? t("app.sendBookingRequest")
+                    : t("app.sendOffer")}{" "}
                 <span>↗</span>
               </button>
             </div>
@@ -18002,17 +17959,17 @@ export default function MarketplaceApp({
 
       {counteringRequest && (
         <Modal
-          label="Suggest different terms"
+          label={t("app.suggestDifferentTerms")}
           onClose={() => setCounteringRequest(null)}
         >
           <div className="modal-heading">
-            <p className="eyebrow">Counteroffer</p>
-            <h2>Suggest different terms.</h2>
-            <p>Explain what you can deliver and what needs to change.</p>
+            <p className="eyebrow">{t("app.counteroffer")}</p>
+            <h2>{t("app.suggestDifferentTerms2")}</h2>
+            <p>{t("app.explainWhatYouCanDeliverAndWhat")}</p>
           </div>
           <form className="stack-form" onSubmit={submitCounteroffer}>
             <label>
-              Counter budget
+              {t("app.counterBudget")}
               <input
                 name="counter_budget"
                 type="number"
@@ -18031,16 +17988,16 @@ export default function MarketplaceApp({
               />
             </label>
             <label>
-              Counteroffer details
+              {t("app.counterofferDetails")}
               <textarea
                 name="counter_message"
                 required
                 minLength={10}
-                placeholder="Explain the revised timing, scope, or deliverables."
+                placeholder={t("app.explainTheRevisedTimingScopeOrDeliverables")}
               />
             </label>
             <button className="button button-coral button-full" disabled={busy}>
-              {busy ? "Sending..." : "Send counteroffer"} <span>↗</span>
+              {busy ? t("app.sending") : t("app.sendCounteroffer")} <span>↗</span>
             </button>
           </form>
         </Modal>
@@ -18048,51 +18005,50 @@ export default function MarketplaceApp({
 
       {verificationOpen && profile && profile.role !== "consumer" && (
         <Modal
-          label="Submit verification evidence"
+          label={t("app.submitVerificationEvidence")}
           onClose={() => setVerificationOpen(false)}
         >
           <div className="modal-heading">
-            <p className="eyebrow">SideSpace verification</p>
-            <h2>Submit evidence for review.</h2>
+            <p className="eyebrow">{t("app.sidespaceVerification")}</p>
+            <h2>{t("app.submitEvidenceForReview")}</h2>
             <p>
-              A social link is self-reported until SideSpace reviews evidence or
-              a supported provider is connected. Approval is never automatic.
+              {t("app.aSocialLinkIsSelfReportedUntil")}
             </p>
           </div>
           <form className="stack-form" onSubmit={submitVerificationRequest}>
             <label>
-              Public business or portfolio URL
+              {t("app.publicBusinessOrPortfolioUrl")}
               <input
                 name="evidence_url"
                 type="url"
                 required
-                placeholder="https://yourbusiness.com/about"
+                placeholder={t("app.httpsYourbusinessComAbout")}
               />
             </label>
             <label>
-              Primary social platform
+              {t("app.primarySocialPlatform")}
               <select name="social_platform" defaultValue="instagram">
                 <option value="instagram">Instagram</option>
                 <option value="tiktok">TikTok</option>
                 <option value="youtube">YouTube</option>
-                <option value="facebook">Facebook</option>
-                <option value="x">X</option>
-                <option value="none">No social account</option>
+                <option value="facebook">{t("app.facebook")}</option>
+                <option value="x">{t("app.x")}</option>
+                <option value="none">{t("app.noSocialAccount")}</option>
               </select>
             </label>
             <label>
-              Social handle or profile URL
-              <input name="social_handle" placeholder="@yourhandle" />
+              {t("app.socialHandleOrProfileUrl")}
+              <input name="social_handle" placeholder={t("app.yourhandle")} />
             </label>
             <label>
-              What should we verify?
+              {t("app.whatShouldWeVerify")}
               <textarea
                 name="verification_message"
-                placeholder="Tell us how the website and social profile connect to you or your organization."
+                placeholder={t("app.tellUsHowTheWebsiteAndSocial")}
               />
             </label>
             <button className="button button-dark button-full" disabled={busy}>
-              {busy ? "Submitting..." : "Submit for manual review"}{" "}
+              {busy ? t("app.submitting") : t("app.submitForManualReview")}{" "}
               <span>↗</span>
             </button>
           </form>
@@ -18101,36 +18057,36 @@ export default function MarketplaceApp({
 
       {reportTarget && (
         <Modal
-          label={`Report ${reportTarget.profile.display_name}`}
+          label={t("app.reportDisplayName", { display_name: reportTarget.profile.display_name })}
           onClose={() => setReportTarget(null)}
         >
           <div className="modal-heading">
-            <p className="eyebrow">Safety report</p>
-            <h2>Report {reportTarget.profile.display_name}</h2>
-            <p>Reports are private and reviewed by the SideSpace team.</p>
+            <p className="eyebrow">{t("app.safetyReport")}</p>
+            <h2>{t("app.reportDisplayName", { display_name: reportTarget.profile.display_name })}</h2>
+            <p>{t("app.reportsArePrivateAndReviewedByThe")}</p>
           </div>
           <form className="stack-form" onSubmit={submitProfileReport}>
             <label>
-              Reason
+              {t("app.reason")}
               <select name="reason" defaultValue="misleading">
-                <option value="misleading">Misleading listing or metrics</option>
-                <option value="spam">Spam or unwanted promotion</option>
-                <option value="unsafe">Unsafe or prohibited content</option>
-                <option value="impersonation">Impersonation</option>
-                <option value="other">Other</option>
+                <option value="misleading">{t("app.misleadingListingOrMetrics")}</option>
+                <option value="spam">{t("app.spamOrUnwantedPromotion")}</option>
+                <option value="unsafe">{t("app.unsafeOrProhibitedContent")}</option>
+                <option value="impersonation">{t("app.impersonation")}</option>
+                <option value="other">{t("app.other")}</option>
               </select>
             </label>
             <label>
-              Details
+              {t("app.details")}
               <textarea
                 name="details"
                 required
                 minLength={10}
-                placeholder="Describe what happened and what the team should review."
+                placeholder={t("app.describeWhatHappenedAndWhatTheTeam")}
               />
             </label>
             <button className="button button-dark button-full" disabled={busy}>
-              {busy ? "Submitting..." : "Submit private report"}
+              {busy ? t("app.submitting") : t("app.submitPrivateReport")}
             </button>
           </form>
         </Modal>
@@ -18143,16 +18099,16 @@ export default function MarketplaceApp({
             className="inbox-drawer"
             role="dialog"
             aria-modal="true"
-            aria-label="Messages"
+            aria-label={t("chrome.messages")}
             tabIndex={-1}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <header>
               <div>
-                <p className="eyebrow">Private conversations</p>
-                <h2>Messages</h2>
+                <p className="eyebrow">{t("app.privateConversations")}</p>
+                <h2>{t("chrome.messages")}</h2>
               </div>
-              <button onClick={closeInbox} aria-label="Close messages">
+              <button onClick={closeInbox} aria-label={t("app.closeMessages")}>
                 ×
               </button>
             </header>
@@ -18163,20 +18119,20 @@ export default function MarketplaceApp({
                     <span>@</span>
                     <h3>
                       {inboxState === "loading"
-                        ? "Loading your conversations..."
-                        : "We could not load your conversations."}
+                        ? t("app.loadingYourConversations")
+                        : t("app.weCouldNotLoadYourConversations")}
                     </h3>
                     <p>
                       {inboxState === "loading"
-                        ? "One moment."
-                        : "Check your connection and reopen Messages."}
+                        ? t("app.oneMoment")
+                        : t("app.checkYourConnectionAndReopenMessages")}
                     </p>
                   </div>
                 ) : !visibleThreads.length ? (
                   <div className="inbox-empty">
                     <span>@</span>
-                    <h3>Your inbox is ready.</h3>
-                    <p>Message a listing owner to start a conversation.</p>
+                    <h3>{t("app.yourInboxIsReady")}</h3>
+                    <p>{t("app.messageAListingOwnerToStartA")}</p>
                   </div>
                 ) : (
                   visibleThreads.map((thread) => (
@@ -18201,7 +18157,7 @@ export default function MarketplaceApp({
                     <div className="conversation-head">
                       <button
                         className="mobile-back"
-                        aria-label="Back to conversations"
+                        aria-label={t("app.backToConversations")}
                         onClick={() => {
                           setActiveContact(null);
                           setActiveThread(null);
@@ -18214,7 +18170,7 @@ export default function MarketplaceApp({
                         <strong>{activeContact.display_name}</strong>
                         <small>
                           {roleLabel(activeContact.role)} · {activeContact.city}
-                          {activeContact.is_demo && " · Automated demo replies"}
+                          {activeContact.is_demo && t("app.automatedDemoReplies")}
                         </small>
                       </div>
                     </div>
@@ -18222,10 +18178,9 @@ export default function MarketplaceApp({
                       {!messages.length && (
                         <div className="message-start">
                           <Avatar profile={activeContact} />
-                          <h3>Start with something specific.</h3>
+                          <h3>{t("app.startWithSomethingSpecific")}</h3>
                           <p>
-                            Mention the listing, your timeline, and what success
-                            would look like.
+                            {t("app.mentionTheListingYourTimelineAndWhat")}
                           </p>
                         </div>
                       )}
@@ -18246,7 +18201,7 @@ export default function MarketplaceApp({
                           <span className="sr-only">{sender}: </span>
                           <p>{message.body}</p>
                           <small>
-                            {TIME_FORMAT.format(new Date(message.created_at))}
+                            {timeFormat(locale).format(new Date(message.created_at))}
                           </small>
                         </div>
                         );
@@ -18264,17 +18219,17 @@ export default function MarketplaceApp({
                       <textarea
                         name="body"
                         required
-                        placeholder="Write a message..."
+                        placeholder={t("app.writeAMessage")}
                         rows={2}
                       />
-                      <button>Send ↗</button>
+                      <button>{t("app.send")}</button>
                     </form>
                   </>
                 ) : (
                   <div className="conversation-placeholder">
                     <span>↗</span>
-                    <h3>Choose a conversation</h3>
-                    <p>Your private messages will appear here.</p>
+                    <h3>{t("app.chooseAConversation")}</h3>
+                    <p>{t("app.yourPrivateMessagesWillAppearHere")}</p>
                   </div>
                 )}
               </div>

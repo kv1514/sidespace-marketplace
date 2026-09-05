@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { useLocale } from "@/app/components/LocaleProvider";
 
 /**
  * A 360 photo or 360 video of a space, looked around by dragging.
@@ -36,6 +37,7 @@ function clamp(value: number, low: number, high: number) {
 }
 
 export default function PanoramaViewer({ src, kind, label }: Props) {
+  const { t } = useLocale();
   const mountRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const movedRef = useRef(false);
@@ -280,12 +282,12 @@ export default function PanoramaViewer({ src, kind, label }: Props) {
       <div ref={mountRef} className="pano-canvas" />
       {status === "loading" && (
         <span className="pano-status" role="status">
-          Loading the 360° view…
+          {t("app.loadingThe360View")}
         </span>
       )}
       {status === "ready" && !moved && (
         <span className="pano-hint" aria-hidden="true">
-          Drag to look around
+          {t("panorama.dragToLookAround")}
         </span>
       )}
       {kind === "video360" && status === "ready" && (
@@ -293,16 +295,16 @@ export default function PanoramaViewer({ src, kind, label }: Props) {
           <button
             type="button"
             onClick={togglePlay}
-            aria-label={playing ? "Pause the 360° video" : "Play the 360° video"}
+            aria-label={playing ? t("panorama.pauseThe360Video") : t("panorama.playThe360Video")}
           >
-            {playing ? "❚❚ Pause" : "▶ Play"}
+            {playing ? t("panorama.pause") : t("panorama.play")}
           </button>
           <button
             type="button"
             onClick={toggleMute}
-            aria-label={muted ? "Turn the sound on" : "Turn the sound off"}
+            aria-label={muted ? t("panorama.turnTheSoundOn") : t("panorama.turnTheSoundOff")}
           >
-            {muted ? "Sound off" : "Sound on"}
+            {muted ? t("panorama.soundOff") : t("panorama.soundOn")}
           </button>
         </div>
       )}

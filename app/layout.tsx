@@ -7,6 +7,7 @@ import "./public-site.css";
 import { OG_IMAGE, SITE_URL } from "@/lib/site-metadata";
 import LocaleProvider from "@/app/components/LocaleProvider";
 import { CURRENCY_COOKIE, currencyFromRequest } from "@/lib/currency";
+import { getTranslator } from "@/lib/i18n-server";
 import {
   LOCALE_COOKIE,
   localeFromAcceptLanguage,
@@ -21,7 +22,9 @@ export const viewport: Viewport = {
   themeColor: "#fbf7e6",
 };
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return {
   metadataBase: new URL(SITE_URL),
   // Without this, no page emits rel=canonical and the legal pages have no
   // identity of their own for crawlers to separate from the homepage.
@@ -30,25 +33,22 @@ export const metadata: Metadata = {
     google: "-tVSDszKSbYFpt-rw-F18V4FtwnhWrxmSrjOFy4ZRns",
   },
   title: {
-    default: "SideSpace - Local attention, now bookable",
+    default: t("meta.siteTitle"),
     template: "%s · SideSpace",
   },
-  description:
-    "Book creator listings for social audiences, storefront windows, vehicles, counters, and community boards. Free to join, and the creator sets the price.",
+  description: t("meta.siteDescription"),
   openGraph: {
     type: "website",
     siteName: "SideSpace",
     url: SITE_URL,
-    title: "SideSpace - Local attention, now bookable",
-    description:
-      "Book creators offering social, physical, and sponsorship inventory—or list the way you can advertise.",
+    title: t("meta.siteTitle"),
+    description: t("meta.ogDescription"),
     images: OG_IMAGE,
   },
   twitter: {
     card: "summary_large_image",
-    title: "SideSpace - Local attention, now bookable",
-    description:
-      "Book creator-led social audiences, physical placements, and sponsorships—or list the way you can advertise.",
+    title: t("meta.siteTitle"),
+    description: t("meta.twitterDescription"),
     images: OG_IMAGE,
   },
   icons: {
@@ -58,7 +58,8 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/apple-icon.png" }],
   },
-};
+  };
+}
 
 export default async function RootLayout({
   children,
