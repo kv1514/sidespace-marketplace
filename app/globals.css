@@ -637,10 +637,18 @@ h2 em {
   border: 1px solid var(--line);
   border-radius: 18px;
   display: flex;
+  gap: 8px;
   justify-content: space-between;
   margin-bottom: 14px;
   min-height: 72px;
   padding: 10px;
+}
+
+.market-searches {
+  align-items: center;
+  display: flex;
+  flex: 1 1 560px;
+  min-width: 0;
 }
 
 .search-control {
@@ -662,6 +670,38 @@ h2 em {
   font-size: 12px;
   outline: 0;
   width: 100%;
+}
+
+.location-control {
+  border-left: 1px solid var(--line-soft);
+  min-width: 220px;
+}
+
+.location-control > span {
+  color: var(--ink-soft);
+}
+
+.clear-location {
+  align-items: center;
+  background: var(--paper-2);
+  border: 0;
+  border-radius: 50%;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 17px;
+  height: 26px;
+  justify-content: center;
+  line-height: 1;
+  width: 26px;
+}
+
+.clear-location:hover,
+.clear-location:focus-visible {
+  background: var(--ink);
+  color: var(--paper);
+  outline: none;
 }
 
 .role-tabs {
@@ -3415,8 +3455,19 @@ h2 em {
     flex-direction: column;
   }
 
+  .market-searches {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
   .search-control {
     min-height: 48px;
+  }
+
+  .location-control {
+    border-left: 0;
+    border-top: 1px solid var(--line-soft);
   }
 
   .role-tabs {
@@ -5004,6 +5055,26 @@ html {
 }
 
 /* ===== Compact listing cards + dual-role picker ===== */
+
+.listing-translation-badge {
+  background: color-mix(in srgb, var(--lime) 48%, var(--white));
+  border: 1px solid color-mix(in srgb, var(--lime) 75%, var(--line));
+  border-radius: 999px;
+  color: var(--ink);
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  margin-top: 9px;
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.listing-translation-badge.is-original {
+  background: var(--paper-2);
+  border-color: var(--line);
+  color: var(--ink-soft);
+}
 
 .listing-blurb {
   -webkit-box-orient: vertical;

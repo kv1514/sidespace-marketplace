@@ -21,6 +21,7 @@ import {
 } from "@/app/components/SiteChrome";
 import SmoothScroll from "@/app/components/SmoothScroll";
 import ScrollParallax from "@/app/components/ScrollParallax";
+import { useLocale } from "@/app/components/LocaleProvider";
 
 type PublicRoute = Exclude<SideSpaceRoute, "marketplace" | "dashboard">;
 
@@ -57,6 +58,7 @@ export default function PublicSiteApp({
   inviteToken?: string;
   referralCode?: string;
 }) {
+  const { t } = useLocale();
   const router = useRouter();
   const configured = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -194,7 +196,7 @@ export default function PublicSiteApp({
       <SmoothScroll />
       <ScrollParallax key={route} />
       <a className="ss-skip-link" href="#main-content">
-        Skip to main content
+        {t("chrome.skipToMain")}
       </a>
       <SiteHeader
         route={route}

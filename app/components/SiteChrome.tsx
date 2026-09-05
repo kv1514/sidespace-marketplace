@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import {
+  LanguageSwitcher,
+  useLocale,
+} from "@/app/components/LocaleProvider";
+import type { TranslationKey } from "@/lib/i18n";
 
 export type SideSpaceRoute =
   | "home"
@@ -18,18 +23,22 @@ type Viewer = {
 
 const PUBLIC_LINKS: Array<{
   href: string;
-  label: string;
+  labelKey: TranslationKey;
   route: SideSpaceRoute;
 }> = [
-  { href: "/marketplace", label: "Marketplace", route: "marketplace" },
+  { href: "/marketplace", labelKey: "chrome.marketplace", route: "marketplace" },
   {
     href: "/marketplace?sort=popular",
-    label: "Popular",
+    labelKey: "chrome.popular",
     route: "marketplace",
   },
-  { href: "/how-it-works", label: "How it works", route: "how-it-works" },
-  { href: "/creators", label: "Creators", route: "creators" },
-  { href: "/pricing", label: "Pricing", route: "pricing" },
+  {
+    href: "/how-it-works",
+    labelKey: "chrome.howItWorks",
+    route: "how-it-works",
+  },
+  { href: "/creators", labelKey: "chrome.creators", route: "creators" },
+  { href: "/pricing", labelKey: "chrome.pricing", route: "pricing" },
 ];
 
 export function SideSpaceMark() {
@@ -70,6 +79,7 @@ export function SiteHeader({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const { t } = useLocale();
 
   useEffect(() => {
     let frame = 0;
@@ -120,11 +130,11 @@ export function SiteHeader({
         className={`ss-header${scrolled ? " is-scrolled" : ""}${menuOpen ? " menu-open" : ""}`}
       >
         <div className="ss-header-inner">
-        <Link className="ss-brand" href="/" aria-label="SideSpace home">
+        <Link className="ss-brand" href="/" aria-label={t("chrome.sideSpaceHome")}>
           <SideSpaceMark />
         </Link>
 
-        <nav className="ss-desktop-nav" aria-label="Primary navigation">
+        <nav className="ss-desktop-nav" aria-label={t("chrome.primaryNavigation")}>
           {PUBLIC_LINKS.map((link) => (
             <Link
               href={link.href}
@@ -136,18 +146,21 @@ export function SiteHeader({
                   : undefined
               }
             >
-              {link.label}
+              {t(link.labelKey)}
             </Link>
           ))}
         </nav>
 
         <div className="ss-header-actions">
+          <div className="ss-language-switcher-desktop">
+            <LanguageSwitcher />
+          </div>
           {loading ? (
             <span className="ss-account-skeleton" aria-hidden="true" />
           ) : viewer ? (
             <>
               <button className="ss-header-text-action" onClick={onMessages}>
-                Messages
+                {t("chrome.messages")}
                 {unreadCount > 0 && (
                   <b>{unreadCount > 99 ? "99+" : unreadCount}</b>
                 )}
@@ -156,12 +169,12 @@ export function SiteHeader({
                 className={`ss-header-text-action ss-dashboard-link${route === "dashboard" ? " is-current" : ""}`}
                 href="/dashboard"
               >
-                Dashboard
+                {t("chrome.dashboard")}
               </Link>
               <button
                 className="ss-profile-control"
                 onClick={onAccount}
-                aria-label={`Open ${viewer.displayName}'s profile and settings`}
+                aria-label={`${t("chrome.profile")}: ${viewer.displayName}`}
               >
                 {viewer.avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -171,17 +184,17 @@ export function SiteHeader({
                     {viewer.displayName.slice(0, 1).toUpperCase()}
                   </span>
                 )}
-                <span>Profile</span>
+                <span>{t("chrome.profile")}</span>
               </button>
             </>
           ) : (
             <>
               <button className="ss-header-text-action ss-sign-in" onClick={onSignIn}>
-                Sign in
+                {t("chrome.signIn")}
               </button>
               <button className="ss-header-join" onClick={onJoin}>
                 <span>
-                  Join<span className="ss-header-join-full"> SideSpace</span>
+                  {t("chrome.join")}<span className="ss-header-join-full"> SideSpace</span>
                 </span>
                 <span aria-hidden="true" className="ss-icon-arrow">
                   ↗
@@ -195,7 +208,9 @@ export function SiteHeader({
             type="button"
             aria-expanded={menuOpen}
             aria-controls="ss-mobile-menu"
-            aria-label={menuOpen ? "Close navigation" : "Open navigation"}
+            aria-label={
+              menuOpen ? t("chrome.closeNavigation") : t("chrome.openNavigation")
+            }
             onClick={() => setMenuOpen((open) => !open)}
           >
             <span />
@@ -205,7 +220,7 @@ export function SiteHeader({
       </div>
 
       <div className="ss-mobile-menu" id="ss-mobile-menu" hidden={!menuOpen}>
-        <nav aria-label="Mobile navigation">
+        <nav aria-label={t("chrome.mobileNavigation")}>
           {PUBLIC_LINKS.map((link, index) => (
             <Link
               href={link.href}
@@ -214,7 +229,7 @@ export function SiteHeader({
               onClick={() => setMenuOpen(false)}
             >
               <span>{String(index + 1).padStart(2, "0")}</span>
-              {link.label}
+              {t(link.labelKey)}
               <b aria-hidden="true" className="ss-icon-arrow">
                 ↗
               </b>
@@ -228,7 +243,7 @@ export function SiteHeader({
                 onClick={() => setMenuOpen(false)}
               >
                 <span>05</span>
-                Dashboard
+                {t("chrome.dashboard")}
                 <b aria-hidden="true" className="ss-icon-arrow">
                   ↗
                 </b>
@@ -240,7 +255,7 @@ export function SiteHeader({
                 }}
               >
                 <span>06</span>
-                Messages
+                {t("chrome.messages")}
                 {unreadCount > 0 && <b>{unreadCount}</b>}
               </button>
               <button
@@ -250,12 +265,15 @@ export function SiteHeader({
                 }}
               >
                 <span>07</span>
-                Profile
+                {t("chrome.profile")}
                 <b aria-hidden="true">↗</b>
               </button>
             </>
           )}
         </nav>
+        <div className="ss-language-switcher-mobile">
+          <LanguageSwitcher />
+        </div>
         {!viewer && (
           <div className="ss-mobile-auth">
             <button
@@ -264,7 +282,7 @@ export function SiteHeader({
                 onSignIn();
               }}
             >
-              Sign in
+              {t("chrome.signIn")}
             </button>
             <button
               onClick={() => {
@@ -272,7 +290,7 @@ export function SiteHeader({
                 onJoin();
               }}
             >
-              Join SideSpace{" "}
+              {t("chrome.joinSideSpace")} {" "}
               <span aria-hidden="true" className="ss-icon-arrow">
                 ↗
               </span>
@@ -283,7 +301,7 @@ export function SiteHeader({
     </header>
       {menuOpen && (
         <button
-          aria-label="Close navigation"
+          aria-label={t("chrome.closeNavigation")}
           className="ss-menu-backdrop"
           type="button"
           onClick={() => setMenuOpen(false)}
@@ -294,30 +312,32 @@ export function SiteHeader({
 }
 
 export function SiteFooter({ onJoin }: { onJoin: () => void }) {
+  const { t } = useLocale();
+
   return (
     <footer className="ss-footer">
       <div className="ss-footer-lead">
-        <Link className="ss-brand" href="/" aria-label="SideSpace home">
+        <Link className="ss-brand" href="/" aria-label={t("chrome.sideSpaceHome")}>
           <SideSpaceMark />
         </Link>
         <p>
-          The marketplace for local attention.
+          {t("chrome.footerTaglineOne")}
           <br />
-          Digital, physical, and directly bookable.
+          {t("chrome.footerTaglineTwo")}
         </p>
       </div>
-      <nav aria-label="Footer navigation">
+      <nav aria-label={t("chrome.footerNavigation")}>
         {PUBLIC_LINKS.map((link) => (
           <Link href={link.href} key={link.href}>
-            {link.label}
+            {t(link.labelKey)}
           </Link>
         ))}
-        <Link href="/terms">Terms</Link>
-        <Link href="/privacy">Privacy</Link>
+        <Link href="/terms">{t("chrome.terms")}</Link>
+        <Link href="/privacy">{t("chrome.privacy")}</Link>
       </nav>
       <div className="ss-footer-end">
         <button onClick={onJoin}>
-          List what you have{" "}
+          {t("chrome.listWhatYouHave")} {" "}
           <span aria-hidden="true" className="ss-icon-arrow">
             ↗
           </span>

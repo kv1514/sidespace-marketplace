@@ -102,7 +102,10 @@ export default async function Marketplace({
               ? params.role
               : "all"
           : "all";
-  const initialSort = params.sort === "popular" ? "popular" : "latest";
+  const initialSort =
+    params.sort === "popular" || params.sort === "location"
+      ? params.sort
+      : "latest";
 
   return (
     <MarketplaceApp
@@ -110,6 +113,11 @@ export default async function Marketplace({
       initialProfiles={snapshot.profiles}
       initialListings={snapshot.listings}
       initialQuery={typeof params.q === "string" ? params.q.slice(0, 120) : ""}
+      initialLocation={
+        typeof params.location === "string"
+          ? params.location.slice(0, 120)
+          : ""
+      }
       initialChannel={
         typeof params.channel === "string" ? params.channel.slice(0, 80) : "All"
       }

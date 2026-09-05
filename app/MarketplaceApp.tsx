@@ -73,6 +73,24 @@ import {
   DashboardGate,
   LandingPage,
 } from "@/app/components/PublicPages";
+import { useLocale } from "@/app/components/LocaleProvider";
+import {
+  formatCurrency as formatLocalizedCurrency,
+  localeTag,
+  localizeListingChannel,
+  localizeListingUnit,
+  localizeRole,
+  type Locale,
+  type TranslationKey,
+} from "@/lib/i18n";
+import {
+  localizedListingCopy,
+  type ListingTranslations,
+} from "@/lib/listing-localization";
+import {
+  compareLocations,
+  locationMatchScore,
+} from "@/lib/listings/location";
 import {
   SiteFooter,
   SiteHeader,
@@ -103,7 +121,7 @@ type Role =
   | "space_owner"
   | "sponsor_host";
 type RoleFilter = "all" | "supply" | "business" | "creator";
-type ListingSort = "latest" | "popular";
+type ListingSort = "latest" | "popular" | "location";
 type CreatorOfferType = "social" | "physical" | "sponsorship";
 type LocationPoint = {
   latitude: number;
@@ -199,6 +217,7 @@ type Listing = BookingSchedule & {
   price_unit: string;
   description: string;
   demographics: string;
+  translations?: ListingTranslations | null;
   image_url: string;
   image_urls?: string[];
   location_area?: string;
@@ -4183,13 +4202,16 @@ function formatOffer(raw: string) {
  * `price_max_cents` the high end - because "what's your budget" is a band, not a
  * number. Every other listing has a single price and renders unchanged.
  */
-function priceLabel(listing: Pick<Listing, "price_cents" | "price_max_cents">) {
+function priceLabel(
+  listing: Pick<Listing, "price_cents" | "price_max_cents">,
+  locale: Locale = "en",
+) {
   const low = listing.price_cents;
   const high = listing.price_max_cents;
   if (typeof high === "number" && high > low) {
-    return `${formatCents(low)}–${formatCents(high)}`;
+    return `${formatLocalizedCurrency(locale, low)}–${formatLocalizedCurrency(locale, high)}`;
   }
-  return formatCents(low);
+  return formatLocalizedCurrency(locale, low);
 }
 
 function isBrief(listing: Pick<Listing, "channel">) {
@@ -4348,8 +4370,13 @@ function profileHasRole(
   return profileRoles(profile).includes(canonicalRole(role));
 }
 
-function rolesLabel(profile: Pick<Profile, "role" | "extra_roles">) {
-  return profileRoles(profile).map(roleLabel).join(" · ");
+function rolesLabel(
+  profile: Pick<Profile, "role" | "extra_roles">,
+  locale: Locale = "en",
+) {
+  return profileRoles(profile)
+    .map((role) => localizeRole(locale, role))
+    .join(" · ");
 }
 
 /** Characters as a person counts them, matching Postgres char_length. */
@@ -5133,6 +5160,7 @@ export default function MarketplaceApp({
   invite = null,
   route = "home",
   initialQuery = "",
+  initialLocation = "",
   initialRoleFilter = "all",
   initialChannel = "All",
   initialSort = "latest",
@@ -5160,10 +5188,17 @@ export default function MarketplaceApp({
    * mounted so every route keeps the same dialogs, sessions, and handlers. */
   route?: SideSpaceRoute;
   initialQuery?: string;
+  initialLocation?: string;
   initialRoleFilter?: RoleFilter;
   initialChannel?: string;
   initialSort?: ListingSort;
 } = {}) {
+  const {
+    locale,
+    translateListings,
+    formatNumber: formatLocalizedNumber,
+    t,
+  } = useLocale();
   const seededProfiles = useMemo(() => {
     const loaded = safeProfiles(initialProfiles);
     return loaded.length ? loaded : demoProfiles;
@@ -5531,6 +5566,9 @@ export default function MarketplaceApp({
   // has an empty left column, and the layout closes it up rather than leaving
   // a 520px hole beside the copy.
   const detailPhotos = selectedListing ? listingPhotos(selectedListing) : [];
+  const detailCopy = selectedListing
+    ? localizedListingCopy(selectedListing, locale, translateListings)
+    : null;
   const detailHasMedia = Boolean(
     selectedListing &&
       (detailPhotos.length ||
@@ -5606,6 +5644,9 @@ export default function MarketplaceApp({
   const [stripeAccountStatus, setStripeAccountStatus] =
     useState<StripeAccountStatus | null>(null);
   const [campaignListing, setCampaignListing] = useState<Listing | null>(null);
+  const campaignListingCopy = campaignListing
+    ? localizedListingCopy(campaignListing, locale, translateListings)
+    : null;
   const [campaignFeedback, setCampaignFeedback] = useState("");
   const [campaignRequestMode, setCampaignRequestMode] =
     useState<CampaignRequestMode>("offer");
@@ -5641,6 +5682,7 @@ export default function MarketplaceApp({
   const [stepsLive, setStepsLive] = useState(false);
   const stepsRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState(initialQuery);
+  const [locationQuery, setLocationQuery] = useState(initialLocation);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>(initialRoleFilter);
   const [channelFilter, setChannelFilter] = useState(initialChannel);
   const [listingSort, setListingSort] = useState<ListingSort>(initialSort);
@@ -6475,6 +6517,21 @@ export default function MarketplaceApp({
       ? channelFilter
       : "All";
 
+  // Suggestions come from the same public city/area labels used on cards.
+  // They are not reverse-geocoded and never include street addresses.
+  const locationOptions = useMemo(() => {
+    const values = new Set<string>();
+    for (const listing of listings) {
+      if (blockedProfileIds.includes(listing.owner.id)) continue;
+      if (isInternalAccount(listing.owner)) continue;
+      const location = listingCity(listing).trim();
+      if (location) values.add(location);
+    }
+    return Array.from(values).sort((left, right) =>
+      compareLocations(left, right, localeTag(locale)),
+    );
+  }, [blockedProfileIds, listings, locale]);
+
   // True while we know there is a member but not yet who they have blocked.
   // The server-rendered markup is shared and cached, so it cannot leave
   // blocked listings out; the client has to hold them back until it knows.
@@ -6496,6 +6553,7 @@ export default function MarketplaceApp({
     // rather than as an empty marketplace.
     if (blocksPending) return [];
     const normalized = query.trim().toLowerCase();
+    const normalizedLocation = locationQuery.trim();
     const popularityNow = listingSort === "popular" ? Date.now() : 0;
     return listings.filter((listing) => {
       if (blockedProfileIds.includes(listing.owner.id)) return false;
@@ -6515,6 +6573,9 @@ export default function MarketplaceApp({
             : !wanted && profileHasRole(listing.owner, roleFilter));
       const channelMatches =
         activeChannel === "All" || listing.channel === activeChannel;
+      const locationMatches =
+        !normalizedLocation ||
+        locationMatchScore(listingCity(listing), normalizedLocation) > 0;
       // Includes the listing's own location and offer line: both are shown on
       // the card, so searching "Walnut" or "decal" should find them. Optional
       // fields are coalesced so the literal string "undefined" never becomes
@@ -6539,15 +6600,24 @@ export default function MarketplaceApp({
       ]
         .join(" ")
         .toLowerCase();
-      return roleMatches && channelMatches && (!normalized || text.includes(normalized));
+      return (
+        roleMatches &&
+        channelMatches &&
+        locationMatches &&
+        (!normalized || text.includes(normalized))
+      );
     })
       // Members first, samples last; within each band the order is mixed
       // rather than newest-first so one fresh post cannot dominate the top.
       .sort(
         (a, b) =>
-          (listingSort === "popular"
-            ? comparePopularListings(a, b, popularityNow)
-            : 0) ||
+          (listingSort === "location"
+            ? locationMatchScore(listingCity(b), normalizedLocation) -
+                locationMatchScore(listingCity(a), normalizedLocation) ||
+              compareLocations(listingCity(a), listingCity(b), localeTag(locale))
+            : listingSort === "popular"
+              ? comparePopularListings(a, b, popularityNow)
+              : 0) ||
           listingRank(a) - listingRank(b) ||
           shuffleKey(a.id) - shuffleKey(b.id),
       );
@@ -6557,6 +6627,8 @@ export default function MarketplaceApp({
     blockedProfileIds,
     listingSort,
     listings,
+    locale,
+    locationQuery,
     query,
     roleFilter,
   ]);
@@ -7585,8 +7657,28 @@ export default function MarketplaceApp({
   function setListingSortAndUrl(next: ListingSort) {
     setListingSort(next);
     const url = new URL(window.location.href);
-    if (next === "popular") url.searchParams.set("sort", next);
+    if (next !== "latest") url.searchParams.set("sort", next);
     else url.searchParams.delete("sort");
+    window.history.replaceState(null, "", url);
+  }
+
+  function setLocationAndUrl(next: string) {
+    const trimmed = next.trim();
+    setLocationQuery(next);
+    const url = new URL(window.location.href);
+    if (trimmed) {
+      url.searchParams.set("location", trimmed);
+      // A location search should feel stable: keep the strongest city/area
+      // matches first instead of letting popularity shuffle them away.
+      setListingSort("location");
+      url.searchParams.set("sort", "location");
+    } else {
+      url.searchParams.delete("location");
+      if (listingSort === "location") {
+        setListingSort("latest");
+        url.searchParams.delete("sort");
+      }
+    }
     window.history.replaceState(null, "", url);
   }
 
@@ -11624,19 +11716,28 @@ export default function MarketplaceApp({
           <div className="account-empty">Loading your saved listings…</div>
         ) : ownListings.length ? (
           <div className="my-listings-grid">
-            {ownListings.map((listing) => (
+            {ownListings.map((listing) => {
+              const copy = localizedListingCopy(
+                listing,
+                locale,
+                translateListings,
+              );
+              return (
               <article className="my-listing-card" key={listing.id}>
                 <ListingCover
                   listing={listing}
-                  alt={`${listing.title} listing`}
+                  alt={copy.title + " listing"}
                 />
                 <div>
                   <span className={`listing-status status-${listing.status}`}>
                     {listing.status}
                   </span>
-                  <h4>{listing.title}</h4>
+                  <h4>{copy.title}</h4>
                   <p>
-                    {listing.channel} • {priceLabel(listing)}/{pricingLabel(listing)}
+                    {isBrief(listing)
+                      ? t("market.wanted")
+                      : localizeListingChannel(locale, listing.channel)}{" "}
+                    • {priceLabel(listing, locale)}/{localizeListingUnit(locale, pricingLabel(listing))}
                   </p>
                   {(() => {
                     const gaps = listingGaps(listing);
@@ -11667,7 +11768,8 @@ export default function MarketplaceApp({
                   </div>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="account-empty">
@@ -12309,7 +12411,7 @@ export default function MarketplaceApp({
         >
           <div className="dashboard-head">
             <div>
-              <p className="eyebrow">{rolesLabel(profile)} · {profile.city || "Add your city"}</p>
+              <p className="eyebrow">{rolesLabel(profile, locale)} · {profile.city || "Add your city"}</p>
               <h1 className="dashboard-title">
                 <em>{greeting()},</em>{" "}
                 {profile.display_name.split(" ")[0] || "there"}.
@@ -12576,7 +12678,13 @@ export default function MarketplaceApp({
               </header>
               {creatorRecommendations.length ? (
                 <div className="dashboard-recommendation-grid">
-                  {creatorRecommendations.map((recommendation) => (
+                  {creatorRecommendations.map((recommendation) => {
+                    const copy = localizedListingCopy(
+                      recommendation.listing,
+                      locale,
+                      translateListings,
+                    );
+                    return (
                     <article
                       className="dashboard-recommendation-card"
                       key={recommendation.listing.id}
@@ -12584,14 +12692,18 @@ export default function MarketplaceApp({
                       <ListingCover listing={recommendation.listing} />
                       <div className="dashboard-recommendation-body">
                         <div className="dashboard-recommendation-meta">
-                          <span>{recommendation.listing.channel}</span>
+                          <span>
+                            {isBrief(recommendation.listing)
+                              ? t("market.wanted")
+                              : localizeListingChannel(locale, recommendation.listing.channel)}
+                          </span>
                           <small>
                             {recommendation.listing.owner.display_name} ·{" "}
                             {listingCity(recommendation.listing)}
                           </small>
                         </div>
-                        <strong>{recommendation.listing.title}</strong>
-                        <p>{recommendation.listing.description}</p>
+                        <strong>{copy.title}</strong>
+                        <p>{copy.description}</p>
                         <small className="dashboard-recommendation-reason">
                           {recommendation.reasons.slice(0, 2).join(" · ")}
                         </small>
@@ -12612,7 +12724,8 @@ export default function MarketplaceApp({
                         </div>
                       </div>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="dashboard-panel-empty">
@@ -12911,20 +13024,26 @@ export default function MarketplaceApp({
         <div className="section-top">
           <div>
             <p className="section-label">
-              {listingSort === "popular" ? "Popular listings" : "Marketplace"}
+              {listingSort === "popular"
+                ? t("market.popularLabel")
+                : t("market.label")}
             </p>
-            <h1>Find the right audience or <em>spot.</em></h1>
+            <h1>
+              {t("market.titleLead")} <em>{t("market.titleAccent")}</em>
+            </h1>
           </div>
           <p>
-            Search Instagram, TikTok, newsletters, local audiences, towns, or
-            physical formats. See the details, meet the owner, and start a
-            private conversation.
+            {t("market.description")}
           </p>
         </div>
 
         {/* Which side of the marketplace someone is on decides what they
             should even be looking at, so ask it plainly first. */}
-        <div className="intent-switch" role="group" aria-label="What are you here for?">
+        <div
+          className="intent-switch"
+          role="group"
+          aria-label={t("market.intentAria")}
+        >
           <button
             type="button"
             className={roleFilter === "supply" ? "active" : ""}
@@ -12934,8 +13053,8 @@ export default function MarketplaceApp({
               setChannelFilter("All");
             }}
           >
-            <strong>I want to advertise</strong>
-            <small>Buy space from local people and creators</small>
+            <strong>{t("market.advertise")}</strong>
+            <small>{t("market.advertiseDescription")}</small>
           </button>
           <button
             type="button"
@@ -12946,8 +13065,8 @@ export default function MarketplaceApp({
               setChannelFilter("All");
             }}
           >
-            <strong>I have advertising to offer</strong>
-            <small>List your audience, placement, or sponsorship inventory</small>
+            <strong>{t("market.offer")}</strong>
+            <small>{t("market.offerDescription")}</small>
           </button>
           {roleFilter !== "all" && (
             <button
@@ -12955,34 +13074,66 @@ export default function MarketplaceApp({
               className="intent-clear"
               onClick={() => setRoleFilter("all")}
             >
-              Show everything
+              {t("market.showEverything")}
             </button>
           )}
         </div>
 
         <div className="market-controls">
-          <label className="search-control">
-            <span aria-hidden="true">⌕</span>
-            <input
-              type="search"
-              aria-label="Search listings by platform, creator, space, or city"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search Instagram, creators, spaces, cities..."
-            />
-          </label>
+          <div className="market-searches">
+            <label className="search-control">
+              <span aria-hidden="true">⌕</span>
+              <input
+                type="search"
+                aria-label={t("market.searchAria")}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t("market.searchPlaceholder")}
+              />
+            </label>
+            <div className="search-control location-control">
+              <span aria-hidden="true">⌖</span>
+              <input
+                type="search"
+                aria-label={t("market.locationAria")}
+                list="ss-market-location-options"
+                value={locationQuery}
+                onChange={(event) => setLocationAndUrl(event.target.value)}
+                placeholder={t("market.locationPlaceholder")}
+              />
+              {locationQuery && (
+                <button
+                  type="button"
+                  className="clear-location"
+                  aria-label={t("market.clearLocation")}
+                  onClick={() => setLocationAndUrl("")}
+                >
+                  ×
+                </button>
+              )}
+              <datalist id="ss-market-location-options">
+                {locationOptions.map((location) => (
+                  <option key={location} value={location} />
+                ))}
+              </datalist>
+            </div>
+          </div>
           {/* A group of filters, not tabs: these narrow one grid rather than
               swapping panels, and role="tablist" without role="tab" children
               left the active filter signalled by background colour alone. */}
-          <div className="role-tabs" role="group" aria-label="Listing owner type">
+          <div
+            className="role-tabs"
+            role="group"
+            aria-label={t("market.ownerTypeAria")}
+          >
             {(
                 [
-                ["all", "Everything"],
-                ["supply", "Advertising available"],
-                ["creator", "Creators"],
-                ["business", "Space wanted"],
-              ] as Array<[RoleFilter, string]>
-            ).map(([value, label]) => (
+                ["all", "market.everything"],
+                ["supply", "market.advertisingAvailable"],
+                ["creator", "market.creators"],
+                ["business", "market.spaceWanted"],
+              ] as Array<[RoleFilter, TranslationKey]>
+            ).map(([value, labelKey]) => (
               <button
                 key={value}
                 type="button"
@@ -12990,13 +13141,17 @@ export default function MarketplaceApp({
                 aria-pressed={roleFilter === value}
                 onClick={() => setRoleFilter(value)}
               >
-                {label}
+                {t(labelKey)}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="filter-row" role="group" aria-label="Channel">
+        <div
+          className="filter-row"
+          role="group"
+          aria-label={t("market.channelAria")}
+        >
           {channels.map((channel) => (
             <button
               key={channel}
@@ -13005,28 +13160,42 @@ export default function MarketplaceApp({
               aria-pressed={activeChannel === channel}
               onClick={() => setChannelFilter(channel)}
             >
-              {channel}
+              {channel === "All"
+                ? t("market.everything")
+                : localizeListingChannel(locale, channel)}
             </button>
           ))}
           {/* Announce the new count when a filter changes, so the result of
               pressing a filter is not visible-only. */}
           <span className="result-count" role="status" aria-live="polite">
             {blocksPending
-              ? "Loading the marketplace"
-              : `${visibleListings.length} listing${visibleListings.length === 1 ? "" : "s"} · ${requestableListingCount} available · ${visibleListings.length - requestableListingCount} view-only`}
+              ? t("market.loading")
+              : `${formatLocalizedNumber(visibleListings.length)} ${visibleListings.length === 1 ? t("market.listing") : t("market.listings")} · ${formatLocalizedNumber(requestableListingCount)} ${t("market.available")} · ${formatLocalizedNumber(visibleListings.length - requestableListingCount)} ${t("market.viewOnly")}`}
           </span>
         </div>
 
         <div className="listing-discovery-toolbar">
-          <div className="listing-sort" role="group" aria-label="Order listings">
-            <span className="listing-sort-label">Browse by</span>
+          <div
+            className="listing-sort"
+            role="group"
+            aria-label={t("market.orderAria")}
+          >
+            <span className="listing-sort-label">{t("market.browseBy")}</span>
             <button
               type="button"
               className={listingSort === "popular" ? "active" : ""}
               aria-pressed={listingSort === "popular"}
               onClick={() => setListingSortAndUrl("popular")}
             >
-              Popular now
+              {t("market.popularNow")}
+            </button>
+            <button
+              type="button"
+              className={listingSort === "location" ? "active" : ""}
+              aria-pressed={listingSort === "location"}
+              onClick={() => setListingSortAndUrl("location")}
+            >
+              {t("market.locationSort")}
             </button>
             <button
               type="button"
@@ -13034,61 +13203,75 @@ export default function MarketplaceApp({
               aria-pressed={listingSort === "latest"}
               onClick={() => setListingSortAndUrl("latest")}
             >
-              Latest
+              {t("market.latest")}
             </button>
           </div>
-          {listingSort === "popular" && (
+          {locationQuery ? (
             <p className="listing-sort-note">
-              Popularity blends likes, freshness, and listing detail so new
-              opportunities can still break through.
+              {visibleListings.length
+                ? t("market.locationNote", { location: locationQuery })
+                : t("market.noLocationMatches", { location: locationQuery })}
             </p>
-          )}
+          ) : listingSort === "popular" ? (
+            <p className="listing-sort-note">
+              {t("market.popularityNote")}
+            </p>
+          ) : null}
         </div>
 
         {forYou.items.length >= 3 && (
           <section className="listing-foryou" aria-labelledby="listing-foryou-heading">
             <div className="listing-foryou-head">
               <span className="eyebrow">
-                {forYou.personalised ? "Picked for you" : "Popular right now"}
+                {forYou.personalised
+                  ? t("market.pickedForYou")
+                  : t("market.popularRightNow")}
               </span>
               <h3 id="listing-foryou-heading">
                 {forYou.personalised
-                  ? "Based on what you have been looking at"
-                  : "What people are opening most"}
+                  ? t("market.basedOnLooking")
+                  : t("market.openingMost")}
               </h3>
             </div>
             <div className="listing-foryou-row">
-              {forYou.items.map(({ listing, reasons }) => (
-                <article
-                  className="listing-foryou-card"
-                  key={listing.id}
-                  data-listing-id={listing.id}
-                >
-                  <button
-                    type="button"
-                    className="listing-foryou-image"
-                    onClick={() => openListing(listing)}
-                    aria-label={`Open ${listing.title}`}
+              {forYou.items.map(({ listing, reasons }) => {
+                const copy = localizedListingCopy(
+                  listing,
+                  locale,
+                  translateListings,
+                );
+                return (
+                  <article
+                    className="listing-foryou-card"
+                    key={listing.id}
+                    data-listing-id={listing.id}
                   >
-                    <ListingCover listing={listing} />
-                  </button>
-                  <div className="listing-foryou-body">
                     <button
                       type="button"
-                      className="listing-foryou-title"
+                      className="listing-foryou-image"
                       onClick={() => openListing(listing)}
+                      aria-label={t("market.openListing", { title: copy.title })}
                     >
-                      {listing.title}
+                      <ListingCover listing={listing} />
                     </button>
-                    <small>
-                      {listing.owner.display_name} · {listingCity(listing)}
-                    </small>
-                    {reasons.length > 0 && (
-                      <p className="listing-foryou-reason">{reasons.join(" · ")}</p>
-                    )}
-                  </div>
-                </article>
-              ))}
+                    <div className="listing-foryou-body">
+                      <button
+                        type="button"
+                        className="listing-foryou-title"
+                        onClick={() => openListing(listing)}
+                      >
+                        {copy.title}
+                      </button>
+                      <small>
+                        {listing.owner.display_name} · {listingCity(listing)}
+                      </small>
+                      {reasons.length > 0 && (
+                        <p className="listing-foryou-reason">{reasons.join(" · ")}</p>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </section>
         )}
@@ -13098,12 +13281,18 @@ export default function MarketplaceApp({
             Array.from({ length: 6 }, (_, index) => (
               <div className="listing-skeleton" key={`skeleton-${index}`} />
             ))}
-          {visibleListings.map((listing) => (
-            <article
-              className="listing-card"
-              key={listing.id}
-              data-listing-id={listing.id}
-            >
+          {visibleListings.map((listing) => {
+            const copy = localizedListingCopy(
+              listing,
+              locale,
+              translateListings,
+            );
+            return (
+              <article
+                className="listing-card"
+                key={listing.id}
+                data-listing-id={listing.id}
+              >
               <button
                 className={`listing-image${
                   listingCover(listing) ? "" : " is-blank"
@@ -13114,16 +13303,18 @@ export default function MarketplaceApp({
                 <span
                   className={`listing-channel ${isBrief(listing) ? "is-brief" : ""}`}
                 >
-                  {isBrief(listing) ? "Wanted" : listing.channel}
+                  {isBrief(listing)
+                    ? t("market.wanted")
+                    : localizeListingChannel(locale, listing.channel)}
                 </span>
                 {listingPhotos(listing).length > 1 && (
                   <span className="photo-count">
-                    {listingPhotos(listing).length} photos
+                    {formatLocalizedNumber(listingPhotos(listing).length)} {t("market.photos")}
                   </span>
                 )}
                 {listing.tour_kind && (
                   <span className="tour-badge">
-                    {listing.tour_kind === "video" ? "▶ Video" : "360°"}
+                    {listing.tour_kind === "video" ? `▶ ${t("market.video")}` : "360°"}
                   </span>
                 )}
                 {/* A 34px circular heart pill sat here on every card - the
@@ -13133,7 +13324,7 @@ export default function MarketplaceApp({
                     clicked is worse than no control. Restore it alongside a
                     real favorites feature, not before. */}
                 <span className="image-hint" aria-hidden="true">
-                  Click to view{" "}
+                  {t("market.clickToView")} {" "}
                   <b aria-hidden="true" className="ss-icon-arrow ss-icon-east">
                     →
                   </b>
@@ -13141,7 +13332,7 @@ export default function MarketplaceApp({
               </button>
               <ListingLikeButton
                 placement="card"
-                title={listing.title}
+                title={copy.title}
                 likeCount={listing.like_count}
                 liked={likedListingIds.has(listing.id)}
                 isAuthenticated={Boolean(user)}
@@ -13169,11 +13360,11 @@ export default function MarketplaceApp({
                       {listing.owner.display_name}
                       {listing.owner.verified && <span className="verified">✓</span>}
                       {listing.owner.is_demo && (
-                        <span className="sample-badge">Demo</span>
+                        <span className="sample-badge">{t("chrome.demo")}</span>
                       )}
                     </strong>
                     <small>
-                      {rolesLabel(listing.owner)} · {listingCity(listing)}
+                      {rolesLabel(listing.owner, locale)} · {listingCity(listing)}
                     </small>
                   </div>
                 </div>
@@ -13181,22 +13372,38 @@ export default function MarketplaceApp({
                   className="listing-title"
                   onClick={() => openListing(listing)}
                 >
-                  {listing.title}
+                  {copy.title}
                 </button>
-                <p className="listing-blurb">{listing.description}</p>
+                {translateListings && locale !== "en" && (
+                  <span
+                    className={`listing-translation-badge${copy.translated ? "" : " is-original"}`}
+                    title={
+                      copy.translated
+                        ? undefined
+                        : t("market.translationUnavailable")
+                    }
+                  >
+                    {copy.translated
+                      ? t("market.translatedLabel")
+                      : t("market.originalLabel")}
+                  </span>
+                )}
+                <p className="listing-blurb">{copy.description}</p>
                 <div className="listing-offer">
                   <span className="listing-offer-label">
-                    {isBrief(listing) ? "Looking for" : "You get"}
+                    {isBrief(listing)
+                      ? t("market.lookingFor")
+                      : t("market.youGet")}
                   </span>
                   <span className="listing-offer-value">
-                    {formatOffer(listing.format)}
+                    {formatOffer(copy.format)}
                   </span>
                 </div>
                 <button
                   className="listing-more"
                   onClick={() => openListing(listing)}
                 >
-                  Learn more{" "}
+                  {t("market.learnMore")} {" "}
                   <span aria-hidden="true" className="ss-icon-arrow ss-icon-east">
                     →
                   </span>
@@ -13204,10 +13411,10 @@ export default function MarketplaceApp({
                 <footer>
                   <div>
                     {isBrief(listing) && (
-                      <span className="price-lead">Budget</span>
+                      <span className="price-lead">{t("market.budget")}</span>
                     )}
-                    <strong>{priceLabel(listing)}</strong>
-                    <small> / {pricingLabel(listing)}</small>
+                    <strong>{priceLabel(listing, locale)}</strong>
+                    <small> / {localizeListingUnit(locale, pricingLabel(listing))}</small>
                   </div>
                   <button
                     disabled={!isListingRequestable(listing)}
@@ -13220,38 +13427,44 @@ export default function MarketplaceApp({
                       isListingRequestable(listing)
                         ? isBrief(listing)
                           ? undefined
-                          : listing.instant_booking_enabled ? "Choose an open date and check out." : "Make an offer for custom dates."
-                        : "The owner must confirm this listing before requests open."
+                          : listing.instant_booking_enabled
+                            ? t("market.chooseDateTitle")
+                            : t("market.makeOfferTitle")
+                        : t("market.ownerConfirmTitle")
                     }
                   >
                     {isListingRequestable(listing)
                       ? isBrief(listing)
-                        ? "Offer my space"
-                        : listing.instant_booking_enabled ? "Choose dates" : "View booking options"
-                      : "View only"}{" "}
+                        ? t("market.offerMySpace")
+                        : listing.instant_booking_enabled
+                          ? t("market.chooseDates")
+                          : t("market.viewBookingOptions")
+                      : t("market.viewOnlyButton")}{" "}
                     <span aria-hidden="true" className="ss-icon-arrow">
                       ↗
                     </span>
                   </button>
                 </footer>
               </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
         {!visibleListings.length && !blocksPending && (
           <div className="empty-state">
             <span>⌕</span>
-            <h3>No exact matches yet.</h3>
-            <p>Try a broader search or clear one of the filters.</p>
+            <h3>{t("market.noMatches")}</h3>
+            <p>{t("market.tryBroader")}</p>
             <button
               className="button button-dark"
               onClick={() => {
                 setQuery("");
+                setLocationAndUrl("");
                 setRoleFilter("all");
                 setChannelFilter("All");
               }}
             >
-              Clear filters
+              {t("market.clearFilters")}
             </button>
           </div>
         )}
@@ -13332,7 +13545,7 @@ export default function MarketplaceApp({
           {showcasePeople.map((person) => (
             <article key={person.id} className="person-card">
               <Avatar profile={person} size="large" />
-              <span className="person-role">{rolesLabel(person)}</span>
+              <span className="person-role">{rolesLabel(person, locale)}</span>
               {person.is_demo && <span className="person-demo">Demo profile</span>}
               {!person.is_demo && person.verified && (
                 <span className="person-verified">Verified by SideSpace</span>
@@ -13763,7 +13976,7 @@ export default function MarketplaceApp({
                 <p className="eyebrow">Your SideSpace profile</p>
                 <h2>{profile.display_name}</h2>
                 <p>
-                  {user.email} <span>•</span> {rolesLabel(profile)} <span>•</span>{" "}
+                  {user.email} <span>•</span> {rolesLabel(profile, locale)} <span>•</span>{" "}
                   {profile.city || "Location not added"}
                 </p>
               </div>
@@ -16807,7 +17020,7 @@ export default function MarketplaceApp({
                                       : answers.priceMax == null
                                         ? null
                                         : dollarsToCents(answers.priceMax),
-                                });
+                                }, locale);
                               })()}
                             </b>
                             <small>
@@ -17264,7 +17477,11 @@ export default function MarketplaceApp({
       )}
 
       {selectedListing && (
-        <Modal label={selectedListing.title} onClose={closeListing} wide>
+        <Modal
+          label={detailCopy?.title ?? selectedListing.title}
+          onClose={closeListing}
+          wide
+        >
           <div className={`detail-layout${detailHasMedia ? "" : " has-no-media"}`}>
             {detailHasMedia && (
             <div className="detail-media">
@@ -17273,9 +17490,13 @@ export default function MarketplaceApp({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={detailPhotos[selectedPhotoIndex] || detailPhotos[0]}
-                  alt={`${selectedListing.title} photo ${selectedPhotoIndex + 1}`}
+                  alt={`${detailCopy?.title ?? selectedListing.title} photo ${selectedPhotoIndex + 1}`}
                 />
-                <span className="listing-channel">{selectedListing.channel}</span>
+                <span className="listing-channel">
+                  {isBrief(selectedListing)
+                    ? t("market.wanted")
+                    : localizeListingChannel(locale, selectedListing.channel)}
+                </span>
               </figure>
               )}
               {detailPhotos.length > 1 && (
@@ -17364,7 +17585,7 @@ export default function MarketplaceApp({
                       )}
                     </strong>
                     <small>
-                      {rolesLabel(selectedListing.owner)} ·{" "}
+                      {rolesLabel(selectedListing.owner, locale)} ·{" "}
                       {selectedListing.owner.city}
                     </small>
                   </div>
@@ -17434,10 +17655,10 @@ export default function MarketplaceApp({
                 </div>
               )}
               <div className="detail-title-row">
-                <h2>{selectedListing.title}</h2>
+                <h2>{detailCopy?.title ?? selectedListing.title}</h2>
                 <ListingLikeButton
                   placement="detail"
-                  title={selectedListing.title}
+                  title={detailCopy?.title ?? selectedListing.title}
                   likeCount={selectedListing.like_count}
                   liked={likedListingIds.has(selectedListing.id)}
                   isAuthenticated={Boolean(user)}
@@ -17459,8 +17680,24 @@ export default function MarketplaceApp({
                   onToggle={() => void toggleListingLike(selectedListing)}
                 />
               </div>
-              <p className="listing-included">{selectedListing.deliverables || selectedListing.format}</p>
-              <div className="detail-price"><strong>{priceLabel(selectedListing)}</strong><span> / {pricingLabel(selectedListing)}</span></div>
+              {translateListings && locale !== "en" && detailCopy && (
+                <span
+                  className={`listing-translation-badge${detailCopy.translated ? "" : " is-original"}`}
+                  title={
+                    detailCopy.translated
+                      ? undefined
+                      : t("market.translationUnavailable")
+                  }
+                >
+                  {detailCopy.translated
+                    ? t("market.translatedLabel")
+                    : t("market.originalLabel")}
+                </span>
+              )}
+              <p className="listing-included">
+                {detailCopy?.deliverables || detailCopy?.format}
+              </p>
+              <div className="detail-price"><strong>{priceLabel(selectedListing, locale)}</strong><span> / {localizeListingUnit(locale, pricingLabel(selectedListing))}</span></div>
               <div className="detail-facts">
                 <div><small>Location</small><strong>{listingCity(selectedListing)}</strong></div>
                 <div><small>Timing</small><strong>{isBrief(selectedListing) ? selectedListing.available_from && selectedListing.available_to ? bookingDateLabel(selectedListing.timing_kind,selectedListing.available_from,selectedListing.available_to) : "Flexible" : selectedListing.timing_kind === "deadline" ? "Choose a delivery deadline" : "Choose your campaign dates"}</strong></div>
@@ -17468,7 +17705,7 @@ export default function MarketplaceApp({
                 {selectedListing.timing_kind === "date_range" && selectedListing.pricing_kind !== "fixed" && <div><small>Minimum duration</small><strong>{selectedListing.minimum_duration_days ?? 1} {(selectedListing.minimum_duration_days ?? 1) === 1 ? "day" : "days"}</strong></div>}
               </div>
               <details className="composer-options"><summary>Details and booking terms</summary>
-                {selectedListing.description && selectedListing.description !== selectedListing.deliverables && <p>{selectedListing.description}</p>}
+                {detailCopy?.description && detailCopy.description !== detailCopy.deliverables && <p>{detailCopy.description}</p>}
                 {selectedListing.space_size && <p><strong>Size: </strong>{selectedListing.space_size}</p>}
                 {!!selectedListing.surface_types?.length && <p><strong>Allowed formats: </strong>{selectedListing.surface_types.join(", ")}</p>}
                 {selectedListing.install_by && <p><strong>Installation: </strong>{INSTALL_CHIPS.find((item) => item.value === selectedListing.install_by)?.label || selectedListing.install_by}</p>}
@@ -17476,11 +17713,11 @@ export default function MarketplaceApp({
                 {selectedListing.sponsor_slots != null && <p><strong>Available spots: </strong>{selectedListing.sponsor_slots}</p>}
                 {isBrief(selectedListing) && !!selectedListing.target_platforms?.length && <p><strong>Target platforms: </strong>{selectedListing.target_platforms.join(", ")}</p>}
                 {isBrief(selectedListing) && selectedListing.brief_scope && <p><strong>Placements: </strong>{selectedListing.brief_scope === "both" ? "Physical and online" : selectedListing.brief_scope === "physical" ? "Physical" : "Online"}</p>}
-                {selectedListing.demographics && <p><strong>Audience: </strong>{selectedListing.demographics}</p>}
-                {selectedListing.availability_notes && <p>{selectedListing.availability_notes}</p>}
+                {detailCopy?.demographics && <p><strong>Audience: </strong>{detailCopy.demographics}</p>}
+                {detailCopy?.availability_notes && <p>{detailCopy.availability_notes}</p>}
                 {(selectedListing.available_from || selectedListing.available_to) && <p>Available {displayDate(selectedListing.available_from)} – {displayDate(selectedListing.available_to)}</p>}
-                {selectedListing.minimum_booking && <p>{selectedListing.minimum_booking}</p>}
-                <p><strong>Cancellation: </strong>{selectedListing.cancellation_policy || "Agree with the owner before payment."}</p>
+                {detailCopy?.minimum_booking && <p>{detailCopy.minimum_booking}</p>}
+                <p><strong>Cancellation: </strong>{detailCopy?.cancellation_policy || "Agree with the owner before payment."}</p>
               </details>
               {!viewingOwnListing && isListingRequestable(selectedListing) && !isBrief(selectedListing) && selectedListing.instant_booking_enabled && selectedListing.price_cents > 0 && (
                 <InstantBookingPanel key={selectedListing.id} listing={selectedListing} busy={busy}
@@ -17643,7 +17880,7 @@ export default function MarketplaceApp({
                   {selectedOwner.verified && <span className="verified">✓</span>}
                 </h2>
                 <p className="seller-profile-meta">
-                  {rolesLabel(selectedOwner)}
+                          {rolesLabel(selectedOwner, locale)}
                   {selectedOwner.city ? ` · ${selectedOwner.city}` : ""}
                   {displayHandle(selectedOwner.handle ?? "")
                     ? ` · ${displayHandle(selectedOwner.handle ?? "")}`
@@ -17706,33 +17943,42 @@ export default function MarketplaceApp({
                 <p className="seller-profile-empty">Loading their listings…</p>
               ) : ownerListings.length ? (
                 <div className="seller-listing-grid">
-                  {ownerListings.map((listing) => (
-                    <button
-                      type="button"
-                      className="seller-listing"
-                      key={listing.id}
-                      onClick={() => openListingFromProfile(listing)}
-                      aria-current={
-                        listing.id === selectedListing?.id ? "true" : undefined
-                      }
-                    >
-                      <ListingCover listing={listing} />
-                      <span className="seller-listing-body">
-                        <span className="seller-listing-channel">
-                          {listing.channel}
-                        </span>
-                        <strong>{listing.title}</strong>
-                        <span className="seller-listing-price">
-                          {priceLabel(listing)} / {listing.price_unit}
-                        </span>
-                        {listing.id === selectedListing?.id && (
-                          <span className="seller-listing-current">
-                            The one you were reading
+                  {ownerListings.map((listing) => {
+                    const copy = localizedListingCopy(
+                      listing,
+                      locale,
+                      translateListings,
+                    );
+                    return (
+                      <button
+                        type="button"
+                        className="seller-listing"
+                        key={listing.id}
+                        onClick={() => openListingFromProfile(listing)}
+                        aria-current={
+                          listing.id === selectedListing?.id ? "true" : undefined
+                        }
+                      >
+                        <ListingCover listing={listing} />
+                        <span className="seller-listing-body">
+                          <span className="seller-listing-channel">
+                            {isBrief(listing)
+                              ? t("market.wanted")
+                              : localizeListingChannel(locale, listing.channel)}
                           </span>
-                        )}
-                      </span>
-                    </button>
-                  ))}
+                          <strong>{copy.title}</strong>
+                          <span className="seller-listing-price">
+                            {priceLabel(listing, locale)} / {localizeListingUnit(locale, pricingLabel(listing))}
+                          </span>
+                          {listing.id === selectedListing?.id && (
+                            <span className="seller-listing-current">
+                              The one you were reading
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="seller-profile-empty">
@@ -17757,25 +18003,25 @@ export default function MarketplaceApp({
 
       {campaignListing && (
         <Modal
-          label={`${campaignRequestMode === "buy_now" ? "Book as listed" : "Make an offer"} on ${campaignListing.title}`}
+          label={`${campaignRequestMode === "buy_now" ? "Book as listed" : "Make an offer"} on ${campaignListingCopy?.title ?? campaignListing.title}`}
           onClose={() => {
             setCampaignListing(null);
             setCampaignRequestMode("offer");
           }}
           wide
         >
-          <div className="modal-heading"><h2>{campaignRequestMode === "buy_now" ? "Request a booking" : "Make a custom offer"}</h2><p>{campaignListing.title}</p></div>
-          {campaignRequestMode === "buy_now" && <div className="booking-terms-summary"><strong>What’s included</strong><p>{campaignListing.deliverables || campaignListing.format}</p>
-            <details><summary>Booking and cancellation terms</summary><p>{campaignListing.cancellation_policy || "Agree cancellation terms with the owner before payment."}</p><p>{campaignListing.minimum_booking}</p></details>
+          <div className="modal-heading"><h2>{campaignRequestMode === "buy_now" ? "Request a booking" : "Make a custom offer"}</h2><p>{campaignListingCopy?.title ?? campaignListing.title}</p></div>
+          {campaignRequestMode === "buy_now" && <div className="booking-terms-summary"><strong>What’s included</strong><p>{campaignListingCopy?.deliverables || campaignListingCopy?.format}</p>
+            <details><summary>Booking and cancellation terms</summary><p>{campaignListingCopy?.cancellation_policy || "Agree cancellation terms with the owner before payment."}</p><p>{campaignListingCopy?.minimum_booking}</p></details>
           </div>}
           <form className="field-grid campaign-form" onSubmit={submitCampaignRequest} onInvalidCapture={(event) => revealInvalidField(event.target)}>
             <BookingFields listing={campaignListing} quoteRequired={campaignRequestMode === "buy_now"} />
             {campaignRequestMode !== "buy_now" && <>
               <label className="field-wide">Offer total ($)<input name="budget" type="number" min="0" step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
-              <label className="field-wide">{isBrief(campaignListing) ? "What you’ll deliver" : "What you need"}<textarea name="requested_deliverables" required minLength={2} maxLength={1000} defaultValue={campaignListing.deliverables || campaignListing.format} /></label>
+            <label className="field-wide">{isBrief(campaignListing) ? "What you’ll deliver" : "What you need"}<textarea name="requested_deliverables" required minLength={2} maxLength={1000} defaultValue={campaignListingCopy?.deliverables || campaignListingCopy?.format} /></label>
             </>}
             <details className="composer-options field-wide"><summary>Campaign details (optional)</summary><div className="field-grid">
-              <label className="field-wide">Campaign name<input name="campaign_name" maxLength={120} defaultValue={campaignListing.title} /></label>
+              <label className="field-wide">Campaign name<input name="campaign_name" maxLength={120} defaultValue={campaignListingCopy?.title ?? campaignListing.title} /></label>
               <label className="field-wide">What are you promoting?<textarea name="goals" maxLength={1500} /></label>
               <label className="field-wide">Notes or questions<textarea name="notes" maxLength={2000} /></label>
             </div></details>

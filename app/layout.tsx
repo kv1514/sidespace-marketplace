@@ -1,9 +1,18 @@
 import type { Metadata, Viewport } from "next";
+import { cookies, headers } from "next/headers";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import "lenis/dist/lenis.css";
 import "./public-site.css";
 import { OG_IMAGE, SITE_URL } from "@/lib/site-metadata";
+import LocaleProvider from "@/app/components/LocaleProvider";
+import {
+  LOCALE_COOKIE,
+  LISTING_TRANSLATION_COOKIE,
+  localeFromAcceptLanguage,
+  localeTag,
+  parseLocale,
+} from "@/lib/i18n";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -51,11 +60,19 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const requestCookies = await cookies();
+  const requestHeaders = await headers();
+  const initialLocale =
+    parseLocale(requestCookies.get(LOCALE_COOKIE)?.value) ??
+    localeFromAcceptLanguage(requestHeaders.get("accept-language"));
+  const initialTranslateListings =
+    requestCookies.get(LISTING_TRANSLATION_COOKIE)?.value !== "0";
+
   return (
-    <html lang="en">
+    <html lang={localeTag(initialLocale)}>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
@@ -69,7 +86,12 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {children}
+        <LocaleProvider
+          initialLocale={initialLocale}
+          initialTranslateListings={initialTranslateListings}
+        >
+          {children}
+        </LocaleProvider>
         <Analytics />
       </body>
     </html>
