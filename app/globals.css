@@ -12449,27 +12449,85 @@ html[lang^="ko"] {
   margin-bottom: 9px;
 }
 
-.portfolio-socials-grid {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-}
-
-.portfolio-socials-grid .chip-check span {
+/* The accounts already attached, each removable. */
+.portfolio-socials-chosen {
   display: flex;
-  flex-direction: column;
-  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
 }
 
-.portfolio-socials-grid .chip-check small {
+.portfolio-socials-chosen li {
+  align-items: baseline;
+  background: var(--paper, #f6f2e9);
+  border: 1px solid var(--line, #dedbd5);
+  border-radius: 999px;
+  display: flex;
+  gap: 7px;
+  max-width: 100%;
+  padding: 6px 8px 6px 13px;
+}
+
+.portfolio-socials-chosen span {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.portfolio-socials-chosen small {
   color: var(--ink-soft);
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.portfolio-socials-empty {
+.portfolio-socials-chosen button {
+  background: none;
+  border: 0;
   color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.portfolio-socials-chosen button:hover {
+  color: inherit;
+}
+
+.portfolio-socials-pick select {
+  width: 100%;
+}
+
+/* Platform, then the link or handle, then Add. Wraps to one per line on a
+   phone rather than squeezing three controls across 390px. */
+.portfolio-socials-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.portfolio-socials-add select {
+  flex: 0 1 150px;
+}
+
+.portfolio-socials-add input {
+  flex: 1 1 190px;
+  min-width: 0;
+}
+
+.portfolio-socials-add .button {
+  flex: 0 0 auto;
+}
+
+.portfolio-socials-note {
+  color: var(--ink-soft);
+  display: block;
+  margin-top: 8px;
 }
 
 /* One account a piece of portfolio work ran on, on a public profile. */

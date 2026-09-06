@@ -144,6 +144,9 @@ type Role =
  */
 type RoleFilter = "all" | "supply" | "online" | "physical" | "wanted";
 
+/** As many accounts as one piece of work can name; the column enforces the same. */
+const MAX_PORTFOLIO_SOCIALS = 8;
+
 /** A creator's own audience: a post, a mention, a placement in something they publish. */
 const ONLINE_CHANNELS = new Set([
   "Instagram",
@@ -307,6 +310,12 @@ type Listing = BookingSchedule & {
   provenance_status?: ListingProvenanceStatus | null;
   availability_confirmed_at?: string | null;
   like_count?: number | string | null;
+  /**
+   * Hand-picked position at the top of the marketplace; absent for almost
+   * every listing. Set by the founders, never by an owner - see the
+   * 20260906140000 migration.
+   */
+  featured_rank?: number | null;
   /** Seven-day reach, merged in from listing_reach(); absent when it did not load. */
   impressions_7d?: number | string | null;
   clicks_7d?: number | string | null;
@@ -4294,6 +4303,19 @@ function priceLabel(
   return format(low);
 }
 
+/**
+ * Where a hand-picked listing sits, and last place for everything else.
+ *
+ * A plain number rather than a boolean so the founders can order the picks
+ * against each other; unfeatured listings all tie here and fall through to
+ * the ranking below, which is the whole point - this decides the first few
+ * rows and nothing else.
+ */
+function featuredRank(listing: Pick<Listing, "featured_rank">) {
+  const rank = listing.featured_rank;
+  return typeof rank === "number" && Number.isFinite(rank) ? rank : Number.MAX_SAFE_INTEGER;
+}
+
 function isBrief(listing: Pick<Listing, "channel">) {
   return listing.channel === "Business brief";
 }
@@ -4494,6 +4516,19 @@ function initials(name: string) {
  * handle. Anything unrecognised - a newsletter, a podcast, a personal site -
  * shows its hostname, which is still more use than the full URL.
  */
+/** The account itself, short enough to sit under its platform name. */
+function socialHandleForUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\/$/, "");
+    return path && path !== "/"
+      ? `${parsed.hostname.replace(/^www\./, "")}${path}`
+      : parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
 function socialLabelForUrl(url: string, tx: (text: string) => string) {
   let host = "";
   try {
@@ -5792,6 +5827,22 @@ export default function MarketplaceApp({
    * during onboarding, and a form that makes someone paste the same Instagram
    * URL a third time is a form that gets an empty portfolio.
    */
+  /**
+   * The accounts ticked onto the portfolio item being written, and the box to
+   * add one that is not on their profile yet.
+   *
+   * Held here rather than read off the form because a picked account has to
+   * appear as a chip the moment it is picked, and because pasting a new one
+   * writes it back to the profile - the creator should have to tell us about
+   * an account exactly once, wherever they happen to be standing when they
+   * think of it.
+   */
+  const [portfolioSocials, setPortfolioSocials] = useState<string[]>([]);
+  const [portfolioSocialDraft, setPortfolioSocialDraft] = useState("");
+  const [portfolioSocialPlatform, setPortfolioSocialPlatform] = useState(
+    socialPlatforms[0].key as string,
+  );
+
   const ownSocialAccounts = useMemo(() => {
     return socialPlatforms
       .map((platform) => {
@@ -6837,6 +6888,11 @@ export default function MarketplaceApp({
     const normalized = query.trim().toLowerCase();
     const normalizedLocation = locationQuery.trim();
     const rankingNow = Date.now();
+    // The hand-picked few lead the page, but only while it is a page someone
+    // is browsing. Once they have typed a place or a word they are looking
+    // for something, and a pin that does not match it is not a highlight, it
+    // is the search being ignored.
+    const pinFeatured = !normalized && !normalizedLocation;
     return listings.filter((listing) => {
       if (blockedProfileIds.includes(listing.owner.id)) return false;
       // A test account's listings must not appear in the marketplace, the
@@ -6908,6 +6964,9 @@ export default function MarketplaceApp({
       // has nowhere to give itself away.
       .sort(
         (a, b) =>
+          // Ahead of the members/samples bands: a featured listing is a
+          // member's, and it is meant to be first, not first-of-its-band.
+          (pinFeatured ? featuredRank(a) - featuredRank(b) : 0) ||
           (listingSort === "location"
             ? locationMatchScore(listingCity(b), normalizedLocation) -
                 locationMatchScore(listingCity(a), normalizedLocation) ||
@@ -10814,6 +10873,51 @@ export default function MarketplaceApp({
     }
   }
 
+  /**
+   * Attach an account to the item being written, and remember it.
+   *
+   * Takes a full URL or a bare handle - "@its.kv15" and
+   * "https://instagram.com/its.kv15" are the same answer, and asking someone
+   * to know which one we wanted is asking them to do our parsing. A handle is
+   * resolved against the platform they chose.
+   *
+   * An account that is new to us is saved to their profile as well as to this
+   * item, so it shows up on their profile and in the picker next time. That
+   * write is best-effort: failing to remember an account must not stop them
+   * attaching it here, which is what they actually asked for.
+   */
+  async function addPortfolioSocial() {
+    const platform =
+      socialPlatforms.find((item) => item.key === portfolioSocialPlatform) ??
+      socialPlatforms[0];
+    const url = normalizeSocialUrl(platform, portfolioSocialDraft);
+    if (!/^https:\/\//i.test(url)) {
+      return setToast(t("app.addALinkStartingWithHttps"), "problem");
+    }
+    if (portfolioSocials.includes(url)) {
+      setPortfolioSocialDraft("");
+      return;
+    }
+    if (portfolioSocials.length >= MAX_PORTFOLIO_SOCIALS) {
+      return setToast(t("app.thatIsAsManyAccountsAsOnePiece"), "problem");
+    }
+    setPortfolioSocials((current) => [...current, url]);
+    setPortfolioSocialDraft("");
+
+    const known = profile?.social_links ?? {};
+    if (!supabase || !profile || known[platform.key] === url) return;
+    const merged = { ...known, [platform.key]: url };
+    const { error } = await supabase
+      .from("profiles")
+      .update({ social_links: merged })
+      .eq("id", profile.id);
+    if (error) {
+      console.error("[portfolio] could not save the account to the profile", error);
+      return;
+    }
+    setProfile((current) => (current ? { ...current, social_links: merged } : current));
+  }
+
   async function submitCreatorPortfolioItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !profile || canonicalRole(profile.role) !== "creator") return;
@@ -10825,22 +10929,20 @@ export default function MarketplaceApp({
       title: String(values.get("title") ?? "").trim(),
       description: String(values.get("description") ?? "").trim(),
       kind: String(values.get("kind") ?? "project"),
-      media_url: String(values.get("media_url") ?? "").trim(),
       project_url: String(values.get("project_url") ?? "").trim(),
-      // Whichever of their own accounts they ticked. Filtered rather than
-      // trusted: the checkbox values come from their profile, but the column
-      // only accepts https and the form is not the last word on that.
-      social_urls: values
-        .getAll("social_urls")
-        .map((value) => String(value).trim())
+      // The accounts they attached. Filtered rather than trusted: the column
+      // only accepts https, and this form is not the last word on that.
+      social_urls: portfolioSocials
         .filter((url) => /^https:\/\//i.test(url))
-        .slice(0, 8),
+        .slice(0, MAX_PORTFOLIO_SOCIALS),
       sort_order: creatorPortfolio.length,
       published: true,
     });
     setBusy(false);
     if (error) return setToast(friendlyDbError(error));
     form.reset();
+    setPortfolioSocials([]);
+    setPortfolioSocialDraft("");
     setToast("Portfolio item published to your Creator profile.");
     await loadAccountMarketplaceState(profile);
   }
@@ -14572,30 +14674,136 @@ export default function MarketplaceApp({
                   </div>
                 )}
                 <form className="field-grid campaign-form" onSubmit={submitCreatorPortfolioItem}>
+                  {/* "Work title" read like a job title, and "Type: Project"
+                      said nothing at all. The questions now name the thing
+                      they want: what it was, what kind of work, where it ran,
+                      how it went. */}
                   <label>
-                    {t("app.workTitle")}
-                    <input name="title" required minLength={2} maxLength={120} />
+                    {t("app.whatWasIt")}
+                    <input
+                      name="title"
+                      required
+                      minLength={2}
+                      maxLength={120}
+                      placeholder={t("app.summerCampaignExample")}
+                    />
                   </label>
                   <label>
-                    {t("app.type")}
-                    <select name="kind" defaultValue="project">
-                      <option value="video">{t("market.video")}</option>
+                    {t("app.kindOfWork")}
+                    <select name="kind" defaultValue="campaign">
                       <option value="campaign">{t("app.campaign")}</option>
+                      <option value="video">{t("market.video")}</option>
                       <option value="case_study">{t("app.caseStudy")}</option>
                       <option value="project">{t("app.project")}</option>
                       <option value="other">{t("app.other")}</option>
                     </select>
                   </label>
-                  <label>
-                    {t("app.mediaUrl")}
-                    <input name="media_url" type="url" placeholder={t("app.https")} />
-                  </label>
-                  <label>
-                    {t("app.projectUrl")}
+                  <label className="field-wide">
+                    {t("app.linkToTheWork")}
                     <input name="project_url" type="url" placeholder={t("app.https")} />
                   </label>
+                  {/* Where the work went out. A business reading a portfolio
+                      wants to know which account carried it - work is only
+                      evidence if you can see where it reached people. Pick as
+                      many as applied: a campaign that ran on a story and a
+                      video is two accounts, not two portfolio items. */}
+                  <div className="field-wide portfolio-socials">
+                    <span className="portfolio-socials-label">
+                      {t("app.whereDidItRun")}
+                    </span>
+                    {portfolioSocials.length > 0 && (
+                      <ul className="portfolio-socials-chosen">
+                        {portfolioSocials.map((url) => (
+                          <li key={url}>
+                            <span>{socialLabelForUrl(url, tx)}</span>
+                            <small>{socialHandleForUrl(url)}</small>
+                            <button
+                              type="button"
+                              aria-label={t("app.removeUrl", { url: socialHandleForUrl(url) })}
+                              onClick={() =>
+                                setPortfolioSocials((current) =>
+                                  current.filter((item) => item !== url),
+                                )
+                              }
+                            >
+                              ×
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {ownSocialAccounts.some(
+                      (account) => !portfolioSocials.includes(account.url),
+                    ) && (
+                      <label className="portfolio-socials-pick">
+                        <span className="sr-only">{t("app.addOneOfYourAccounts")}</span>
+                        <select
+                          value=""
+                          onChange={(event) => {
+                            const picked = event.currentTarget.value;
+                            if (!picked) return;
+                            setPortfolioSocials((current) =>
+                              current.includes(picked) ||
+                              current.length >= MAX_PORTFOLIO_SOCIALS
+                                ? current
+                                : [...current, picked],
+                            );
+                          }}
+                        >
+                          <option value="">{t("app.addOneOfYourAccounts")}</option>
+                          {ownSocialAccounts
+                            .filter((account) => !portfolioSocials.includes(account.url))
+                            .map((account) => (
+                              <option key={account.key} value={account.url}>
+                                {`${tx(account.label)} · ${account.handle}`}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    )}
+                    <div className="portfolio-socials-add">
+                      <select
+                        aria-label={t("app.platform")}
+                        value={portfolioSocialPlatform}
+                        onChange={(event) =>
+                          setPortfolioSocialPlatform(event.currentTarget.value)
+                        }
+                      >
+                        {socialPlatforms.map((platform) => (
+                          <option key={platform.key} value={platform.key}>
+                            {tx(platform.label)}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={portfolioSocialDraft}
+                        onChange={(event) =>
+                          setPortfolioSocialDraft(event.currentTarget.value)
+                        }
+                        onKeyDown={(event) => {
+                          // Enter inside this box means "add the account",
+                          // not "publish the item they have not finished".
+                          if (event.key !== "Enter") return;
+                          event.preventDefault();
+                          void addPortfolioSocial();
+                        }}
+                        placeholder={t("app.linkOrHandlePlaceholder")}
+                        aria-label={t("app.linkOrHandle")}
+                      />
+                      <button
+                        type="button"
+                        className="button button-ghost"
+                        onClick={() => void addPortfolioSocial()}
+                      >
+                        {t("app.add")}
+                      </button>
+                    </div>
+                    <small className="portfolio-socials-note">
+                      {t("app.anAccountYouAddIsSavedToYourProfile")}
+                    </small>
+                  </div>
                   <label className="field-wide">
-                    {t("app.whatDidYouMake")}
+                    {t("app.howDidItGo")}
                     <textarea
                       name="description"
                       maxLength={1200}
