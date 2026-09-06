@@ -2212,6 +2212,7 @@ export const ENGLISH_MESSAGES = {
   "app.likeTitle": "Like {title}",
   "app.signInToLikeTitle": "Sign in to like {title}",
   "app.likesUnavailableOnSampleListings": "Likes are unavailable on sample listings",
+  "app.errorCannotPublishListings": "This account cannot publish listings right now. Finish setting up your profile first, or contact support if your account is under review.",
   "app.chooseAJpgPngOrWebpImage": "Choose a JPG, PNG, or WebP image.",
   "app.thisBrowserCannotShareAUS": "This browser cannot share a U.S. location. Choose a U.S. city and state instead.",
   "app.weCouldNotReadAUsableLocation": "We could not read a usable location. Type your city and state instead.",

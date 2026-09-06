@@ -2213,6 +2213,7 @@ export const MANDARIN_MESSAGES: Messages = {
   "app.likeTitle": "点赞 {title}",
   "app.signInToLikeTitle": "登录后即可点赞 {title}",
   "app.likesUnavailableOnSampleListings": "示例广告位不支持点赞",
+  "app.errorCannotPublishListings": "此账号目前无法发布信息。请先完成个人资料设置；如果你的账号正在审核中，请联系支持团队。",
   "app.chooseAJpgPngOrWebpImage": "请选择 JPG、PNG 或 WebP 格式的图片。",
   "app.thisBrowserCannotShareAUS": "此浏览器无法共享 U.S. 位置。请改为选择 U.S. 的城市和州。",
   "app.weCouldNotReadAUsableLocation": "无法读取可用的位置。请改为输入你的城市和州。",

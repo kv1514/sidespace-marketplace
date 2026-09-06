@@ -2213,6 +2213,7 @@ export const VIETNAMESE_MESSAGES: Messages = {
   "app.likeTitle": "Thích {title}",
   "app.signInToLikeTitle": "Đăng nhập để thích {title}",
   "app.likesUnavailableOnSampleListings": "Không thể thích tin đăng mẫu",
+  "app.errorCannotPublishListings": "Tài khoản này hiện không thể đăng tin. Hãy hoàn tất thiết lập hồ sơ trước, hoặc liên hệ bộ phận hỗ trợ nếu tài khoản của bạn đang được xem xét.",
   "app.chooseAJpgPngOrWebpImage": "Hãy chọn ảnh JPG, PNG hoặc WebP.",
   "app.thisBrowserCannotShareAUS": "Trình duyệt này không thể chia sẻ vị trí tại U.S. Hãy chọn một thành phố và tiểu bang của U.S. thay vào đó.",
   "app.weCouldNotReadAUsableLocation": "Chúng tôi không đọc được vị trí khả dụng. Hãy nhập thành phố và tiểu bang của bạn thay vào đó.",

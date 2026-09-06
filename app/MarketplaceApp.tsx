@@ -4146,7 +4146,15 @@ function friendlyDbError(error: unknown): string {
   const code = (error as { code?: string } | null)?.code ?? "";
 
   if (/row-level security/i.test(raw)) {
-    // A refusal here has several causes - a block in either direction, a
+    // A refused listing write is about the account, not about anybody else:
+    // the policy turns down internal, suspended, consumer and unfinished
+    // profiles. Telling those members a listing was "paused or removed, or
+    // one of you may have blocked the other" sent them looking for a block
+    // that does not exist.
+    if (/table "listings"/i.test(raw)) {
+      return "This account cannot publish listings right now. Finish setting up your profile first, or contact support if your account is under review.";
+    }
+    // Elsewhere a refusal has several causes - a block in either direction, a
     // listing that was just paused or removed, an account that was deleted,
     // or an unfinished profile. Naming only blocking told people they had been
     // blocked when nobody had blocked anyone, which is worse than vague.

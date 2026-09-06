@@ -2213,6 +2213,7 @@ export const FRENCH_MESSAGES: Messages = {
   "app.likeTitle": "Aimer {title}",
   "app.signInToLikeTitle": "Connectez-vous pour aimer {title}",
   "app.likesUnavailableOnSampleListings": "Les likes ne sont pas disponibles sur les annonces d’exemple",
+  "app.errorCannotPublishListings": "Ce compte ne peut pas publier d’annonces pour le moment. Terminez d’abord la configuration de votre profil, ou contactez le support si votre compte est en cours d’examen.",
   "app.chooseAJpgPngOrWebpImage": "Choisissez une image JPG, PNG ou WebP.",
   "app.thisBrowserCannotShareAUS": "Ce navigateur ne peut pas partager une position aux U.S. Choisissez plutôt une ville et un État aux U.S.",
   "app.weCouldNotReadAUsableLocation": "Nous n’avons pas pu lire une position utilisable. Saisissez plutôt votre ville et votre État.",

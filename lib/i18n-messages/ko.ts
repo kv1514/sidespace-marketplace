@@ -2213,6 +2213,7 @@ export const KOREAN_MESSAGES: Messages = {
   "app.likeTitle": "{title} 좋아요",
   "app.signInToLikeTitle": "{title}에 좋아요를 누르려면 로그인하세요",
   "app.likesUnavailableOnSampleListings": "샘플 광고 지면에서는 좋아요를 사용할 수 없습니다",
+  "app.errorCannotPublishListings": "이 계정은 지금 리스팅을 게시할 수 없습니다. 먼저 프로필 설정을 완료하거나, 계정이 검토 중이라면 지원팀에 문의하세요.",
   "app.chooseAJpgPngOrWebpImage": "JPG, PNG 또는 WebP 이미지를 선택하세요.",
   "app.thisBrowserCannotShareAUS": "이 브라우저에서는 U.S. 위치를 공유할 수 없습니다. 대신 U.S. 도시와 주를 선택하세요.",
   "app.weCouldNotReadAUsableLocation": "사용할 수 있는 위치를 읽지 못했습니다. 대신 도시와 주를 직접 입력하세요.",

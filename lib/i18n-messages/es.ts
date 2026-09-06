@@ -2213,6 +2213,7 @@ export const SPANISH_MESSAGES: Messages = {
   "app.likeTitle": "Dar me gusta a {title}",
   "app.signInToLikeTitle": "Inicia sesión para dar me gusta a {title}",
   "app.likesUnavailableOnSampleListings": "Los me gusta no están disponibles en anuncios de muestra",
+  "app.errorCannotPublishListings": "Esta cuenta no puede publicar anuncios por ahora. Termina de configurar tu perfil primero o contacta con soporte si tu cuenta está en revisión.",
   "app.chooseAJpgPngOrWebpImage": "Elige una imagen JPG, PNG o WebP.",
   "app.thisBrowserCannotShareAUS": "Este navegador no puede compartir una ubicación de U.S. Elige una ciudad y un estado de U.S. en su lugar.",
   "app.weCouldNotReadAUsableLocation": "No pudimos leer una ubicación utilizable. Escribe tu ciudad y estado en su lugar.",
