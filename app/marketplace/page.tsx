@@ -51,12 +51,20 @@ export async function generateMetadata({
     : base;
 }
 
-const ROLE_FILTERS = new Set([
-  "all",
-  "supply",
-  "business",
-  "creator",
-]);
+const ROLE_FILTERS = new Set(["all", "supply", "online", "physical", "wanted"]);
+
+/**
+ * Links that predate the kind-based chips. "business" asked for briefs, which
+ * is now "wanted"; "creator" asked for creator-owned listings, which in
+ * practice meant their online audiences. A shared or bookmarked link keeps
+ * landing on what its sender meant.
+ */
+const LEGACY_ROLES: Record<string, string> = {
+  business: "wanted",
+  creator: "online",
+  space_owner: "physical",
+  sponsor_host: "physical",
+};
 
 export default async function Marketplace({
   searchParams,
@@ -81,13 +89,10 @@ export default async function Marketplace({
     intent === "advertise" || intent === "supply"
       ? "supply"
       : intent === "offer"
-        ? "business"
+        ? "wanted"
         : typeof params.role === "string"
-          ? params.role === "space_owner" || params.role === "sponsor_host"
-            ? "creator"
-            : ROLE_FILTERS.has(params.role)
-              ? params.role
-              : "all"
+          ? (LEGACY_ROLES[params.role] ??
+            (ROLE_FILTERS.has(params.role) ? params.role : "all"))
           : "all";
   // A bookmarked ?sort=popular from when that page existed still opens the
   // marketplace, in the default order, rather than 404ing or looking broken.
@@ -110,8 +115,9 @@ export default async function Marketplace({
       initialRoleFilter={requestedRole as
         | "all"
         | "supply"
-        | "business"
-        | "creator"}
+        | "online"
+        | "physical"
+        | "wanted"}
       initialSort={initialSort}
       initialListingTranslations={initialListingTranslations}
     />

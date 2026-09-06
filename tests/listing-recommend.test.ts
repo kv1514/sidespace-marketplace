@@ -9,6 +9,7 @@ import {
   normalizeTerm,
   priceProximity,
   recommendListings,
+  cooccurrenceAffinity,
   textSimilarity,
   type CooccurrenceIndex,
   type RecommendListing,
@@ -562,5 +563,82 @@ describe("popularity orders within taste, and never overrides it", () => {
     });
     const quietPost = listing({ id: "ig-quiet", like_count: 0 });
     expect(personalScore(lovedVideo, even, now)).toBeGreaterThan(personalScore(quietPost, even, now));
+  });
+});
+
+// The "Picked for you" row was removed: a heading that names the model
+// defeats a model built not to be noticed. Its co-visit signal moved into the
+// grid ranking, which is the only place personalisation now shows at all.
+describe("what the crowd co-visits, folded into the grid", () => {
+  const now = Date.UTC(2026, 8, 6);
+  const seedId = "seed-listing";
+  const walls = {
+    id: "wall-1",
+    channel: "Wall / mural",
+    location_area: "Fresno, CA",
+    title: "A wall",
+    created_at: new Date(now - 86_400_000).toISOString(),
+  };
+  const seed = {
+    id: seedId,
+    channel: "Instagram",
+    location_area: "Berkeley, CA",
+    title: "The one they opened",
+    created_at: new Date(now - 86_400_000).toISOString(),
+  };
+  const events = [{ listingId: seedId, kind: "click" as const, at: now - 3_600_000 }];
+  const taste = () => buildTasteProfile(events, [seed, walls], now);
+
+  /** A pair seen together by `pairs` visitors, out of `total` who saw each. */
+  const index = (pairs: number, total = 40) =>
+    new Map([
+      [walls.id, new Map([[seedId, pairs], [walls.id, total]])],
+      [seedId, new Map([[walls.id, pairs], [seedId, total]])],
+    ]);
+
+  it("keeps every listing the visitor's channels and cities do not know at zero", () => {
+    // Fresno walls for a Berkeley Instagram browser: nothing known, nothing moved.
+    expect(personalScore(walls, taste(), now)).toBe(0);
+    expect(personalScore(walls, taste(), now, null)).toBe(0);
+  });
+
+  it("lifts a listing the crowd opens alongside the one they opened", () => {
+    expect(personalScore(walls, taste(), now, index(20))).toBeGreaterThan(0);
+  });
+
+  it("barely whispers while the pair is still a coincidence", () => {
+    // The floor damps rather than mutes: one shared visitor out of forty is
+    // evidence, just very little of it. What matters is the gap to a real
+    // pattern, which here is two orders of magnitude.
+    const coincidence = cooccurrenceAffinity(walls.id, taste(), index(1));
+    const pattern = cooccurrenceAffinity(walls.id, taste(), index(20));
+    expect(coincidence).toBeGreaterThan(0);
+    expect(pattern).toBeGreaterThan(coincidence * 50);
+  });
+
+  it("never recommends a listing on the strength of itself", () => {
+    const selfOnly = new Map([[seedId, new Map([[seedId, 40]])]]);
+    expect(cooccurrenceAffinity(seedId, taste(), selfOnly)).toBe(0);
+  });
+
+  it("cannot outrank what the visitor has plainly been choosing", () => {
+    const onChannel = {
+      id: "ig-2",
+      channel: "Instagram",
+      location_area: "Berkeley, CA",
+      title: "More of what they open",
+      created_at: new Date(now - 86_400_000).toISOString(),
+    };
+    const profile = buildTasteProfile(events, [seed, walls, onChannel], now);
+    const strong = index(40);
+    expect(personalScore(onChannel, profile, now, strong)).toBeGreaterThan(
+      personalScore(walls, profile, now, strong),
+    );
+  });
+
+  it("changes nothing for a visitor with no history", () => {
+    const stranger = buildTasteProfile([], [seed, walls], now);
+    expect(personalScore(walls, stranger, now, index(40))).toBe(0);
+    expect(comparePersonal(walls, seed, stranger, now, index(40))).toBe(0);
   });
 });

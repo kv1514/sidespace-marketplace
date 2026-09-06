@@ -15,12 +15,25 @@ live catalogue before shipping it.
   freshness decide the order inside a channel. Someone who opened three
   Instagram listings sees every Instagram listing before a wall; someone who
   opened two walls and a car window sees the walls, then the car.
-- **The "Picked for you" row** above the grid is a different thing: listings
-  that resemble what they opened, spread across channels on purpose, one per
-  owner. For a stranger it is "Popular right now". Neither heading explains
-  itself. A line like "based on what you have been looking at" told visitors
-  they were being watched, and a test now fails if that copy comes back
-  (`tests/i18n.test.ts`).
+- **There is no second row.** A "Picked for you" row used to sit above the
+  grid, showing listings that resembled what the visitor had opened, spread
+  across channels, one per owner. It was removed: a model built not to be
+  noticed does not get a heading naming it, and "Picked for you" said the
+  quiet part out loud. Its one signal the grid lacked - co-visits - moved
+  into `personalScore`, so the ranking got stronger as the announcement went
+  away. A test still fails if copy like "based on what you have been looking
+  at" comes back (`tests/i18n.test.ts`).
+- **Co-visits** are the one thing that can surprise a visitor usefully: not
+  "you like Instagram, here is more Instagram", but "the people who opened
+  what you opened went on to open this". `cooccurrenceAffinity` weighs each
+  listing they interacted with by its share of their interest, asks
+  `private.listing_cooccurrence()` how often each candidate was seen
+  alongside it, and is worth up to `COOCCURRENCE_WEIGHT` (0.6) of a perfect
+  categorical fit - enough to speak for a listing whose channel and city say
+  nothing, never enough to outrank one they have plainly been choosing. It is
+  0 with no index, which is a young catalogue's normal state, and each pair
+  is damped by `pairs / COOCCURRENCE_CONFIDENCE` so a single shared visitor
+  is a whisper rather than a verdict.
 - **A sort the visitor chose by hand** ("Location") is left alone.
   Personalisation applies only to the default "Recommended" order.
 
@@ -70,7 +83,8 @@ For each listing and visitor, `personalScore` is
 ```
 confidence × fit × (1 + prior)
 
-fit   = 0.7 × channel share + 0.3 × city share        (tasteFit)
+fit   = min(1, tasteFit + 0.6 × cooccurrenceAffinity)
+tasteFit = 0.7 × channel share + 0.3 × city share
 prior = min(1, popularityScore / 45)                   (PRIOR_CEILING)
 ```
 
