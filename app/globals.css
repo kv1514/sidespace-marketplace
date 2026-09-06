@@ -12439,3 +12439,41 @@ html[lang^="ko"] {
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
+
+/* "Where did it run?" - the creator's own accounts, ticked onto one piece of
+   portfolio work. */
+.portfolio-socials-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 9px;
+}
+
+.portfolio-socials-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+
+.portfolio-socials-grid .chip-check span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.portfolio-socials-grid .chip-check small {
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portfolio-socials-empty {
+  color: var(--ink-soft);
+}
+
+/* One account a piece of portfolio work ran on, on a public profile. */
+.portfolio-social-ref {
+  margin-left: 8px;
+  white-space: nowrap;
+}

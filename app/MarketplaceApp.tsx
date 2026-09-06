@@ -129,7 +129,40 @@ type Role =
   | "creator"
   | "space_owner"
   | "sponsor_host";
-type RoleFilter = "all" | "supply" | "business" | "creator";
+/**
+ * Which kind of listing the grid is narrowed to.
+ *
+ * It used to ask who posted the listing - "Advertising available",
+ * "Creators", "Space wanted" - and the first two were the same answer said
+ * twice, because a creator's listing IS advertising available. What a visitor
+ * actually wants to separate is the thing being sold: an audience they can
+ * post to, a place they can put something, or a business asking for either.
+ *
+ * "supply" is every offer regardless of kind. It has no chip of its own; the
+ * intent switch above the chips is the only thing that sets it, and that
+ * switch stays visibly pressed to explain the narrowing.
+ */
+type RoleFilter = "all" | "supply" | "online" | "physical" | "wanted";
+
+/** A creator's own audience: a post, a mention, a placement in something they publish. */
+const ONLINE_CHANNELS = new Set([
+  "Instagram",
+  "TikTok",
+  "YouTube",
+  "Newsletter",
+  "Website",
+]);
+
+/**
+ * Which chip a listing answers to. Everything that is not a brief and not an
+ * online audience is somewhere you could stand: a window, a wall, a vehicle,
+ * a board, a sponsored banner. "Other" lands here too - it is the fallback
+ * for a physical thing nobody had a word for.
+ */
+function listingKind(listing: Pick<Listing, "channel">): "online" | "physical" | "wanted" {
+  if (isBrief(listing)) return "wanted";
+  return ONLINE_CHANNELS.has(listing.channel) ? "online" : "physical";
+}
 /**
  * How the grid is ordered.
  *
@@ -426,6 +459,8 @@ type CreatorPortfolioItem = {
   kind: "video" | "project" | "campaign" | "case_study" | "other";
   media_url: string;
   project_url: string;
+  /** The creator's own accounts this work ran on, as https URLs. See the 20260906130000 migration. */
+  social_urls?: string[];
   sort_order: number;
   published: boolean;
   created_at: string;
@@ -4452,6 +4487,26 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+/**
+ * What to call a social URL on someone else's screen.
+ *
+ * Matched on the host so a link keeps its name however the creator typed the
+ * handle. Anything unrecognised - a newsletter, a podcast, a personal site -
+ * shows its hostname, which is still more use than the full URL.
+ */
+function socialLabelForUrl(url: string, tx: (text: string) => string) {
+  let host = "";
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+  const platform = socialPlatforms.find(
+    (item) => item.base && new URL(item.base).hostname.replace(/^www\./, "") === host,
+  );
+  return platform ? tx(platform.label) : host;
+}
+
 function normalizeSocialUrl(
   platform: (typeof socialPlatforms)[number],
   value: string,
@@ -5730,6 +5785,28 @@ export default function MarketplaceApp({
   const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransaction[]>([]);
   const [adCreditBalanceCents, setAdCreditBalanceCents] = useState(0);
   const [creatorPortfolio, setCreatorPortfolio] = useState<CreatorPortfolioItem[]>([]);
+  /**
+   * The creator's own social accounts, ready to tick onto a portfolio item.
+   *
+   * Read from their profile rather than asked for again: they filled these in
+   * during onboarding, and a form that makes someone paste the same Instagram
+   * URL a third time is a form that gets an empty portfolio.
+   */
+  const ownSocialAccounts = useMemo(() => {
+    return socialPlatforms
+      .map((platform) => {
+        const url = profile?.social_links?.[platform.key] ?? "";
+        let handle = url;
+        try {
+          const parsed = new URL(url);
+          handle = `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname.replace(/\/$/, "")}`;
+        } catch {
+          // Not a URL we can shorten; show whatever they saved.
+        }
+        return { key: platform.key, label: platform.label, url, handle };
+      })
+      .filter((account) => /^https:\/\//i.test(account.url));
+  }, [profile?.social_links]);
   const [creatorReviews, setCreatorReviews] = useState<CreatorReview[]>([]);
   const [selectedCreatorPortfolio, setSelectedCreatorPortfolio] =
     useState<CreatorPortfolioItem[]>([]);
@@ -6768,14 +6845,10 @@ export default function MarketplaceApp({
       // Direction matters more than who posted it: a business can offer space
       // (Troy VEX sells Instagram posts) and a creator can want space. Only
       // the "Business brief" channel means "wanted".
-      const wanted = isBrief(listing);
+      const kind = listingKind(listing);
       const roleMatches =
         roleFilter === "all" ||
-        (roleFilter === "business"
-          ? wanted
-          : roleFilter === "supply"
-            ? !wanted
-            : !wanted && profileHasRole(listing.owner, roleFilter));
+        (roleFilter === "supply" ? kind !== "wanted" : kind === roleFilter);
       const channelMatches =
         activeChannel === "All" || listing.channel === activeChannel;
       const locationMatches =
@@ -10754,6 +10827,14 @@ export default function MarketplaceApp({
       kind: String(values.get("kind") ?? "project"),
       media_url: String(values.get("media_url") ?? "").trim(),
       project_url: String(values.get("project_url") ?? "").trim(),
+      // Whichever of their own accounts they ticked. Filtered rather than
+      // trusted: the checkbox values come from their profile, but the column
+      // only accepts https and the form is not the last word on that.
+      social_urls: values
+        .getAll("social_urls")
+        .map((value) => String(value).trim())
+        .filter((url) => /^https:\/\//i.test(url))
+        .slice(0, 8),
       sort_order: creatorPortfolio.length,
       published: true,
     });
@@ -13355,10 +13436,10 @@ export default function MarketplaceApp({
           </button>
           <button
             type="button"
-            className={roleFilter === "business" ? "active" : ""}
-            aria-pressed={roleFilter === "business"}
+            className={roleFilter === "wanted" ? "active" : ""}
+            aria-pressed={roleFilter === "wanted"}
             onClick={() => {
-              setRoleFilter("business");
+              setRoleFilter("wanted");
               setChannelFilter("All");
             }}
           >
@@ -13421,14 +13502,14 @@ export default function MarketplaceApp({
           <div
             className="role-tabs"
             role="group"
-            aria-label={t("market.ownerTypeAria")}
+            aria-label={t("market.listingKindAria")}
           >
             {(
                 [
                 ["all", "market.everything"],
-                ["supply", "market.advertisingAvailable"],
-                ["creator", "market.creators"],
-                ["business", "market.spaceWanted"],
+                ["online", "market.online"],
+                ["physical", "market.physicalSpace"],
+                ["wanted", "market.spaceWanted"],
               ] as Array<[RoleFilter, TranslationKey]>
             ).map(([value, labelKey]) => (
               <button
@@ -14521,6 +14602,38 @@ export default function MarketplaceApp({
                       placeholder={t("app.scopeDeliverablesResultAndYourRole")}
                     />
                   </label>
+                  {/* Where the work went out. The two URL fields above point at
+                      the work itself; a business reading a portfolio also wants
+                      to know which account carried it, and the creator has
+                      already told us their accounts once. Tick as many as
+                      applied - a campaign that ran on a story and a video is
+                      two accounts, not two portfolio items. */}
+                  <div className="field-wide portfolio-socials">
+                    <span className="portfolio-socials-label">
+                      {t("app.whereDidItRun")}
+                    </span>
+                    {ownSocialAccounts.length ? (
+                      <div className="portfolio-socials-grid">
+                        {ownSocialAccounts.map((account) => (
+                          <label className="chip-check" key={account.key}>
+                            <input
+                              type="checkbox"
+                              name="social_urls"
+                              value={account.url}
+                            />
+                            <span>
+                              <strong>{tx(account.label)}</strong>
+                              <small>{account.handle}</small>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <small className="portfolio-socials-empty">
+                        {t("app.addSocialAccountsToAttachThem")}
+                      </small>
+                    )}
+                  </div>
                   <button className="button button-dark field-wide" disabled={busy}>
                     {busy ? t("app.publishing") : t("app.addToPublicPortfolio")}
                   </button>
@@ -17830,6 +17943,27 @@ export default function MarketplaceApp({
                               {t("app.viewReplaceall", { replaceAll: item.kind.replaceAll("_", " ") })}
                             </a>
                           )}
+                          {/* The accounts it ran on, named rather than dumped
+                              as raw URLs: "Instagram" reads as evidence, a
+                              hostname reads as a link someone forgot to
+                              label. */}
+                          {(item.social_urls ?? [])
+                            // The column already refuses anything but https,
+                            // and this refuses it again: an href is the one
+                            // place a bad string from the database becomes
+                            // executable, and the check costs nothing.
+                            .filter((url) => /^https:\/\//i.test(url))
+                            .map((url) => (
+                            <a
+                              className="portfolio-social-ref"
+                              key={url}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {socialLabelForUrl(url, tx)}
+                            </a>
+                            ))}
                         </p>
                       ))}
                     </div>
