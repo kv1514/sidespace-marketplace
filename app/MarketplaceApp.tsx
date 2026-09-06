@@ -17,6 +17,12 @@ import {
 } from "react";
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import {
+  forgetReturningVisitor,
+  hasReturnedBefore,
+  lastSignInEmail,
+  markReturningVisitor,
+} from "@/lib/auth/returning";
 import { toastTone, type ToastTone } from "@/lib/toast-tone";
 import {
   loadProfileContacts,
@@ -5245,6 +5251,40 @@ export default function MarketplaceApp({
   const [loading, setLoading] = useState(configured);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
+  // The address this browser last signed in with, used only to prefill the
+  // sign-in field. Held in state rather than read inline at render time:
+  // localStorage cannot be read while rendering without the server and the
+  // client disagreeing about the first paint. Filled by the deferred effect
+  // below, which lands long before any dialog can be opened by hand.
+  const [rememberedEmail, setRememberedEmail] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setRememberedEmail(lastSignInEmail()), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  // The email input is uncontrolled, so switching to "Create an account" is
+  // the only moment a prefill can be withdrawn without fighting the typist.
+  const authEmailRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * Which half of the account dialog to open on, for a visitor who has not
+   * said which they want.
+   *
+   * A returning browser gets sign-in. The exception is an invite or a business
+   * referral: the ad credit those links carry is stated on the sign-up form
+   * and nowhere else, so opening on sign-in would hide the entire reason the
+   * link was sent. Someone who turns out to have an account is one press from
+   * the other form; an offer they never saw is gone.
+   *
+   * Declared up here rather than beside the dialog openers because the
+   * `?auth=` effect below also needs it, and a const is not hoisted.
+   */
+  const preferredAuthMode = useCallback((): "signin" | "signup" => {
+    const carriesSignupOffer = Boolean(
+      activeBusinessReferralCode(referralCode) ||
+        (invite && inviteRole(invite) === "business"),
+    );
+    if (carriesSignupOffer) return "signup";
+    return hasReturnedBefore() ? "signin" : "signup";
+  }, [invite, referralCode]);
   const [accountOpen, setAccountOpen] = useState(false);
   const [businessPreferencesDraft, setBusinessPreferencesDraft] =
     useState<BusinessPreferences>(() => emptyBusinessPreferences());
@@ -6145,6 +6185,13 @@ export default function MarketplaceApp({
           const currentUser = authResult.data.user;
           setUser(currentUser);
           if (currentUser) {
+            // /auth/callback exchanges the code on the SERVER, so a Google
+            // redirect, a magic link, an email confirmation and a password
+            // recovery all land back here with a session already in place and
+            // no SIGNED_IN event of their own. Without this line those four
+            // routes never mark the browser, and the people who used them are
+            // offered a sign-up form the next time they come back.
+            markReturningVisitor(currentUser.email);
             lastAuthUserIdRef.current = currentUser.id;
             void loadLikedListings(currentUser);
             void loadOwnProfile(currentUser);
@@ -6163,6 +6210,11 @@ export default function MarketplaceApp({
       setUser(currentUser);
       setSessionResolved(true);
       if (currentUser) {
+        // The catch-all for every client-side sign-in: email and password,
+        // Google's on-domain token, and each token refresh afterwards. It runs
+        // before the `window.location.assign` that both of those paths fire on
+        // success, so the mark is written while this page is still alive.
+        markReturningVisitor(currentUser.email);
         // Supabase fires TOKEN_REFRESHED in the background and re-fires
         // SIGNED_IN whenever the tab regains focus. Those say nothing new
         // about the profile, and reloading on them churned state underneath
@@ -6976,11 +7028,20 @@ export default function MarketplaceApp({
     window.history.replaceState({}, "", url.toString());
     if (requestedMode === "signup" && user) return;
     const timer = window.setTimeout(() => {
-      setAuthMode(requestedMode);
+      // "Join SideSpace" on a marketing page arrives here as ?auth=signup,
+      // which is an intent to have an account rather than a claim to lack one.
+      // A browser that has signed in before gets the sign-in form instead, the
+      // same as pressing Join inside the marketplace — and by the same rule,
+      // an invite or referral still opens on sign-up. An explicit
+      // ?auth=signin is left exactly as asked.
+      setRememberedEmail(lastSignInEmail());
+      setAuthMode(
+        requestedMode === "signup" ? preferredAuthMode() : requestedMode,
+      );
       setAuthOpen(true);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [route, sessionResolved, user]);
+  }, [preferredAuthMode, route, sessionResolved, user]);
 
   useEffect(() => {
     if (route !== "dashboard" || !profile || typeof window === "undefined") return;
@@ -7223,6 +7284,35 @@ export default function MarketplaceApp({
     }
   }
 
+  /**
+   * Open the account dialog on the form this visitor is most likely to need.
+   *
+   * Every gated action used to assert a mode outright, and the two assertions
+   * disagreed: pressing "Join" always offered sign-up, so a member who had
+   * signed out was told to create a second account, while tapping a heart
+   * always offered sign-in, so a stranger was asked for credentials they had
+   * never had. Neither control knows anything about the person pressing it;
+   * this browser does.
+   *
+   * Controls that carry explicit intent — the "Sign in" button, an expired
+   * session, a failed OAuth callback — still set their own mode and must keep
+   * doing so.
+   */
+  function openAuthDialog() {
+    // Re-read rather than trusting the value captured at mount. Someone who
+    // signs in and then signs out again never reloads the page, so the effect
+    // that seeded this has long since run and would prefill whatever was on
+    // screen an hour ago — usually nothing at all.
+    setRememberedEmail(lastSignInEmail());
+    const mode = preferredAuthMode();
+    setAuthMode(mode);
+    setAuthOpen(true);
+    // Returned so a caller can word its own message to match the form that
+    // actually opened. Telling a first-time visitor to "sign in" over a
+    // sign-up form is the contradiction this exists to prevent.
+    return mode;
+  }
+
   function openSignupOrDashboard() {
     if (user) {
       if (!profile?.onboarding_complete) {
@@ -7250,8 +7340,7 @@ export default function MarketplaceApp({
       if (route !== "dashboard") window.location.assign("/dashboard");
       return;
     }
-    setAuthMode("signup");
-    setAuthOpen(true);
+    openAuthDialog();
   }
 
   // Public pages send profile intent through the lightweight dashboard route.
@@ -7481,11 +7570,15 @@ export default function MarketplaceApp({
   }
 
   function requireAccount(action: () => void) {
-    if (localPreviewAvailable) {
-      openOnboardingPreview();
-      return;
-    }
-    if (!configured) {
+    // A deployment with no backend genuinely cannot take an account, so it
+    // still says so. Local preview is exempt: it has no backend either, but it
+    // has a working dialog to show, and swallowing the press with a toast is
+    // how the wizard came to stand in for one.
+    //
+    // Ahead of closeListing below, so a refusal stays a refusal: a toast that
+    // also threw away the listing someone was reading would take more from
+    // them than the thing they asked for.
+    if (!configured && !localPreviewAvailable) {
       setToast(
         "Connect Supabase to enable public accounts and messaging.",
         "problem",
@@ -7499,9 +7592,19 @@ export default function MarketplaceApp({
     if ((!user || !profile?.onboarding_complete) && selectedListing) {
       closeListing();
     }
+    // SIGNED OUT IS ANSWERED BEFORE ANYTHING ELSE.
+    //
+    // This function used to open the onboarding preview outright whenever
+    // localPreviewAvailable, ahead of every other guard. With no .env.local
+    // that is true throughout `next dev`, so every gated action — Join,
+    // booking, checkout, messaging — handed a signed-out visitor the five-step
+    // "Set up your account" wizard and the branch below could never run.
+    // Someone who had never signed in was being asked to fill in a profile.
+    //
+    // The preview is still reachable, deliberately, from inside the dialog
+    // this opens instead.
     if (!user) {
-      setAuthMode("signup");
-      setAuthOpen(true);
+      openAuthDialog();
       return;
     }
     if (!profile?.onboarding_complete) {
@@ -7617,13 +7720,21 @@ export default function MarketplaceApp({
   async function toggleListingLike(listing: Listing) {
     const listingId = listing.id;
     if (likeRequestsRef.current.has(listingId)) return;
-    if (!supabase) {
-      setToast("Sign in to like listings.", "problem");
+    // Signed out is answered before the backend question, not after. The two
+    // checks used to run the other way round, and `supabase` is null whenever
+    // Supabase is unconfigured — so in local dev the heart replied to a
+    // signed-out visitor with a toast telling them to sign in and no way to do
+    // it, the one gated control in the product that offered no route in.
+    if (!user) {
+      setToast(
+        openAuthDialog() === "signin"
+          ? "Sign in to like listings."
+          : "Create an account to like listings.",
+        "problem",
+      );
       return;
     }
-    if (!user) {
-      setAuthMode("signin");
-      setAuthOpen(true);
+    if (!supabase) {
       setToast("Sign in to like listings.", "problem");
       return;
     }
@@ -7802,6 +7913,12 @@ export default function MarketplaceApp({
       setBusy(false);
       if (error) return setToast(friendlyDbError(error));
       setAuthOpen(false);
+      // The account exists from here on, whichever branch runs. The one below
+      // creates NO session and fires no auth event, so it is the single
+      // success the listener cannot see: without this the person who signs up,
+      // closes the tab, and comes back before confirming their email is asked
+      // to create the account they already made.
+      markReturningVisitor(email);
       if (data.session) {
         setUser(data.user);
         setOnboardingMode("setup");
@@ -10955,6 +11072,15 @@ export default function MarketplaceApp({
     ]);
   }
 
+  /**
+   * Teardown shared by every sign-out, explicit or background.
+   *
+   * React state only. It must NOT grow a "clear this browser's storage" line:
+   * the returning-visitor mark in lib/auth/returning.ts is written precisely so
+   * that signing out and coming back later offers a sign-in form instead of a
+   * sign-up one, and wiping it here would undo that on the single event it
+   * exists to survive. Account deletion clears it, and nothing else does.
+   */
   function clearSessionState() {
     setProfile(null);
     setProfileChecked(false);
@@ -11016,12 +11142,50 @@ export default function MarketplaceApp({
       setToast(
         "We could not sign you out. Check your connection and try again — you are still signed in.",
       );
-      return;
+      return false;
     }
     setUser(null);
     lastAuthUserIdRef.current = null;
     clearSessionState();
     setToast("Signed out.");
+    return true;
+  }
+
+  /**
+   * Put the onboarding modal away and leave no half-state behind it.
+   *
+   * Extracted from the modal's own onClose so the two callers cannot drift:
+   * anything the close button resets, the "I already have an account" link
+   * resets too, and a future step added to one is added to both.
+   */
+  function closeOnboarding() {
+    setOnboardingOpen(false);
+    setOnboardingPreview(false);
+    setOnboardingStep(1);
+    setOnboardingError("");
+    setOnboardingInvalidField("");
+    setAvatarCropPending(false);
+    resetIgAvatarSync();
+  }
+
+  /**
+   * "I already have an account", pressed on the first setup screen.
+   *
+   * Two people press this. Someone in the local preview, who has no session to
+   * end. And someone who has just created an account — usually with the wrong
+   * Google identity — and whose real account is under another address; for
+   * them the only route to it is to end this session first.
+   *
+   * Offered on step 1 alone, which is the role cards and nothing else, so
+   * there is never typed work to lose. If the sign-out fails, signOut() has
+   * already said so and left the session intact — opening a sign-in form on
+   * top of that would be telling them two different things at once.
+   */
+  async function switchToExistingAccount() {
+    closeOnboarding();
+    if (user && !(await signOut())) return;
+    setAuthMode("signin");
+    setAuthOpen(true);
   }
 
   /** Public storage URLs look like .../object/public/<bucket>/<path>. */
@@ -11328,6 +11492,17 @@ export default function MarketplaceApp({
         throw new Error(String(data.error));
       }
 
+      // The one place this browser is forgotten. Everywhere else the mark
+      // deliberately outlives a sign-out — but there is no account to come
+      // back to now, and leaving it would greet this person with "Welcome
+      // back" and a password field for credentials that no longer exist,
+      // forever, with no route left to sign up again. Deliberately not in
+      // clearSessionState: an ordinary sign-out calls that too.
+      //
+      // BEFORE the signOut await, not after: the account is already gone by
+      // this line, and a network failure signing out must not be what leaves
+      // this browser permanently pointed at a dead account.
+      forgetReturningVisitor();
       await supabase.auth.signOut();
       setDeleteAccountOpen(false);
       setUser(null);
@@ -13844,16 +14019,7 @@ export default function MarketplaceApp({
               </p>
             </div>
           )}
-          {localPreviewAvailable ? (
-            <button
-              type="button"
-              className="button button-dark button-full preview-onboarding-button"
-              onClick={openOnboardingPreview}
-            >
-              Preview onboarding <span>→</span>
-            </button>
-          ) : (
-            <>
+          <>
               {googleOAuthEnabled && (
                 <>
                   {/* Google's own button, on our domain, so its account
@@ -13888,10 +14054,12 @@ export default function MarketplaceApp({
                 <label>
                   Email address
                   <input
+                    ref={authEmailRef}
                     name="email"
                     type="email"
                     autoComplete="email"
                     required
+                    defaultValue={rememberedEmail}
                     placeholder="you@example.com"
                   />
                 </label>
@@ -13938,22 +14106,49 @@ export default function MarketplaceApp({
               </form>
               <button
                 className="switch-auth"
-                onClick={() =>
-                  setAuthMode((mode) =>
-                    mode === "signup" ? "signin" : "signup",
-                  )
-                }
+                onClick={() => {
+                  const next = authMode === "signup" ? "signin" : "signup";
+                  // The prefilled address is a convenience for signing back
+                  // in, never a suggestion of which address to register. On
+                  // the way to sign-up it is withdrawn — but only while it is
+                  // still untouched, because anything typed over it is theirs
+                  // and deleting that would be the worse mistake.
+                  const field = authEmailRef.current;
+                  if (
+                    next === "signup" &&
+                    field &&
+                    rememberedEmail &&
+                    field.value === rememberedEmail
+                  ) {
+                    field.value = "";
+                  }
+                  setAuthMode(next);
+                }}
               >
                 {authMode === "signup"
                   ? "Already a member? Sign in"
                   : "New here? Create an account"}
               </button>
+              {/* Below the real form, not instead of it. This button used to
+                  REPLACE the entire dialog body whenever the local preview was
+                  available, so `next dev` had no sign-in form at all and the
+                  only thing any gated action could lead to was the setup
+                  wizard. The dev flow is still one press away; it is no longer
+                  the only thing on offer. */}
+              {localPreviewAvailable && (
+                <button
+                  type="button"
+                  className="button button-dark button-full preview-onboarding-button"
+                  onClick={openOnboardingPreview}
+                >
+                  Preview onboarding <span>→</span>
+                </button>
+              )}
               <p className="security-note">
                 Passwords are handled by Supabase Auth and never stored in the
                 SideSpace application database.
               </p>
-            </>
-          )}
+          </>
         </Modal>
       )}
 
@@ -14691,15 +14886,7 @@ export default function MarketplaceApp({
               ? "Edit your SideSpace profile"
               : "Set up your SideSpace account"
           }
-          onClose={() => {
-            setOnboardingOpen(false);
-            setOnboardingPreview(false);
-            setOnboardingStep(1);
-            setOnboardingError("");
-            setOnboardingInvalidField("");
-            setAvatarCropPending(false);
-            resetIgAvatarSync();
-          }}
+          onClose={closeOnboarding}
           wide
         >
           <div className="onboarding-top">
@@ -15111,6 +15298,37 @@ export default function MarketplaceApp({
                       </span>
                     )}
                   </div>
+                )}
+
+                {/* The way out for someone who is in the wrong place.
+
+                    Setup step 1 is the one screen with no action row of its
+                    own — choosing a role advances immediately — so this is a
+                    plain link at the end of the slide rather than a member of
+                    `.onboarding-actions`, whose stylesheet would repaint it as
+                    a bordered pill.
+
+                    `setup` keeps it away from the edit-mode profile editor,
+                    which renders this same step to a member who is already set
+                    up and is not looking for a different account. Step 1
+                    because steps 1 and 2 share one slide, and because step 1
+                    holds no typed answers — switchToExistingAccount ends the
+                    session, and that is only safe while there is nothing to
+                    lose. Deliberately NOT gated on `!user`: the modal itself
+                    only renders for `user || onboardingPreview`, so a
+                    signed-out gate would have limited this to `next dev` and
+                    the link would never have existed in a deployed build.
+
+                    type="button" — the enclosing form's submit is the whole
+                    publish path. */}
+                {onboardingMode === "setup" && onboardingStep === 1 && (
+                  <button
+                    type="button"
+                    className="switch-auth"
+                    onClick={() => void switchToExistingAccount()}
+                  >
+                    I already have an account
+                  </button>
                 )}
               </div>
             )}

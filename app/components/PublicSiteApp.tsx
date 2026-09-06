@@ -22,6 +22,7 @@ import {
 import SmoothScroll from "@/app/components/SmoothScroll";
 import ScrollParallax from "@/app/components/ScrollParallax";
 import { useLocale } from "@/app/components/LocaleProvider";
+import { markReturningVisitor } from "@/lib/auth/returning";
 
 type PublicRoute = Exclude<SideSpaceRoute, "marketplace" | "dashboard">;
 
@@ -115,6 +116,12 @@ export default function PublicSiteApp({
             setLoadingViewer(false);
             return;
           }
+          // MarketplaceApp is not mounted on the marketing routes, so this is
+          // the only place a member browsing `/`, `/creators`, `/pricing` or
+          // `/how-it-works` is observed to be signed in. Without it, anyone
+          // whose habit is to arrive at the homepage stays unmarked, and the
+          // Join button keeps offering them a second account.
+          markReturningVisitor(user.email);
           const { data } = await supabase
             .from("my_profiles")
             .select("display_name, avatar_url, onboarding_complete")
