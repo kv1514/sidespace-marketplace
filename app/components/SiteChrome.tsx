@@ -119,10 +119,25 @@ export function SiteHeader({
     return () => desktopNav.removeEventListener("change", closeOnDesktop);
   }, []);
 
-  const popularActive =
-    route === "marketplace" &&
-    typeof window !== "undefined" &&
-    new URL(window.location.href).searchParams.get("sort") === "popular";
+  // Which of the two marketplace links is the current page. Read from the
+  // address after mount rather than during render: the server does not know
+  // the search params, so rendering from window.location marked the wrong
+  // link on a direct load and hydration kept it. No dependency list on
+  // purpose - the header re-renders on every route change and on the
+  // toolbar's replaceState, and the check costs nothing.
+  const [popularActive, setPopularActive] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPopularActive(
+        route === "marketplace" &&
+          new URL(window.location.href).searchParams.get("sort") === "popular",
+      );
+    }, 0);
+    return () => window.clearTimeout(timer);
+  });
+  const isCurrent = (link: (typeof PUBLIC_LINKS)[number]) =>
+    route === link.route &&
+    (link.href.includes("sort=popular") ? popularActive : !popularActive);
 
   return (
     <>
@@ -139,12 +154,7 @@ export function SiteHeader({
             <Link
               href={link.href}
               key={link.href}
-              aria-current={
-                route === link.route &&
-                (link.href.includes("sort=popular") ? popularActive : !popularActive)
-                  ? "page"
-                  : undefined
-              }
+              aria-current={isCurrent(link) ? "page" : undefined}
             >
               {t(link.labelKey)}
             </Link>
@@ -194,7 +204,7 @@ export function SiteHeader({
               </button>
               <button className="ss-header-join" onClick={onJoin}>
                 <span>
-                  {t("chrome.join")}<span className="ss-header-join-full"> SideSpace</span>
+                  {t("chrome.joinSideSpace")}
                 </span>
                 <span aria-hidden="true" className="ss-icon-arrow">
                   ↗
@@ -225,7 +235,7 @@ export function SiteHeader({
             <Link
               href={link.href}
               key={link.href}
-              aria-current={route === link.route ? "page" : undefined}
+              aria-current={isCurrent(link) ? "page" : undefined}
               onClick={() => setMenuOpen(false)}
             >
               <span>{String(index + 1).padStart(2, "0")}</span>
@@ -242,7 +252,7 @@ export function SiteHeader({
                 aria-current={route === "dashboard" ? "page" : undefined}
                 onClick={() => setMenuOpen(false)}
               >
-                <span>05</span>
+                <span>{String(PUBLIC_LINKS.length + 1).padStart(2, "0")}</span>
                 {t("chrome.dashboard")}
                 <b aria-hidden="true" className="ss-icon-arrow">
                   ↗
@@ -254,7 +264,7 @@ export function SiteHeader({
                   onMessages();
                 }}
               >
-                <span>06</span>
+                <span>{String(PUBLIC_LINKS.length + 2).padStart(2, "0")}</span>
                 {t("chrome.messages")}
                 {unreadCount > 0 && <b>{unreadCount}</b>}
               </button>
@@ -264,7 +274,7 @@ export function SiteHeader({
                   onAccount();
                 }}
               >
-                <span>07</span>
+                <span>{String(PUBLIC_LINKS.length + 3).padStart(2, "0")}</span>
                 {t("chrome.profile")}
                 <b aria-hidden="true">↗</b>
               </button>
@@ -342,7 +352,7 @@ export function SiteFooter({ onJoin }: { onJoin: () => void }) {
             ↗
           </span>
         </button>
-        <small>© {new Date().getFullYear()} SideSpace</small>
+        <small>{t("chrome.yearSidespace", { year: new Date().getFullYear() })}</small>
       </div>
     </footer>
   );

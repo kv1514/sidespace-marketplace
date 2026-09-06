@@ -8,6 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import type { GeoPlace } from "@/lib/geo/places";
+import { useLocale } from "@/app/components/LocaleProvider";
 
 type CityAutocompleteProps = {
   value: string;
@@ -30,6 +31,7 @@ export default function CityAutocomplete({
   placeholder = "Brea, CA",
   autoFocus,
 }: CityAutocompleteProps) {
+  const { t, tx } = useLocale();
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -172,12 +174,12 @@ export default function CityAutocomplete({
                 choose(place);
               }}
             >
-              {place.label}
+              {tx(place.label)}
             </li>
           ))}
           {loading && places.length === 0 ? (
             <li className="city-autocomplete-status" role="presentation">
-              Searching U.S. cities…
+              {t("city.searchingUSCities")}
             </li>
           ) : null}
         </ul>

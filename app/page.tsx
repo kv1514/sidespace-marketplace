@@ -3,6 +3,8 @@ import { isBusinessReferralCode, normalizeBusinessReferralCode } from "@/lib/pay
 import PublicSiteApp from "./components/PublicSiteApp";
 import InviteMarketplaceBridge from "./components/InviteMarketplaceBridge";
 import { OG_IMAGE } from "@/lib/site-metadata";
+import { getTranslator } from "@/lib/i18n-server";
+import { loadListingTranslationSeed } from "@/lib/listings/translation-seed";
 import {
   isInviteToken,
   loadInvite,
@@ -12,19 +14,20 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return {
   alternates: { canonical: "/" },
-  title: "SideSpace - Local attention, now bookable",
-  description:
-    "Book creators offering social, physical, and sponsorship inventory—or list the way you can advertise.",
+  title: t("meta.siteTitle"),
+  description: t("meta.ogDescription"),
   openGraph: {
     images: OG_IMAGE,
     url: "/",
-    title: "SideSpace - Local attention, now bookable",
-    description:
-      "The marketplace for creators with social audiences, physical placements, sponsorships, and more.",
+    title: t("meta.siteTitle"),
+    description: t("meta.homeOgDescription"),
   },
-};
+  };
+}
 
 export default async function Home({
   searchParams,
@@ -52,13 +55,20 @@ export default async function Home({
     }),
     loadReferralCredit(referralCode),
   ]);
+  const initialListingTranslations = await loadListingTranslationSeed(
+    snapshot.listings,
+  );
 
   // Referral and prospect links keep the full onboarding engine mounted even
   // when the lookup is temporarily unavailable. Normal homepage visits use
   // the much smaller public shell and load listing details on /marketplace.
   if (!isInviteToken(inviteToken) && !referralCode) {
     return (
-      <PublicSiteApp route="home" initialListings={snapshot.listings} />
+      <PublicSiteApp
+        route="home"
+        initialListings={snapshot.listings}
+        initialListingTranslations={initialListingTranslations}
+      />
     );
   }
 
@@ -67,6 +77,7 @@ export default async function Home({
       route="home"
       initialProfiles={snapshot.profiles}
       initialListings={snapshot.listings}
+      initialListingTranslations={initialListingTranslations}
       invite={invite}
       inviteToken={inviteToken}
       referralCode={referralCode}

@@ -62,7 +62,7 @@ describe("offer tiles and the section they navigate to", () => {
     // ...and it is visible while it is on. A filter nobody can see reads as
     // missing data.
     expect(app).toContain("filter-pill");
-    expect(app).toContain("Open only");
+    expect(app).toContain('t("app.openOnly")');
   });
 
   it("keeps the offers filter announced as a single choice, not three toggles", () => {

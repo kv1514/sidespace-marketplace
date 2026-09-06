@@ -5,14 +5,16 @@ import { bookingDateLabel, type BookingListing, type BookingQuote } from "@/lib/
 import { createClient } from "@/lib/supabase/client";
 import { AvailabilityCalendar } from "./AvailabilityCalendar";
 import { formatCents } from "@/lib/payments/fees";
+import { useLocale } from "@/app/components/LocaleProvider";
 
 export function BookingPriceSummary({ quote }: { quote: BookingQuote }) {
+  const { t, locale } = useLocale();
   return <div className="booking-price-summary" aria-live="polite">
-    <strong>{bookingDateLabel(quote.timingKind, quote.startDate, quote.endDate)}</strong>
-    <dl>{quote.pricingKind && quote.pricingKind !== "fixed" && <div><dt>Rate</dt><dd>{formatCents(quote.rateCents)} / {quote.pricingKind === "30_days" ? "30 days" : quote.pricingKind}</dd></div>}<div><dt>Subtotal</dt><dd>{formatCents(quote.subtotalCents)}</dd></div>
-      <div><dt>Service fee</dt><dd>{formatCents(quote.buyerFeeCents)}</dd></div>
-      <div><dt>Total before tax</dt><dd>{formatCents(quote.customerTotalCents)}</dd></div></dl>
-    <small>Ad credit and any tax appear at checkout.</small>
+    <strong>{bookingDateLabel(quote.timingKind, quote.startDate, quote.endDate, t, locale)}</strong>
+    <dl>{quote.pricingKind && quote.pricingKind !== "fixed" && <div><dt>{t("booking.rate")}</dt><dd>{formatCents(quote.rateCents)} / {quote.pricingKind === "30_days" ? t("home.unitThirtyDays") : quote.pricingKind}</dd></div>}<div><dt>{t("booking.subtotal")}</dt><dd>{formatCents(quote.subtotalCents)}</dd></div>
+      <div><dt>{t("booking.serviceFee")}</dt><dd>{formatCents(quote.buyerFeeCents)}</dd></div>
+      <div><dt>{t("app.totalBeforeTax")}</dt><dd>{formatCents(quote.customerTotalCents)}</dd></div></dl>
+    <small>{t("booking.adCreditAndAnyTaxAppearAt")}</small>
   </div>;
 }
 
@@ -20,6 +22,7 @@ export function BookingFields({ listing, quoteRequired = true, onChange }: {
   listing: BookingListing; quoteRequired?: boolean;
   onChange?: (selection: { start: string; end: string; quote: BookingQuote | null }) => void;
 }) {
+  const { t, locale } = useLocale();
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [availability, setAvailability] = useState<{ dates: string[]; error: string } | null>(null);
   const [start, setStart] = useState("");
@@ -58,22 +61,22 @@ export function BookingFields({ listing, quoteRequired = true, onChange }: {
   }, [calendarOpen, listing.id, listing.updated_at, listing.instant_booking_enabled, reload]);
   return <div className="booking-fields field-wide">
     {listing.instant_booking_enabled && <details className="composer-options booking-calendar" onToggle={(event) => setCalendarOpen(event.currentTarget.open)}>
-      <summary>See available dates</summary>
-      {!availability ? <p role="status">Loading open dates…</p> : availability.error ? <p role="alert">{availability.error}</p> : !availability.dates.length ? <p>No open dates right now. You can make a custom offer.</p> : <>
-        <p>{deadline ? "Choose a delivery date." : fixed ? "Choose a start date." : start && !end ? "Now choose the end date." : "Choose a start date, then an end date."}</p>
+      <summary>{t("booking.seeAvailableDates")}</summary>
+      {!availability ? <p role="status">{t("booking.loadingOpenDates")}</p> : availability.error ? <p role="alert">{availability.error}</p> : !availability.dates.length ? <p>{t("booking.noOpenDatesRightNowYouCan")}</p> : <>
+        <p>{deadline ? t("booking.chooseADeliveryDate") : fixed ? t("booking.chooseAStartDate") : start && !end ? t("booking.nowChooseTheEndDate") : t("booking.chooseAStartDateThenAnEnd")}</p>
         <AvailabilityCalendar minimum={minimum} maximum={maximum} allowed={availability.dates} selected={[start,lastDay].filter(Boolean)}
           onChange={([day]) => { if (!day) return; if (deadline || fixed) setStart(day); else if (start && !end && day >= start) setEnd(day); else { setStart(day); setEnd(""); } }} />
       </>}
     </details>}
-    <div className="field-grid"><label>{deadline ? "Deliver by" : "Start date"}
+    <div className="field-grid"><label>{deadline ? t("composer.deliverBy") : t("composer.startDate")}
       <input name="start_date" type="date" min={minimum} max={maximum} required value={start}
         onChange={(event) => { setStart(event.target.value); }} /></label>
-      {!deadline && !fixed ? <label>End date<input name="end_date" type="date" min={start || minimum} max={maximum} required value={end}
+      {!deadline && !fixed ? <label>{t("composer.endDate")}<input name="end_date" type="date" min={start || minimum} max={maximum} required value={end}
         onChange={(event) => { setEnd(event.target.value); }} /></label> : <input type="hidden" name="end_date" value={lastDay} />}
     </div>
-    {!deadline && fixed && start && <p>{bookingDateLabel("date_range", start, lastDay)}</p>}
-    {loading && <p role="status">Checking dates and price…</p>}
-    {error && <div className="field-error" role="alert">{error} <button type="button" onClick={() => setReload((value) => value + 1)}>Try again</button></div>}
+    {!deadline && fixed && start && <p>{bookingDateLabel("date_range", start, lastDay, t, locale)}</p>}
+    {loading && <p role="status">{t("booking.checkingDatesAndPrice")}</p>}
+    {error && <div className="field-error" role="alert">{error} <button type="button" onClick={() => setReload((value) => value + 1)}>{t("booking.tryAgain")}</button></div>}
     {quote && <BookingPriceSummary quote={quote} />}
     <input type="hidden" name="quote_subtotal" value={quote?.subtotalCents ?? ""} />
     <input type="hidden" name="quote_version" value={quote?.listingUpdatedAt ?? ""} />

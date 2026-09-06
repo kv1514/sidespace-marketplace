@@ -1,5 +1,6 @@
 import { addCalendarDays, calendarToday, validCalendarDay, type BookingSchedule } from "./availability";
 import { calculatePaymentBreakdown } from "../payments/fees";
+import { DEFAULT_LOCALE, localeTag, translateEnglish, type Locale, type Translate } from "../i18n";
 
 export type TimingKind = "deadline" | "date_range";
 export type PricingKind = "fixed" | "day" | "week" | "30_days";
@@ -14,16 +15,17 @@ export function calendarDayCount(start: string, end: string) {
   return Math.round((Date.parse(`${end}T12:00:00Z`) - Date.parse(`${start}T12:00:00Z`)) / 86400000) + 1;
 }
 
-export function bookingDateLabel(kind: TimingKind | null | undefined, start: string, end: string) {
+export function bookingDateLabel(kind: TimingKind | null | undefined, start: string, end: string, t: Translate = translateEnglish, locale: Locale = DEFAULT_LOCALE) {
+  const tag = localeTag(locale);
   const date = (day: string) => new Date(`${day}T12:00:00Z`);
-  const label = (day: string) => date(day).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
-  if (!validCalendarDay(start) || !validCalendarDay(end)) return "Choose a date";
-  if (kind === "deadline") return `Deliver by ${label(end)}`;
+  const label = (day: string) => date(day).toLocaleDateString(tag, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  if (!validCalendarDay(start) || !validCalendarDay(end)) return t("booking.chooseADate");
+  if (kind === "deadline") return t("booking.deliverBy", { date: label(end) });
   const days = calendarDayCount(start, end);
   const range = start === end ? label(start) : start.slice(0,7) === end.slice(0,7)
-    ? `${date(start).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" })}–${Number(end.slice(8))}, ${end.slice(0,4)}`
+    ? `${date(start).toLocaleDateString(tag, { month: "long", day: "numeric", timeZone: "UTC" })}–${Number(end.slice(8))}, ${end.slice(0,4)}`
     : `${label(start)} – ${label(end)}`;
-  return `${range} · ${days} ${days === 1 ? "day" : "days"}`;
+  return days === 1 ? t("booking.rangeOneDay", { range }) : t("booking.rangeDays", { range, count: days });
 }
 
 export function pricingLabel(listing: BookingSchedule & { price_unit?: string }) {

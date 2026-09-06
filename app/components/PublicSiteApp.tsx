@@ -22,6 +22,9 @@ import {
 import SmoothScroll from "@/app/components/SmoothScroll";
 import ScrollParallax from "@/app/components/ScrollParallax";
 import { useLocale } from "@/app/components/LocaleProvider";
+import { markReturningVisitor } from "@/lib/auth/returning";
+import { useListingTranslations } from "@/app/components/useListingTranslations";
+import type { ListingTranslationSeed } from "@/lib/listings/translations";
 
 type PublicRoute = Exclude<SideSpaceRoute, "marketplace" | "dashboard">;
 
@@ -50,15 +53,18 @@ function safeListings(value: unknown): PublicListing[] {
 export default function PublicSiteApp({
   route,
   initialListings = null,
+  initialListingTranslations = null,
   inviteToken = "",
   referralCode = "",
 }: {
   route: PublicRoute;
   initialListings?: unknown;
+  /** Cached translations of those listings in the reader's language. See useListingTranslations. */
+  initialListingTranslations?: ListingTranslationSeed | null;
   inviteToken?: string;
   referralCode?: string;
 }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const router = useRouter();
   const configured = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -94,6 +100,17 @@ export default function PublicSiteApp({
       )
       .slice(0, 24);
   }, [initialListings]);
+  // The same listings in the reader's language. See useListingTranslations.
+  const { copyFor } = useListingTranslations({
+    locale,
+    enabled: configured,
+    listings,
+    seed: initialListingTranslations,
+  });
+  const localizedListings = useMemo(
+    () => listings.map((listing) => copyFor(listing)),
+    [copyFor, listings],
+  );
 
   // Public pages only need enough account state to render the right header.
   // Load the Supabase browser client after hydration so the initial marketing
@@ -115,6 +132,12 @@ export default function PublicSiteApp({
             setLoadingViewer(false);
             return;
           }
+          // MarketplaceApp is not mounted on the marketing routes, so this is
+          // the only place a member browsing `/`, `/creators`, `/pricing` or
+          // `/how-it-works` is observed to be signed in. Without it, anyone
+          // whose habit is to arrive at the homepage stays unmarked, and the
+          // Join button keeps offering them a second account.
+          markReturningVisitor(user.email);
           const { data } = await supabase
             .from("my_profiles")
             .select("display_name, avatar_url, onboarding_complete")
@@ -211,7 +234,7 @@ export default function PublicSiteApp({
 
       {route === "home" && (
         <LandingPage
-          listings={listings}
+          listings={localizedListings}
           onJoin={() => openAuth("signup")}
           onList={listAttention}
         />
@@ -221,7 +244,7 @@ export default function PublicSiteApp({
       )}
       {route === "creators" && (
         <CreatorsPage
-          listings={listings}
+          listings={localizedListings}
           onList={listAttention}
           onOpenListing={openListing}
         />

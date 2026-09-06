@@ -1902,6 +1902,15 @@ h2 em {
   width: 100%;
 }
 
+/* The local dev entry into the onboarding flow. It used to REPLACE the whole
+   auth dialog body, so it was the only control in that slot and needed no
+   spacing of its own. It now sits below the real form and the "Already a
+   member?" link, whose underline was touching its top edge with half a pixel
+   between them. */
+.preview-onboarding-button {
+  margin-top: 14px;
+}
+
 .security-note {
   color: var(--ink-soft);
   font-size: 10px;
@@ -12504,4 +12513,34 @@ label:has(.city-autocomplete-list),
    means the same thing everywhere, minus the affordance. */
 .dashboard-stat.dashboard-stat-readout {
   cursor: default;
+}
+
+/* "Translated automatically - Show original", under the title of a listing
+   the reader is seeing in their own language. */
+.detail-translation-note {
+  align-items: center;
+  color: var(--ink-soft);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 10px;
+  margin: -6px 0 14px;
+}
+
+.detail-translation-note button {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+  text-decoration: underline;
+}
+
+/* Korean breaks lines between words, never inside one; the default breaks
+   after any syllable and split "마켓플레이스" across the hero. */
+html[lang^="ko"] {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }

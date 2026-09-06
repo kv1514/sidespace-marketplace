@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { OG_IMAGE } from "@/lib/site-metadata";
+import { localeTag, translate } from "@/lib/i18n";
+import { getTranslator } from "@/lib/i18n-server";
 
-export const metadata: Metadata = {
-  title: "Terms of Service",
-  description: "The terms that govern using the SideSpace marketplace.",
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return {
+  title: t("meta.termsTitle"),
+  description: t("meta.termsDescription"),
   // Inherited the homepage's og:url, which Slack and LinkedIn treat as a
   // canonical hint - so sharing this page unfurled as the homepage.
   alternates: { canonical: "/terms" },
@@ -13,23 +17,32 @@ export const metadata: Metadata = {
     type: "article",
     siteName: "SideSpace",
     url: "/terms",
-    title: "Terms of Service · SideSpace",
-    description: "The terms that govern using the SideSpace marketplace.",
+    title: `${t("meta.termsTitle")} · SideSpace`,
+    description: t("meta.termsDescription"),
   },
   twitter: {
     images: OG_IMAGE,
     card: "summary",
-    title: "Terms of Service · SideSpace",
-    description: "The terms that govern using the SideSpace marketplace.",
+    title: `${t("meta.termsTitle")} · SideSpace`,
+    description: t("meta.termsDescription"),
   },
-};
+  };
+}
 
-export default function TermsPage() {
+export default async function TermsPage() {
+  // The legal text is English only: a machine translation of terms is a
+  // liability, not a courtesy. Readers in another language are told so.
+  const { locale } = await getTranslator();
   return (
-    <main className="legal-page">
+    <main className="legal-page" lang="en">
       <Link className="legal-home" href="/">
         ← SideSpace
       </Link>
+      {locale !== "en" && (
+        <p className="legal-updated" lang={localeTag(locale)}>
+          {translate(locale, "legal.englishOnly")}
+        </p>
+      )}
       <h1>Terms of Service</h1>
       <p className="legal-updated">Last updated: August 29, 2026</p>
 
