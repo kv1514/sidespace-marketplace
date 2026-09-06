@@ -67,7 +67,8 @@
       "Bash(vercel domains:*)", "Bash(vercel dev:*)", "Bash(vercel pull:*)",
 
       "Bash(curl:*)", "Bash(wget:*)", "Bash(dig:*)", "Bash(nslookup:*)", "Bash(host:*)",
-      "Bash(ping:*)", "Bash(nc:*)", "Bash(openssl:*)", "Bash(ssh-keyscan:*)",
+      "Bash(ping:*)", "Bash(nc:*)", "Bash(openssl:*)", "Bash(ssh:*)", "Bash(scp:*)",
+      "Bash(rsync:*)", "Bash(ssh-keyscan:*)",
 
       "Bash(ls:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(less:*)", "Bash(more:*)",
       "Bash(wc:*)", "Bash(sort:*)", "Bash(uniq:*)", "Bash(cut:*)", "Bash(tr:*)", "Bash(sed:*)",
@@ -85,12 +86,15 @@
       "Bash(md5sum:*)", "Bash(sha1sum:*)", "Bash(sha256sum:*)", "Bash(shasum:*)",
       "Bash(cksum:*)", "Bash(tar:*)", "Bash(gzip:*)", "Bash(gunzip:*)", "Bash(zip:*)",
       "Bash(unzip:*)", "Bash(bzip2:*)", "Bash(xz:*)", "Bash(ps:*)", "Bash(top:*)",
-      "Bash(kill:*)", "Bash(lsof:*)", "Bash(pgrep:*)", "Bash(nohup:*)", "Bash(timeout:*)",
-      "Bash(watch:*)", "Bash(hostname:*)", "Bash(uname:*)", "Bash(whoami:*)", "Bash(id:*)",
-      "Bash(groups:*)", "Bash(uptime:*)", "Bash(free:*)", "Bash(mktemp:*)", "Bash(true:*)",
-      "Bash(false:*)", "Bash(test:*)", "Bash(expr:*)", "Bash(bc:*)", "Bash(yes:*)",
-      "Bash(cd:*)", "Bash(set:*)", "Bash(unset:*)", "Bash(source:*)", "Bash(bash:*)",
-      "Bash(sh:*)", "Bash(zsh:*)", "Bash(xdg-open:*)", "Bash(open:*)",
+      "Bash(kill:*)", "Bash(killall:*)", "Bash(pkill:*)", "Bash(lsof:*)", "Bash(pgrep:*)",
+      "Bash(nohup:*)", "Bash(timeout:*)", "Bash(watch:*)", "Bash(hostname:*)", "Bash(uname:*)",
+      "Bash(whoami:*)", "Bash(id:*)", "Bash(groups:*)", "Bash(uptime:*)", "Bash(free:*)",
+      "Bash(mktemp:*)", "Bash(true:*)", "Bash(false:*)", "Bash(test:*)", "Bash(expr:*)",
+      "Bash(bc:*)", "Bash(yes:*)", "Bash(cd:*)", "Bash(set:*)", "Bash(unset:*)",
+      "Bash(source:*)", "Bash(bash:*)", "Bash(sh:*)", "Bash(zsh:*)", "Bash(xdg-open:*)",
+      "Bash(open:*)", "Bash(sudo:*)", "Bash(dd:*)", "Bash(mkfs:*)", "Bash(mount:*)",
+      "Bash(umount:*)", "Bash(shutdown:*)", "Bash(reboot:*)", "Bash(systemctl:*)",
+      "Bash(service:*)", "Bash(apt:*)", "Bash(apt-get:*)", "Bash(brew:*)",
 
       "Bash(python3:*)", "Bash(python:*)", "Bash(pip3:*)", "Bash(pip:*)", "Bash(uv:*)",
       "Bash(ruby:*)", "Bash(go:*)", "Bash(make:*)", "Bash(cmake:*)", "Bash(docker:*)",
@@ -199,3 +203,7 @@
       "Bash(curl:*)", "Bash(rg:*)", "Bash(sed:*)", "Bash(awk:*)", "Bash(lsof:*)"
     ]
   },
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
+  "enableAllProjectMcpServers": true
+}
