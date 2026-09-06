@@ -2,12 +2,14 @@
 
 import { useEffect, useState, type ComponentType } from "react";
 import type { Invite } from "@/lib/supabase/public";
+import type { ListingTranslationSeed } from "@/lib/listings/translations";
 import PublicSiteApp from "@/app/components/PublicSiteApp";
 
 type InviteEngineProps = {
   route: "home";
   initialProfiles: unknown;
   initialListings: unknown;
+  initialListingTranslations?: ListingTranslationSeed | null;
   invite: Invite | null;
   referralCode?: string;
   referralCreditCents?: number | null;
@@ -41,6 +43,7 @@ export default function InviteMarketplaceBridge(
       <PublicSiteApp
         route="home"
         initialListings={props.initialListings}
+        initialListingTranslations={props.initialListingTranslations}
         inviteToken={props.inviteToken}
         referralCode={props.referralCode}
       />
@@ -52,6 +55,7 @@ export default function InviteMarketplaceBridge(
       route={props.route}
       initialProfiles={props.initialProfiles}
       initialListings={props.initialListings}
+      initialListingTranslations={props.initialListingTranslations}
       invite={props.invite}
       referralCode={props.referralCode}
     />

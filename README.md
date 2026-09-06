@@ -87,6 +87,28 @@ Stripe Checkout, Connect return URLs, and same-origin payment checks match
 the public hostname. The generated `*.vercel.app` address can stay as a
 fallback.
 
+## Languages
+
+The interface speaks English, Spanish, French, Simplified Chinese, Korean, and
+Vietnamese. The language is picked from the `sidespace_locale` cookie, then
+from the browser's `Accept-Language`, and members change it from the language
+and region dialog in the header. Listings, messages, and profiles stay as their
+authors wrote them, and the legal pages are English only with a notice.
+
+- `lib/i18n.ts` is the API: `translate(locale, key)`, the `t()` and `tx()`
+  helpers that `useLocale()` hands to client components, and the formatters.
+- `lib/i18n-messages/` holds one table per language, keyed by dotted names
+  such as `chrome.signIn`. English is the source of truth; every other table
+  must carry every key, which TypeScript enforces.
+- Copy written as a literal in a component goes through `t("ns.key")`. Copy
+  that reaches the screen as data - a toast, a validation message, a label in
+  a module-level constant, a sentence an API route or the database sends back -
+  stays English in the source and is translated by value with `tx()`, which
+  looks the English up in the table.
+- `node scripts/i18n-keys.mjs` lists every sentence the source can show that
+  has no key, keys nothing references, and translations whose placeholders
+  drifted from the English. `tests/i18n.test.ts` fails on the first and last.
+
 ## Security model
 
 Passwords are stored and verified by Supabase Auth, not by the application.
