@@ -12,7 +12,6 @@ export const FRENCH_MESSAGES: Messages = {
   "chrome.footerNavigation": "Navigation du pied de page",
   "chrome.home": "Accueil",
   "chrome.marketplace": "Marketplace",
-  "chrome.popular": "Populaires",
   "chrome.howItWorks": "Comment ça marche",
   "chrome.creators": "Créateurs",
   "chrome.pricing": "Tarifs",
@@ -318,7 +317,6 @@ export const FRENCH_MESSAGES: Messages = {
   "pricing.join": "Rejoindre SideSpace",
 
   "market.label": "Marketplace",
-  "market.popularLabel": "Annonces populaires",
   "market.titleLead": "Trouvez la bonne audience ou le bon",
   "market.titleAccent": "lieu.",
   "market.description": "Recherchez Instagram, TikTok, newsletters, audiences locales, villes ou formats physiques. Consultez les détails, rencontrez le propriétaire et commencez une conversation privée.",
@@ -354,9 +352,7 @@ export const FRENCH_MESSAGES: Messages = {
   "market.viewOnly": "consultation",
   "market.orderAria": "Trier les annonces",
   "market.browseBy": "Explorer par",
-  "market.popularNow": "Populaires maintenant",
-  "market.latest": "Plus récentes",
-  "market.popularityNote": "La popularité combine les likes, la fraîcheur et le niveau de détail afin que les nouvelles opportunités puissent aussi émerger.",
+  "market.recommended": "Recommandées",
   "market.pickedForYou": "Choisi pour vous",
   "market.popularRightNow": "Populaires maintenant",
   "market.translatedAutomatically": "Traduit automatiquement",
@@ -2117,9 +2113,6 @@ export const FRENCH_MESSAGES: Messages = {
   "meta.marketplaceDescription": "Explorez les annonces de créateurs sur SideSpace : audiences sociales, emplacements physiques, sponsorings et demandes de campagne d’entreprises.",
   "meta.marketplaceOgTitle": "Explorez le marketplace SideSpace",
   "meta.marketplaceOgDescription": "Recherchez de la vraie attention locale auprès de créateurs : vitrines, véhicules, sponsorings et plus encore.",
-  "meta.popularTitle": "Annonces populaires",
-  "meta.popularOgTitle": "Annonces populaires sur SideSpace",
-  "meta.popularDescription": "Découvrez les annonces SideSpace que la communauté remarque, où la fraîcheur et la qualité des annonces aident les nouvelles opportunités à émerger.",
 
   "chrome.pricesShownInUsd": "Les prix sont affichés en dollars américains.",
 

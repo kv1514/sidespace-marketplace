@@ -64,7 +64,6 @@ import { LISTING_REACH_RPC, mergeListingReach } from "@/lib/listings/reach";
 import type { ListingTranslationSeed } from "@/lib/listings/translations";
 import { useListingTranslations } from "@/app/components/useListingTranslations";
 import {
-  comparePopularListings,
   normalizeLikeCount,
 } from "@/lib/listings/popularity";
 import {
@@ -132,7 +131,19 @@ type Role =
   | "space_owner"
   | "sponsor_host";
 type RoleFilter = "all" | "supply" | "business" | "creator";
-type ListingSort = "latest" | "popular" | "location";
+/**
+ * How the grid is ordered.
+ *
+ * "recommended" is the default and the only order most visitors ever see: the
+ * personal ranking in lib/listings/recommend.ts. It was called "latest" while
+ * a "popular" mode sat beside it, which was never what it did - with no
+ * history it falls through to a stable shuffle, not to newest-first.
+ *
+ * "popular" is gone. It ranked by likes and reach on a catalogue where the
+ * personal ranking already uses both as a quality prior, so it mostly served
+ * as a second, worse copy of the same page.
+ */
+type ListingSort = "recommended" | "location";
 type CreatorOfferType = "social" | "physical" | "sponsorship";
 type LocationPoint = {
   latitude: number;
@@ -5221,7 +5232,7 @@ export default function MarketplaceApp({
   initialLocation = "",
   initialRoleFilter = "all",
   initialChannel = "All",
-  initialSort = "latest",
+  initialSort = "recommended",
   initialListingTranslations = null,
   referralCode = "",
   referralCreditCents = null,
@@ -5808,14 +5819,15 @@ export default function MarketplaceApp({
   // The header's Marketplace and Popular links are this same page with a
   // different search param. A client-side navigation between them changed
   // the URL and re-rendered the page, but this state kept its first value,
-  // so the address bar said "popular" while the grid stayed on "latest".
+  // so the address bar said "location" while the grid stayed on the default.
   // The toolbar writes the param with replaceState, which the router also
   // reports here, so both paths end in the same place.
   const searchParams = useSearchParams();
   const sortParam = searchParams?.get("sort") ?? null;
   useEffect(() => {
-    const next: ListingSort =
-      sortParam === "popular" || sortParam === "location" ? sortParam : "latest";
+    // Anything else, including a bookmarked ?sort=popular from when that
+    // page existed, lands on the default order rather than a dead end.
+    const next: ListingSort = sortParam === "location" ? "location" : "recommended";
     // Deferred, like the other URL-driven state here: a synchronous set
     // inside an effect re-renders twice for nothing.
     const timer = window.setTimeout(
@@ -6749,7 +6761,6 @@ export default function MarketplaceApp({
     const normalized = query.trim().toLowerCase();
     const normalizedLocation = locationQuery.trim();
     const rankingNow = Date.now();
-    const popularityNow = listingSort === "popular" ? rankingNow : 0;
     return listings.filter((listing) => {
       if (blockedProfileIds.includes(listing.owner.id)) return false;
       // A test account's listings must not appear in the marketplace, the
@@ -6822,11 +6833,11 @@ export default function MarketplaceApp({
             ? locationMatchScore(listingCity(b), normalizedLocation) -
                 locationMatchScore(listingCity(a), normalizedLocation) ||
               compareLocations(listingCity(a), listingCity(b), localeTag(locale))
-            : listingSort === "popular"
-              ? comparePopularListings(a, b, popularityNow)
-              : 0) ||
+            : 0) ||
           listingRank(a) - listingRank(b) ||
-          (listingSort === "latest" ? comparePersonal(a, b, visitorTaste, rankingNow) : 0) ||
+          (listingSort === "recommended"
+            ? comparePersonal(a, b, visitorTaste, rankingNow)
+            : 0) ||
           shuffleKey(a.id) - shuffleKey(b.id),
       );
   }, [
@@ -7906,7 +7917,7 @@ export default function MarketplaceApp({
   function setListingSortAndUrl(next: ListingSort) {
     setListingSort(next);
     const url = new URL(window.location.href);
-    if (next !== "latest") url.searchParams.set("sort", next);
+    if (next !== "recommended") url.searchParams.set("sort", next);
     else url.searchParams.delete("sort");
     window.history.replaceState(null, "", url);
   }
@@ -7918,13 +7929,13 @@ export default function MarketplaceApp({
     if (trimmed) {
       url.searchParams.set("location", trimmed);
       // A location search should feel stable: keep the strongest city/area
-      // matches first instead of letting popularity shuffle them away.
+      // matches first instead of letting the personal ranking reorder them.
       setListingSort("location");
       url.searchParams.set("sort", "location");
     } else {
       url.searchParams.delete("location");
       if (listingSort === "location") {
-        setListingSort("latest");
+        setListingSort("recommended");
         url.searchParams.delete("sort");
       }
     }
@@ -13329,11 +13340,7 @@ export default function MarketplaceApp({
       {route === "marketplace" && (<div className="ss-marketplace-page" id="main-content"><section className="market-section" id="market">
         <div className="section-top">
           <div>
-            <p className="section-label">
-              {listingSort === "popular"
-                ? t("market.popularLabel")
-                : t("market.label")}
-            </p>
+            <p className="section-label">{t("market.label")}</p>
             <h1>
               {t("market.titleLead")} <em>{t("market.titleAccent")}</em>
             </h1>
@@ -13489,11 +13496,11 @@ export default function MarketplaceApp({
             <span className="listing-sort-label">{t("market.browseBy")}</span>
             <button
               type="button"
-              className={listingSort === "popular" ? "active" : ""}
-              aria-pressed={listingSort === "popular"}
-              onClick={() => setListingSortAndUrl("popular")}
+              className={listingSort === "recommended" ? "active" : ""}
+              aria-pressed={listingSort === "recommended"}
+              onClick={() => setListingSortAndUrl("recommended")}
             >
-              {t("market.popularNow")}
+              {t("market.recommended")}
             </button>
             <button
               type="button"
@@ -13503,24 +13510,12 @@ export default function MarketplaceApp({
             >
               {t("market.locationSort")}
             </button>
-            <button
-              type="button"
-              className={listingSort === "latest" ? "active" : ""}
-              aria-pressed={listingSort === "latest"}
-              onClick={() => setListingSortAndUrl("latest")}
-            >
-              {t("market.latest")}
-            </button>
           </div>
           {locationQuery ? (
             <p className="listing-sort-note">
               {visibleListings.length
                 ? t("market.locationNote", { location: locationQuery })
                 : t("market.noLocationMatches", { location: locationQuery })}
-            </p>
-          ) : listingSort === "popular" ? (
-            <p className="listing-sort-note">
-              {t("market.popularityNote")}
             </p>
           ) : null}
         </div>

@@ -12,7 +12,6 @@ export const KOREAN_MESSAGES: Messages = {
   "chrome.footerNavigation": "푸터 내비게이션",
   "chrome.home": "홈",
   "chrome.marketplace": "마켓플레이스",
-  "chrome.popular": "인기",
   "chrome.howItWorks": "이용 방법",
   "chrome.creators": "크리에이터",
   "chrome.pricing": "요금",
@@ -318,7 +317,6 @@ export const KOREAN_MESSAGES: Messages = {
   "pricing.join": "SideSpace 가입",
 
   "market.label": "마켓플레이스",
-  "market.popularLabel": "인기 광고 지면",
   "market.titleLead": "딱 맞는 오디언스 또는",
   "market.titleAccent": "공간을 찾으세요.",
   "market.description": "Instagram, TikTok, 뉴스레터, 지역 오디언스, 도시, 실제 공간 형식을 검색하세요. 세부 정보를 확인하고 소유자를 만나 비공개 대화를 시작하세요.",
@@ -354,9 +352,7 @@ export const KOREAN_MESSAGES: Messages = {
   "market.viewOnly": "개 보기 전용",
   "market.orderAria": "광고 지면 정렬",
   "market.browseBy": "분류별 둘러보기",
-  "market.popularNow": "지금 인기",
-  "market.latest": "최신순",
-  "market.popularityNote": "인기도는 좋아요, 최신성, 광고 지면의 상세함을 종합하므로 새로운 기회도 충분히 눈에 띌 수 있습니다.",
+  "market.recommended": "추천",
   "market.pickedForYou": "맞춤 추천",
   "market.popularRightNow": "지금 인기 있는 항목",
   "market.translatedAutomatically": "자동 번역됨",
@@ -2117,9 +2113,6 @@ export const KOREAN_MESSAGES: Messages = {
   "meta.marketplaceDescription": "SideSpace에서 소셜 오디언스, 실제 공간 광고 위치, 후원을 위한 크리에이터 광고 지면과 업체 캠페인 요청서를 둘러보세요.",
   "meta.marketplaceOgTitle": "SideSpace 마켓플레이스 둘러보기",
   "meta.marketplaceOgDescription": "크리에이터가 제공하는 진짜 지역의 관심을 검색하세요: 매장 전면, 차량, 후원 등.",
-  "meta.popularTitle": "인기 광고 지면",
-  "meta.popularOgTitle": "SideSpace 인기 광고 지면",
-  "meta.popularDescription": "커뮤니티가 주목하는 SideSpace 광고 지면을 확인하세요. 최신성과 광고 지면 품질 덕분에 새로운 기회도 눈에 띌 수 있습니다.",
 
   "chrome.pricesShownInUsd": "가격은 미국 달러로 표시됩니다.",
 

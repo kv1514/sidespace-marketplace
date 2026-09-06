@@ -12,7 +12,6 @@ export const MANDARIN_MESSAGES: Messages = {
   "chrome.footerNavigation": "页脚导航",
   "chrome.home": "首页",
   "chrome.marketplace": "市场",
-  "chrome.popular": "热门",
   "chrome.howItWorks": "运作方式",
   "chrome.creators": "创作者",
   "chrome.pricing": "价格",
@@ -318,7 +317,6 @@ export const MANDARIN_MESSAGES: Messages = {
   "pricing.join": "加入 SideSpace",
 
   "market.label": "市场",
-  "market.popularLabel": "热门资源",
   "market.titleLead": "找到合适的受众或",
   "market.titleAccent": "地点。",
   "market.description": "搜索 Instagram、TikTok、通讯、本地受众、城镇或实体形式。查看详情，认识所有者，开始私密沟通。",
@@ -354,9 +352,7 @@ export const MANDARIN_MESSAGES: Messages = {
   "market.viewOnly": "仅供查看",
   "market.orderAria": "排序资源",
   "market.browseBy": "浏览方式",
-  "market.popularNow": "当前热门",
-  "market.latest": "最新",
-  "market.popularityNote": "热门程度综合考虑点赞、新鲜度和资源详情，让新机会也能脱颖而出。",
+  "market.recommended": "推荐",
   "market.pickedForYou": "为你挑选",
   "market.popularRightNow": "当前热门",
   "market.translatedAutomatically": "自动翻译",
@@ -2117,9 +2113,6 @@ export const MANDARIN_MESSAGES: Messages = {
   "meta.marketplaceDescription": "在 SideSpace 上浏览创作者广告位：社交受众、实体投放位置、赞助，以及商家推广需求。",
   "meta.marketplaceOgTitle": "浏览 SideSpace 市场",
   "meta.marketplaceOgDescription": "搜索来自创作者的真实本地关注：店面、车辆、赞助等。",
-  "meta.popularTitle": "热门广告位",
-  "meta.popularOgTitle": "SideSpace 上的热门广告位",
-  "meta.popularDescription": "查看社区正在关注的 SideSpace 广告位，新鲜度和广告位质量会帮助新机会脱颖而出。",
 
   "chrome.pricesShownInUsd": "价格以美元显示。",
 

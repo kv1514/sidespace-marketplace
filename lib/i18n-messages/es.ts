@@ -12,7 +12,6 @@ export const SPANISH_MESSAGES: Messages = {
   "chrome.footerNavigation": "Navegación del pie de página",
   "chrome.home": "Inicio",
   "chrome.marketplace": "Marketplace",
-  "chrome.popular": "Popular",
   "chrome.howItWorks": "Cómo funciona",
   "chrome.creators": "Creadores",
   "chrome.pricing": "Precios",
@@ -318,7 +317,6 @@ export const SPANISH_MESSAGES: Messages = {
   "pricing.join": "Unirse a SideSpace",
 
   "market.label": "Marketplace",
-  "market.popularLabel": "Anuncios populares",
   "market.titleLead": "Encuentra la audiencia o el",
   "market.titleAccent": "lugar adecuado.",
   "market.description": "Busca Instagram, TikTok, boletines, audiencias locales, ciudades o formatos físicos. Consulta los detalles, conoce al propietario y empieza una conversación privada.",
@@ -354,9 +352,7 @@ export const SPANISH_MESSAGES: Messages = {
   "market.viewOnly": "solo vista",
   "market.orderAria": "Ordenar anuncios",
   "market.browseBy": "Explorar por",
-  "market.popularNow": "Popular ahora",
-  "market.latest": "Más recientes",
-  "market.popularityNote": "La popularidad combina Me gusta, actualidad y detalle del anuncio para que las nuevas oportunidades también destaquen.",
+  "market.recommended": "Recomendados",
   "market.pickedForYou": "Elegidos para ti",
   "market.popularRightNow": "Popular ahora",
   "market.translatedAutomatically": "Traducido automáticamente",
@@ -2117,9 +2113,6 @@ export const SPANISH_MESSAGES: Messages = {
   "meta.marketplaceDescription": "Explora anuncios de creadores para audiencias sociales, espacios publicitarios físicos, patrocinios y solicitudes de campaña de negocios en SideSpace.",
   "meta.marketplaceOgTitle": "Explora el marketplace de SideSpace",
   "meta.marketplaceOgDescription": "Busca atención local real de creadores: escaparates, vehículos, patrocinios y más.",
-  "meta.popularTitle": "Anuncios populares",
-  "meta.popularOgTitle": "Anuncios populares en SideSpace",
-  "meta.popularDescription": "Mira los anuncios de SideSpace que la comunidad está notando; la novedad y la calidad del anuncio ayudan a que las nuevas oportunidades destaquen.",
 
   "chrome.pricesShownInUsd": "Los precios se muestran en dólares estadounidenses.",
 

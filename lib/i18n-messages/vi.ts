@@ -12,7 +12,6 @@ export const VIETNAMESE_MESSAGES: Messages = {
   "chrome.footerNavigation": "Điều hướng chân trang",
   "chrome.home": "Trang chủ",
   "chrome.marketplace": "Sàn giao dịch",
-  "chrome.popular": "Phổ biến",
   "chrome.howItWorks": "Cách hoạt động",
   "chrome.creators": "Nhà sáng tạo",
   "chrome.pricing": "Bảng giá",
@@ -318,7 +317,6 @@ export const VIETNAMESE_MESSAGES: Messages = {
   "pricing.join": "Tham gia SideSpace",
 
   "market.label": "Sàn giao dịch",
-  "market.popularLabel": "Tin đăng phổ biến",
   "market.titleLead": "Tìm đúng khán giả hoặc",
   "market.titleAccent": "vị trí.",
   "market.description": "Tìm Instagram, TikTok, bản tin, khán giả địa phương, thị trấn hoặc định dạng không gian thực. Xem chi tiết, gặp chủ sở hữu và bắt đầu cuộc trò chuyện riêng tư.",
@@ -354,9 +352,7 @@ export const VIETNAMESE_MESSAGES: Messages = {
   "market.viewOnly": "chỉ xem",
   "market.orderAria": "Sắp xếp tin đăng",
   "market.browseBy": "Duyệt theo",
-  "market.popularNow": "Đang phổ biến",
-  "market.latest": "Mới nhất",
-  "market.popularityNote": "Độ phổ biến kết hợp lượt thích, độ mới và mức độ chi tiết của tin đăng để cơ hội mới vẫn có thể nổi bật.",
+  "market.recommended": "Đề xuất",
   "market.pickedForYou": "Chọn riêng cho bạn",
   "market.popularRightNow": "Phổ biến ngay lúc này",
   "market.translatedAutomatically": "Được dịch tự động",
@@ -2117,9 +2113,6 @@ export const VIETNAMESE_MESSAGES: Messages = {
   "meta.marketplaceDescription": "Duyệt tin đăng của nhà sáng tạo về khán giả mạng xã hội, vị trí quảng cáo thực tế, tài trợ và yêu cầu chiến dịch của doanh nghiệp trên SideSpace.",
   "meta.marketplaceOgTitle": "Duyệt sàn giao dịch SideSpace",
   "meta.marketplaceOgDescription": "Tìm kiếm sự chú ý tại địa phương thực sự từ các nhà sáng tạo: mặt tiền cửa hàng, xe, tài trợ và hơn thế nữa.",
-  "meta.popularTitle": "Tin đăng phổ biến",
-  "meta.popularOgTitle": "Tin đăng phổ biến trên SideSpace",
-  "meta.popularDescription": "Xem các tin đăng SideSpace đang được cộng đồng chú ý, với độ mới và chất lượng tin đăng giúp những cơ hội mới nổi bật lên.",
 
   "chrome.pricesShownInUsd": "Giá được hiển thị bằng đô la Mỹ.",
 

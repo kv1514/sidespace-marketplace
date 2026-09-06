@@ -43,25 +43,6 @@ export async function generateMetadata({
   const { t } = await getTranslator();
   const base = marketplaceMetadata(t);
   const listingId = typeof params.listing === "string" ? params.listing : "";
-  if (!listingId && params.sort === "popular") {
-    return {
-      ...base,
-      alternates: { canonical: "/marketplace?sort=popular" },
-      title: t("meta.popularTitle"),
-      description: t("meta.popularDescription"),
-      openGraph: {
-        ...base.openGraph,
-        url: "/marketplace?sort=popular",
-        title: t("meta.popularOgTitle"),
-        description: t("meta.popularDescription"),
-      },
-      twitter: {
-        ...base.twitter,
-        title: t("meta.popularOgTitle"),
-        description: t("meta.popularDescription"),
-      },
-    };
-  }
   if (!listingId) return base;
 
   const listing = await loadPublicListing(listingId);
@@ -108,10 +89,9 @@ export default async function Marketplace({
               ? params.role
               : "all"
           : "all";
-  const initialSort =
-    params.sort === "popular" || params.sort === "location"
-      ? params.sort
-      : "latest";
+  // A bookmarked ?sort=popular from when that page existed still opens the
+  // marketplace, in the default order, rather than 404ing or looking broken.
+  const initialSort = params.sort === "location" ? "location" : "recommended";
 
   return (
     <MarketplaceApp
