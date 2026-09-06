@@ -64,10 +64,10 @@ export function AccountBalance({ profileId, canEarn, canRedeem, stripeConfigured
 
   const stripe = data?.stripe;
   const available = stripe?.status === "connected" ? stripe.balances : [];
-  const balanceLabel = loading ? "Loading…" : canEarn
+  const balanceLabel = loading ? t("balance.loading") : canEarn
     ? stripe?.status === "connected" ? available.length ? available.map((entry) => money(entry.availableCents, entry.currency)).join(" · ") : money(0)
-      : stripe?.status === "not_connected" ? "Start earning" : "View balance"
-    : data?.promo ? money(data.promo.balanceCents) : "View balance";
+      : stripe?.status === "not_connected" ? t("balance.startEarning") : t("balance.viewBalance")
+    : data?.promo ? money(data.promo.balanceCents) : t("balance.viewBalance");
   const content = <div className="balance-detail">
     <header className="balance-heading"><p className="eyebrow">{t("balance.yourSidespace")}</p><h2>{t("balance.balance")}</h2><p>{t("balance.aLittleSpaceRealEarnings")}</p></header>
     {data?.livemode === false && <p className="balance-notice">{t("balance.testModeTheseAreSandboxBalances")}</p>}

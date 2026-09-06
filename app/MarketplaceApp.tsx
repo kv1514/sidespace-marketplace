@@ -11546,16 +11546,16 @@ export default function MarketplaceApp({
 
   function greeting() {
     const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 18) return "Good afternoon";
-    return "Good evening";
+    if (hour < 12) return t("app.goodMorning");
+    if (hour < 18) return t("app.goodAfternoon");
+    return t("app.goodEvening");
   }
 
   /** One honest sentence about what needs attention right now. */
   function dashboardStatus() {
     if (!profile) return "";
     if (!profile.onboarding_complete) {
-      return "Finish your profile to go live on the marketplace.";
+      return t("app.finishProfileToGoLive");
     }
     // A request you countered is still waiting on you - you can accept,
     // decline or revise it - so it must not vanish from your own status line.
@@ -11575,16 +11575,24 @@ export default function MarketplaceApp({
     const parts: string[] = [];
     if (incoming) {
       parts.push(
-        `${incoming} offer or booking${incoming === 1 ? "" : "s"} waiting on you`,
+        incoming === 1
+          ? t("app.oneOfferOrBookingWaiting")
+          : t("app.offersOrBookingsWaiting", { count: incoming }),
       );
     }
     if (awaitingYou) {
       parts.push(
-        `${awaitingYou} counteroffer${awaitingYou === 1 ? "" : "s"} to review`,
+        awaitingYou === 1
+          ? t("app.oneCounterofferToReview")
+          : t("app.counteroffersToReview", { count: awaitingYou }),
       );
     }
     if (unreadCount) {
-      parts.push(`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`);
+      parts.push(
+        unreadCount === 1
+          ? t("app.oneUnreadMessage")
+          : t("app.unreadMessagesCount", { count: unreadCount }),
+      );
     }
     // A listing with gaps is sorted below complete ones and says so on its own
     // card. Leaving it out of the status line meant the dashboard could open
@@ -11599,14 +11607,16 @@ export default function MarketplaceApp({
     ).length;
     if (unfinished) {
       parts.push(
-        `${unfinished} listing${unfinished === 1 ? "" : "s"} to finish`,
+        unfinished === 1
+          ? t("app.oneListingToFinish")
+          : t("app.listingsToFinish", { count: unfinished }),
       );
     }
-    if (parts.length) return `You have ${parts.join(" and ")}.`;
+    if (parts.length) return t("app.youHaveParts", { parts: parts.join(t("app.andJoiner")) });
     if (profile.role !== "consumer" && !ownListings.length) {
-      return "Nothing is listed yet. Add your first space or audience to start getting requests.";
+      return t("app.nothingIsListedYet");
     }
-    return "Nothing needs your attention right now.";
+    return t("app.nothingNeedsYourAttention");
   }
 
   /**
@@ -11879,9 +11889,9 @@ export default function MarketplaceApp({
       );
     };
     const sides = [
-      { key: "all" as const, label: "All" },
-      { key: "incoming" as const, label: "To you" },
-      { key: "outgoing" as const, label: "You sent" },
+      { key: "all" as const, label: t("app.all") },
+      { key: "incoming" as const, label: t("app.toYou") },
+      { key: "outgoing" as const, label: t("app.youSent") },
     ];
     const sideCount = (key: (typeof sides)[number]["key"]) =>
       campaignRequests.filter((request) => matches(request, key)).length;
@@ -12585,23 +12595,23 @@ export default function MarketplaceApp({
                 go: () => void;
               }> = [
                 {
-                  label: "Live listings",
+                  label: t("app.liveListings"),
                   value: active,
                   caption: paused
-                    ? `${paused} paused`
-                    : "Visible in the marketplace",
+                    ? t("app.pausedPaused", { paused })
+                    : t("app.visibleInTheMarketplace"),
                   icon: "listings" as const,
                   tone: active ? "" : "muted",
-                  action: "Manage listings",
+                  action: t("app.manageListings"),
                   go: () => goToDashboardSection("dashboard-listings-all"),
                 },
                 {
-                  label: "Offers to you",
+                  label: t("app.offersToYou"),
                   value: incoming,
-                  caption: incoming ? "Waiting on your reply" : "Nothing pending",
+                  caption: incoming ? t("app.waitingOnYourReply") : t("app.nothingPending"),
                   icon: "incoming" as const,
                   tone: incoming ? "alert" : "muted",
-                  action: "Review offers",
+                  action: t("app.reviewOffers"),
                   go: () => {
                     setCampaignSide("incoming");
                     // The tile counted open work only; the section has to
@@ -12611,12 +12621,12 @@ export default function MarketplaceApp({
                   },
                 },
                 {
-                  label: "Offers you sent",
+                  label: t("app.offersYouSent"),
                   value: outgoing,
-                  caption: outgoing ? "Awaiting a reply" : "None open",
+                  caption: outgoing ? t("app.awaitingAReply") : t("app.noneOpen"),
                   icon: "outgoing" as const,
                   tone: outgoing ? "" : "muted",
-                  action: "Track your offers",
+                  action: t("app.trackYourOffers"),
                   go: () => {
                     setCampaignSide("outgoing");
                     // The tile counted open work only; the section has to
@@ -12626,12 +12636,12 @@ export default function MarketplaceApp({
                   },
                 },
                 {
-                  label: "Unread messages",
+                  label: t("app.unreadMessages"),
                   value: unreadCount,
-                  caption: unreadCount ? "In your inbox" : "All caught up",
+                  caption: unreadCount ? t("app.inYourInbox") : t("app.allCaughtUp"),
                   icon: "messages" as const,
                   tone: unreadCount ? "alert" : "muted",
-                  action: "Open inbox",
+                  action: t("app.openInbox"),
                   go: openInbox,
                 },
               ];
@@ -12641,23 +12651,23 @@ export default function MarketplaceApp({
                   0,
                 );
                 cards.push({
-                  label: "People reached",
+                  label: t("app.peopleReached"),
                   value: reached,
-                  caption: reached ? "Across your listings" : "Counting from now",
+                  caption: reached ? t("app.acrossYourListings") : t("app.countingFromNow"),
                   icon: "analytics" as const,
                   tone: reached ? "" : "muted",
-                  action: "See analytics",
+                  action: t("app.seeAnalytics"),
                   go: () => goToDashboardSection("dashboard-analytics"),
                 });
               }
               if (paymentTransactions.length) {
                 cards.push({
-                  label: "Payments",
+                  label: t("app.payments"),
                   value: paymentTransactions.length,
-                  caption: "Money in motion",
+                  caption: t("app.moneyInMotion"),
                   icon: "payments" as const,
                   tone: "muted",
-                  action: "See payment status",
+                  action: t("app.seePaymentStatus"),
                   go: () => goToDashboardSection("dashboard-payments"),
                 });
               }
@@ -12970,8 +12980,8 @@ export default function MarketplaceApp({
           {[
             {
               icon: "⌕",
-              title: "Find the right fit",
-              copy: "Search local creators, briefs, and physical spaces.",
+              title: t("app.findTheRightFit"),
+              copy: t("app.searchLocalCreatorsBriefsAndPhysicalSpaces"),
               widget: (
                 <div className="mock mock-search" aria-hidden="true">
                   <div className="mock-field">
@@ -13012,8 +13022,8 @@ export default function MarketplaceApp({
             },
             {
               icon: "@",
-              title: "Talk it through",
-              copy: "Agree on the idea, timing, price, and creative details.",
+              title: t("app.talkItThrough"),
+              copy: t("app.agreeOnTheIdeaTimingPriceAnd"),
               widget: (
                 <div className="mock mock-chat" aria-hidden="true">
                   <div className="mock-bubble them">
@@ -13035,8 +13045,8 @@ export default function MarketplaceApp({
             },
             {
               icon: "✓",
-              title: "Book the work",
-              copy: "Confirm the plan and put the local campaign in motion.",
+              title: t("app.bookTheWork"),
+              copy: t("app.confirmThePlanAndPutTheLocal"),
               widget: (
                 <div className="mock mock-deal" aria-hidden="true">
                   <div className="mock-deal-head">
