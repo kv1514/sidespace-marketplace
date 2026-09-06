@@ -95,8 +95,19 @@ export async function POST(request: Request) {
     );
     if (!listings.length) return reply({});
 
-    const admin = createAdminClient();
-    const { data: cached, error: cacheError } = await admin
+    // The cache is read through whichever client this deployment has. A
+    // deployment without the service key (a preview, typically) still reads
+    // what production cached, and still translates; it just cannot cache
+    // what it translated, and the log says so.
+    let admin: ReturnType<typeof createAdminClient> | null = null;
+    try {
+      admin = createAdminClient();
+    } catch {
+      console.error(
+        "[listing translations] SUPABASE_SERVICE_ROLE_KEY is not set on this deployment; translations are served but not cached",
+      );
+    }
+    const { data: cached, error: cacheError } = await (admin ?? publicClient)
       .from(LISTING_TRANSLATIONS_TABLE)
       .select(LISTING_TRANSLATION_COLUMNS)
       .eq("locale", locale)
@@ -137,7 +148,7 @@ export async function POST(request: Request) {
         translated_at: new Date().toISOString(),
       });
     }
-    if (upserts.length) {
+    if (upserts.length && admin) {
       const { error: writeError } = await admin
         .from(LISTING_TRANSLATIONS_TABLE)
         .upsert(upserts, { onConflict: "listing_id,locale" });
@@ -145,7 +156,7 @@ export async function POST(request: Request) {
       if (writeError) console.error("[listing translations] cache write failed:", writeError);
     }
     console.info(
-      `[listing translations] ok provider=${chosen.provider} locale=${locale} asked=${ids.length} cached=${listings.length - pending.length} translated=${upserts.length} missed=${pending.length - upserts.length} ms=${Date.now() - startedAt}`,
+      `[listing translations] ok provider=${chosen.provider} locale=${locale} asked=${ids.length} cached=${listings.length - pending.length} translated=${upserts.length} cached_now=${admin ? "yes" : "no"} missed=${pending.length - upserts.length} ms=${Date.now() - startedAt}`,
     );
     return reply(translations);
   } catch (error) {
