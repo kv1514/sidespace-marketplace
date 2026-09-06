@@ -333,7 +333,7 @@ export function LanguageSwitcher() {
                     }}
                   >
                     <strong>{option.nativeLabel}</strong>
-                    <small>{option.label}</small>
+                    <small>{tx(option.label)}</small>
                   </button>
                 ))}
               </div>

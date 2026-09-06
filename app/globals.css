@@ -12537,3 +12537,10 @@ label:has(.city-autocomplete-list),
   padding: 0;
   text-decoration: underline;
 }
+
+/* Korean breaks lines between words, never inside one; the default breaks
+   after any syllable and split "마켓플레이스" across the hero. */
+html[lang^="ko"] {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}

@@ -4730,8 +4730,8 @@ function SocialLinks({ profile, compact = false }: { profile: Profile; compact?:
           target="_blank"
           rel="noreferrer"
           aria-label={t("app.displayNameOnLabelValue", { display_name: profile.display_name, label: tx(platform.label), value: profile.social_verification?.[platform.key] === "verified"
-              ? ", connected and verified"
-              : ", self-reported link" })}
+              ? `, ${t("app.connectedAndVerified")}`
+              : `, ${t("app.selfReportedLink")}` })}
         >
           <b>{tx(platform.short)}</b>
           {!compact && <span>{tx(platform.label)}</span>}
