@@ -28,11 +28,6 @@ const PUBLIC_LINKS: Array<{
 }> = [
   { href: "/marketplace", labelKey: "chrome.marketplace", route: "marketplace" },
   {
-    href: "/marketplace?sort=popular",
-    labelKey: "chrome.popular",
-    route: "marketplace",
-  },
-  {
     href: "/how-it-works",
     labelKey: "chrome.howItWorks",
     route: "how-it-works",
@@ -119,25 +114,10 @@ export function SiteHeader({
     return () => desktopNav.removeEventListener("change", closeOnDesktop);
   }, []);
 
-  // Which of the two marketplace links is the current page. Read from the
-  // address after mount rather than during render: the server does not know
-  // the search params, so rendering from window.location marked the wrong
-  // link on a direct load and hydration kept it. No dependency list on
-  // purpose - the header re-renders on every route change and on the
-  // toolbar's replaceState, and the check costs nothing.
-  const [popularActive, setPopularActive] = useState(false);
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setPopularActive(
-        route === "marketplace" &&
-          new URL(window.location.href).searchParams.get("sort") === "popular",
-      );
-    }, 0);
-    return () => window.clearTimeout(timer);
-  });
-  const isCurrent = (link: (typeof PUBLIC_LINKS)[number]) =>
-    route === link.route &&
-    (link.href.includes("sort=popular") ? popularActive : !popularActive);
+  // One link per route again, now that the marketplace is a single page.
+  // This used to compare search params after mount, because two links shared
+  // the marketplace route and only `?sort=` told them apart.
+  const isCurrent = (link: (typeof PUBLIC_LINKS)[number]) => route === link.route;
 
   return (
     <>

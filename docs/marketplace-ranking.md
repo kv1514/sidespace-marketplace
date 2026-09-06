@@ -21,8 +21,17 @@ live catalogue before shipping it.
   itself. A line like "based on what you have been looking at" told visitors
   they were being watched, and a test now fails if that copy comes back
   (`tests/i18n.test.ts`).
-- **A sort the visitor chose by hand** ("Popular now", "Location") is left
-  alone. Personalisation applies only to the default "Latest" order.
+- **A sort the visitor chose by hand** ("Location") is left alone.
+  Personalisation applies only to the default "Recommended" order.
+
+  There used to be a second hand sort, "Popular now", with a header link of
+  its own. It ranked by likes, reach and freshness - all three of which the
+  personal ranking already folds in as its quality prior - so it amounted to
+  a second, worse copy of the marketplace. It was removed, and the default
+  order was renamed from "Latest" to "Recommended", which is what it had
+  always been: with no history it falls through to the stable shuffle, never
+  to newest-first. A bookmarked `?sort=popular` still opens the marketplace
+  in the default order.
 
 ## Where the signal comes from
 
@@ -85,8 +94,8 @@ the stable shuffle that breaks the remaining ties.
 
 ## The popularity prior
 
-`popularityScore` in `lib/listings/popularity.ts` is shared by the grid, the
-row and the "Popular now" sort:
+`popularityScore` in `lib/listings/popularity.ts` is shared by the grid and
+the row:
 
 | Term | Formula | Ceiling |
 | --- | --- | --- |

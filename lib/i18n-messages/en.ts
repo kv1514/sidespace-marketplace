@@ -11,7 +11,6 @@ export const ENGLISH_MESSAGES = {
   "chrome.footerNavigation": "Footer navigation",
   "chrome.home": "Home",
   "chrome.marketplace": "Marketplace",
-  "chrome.popular": "Popular",
   "chrome.howItWorks": "How it works",
   "chrome.creators": "Creators",
   "chrome.pricing": "Pricing",
@@ -317,7 +316,6 @@ export const ENGLISH_MESSAGES = {
   "pricing.join": "Join SideSpace",
 
   "market.label": "Marketplace",
-  "market.popularLabel": "Popular listings",
   "market.titleLead": "Find the right audience or",
   "market.titleAccent": "spot.",
   "market.description": "Search Instagram, TikTok, newsletters, local audiences, towns, or physical formats. See the details, meet the owner, and start a private conversation.",
@@ -353,9 +351,7 @@ export const ENGLISH_MESSAGES = {
   "market.viewOnly": "view-only",
   "market.orderAria": "Order listings",
   "market.browseBy": "Browse by",
-  "market.popularNow": "Popular now",
-  "market.latest": "Latest",
-  "market.popularityNote": "Popularity blends likes, freshness, and listing detail so new opportunities can still break through.",
+  "market.recommended": "Recommended",
   "market.pickedForYou": "Picked for you",
   "market.popularRightNow": "Popular right now",
   "market.translatedAutomatically": "Translated automatically",
@@ -2116,9 +2112,6 @@ export const ENGLISH_MESSAGES = {
   "meta.marketplaceDescription": "Browse creator listings for social audiences, physical placements, sponsorships, and business campaign briefs on SideSpace.",
   "meta.marketplaceOgTitle": "Browse the SideSpace marketplace",
   "meta.marketplaceOgDescription": "Search real local attention from creators: storefronts, vehicles, sponsorships, and more.",
-  "meta.popularTitle": "Popular listings",
-  "meta.popularOgTitle": "Popular listings on SideSpace",
-  "meta.popularDescription": "See the SideSpace listings the community is noticing, with freshness and listing quality helping new opportunities break through.",
 
   "chrome.pricesShownInUsd": "Prices are shown in US dollars.",
 
