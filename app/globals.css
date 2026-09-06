@@ -12505,3 +12505,26 @@ label:has(.city-autocomplete-list),
 .dashboard-stat.dashboard-stat-readout {
   cursor: default;
 }
+
+/* "Translated automatically - Show original", under the title of a listing
+   the reader is seeing in their own language. */
+.detail-translation-note {
+  align-items: center;
+  color: var(--ink-soft);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 10px;
+  margin: -6px 0 14px;
+}
+
+.detail-translation-note button {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+  text-decoration: underline;
+}

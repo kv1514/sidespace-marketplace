@@ -4,6 +4,7 @@ import PublicSiteApp from "./components/PublicSiteApp";
 import InviteMarketplaceBridge from "./components/InviteMarketplaceBridge";
 import { OG_IMAGE } from "@/lib/site-metadata";
 import { getTranslator } from "@/lib/i18n-server";
+import { loadListingTranslationSeed } from "@/lib/listings/translation-seed";
 import {
   isInviteToken,
   loadInvite,
@@ -54,13 +55,20 @@ export default async function Home({
     }),
     loadReferralCredit(referralCode),
   ]);
+  const initialListingTranslations = await loadListingTranslationSeed(
+    snapshot.listings,
+  );
 
   // Referral and prospect links keep the full onboarding engine mounted even
   // when the lookup is temporarily unavailable. Normal homepage visits use
   // the much smaller public shell and load listing details on /marketplace.
   if (!isInviteToken(inviteToken) && !referralCode) {
     return (
-      <PublicSiteApp route="home" initialListings={snapshot.listings} />
+      <PublicSiteApp
+        route="home"
+        initialListings={snapshot.listings}
+        initialListingTranslations={initialListingTranslations}
+      />
     );
   }
 
@@ -69,6 +77,7 @@ export default async function Home({
       route="home"
       initialProfiles={snapshot.profiles}
       initialListings={snapshot.listings}
+      initialListingTranslations={initialListingTranslations}
       invite={invite}
       inviteToken={inviteToken}
       referralCode={referralCode}

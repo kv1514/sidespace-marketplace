@@ -3,6 +3,7 @@ import PublicSiteApp from "../components/PublicSiteApp";
 import { loadMarketplaceSnapshot } from "@/lib/public-marketplace";
 import { OG_IMAGE } from "@/lib/site-metadata";
 import { getTranslator } from "@/lib/i18n-server";
+import { loadListingTranslationSeed } from "@/lib/listings/translation-seed";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +28,14 @@ export default async function Creators() {
     listingLimit: 24,
     label: "creators",
   });
+  const initialListingTranslations = await loadListingTranslationSeed(
+    snapshot.listings,
+  );
   return (
     <PublicSiteApp
       route="creators"
       initialListings={snapshot.listings}
+      initialListingTranslations={initialListingTranslations}
     />
   );
 }

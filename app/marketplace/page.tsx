@@ -9,6 +9,7 @@ import {
   OG_IMAGE,
 } from "@/lib/site-metadata";
 import { getTranslator } from "@/lib/i18n-server";
+import { loadListingTranslationSeed } from "@/lib/listings/translation-seed";
 import type { Translate } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -89,6 +90,11 @@ export default async function Marketplace({
       label: "marketplace",
     }),
   ]);
+  // Whatever the cache already holds in the reader's language, so the page
+  // arrives translated instead of flashing English first.
+  const initialListingTranslations = await loadListingTranslationSeed(
+    snapshot.listings,
+  );
   const intent = typeof params.intent === "string" ? params.intent : "";
   const requestedRole =
     intent === "advertise" || intent === "supply"
@@ -127,6 +133,7 @@ export default async function Marketplace({
         | "business"
         | "creator"}
       initialSort={initialSort}
+      initialListingTranslations={initialListingTranslations}
     />
   );
 }

@@ -54,6 +54,8 @@ import {
   mergeListingLikeCounts,
 } from "@/lib/listings/likes";
 import { LISTING_REACH_RPC, mergeListingReach } from "@/lib/listings/reach";
+import type { ListingTranslationSeed } from "@/lib/listings/translations";
+import { useListingTranslations } from "@/app/components/useListingTranslations";
 import {
   comparePopularListings,
   normalizeLikeCount,
@@ -5213,6 +5215,7 @@ export default function MarketplaceApp({
   initialRoleFilter = "all",
   initialChannel = "All",
   initialSort = "latest",
+  initialListingTranslations = null,
   referralCode = "",
   referralCreditCents = null,
   openProfile = false,
@@ -5241,6 +5244,8 @@ export default function MarketplaceApp({
   initialRoleFilter?: RoleFilter;
   initialChannel?: string;
   initialSort?: ListingSort;
+  /** Cached translations of the server-rendered listings in the reader's language. See useListingTranslations. */
+  initialListingTranslations?: ListingTranslationSeed | null;
 } = {}) {
   const {
     locale,
@@ -5616,7 +5621,6 @@ export default function MarketplaceApp({
   // has an empty left column, and the layout closes it up rather than leaving
   // a 520px hole beside the copy.
   const detailPhotos = selectedListing ? listingPhotos(selectedListing) : [];
-  const detailCopy = selectedListing;
   const detailHasMedia = Boolean(
     selectedListing &&
       (detailPhotos.length ||
@@ -5689,6 +5693,34 @@ export default function MarketplaceApp({
   const [selectedOwner, setSelectedOwner] = useState<Profile | null>(null);
   const [ownerListings, setOwnerListings] = useState<Listing[]>([]);
   const [ownerListingsLoading, setOwnerListingsLoading] = useState(false);
+
+  // Listings in the reader's language. Everything loaded is asked for, the
+  // open listing first because it is the one being read; the answer is
+  // cached per listing and language, so this costs the model nothing after
+  // the first reader of each. English asks for nothing.
+  const translationCandidates = useMemo(() => {
+    const candidates: Listing[] = [];
+    if (selectedListing) candidates.push(selectedListing);
+    for (const listing of listings) candidates.push(listing);
+    for (const listing of ownerListings) candidates.push(listing);
+    return candidates;
+  }, [listings, ownerListings, selectedListing]);
+  const { copyFor, translationFor } = useListingTranslations({
+    locale,
+    enabled: configured,
+    listings: translationCandidates,
+    seed: initialListingTranslations,
+  });
+  // The open listing, translated unless it is the reader's own or they asked
+  // for the original. An owner always reads their own words.
+  const [showOriginalCopy, setShowOriginalCopy] = useState(false);
+  const detailTranslation =
+    selectedListing && !viewingOwnListing ? copyFor(selectedListing) : null;
+  const detailHasTranslation = Boolean(detailTranslation?.translated);
+  const detailCopy =
+    detailTranslation && detailHasTranslation && !showOriginalCopy
+      ? detailTranslation
+      : selectedListing;
   const [stripeAccountStatus, setStripeAccountStatus] =
     useState<StripeAccountStatus | null>(null);
   const [campaignListing, setCampaignListing] = useState<Listing | null>(null);
@@ -6681,12 +6713,19 @@ export default function MarketplaceApp({
       // and read by nothing except one sentence of a draft description. A
       // question that changes nothing is a question that should not be asked;
       // making it searchable is the cheaper of the two ways to fix that.
+      // A reader searching in their own language should find a listing by
+      // its translated words as well as the owner's, so the haystack holds
+      // both.
+      const translation = translationFor(listing);
       const text = [
         copy.title,
         listing.channel,
         copy.description,
         copy.demographics,
         copy.format,
+        translation?.title ?? "",
+        translation?.description ?? "",
+        translation?.format ?? "",
         listing.location_area ?? "",
         listing.owner.display_name,
         listing.owner.city,
@@ -6730,6 +6769,7 @@ export default function MarketplaceApp({
     locationQuery,
     query,
     roleFilter,
+    translationFor,
     visitorTaste,
   ]);
   const requestableListingCount = useMemo(
@@ -7768,6 +7808,7 @@ export default function MarketplaceApp({
     // to be recorded.
     trackClick(listing.id);
     setSelectedPhotoIndex(0);
+    setShowOriginalCopy(false);
     setStreetPanoOpen(false);
     setSelectedCreatorPortfolio([]);
     setSelectedCreatorReviews([]);
@@ -12756,7 +12797,7 @@ export default function MarketplaceApp({
               {creatorRecommendations.length ? (
                 <div className="dashboard-recommendation-grid">
                   {creatorRecommendations.map((recommendation) => {
-                    const copy = recommendation.listing;
+                    const copy = copyFor(recommendation.listing);
                     return (
                     <article
                       className="dashboard-recommendation-card"
@@ -13306,7 +13347,7 @@ export default function MarketplaceApp({
             </div>
             <div className="listing-foryou-row">
               {forYou.items.map(({ listing }) => {
-                const copy = listing;
+                const copy = copyFor(listing);
                 return (
                   <article
                     className="listing-foryou-card"
@@ -13346,7 +13387,7 @@ export default function MarketplaceApp({
               <div className="listing-skeleton" key={`skeleton-${index}`} />
             ))}
           {visibleListings.map((listing) => {
-            const copy = listing;
+            const copy = copyFor(listing);
             return (
               <article
                 className="listing-card"
@@ -17652,6 +17693,21 @@ export default function MarketplaceApp({
                   onToggle={() => void toggleListingLike(selectedListing)}
                 />
               </div>
+              {detailHasTranslation && (
+                <p className="detail-translation-note">
+                  <span>
+                    {showOriginalCopy
+                      ? t("market.showingOriginal")
+                      : t("market.translatedAutomatically")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowOriginalCopy((current) => !current)}
+                  >
+                    {showOriginalCopy ? t("market.showTranslation") : t("market.showOriginal")}
+                  </button>
+                </p>
+              )}
               <p className="listing-included">
                 {detailCopy?.deliverables || detailCopy?.format}
               </p>
@@ -17902,7 +17958,7 @@ export default function MarketplaceApp({
               ) : ownerListings.length ? (
                 <div className="seller-listing-grid">
                   {ownerListings.map((listing) => {
-                    const copy = listing;
+                    const copy = copyFor(listing);
                     return (
                       <button
                         type="button"
