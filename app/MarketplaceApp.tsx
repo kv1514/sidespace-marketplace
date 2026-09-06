@@ -69,7 +69,6 @@ import {
 import {
   buildTasteProfile,
   comparePersonal,
-  recommendListings,
   type CooccurrenceIndex,
 } from "@/lib/listings/recommend";
 import {
@@ -6822,11 +6821,18 @@ export default function MarketplaceApp({
       );
     })
       // Members first, samples last. Within each band the default order is
-      // personal: the channels and cities this visitor keeps opening come
-      // first, then likes, reach and freshness. With no history every score
-      // is 0 and the order falls through to the stable shuffle, so a first
-      // visit is mixed rather than newest-first and one fresh post cannot
-      // dominate the top. A sort the visitor chose by hand is left alone.
+      // personal: the channels and cities this visitor keeps opening, plus
+      // the listings that travel with the ones they opened, then likes,
+      // reach and freshness. With no history every score is 0 and the order
+      // falls through to the stable shuffle, so a first visit is mixed
+      // rather than newest-first and one fresh post cannot dominate the top.
+      // A sort the visitor chose by hand is left alone.
+      //
+      // Nothing on the page says any of this. The ranking used to also feed
+      // a "Picked for you" row above the grid, which announced the very
+      // thing the headings were written to avoid saying. The row is gone and
+      // its co-visit signal moved in here, so the model is stronger and now
+      // has nowhere to give itself away.
       .sort(
         (a, b) =>
           (listingSort === "location"
@@ -6836,7 +6842,7 @@ export default function MarketplaceApp({
             : 0) ||
           listingRank(a) - listingRank(b) ||
           (listingSort === "recommended"
-            ? comparePersonal(a, b, visitorTaste, rankingNow)
+            ? comparePersonal(a, b, visitorTaste, rankingNow, cooccurrence)
             : 0) ||
           shuffleKey(a.id) - shuffleKey(b.id),
       );
@@ -6848,6 +6854,7 @@ export default function MarketplaceApp({
     listings,
     locale,
     locationQuery,
+    cooccurrence,
     query,
     roleFilter,
     translationFor,
@@ -6911,29 +6918,6 @@ export default function MarketplaceApp({
    * ranking call - with a catalogue this size that is both simpler and faster.
    * Past a few hundred listings it would need to move behind an RPC.
    */
-  const forYou = useMemo(() => {
-    if (route !== "marketplace" || blocksPending || !listings.length) {
-      return { items: [], personalised: false };
-    }
-    return recommendListings({
-      candidates: listings,
-      events: visitorAffinity,
-      nowMs: Date.now(),
-      viewerProfileId: profile?.id ?? null,
-      blockedProfileIds: new Set(blockedProfileIds),
-      cooccurrence,
-      limit: 4,
-    });
-  }, [
-    blockedProfileIds,
-    blocksPending,
-    cooccurrence,
-    listings,
-    profile?.id,
-    route,
-    visitorAffinity,
-  ]);
-
   const creatorRecommendations = useMemo(
     () =>
       profile?.role === "business" && !blocksPending
@@ -13478,12 +13462,15 @@ export default function MarketplaceApp({
                 : localizeListingChannel(locale, channel)}
             </button>
           ))}
-          {/* Announce the new count when a filter changes, so the result of
-              pressing a filter is not visible-only. */}
-          <span className="result-count" role="status" aria-live="polite">
+          {/* Not on the screen any more - a running tally of listings,
+              available and view-only was noise above a grid that already
+              shows what it has. It stays in the accessibility tree because
+              pressing a filter has to tell a screen-reader user that
+              something happened, and the grid changing silently would not. */}
+          <span className="sr-only" role="status" aria-live="polite">
             {blocksPending
               ? t("market.loading")
-              : `${formatLocalizedNumber(visibleListings.length)} ${visibleListings.length === 1 ? t("market.listing") : t("market.listings")} · ${formatLocalizedNumber(requestableListingCount)} ${t("market.available")} · ${formatLocalizedNumber(visibleListings.length - requestableListingCount)} ${t("market.viewOnly")}`}
+              : `${formatLocalizedNumber(visibleListings.length)} ${visibleListings.length === 1 ? t("market.listing") : t("market.listings")}`}
           </span>
         </div>
 
@@ -13519,55 +13506,6 @@ export default function MarketplaceApp({
             </p>
           ) : null}
         </div>
-
-        {forYou.items.length >= 3 && (
-          <section className="listing-foryou" aria-labelledby="listing-foryou-heading">
-            {/* The picks are personal; the heading does not say so. A line
-                like "based on what you have been looking at" tells a
-                visitor they are being watched, and the model works exactly
-                as well without announcing itself. */}
-            <div className="listing-foryou-head">
-              <h3 id="listing-foryou-heading">
-                {forYou.personalised
-                  ? t("market.pickedForYou")
-                  : t("market.popularRightNow")}
-              </h3>
-            </div>
-            <div className="listing-foryou-row">
-              {forYou.items.map(({ listing }) => {
-                const copy = copyFor(listing);
-                return (
-                  <article
-                    className="listing-foryou-card"
-                    key={listing.id}
-                    data-listing-id={listing.id}
-                  >
-                    <button
-                      type="button"
-                      className="listing-foryou-image"
-                      onClick={() => openListing(listing)}
-                      aria-label={t("market.openListing", { title: copy.title })}
-                    >
-                      <ListingCover listing={listing} />
-                    </button>
-                    <div className="listing-foryou-body">
-                      <button
-                        type="button"
-                        className="listing-foryou-title"
-                        onClick={() => openListing(listing)}
-                      >
-                        {copy.title}
-                      </button>
-                      <small>
-                        {listing.owner.display_name} · {listingCity(listing)}
-                      </small>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        )}
 
         <div className="listing-grid">
           {blocksPending &&

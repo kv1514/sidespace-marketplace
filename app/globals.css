@@ -747,14 +747,6 @@ h2 em {
   border-color: var(--lime);
 }
 
-.result-count {
-  color: var(--ink-soft);
-  font-family: var(--mono);
-  font-size: 10px;
-  margin-left: auto;
-  text-transform: uppercase;
-}
-
 .listing-grid {
   display: grid;
   gap: 18px;
@@ -3655,11 +3647,6 @@ h2 em {
 
   .role-tabs button {
     flex: 0 0 auto;
-  }
-
-  .result-count {
-    margin: 7px 0 0;
-    width: 100%;
   }
 
   .spaces-section {
@@ -12370,92 +12357,6 @@ label:has(.city-autocomplete-list),
    campaign and detail panels already use, so a number means the same thing
    wherever it appears. */
 
-.listing-foryou {
-  border-bottom: 1px solid var(--line-soft);
-  margin: 0 0 clamp(20px, 3vw, 34px);
-  padding: 0 0 clamp(18px, 2.4vw, 26px);
-}
-
-.listing-foryou-head {
-  display: grid;
-  gap: 4px;
-  margin-bottom: 14px;
-}
-
-.listing-foryou-head h3 {
-  font-family: var(--display);
-  font-size: clamp(19px, 2.1vw, 25px);
-  font-weight: 400;
-  letter-spacing: -0.01em;
-  margin: 0;
-}
-
-.listing-foryou-row {
-  display: grid;
-  gap: clamp(12px, 1.6vw, 18px);
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.listing-foryou-card {
-  background: color-mix(in srgb, var(--white) 72%, var(--paper));
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  display: grid;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.listing-foryou-image {
-  aspect-ratio: 16 / 10;
-  background: var(--paper-2);
-  border: 0;
-  cursor: pointer;
-  display: block;
-  overflow: hidden;
-  padding: 0;
-  width: 100%;
-}
-
-.listing-foryou-image img {
-  display: block;
-  height: 100%;
-  object-fit: cover;
-  width: 100%;
-}
-
-.listing-foryou-body {
-  display: grid;
-  gap: 3px;
-  padding: 11px 13px 13px;
-}
-
-.listing-foryou-body small {
-  color: var(--ink-mute);
-  font-size: 11.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.listing-foryou-title {
-  background: none;
-  border: 0;
-  cursor: pointer;
-  display: -webkit-box;
-  font-family: var(--serif);
-  font-size: 14.5px;
-  line-height: 1.3;
-  overflow: hidden;
-  padding: 0;
-  text-align: left;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.listing-foryou-title:hover {
-  text-decoration: underline;
-}
-
 .listing-figures {
   border-top: 1px solid var(--line-soft);
   display: grid;
@@ -12494,12 +12395,6 @@ label:has(.city-autocomplete-list),
 
 .dashboard-analytics-note {
   margin-top: 14px;
-}
-
-@media (max-width: 900px) {
-  .listing-foryou-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 520px) {

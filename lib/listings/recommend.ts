@@ -350,6 +350,15 @@ function cooccurrenceScore(
 export type TasteProfile = {
   channels: Map<string, number>;
   cities: Map<string, number>;
+  /**
+   * The listings this visitor actually interacted with, as shares of their
+   * total interest. Channels and cities say what KIND of thing they like;
+   * this says which exact listings, which is what a co-visit index can be
+   * asked about. Kept whole rather than folded into the shares because
+   * "people who opened this also opened that" is a fact about a pair of
+   * listings, not about a category.
+   */
+  seeds: Map<string, number>;
   strength: number;
 };
 
@@ -372,8 +381,13 @@ export function buildTasteProfile(
   const byId = new Map(candidates.map((listing) => [listing.id, listing]));
   const channels = new Map<string, number>();
   const cities = new Map<string, number>();
+  const seeds = new Map<string, number>();
   let strength = 0;
   for (const [listingId, weight] of buildAffinity(events, nowMs)) {
+    // Seeds are kept for every listing they touched, including ones that have
+    // since left the catalogue: the co-visit index is keyed by id and still
+    // knows what travelled with them.
+    seeds.set(listingId, weight);
     // A listing that has left the catalogue cannot tell us its channel.
     const listing = byId.get(listingId);
     if (!listing) continue;
@@ -383,7 +397,43 @@ export function buildTasteProfile(
     const city = normalizeCity(listing.location_area);
     if (city) cities.set(city, (cities.get(city) ?? 0) + weight);
   }
-  return { channels: toShares(channels), cities: toShares(cities), strength };
+  return {
+    channels: toShares(channels),
+    cities: toShares(cities),
+    seeds: toShares(seeds),
+    strength,
+  };
+}
+
+/**
+ * How strongly a listing travels with the ones this visitor has opened.
+ *
+ * The Amazon move: not "you like Instagram, here is more Instagram", but
+ * "the people who opened the thing you just opened went on to open this".
+ * It can speak for a listing whose channel and city say nothing about the
+ * visitor, which is the only part of the model that can surprise them
+ * usefully.
+ *
+ * Weighted by how much of their interest each seed carries, so the listing
+ * they keep coming back to has more say than one they glanced at, and never
+ * self-referential: a listing is not a recommendation of itself.
+ *
+ * 0 with no index, which is the state of a young catalogue. Every pair
+ * below the confidence floor already scores 0 inside cooccurrenceScore, so
+ * this stays silent until the co-visits are real.
+ */
+export function cooccurrenceAffinity(
+  candidateId: string,
+  taste: TasteProfile,
+  index: CooccurrenceIndex | null | undefined,
+) {
+  if (!index || !taste.seeds.size) return 0;
+  let total = 0;
+  for (const [seedId, share] of taste.seeds) {
+    if (seedId === candidateId) continue;
+    total += share * cooccurrenceScore(candidateId, seedId, index);
+  }
+  return Math.min(1, total);
 }
 
 /** 0 for a stranger, 1 once there is two clicks' worth of decayed interest. */
@@ -417,6 +467,14 @@ const PRIOR_CEILING = 45;
 const PRIOR_LIFT = 1;
 
 /**
+ * How far a co-visit pattern alone can carry a listing the visitor's channels
+ * and cities say nothing about: 0.6 of a perfect fit. High enough that a
+ * strong, well-evidenced pattern outranks a weak categorical match, low
+ * enough that it cannot beat a listing the visitor has plainly been choosing.
+ */
+const COOCCURRENCE_WEIGHT = 0.6;
+
+/**
  * One listing's standing for one visitor.
  *
  * Exactly 0 when nothing is known about them, so a caller can fall through to
@@ -429,13 +487,22 @@ export function personalScore(
   listing: RecommendListing,
   taste: TasteProfile,
   nowMs: number,
+  cooccurrence?: CooccurrenceIndex | null,
 ) {
   const confidence = tasteConfidence(taste);
   if (!confidence) return 0;
-  const fit = tasteFit(listing, taste);
-  if (!fit) return 0;
+  // What the visitor said they like, and what the crowd says goes with what
+  // they opened. Added rather than maxed so a listing that is both beats one
+  // that is only either, and capped so the two together cannot outrun a
+  // perfect fit by more than the weight allows.
+  const relevance = Math.min(
+    1,
+    tasteFit(listing, taste) +
+      COOCCURRENCE_WEIGHT * cooccurrenceAffinity(listing.id, taste, cooccurrence),
+  );
+  if (!relevance) return 0;
   const prior = Math.min(1, popularityScore(listing, nowMs) / PRIOR_CEILING);
-  return confidence * fit * (1 + PRIOR_LIFT * prior);
+  return confidence * relevance * (1 + PRIOR_LIFT * prior);
 }
 
 /**
@@ -448,8 +515,12 @@ export function comparePersonal(
   second: RecommendListing,
   taste: TasteProfile,
   nowMs: number,
+  cooccurrence?: CooccurrenceIndex | null,
 ) {
-  return personalScore(second, taste, nowMs) - personalScore(first, taste, nowMs);
+  return (
+    personalScore(second, taste, nowMs, cooccurrence) -
+    personalScore(first, taste, nowMs, cooccurrence)
+  );
 }
 
 export type RecommendInput<T extends RecommendListing> = {
