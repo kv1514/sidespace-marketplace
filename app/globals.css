@@ -12505,3 +12505,15 @@ label:has(.city-autocomplete-list),
 .dashboard-stat.dashboard-stat-readout {
   cursor: default;
 }
+
+/* The way out of first-run setup for someone who already has an account. */
+.onboarding-existing-account {
+  margin: 18px 0 0;
+  text-align: center;
+}
+
+.onboarding-existing-account .switch-auth {
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

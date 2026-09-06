@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { AccountBalance } from "@/components/AccountBalance";
 import {
   type Dispatch,
@@ -5159,6 +5160,30 @@ function DashboardStatIcon({
   );
 }
 
+/**
+ * Whether anyone has signed in from this browser before. Join then offers the
+ * sign-in form rather than sign-up: a returning member who was signed out by
+ * time or by a new device is far more common than a brand-new visitor who
+ * happens to press Join on a browser that already knows SideSpace.
+ */
+const SIGNED_IN_BEFORE_KEY = "sidespace.signed-in-before";
+
+function signedInBefore() {
+  try {
+    return window.localStorage.getItem(SIGNED_IN_BEFORE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberSignedIn() {
+  try {
+    window.localStorage.setItem(SIGNED_IN_BEFORE_KEY, "1");
+  } catch {
+    // Private browsing or a full store; Join simply offers sign-up next time.
+  }
+}
+
 export default function MarketplaceApp({
   initialProfiles = null,
   initialListings = null,
@@ -5687,6 +5712,25 @@ export default function MarketplaceApp({
   const [roleFilter, setRoleFilter] = useState<RoleFilter>(initialRoleFilter);
   const [channelFilter, setChannelFilter] = useState(initialChannel);
   const [listingSort, setListingSort] = useState<ListingSort>(initialSort);
+  // The header's Marketplace and Popular links are this same page with a
+  // different search param. A client-side navigation between them changed
+  // the URL and re-rendered the page, but this state kept its first value,
+  // so the address bar said "popular" while the grid stayed on "latest".
+  // The toolbar writes the param with replaceState, which the router also
+  // reports here, so both paths end in the same place.
+  const searchParams = useSearchParams();
+  const sortParam = searchParams?.get("sort") ?? null;
+  useEffect(() => {
+    const next: ListingSort =
+      sortParam === "popular" || sortParam === "location" ? sortParam : "latest";
+    // Deferred, like the other URL-driven state here: a synchronous set
+    // inside an effect re-renders twice for nothing.
+    const timer = window.setTimeout(
+      () => setListingSort((current) => (current === next ? current : next)),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, [sortParam]);
   const [toast, setToastState] = useState<{
     text: string;
     tone: ToastTone;
@@ -6086,12 +6130,10 @@ export default function MarketplaceApp({
           ),
         );
         setAnswers(answersFromProfile((own as Profile | null) ?? null));
-        if (!own?.onboarding_complete) {
-          setOnboardingMode("setup");
-          setOnboardingStep(1);
-          setOnboardingInvalidField("");
-          setOnboardingOpen(true);
-        }
+        // Setup used to open here by itself, on every page, for any account
+        // without a finished profile. It now opens only when the member asks
+        // for it: Join, "Finish setup" on the dashboard, the ?onboarding=1
+        // hand-off after sign-up, or an action that needs an account.
       }
       setProfileChecked(true);
       if (own) {
@@ -6163,6 +6205,7 @@ export default function MarketplaceApp({
       setUser(currentUser);
       setSessionResolved(true);
       if (currentUser) {
+        rememberSignedIn();
         // Supabase fires TOKEN_REFRESHED in the background and re-fires
         // SIGNED_IN whenever the tab regains focus. Those say nothing new
         // about the profile, and reloading on them churned state underneath
@@ -7250,7 +7293,21 @@ export default function MarketplaceApp({
       if (route !== "dashboard") window.location.assign("/dashboard");
       return;
     }
-    setAuthMode("signup");
+    setAuthMode(signedInBefore() ? "signin" : "signup");
+    setAuthOpen(true);
+  }
+
+  /**
+   * The first setup slide, for someone who arrived with the wrong account or
+   * none: close the wizard, drop any session, and hand them the sign-in form.
+   */
+  async function switchToExistingAccount() {
+    setOnboardingOpen(false);
+    setOnboardingStep(1);
+    if (user && supabase) {
+      await supabase.auth.signOut();
+    }
+    setAuthMode("signin");
     setAuthOpen(true);
   }
 
@@ -7500,7 +7557,7 @@ export default function MarketplaceApp({
       closeListing();
     }
     if (!user) {
-      setAuthMode("signup");
+      setAuthMode(signedInBefore() ? "signin" : "signup");
       setAuthOpen(true);
       return;
     }
@@ -15060,6 +15117,18 @@ export default function MarketplaceApp({
                   </>
                   )}
                 </div>
+                )}
+
+                {onboardingMode === "setup" && onboardingStep === 1 && (
+                  <p className="onboarding-existing-account">
+                    <button
+                      type="button"
+                      className="switch-auth"
+                      onClick={() => void switchToExistingAccount()}
+                    >
+                      I already have an account
+                    </button>
+                  </p>
                 )}
 
                 {(onboardingMode !== "setup" || onboardingStep !== 1) && (
