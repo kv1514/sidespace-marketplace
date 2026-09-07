@@ -4,6 +4,8 @@ This is the canonical Next.js application repository for SideSpace. The
 repository root is the deployable app, so the existing Sites deployment can
 remain online independently during the migration.
 
+![SideSpace marketplace preview](public/og-card.jpg)
+
 ## Current deployment
 
 - Public app: https://sidespace.ad
@@ -15,7 +17,7 @@ remain online independently during the migration.
   Supabase; Google Cloud currently requires account MFA before those credentials
   can be created
 
-## Included
+## Features
 
 - Public marketplace browsing without an account
 - Email/password accounts through Supabase Auth
@@ -32,6 +34,22 @@ remain online independently during the migration.
 See [docs/STRIPE_MARKETPLACE.md](docs/STRIPE_MARKETPLACE.md) for the money
 model, local sandbox setup, webhook events, test cards, refund/dispute runbook,
 and live-launch gates.
+
+## Architecture
+
+```text
+Browser
+  -> Next.js App Router pages, client components, and server routes
+  -> Supabase Auth + Postgres with row-level security
+  -> Stripe Checkout / Connect + signed webhook reconciliation
+```
+
+The public marketplace and authenticated member flows live in `app/` and
+`components/`. Supabase access is split into browser-safe, server, and admin
+clients under `lib/supabase/`. Payment authority stays on the server in
+`lib/payments/` and `lib/stripe/`; browser success or cancel pages do not fulfil
+orders. SQL migrations and database tests live under `supabase/`, while
+application behavior is covered by `tests/`.
 
 ## Local setup
 
@@ -115,3 +133,30 @@ Passwords are stored and verified by Supabase Auth, not by the application.
 The public browser receives only the Supabase publishable key. PostgreSQL
 row-level-security policies enforce ownership for profiles and listings and
 participant access for conversations and messages.
+
+## Status and limits
+
+This is the deployable SideSpace application, with a public marketplace and
+server-backed member and payment flows. Production integrations remain subject
+to the gates and runbooks below.
+
+### Verification
+
+From the repository root, the main local checks are:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+```
+
+`node scripts/i18n-keys.mjs` checks translation-key coverage. Payment-specific
+setup, sandbox scenarios, webhook handling, delayed payouts, and production
+gates are documented in [docs/STRIPE_MARKETPLACE.md](docs/STRIPE_MARKETPLACE.md)
+and [docs/PAYMENTS_RUNBOOK.md](docs/PAYMENTS_RUNBOOK.md).
+
+Live payment behavior remains explicitly gated by environment approvals and
+must be verified through the intended Stripe, Supabase, and Vercel paths. A
+local build or passing unit tests does not by itself establish legal, tax,
+operations, payout, or production-readiness approval. This repository currently
+does not include a license file.
