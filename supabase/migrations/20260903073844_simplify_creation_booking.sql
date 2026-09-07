@@ -28,13 +28,14 @@ alter policy "Members update their own contact details" on public.profile_contac
   using (private.profile_owned_by_current_user(profile_id))
   with check (private.profile_owned_by_current_user(profile_id));
 
--- Retain the existing owner-only helper; do not grant access to private columns.
-create or replace view public.my_listings with (security_invoker=true,security_barrier=true) as
-select id,owner_profile_id,title,channel,format,price_cents,price_unit,description,demographics,image_url,status,created_at,updated_at,
- image_urls,location_area,availability_notes,available_from,available_to,lead_time_days,minimum_booking,deliverables,cancellation_policy,
- price_max_cents,brief_scope,target_platforms,street_address,surface_types,install_by,space_size,sponsor_tier,sponsor_slots,
- provenance_status,availability_confirmed_at,instant_booking_enabled,availability_dates,booking_duration_days,booking_timezone,street_view_captured,
- street_view_pano,tour_url,tour_kind,timing_kind,pricing_kind,minimum_duration_days from private.current_user_listing_rows();
+-- The owner's my_listings projection is not re-created here. This migration
+-- reached the database after 20260903080000 and 20260903100000 even though it
+-- sorts before them, so the version that ran had to name street_view_pano,
+-- tour_url and tour_kind to avoid dropping columns those two had already
+-- added. By file order those columns do not exist yet, which is what broke a
+-- rebuild from an empty database. 20260907100000 puts the three columns added
+-- above into the projection instead, after the last migration that re-creates
+-- it. The base-table grant above is what the API needs from this migration.
 
 create function private.listing_subtotal_cents(rate bigint, day_count integer, basis text) returns bigint
 language sql immutable strict set search_path='' as $$

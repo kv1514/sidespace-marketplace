@@ -40,14 +40,8 @@ select
   provenance_status, availability_confirmed_at, instant_booking_enabled,
   availability_dates, booking_duration_days, booking_timezone,
   street_view_captured
-from private.current_user_listing_rows() listing(
-  id, owner_profile_id, title, channel, format, price_cents, price_unit,
-  description, demographics, image_url, status, created_at, updated_at,
-  image_urls, location_area, availability_notes, available_from, available_to,
-  lead_time_days, minimum_booking, deliverables, cancellation_policy,
-  price_max_cents, brief_scope, target_platforms, street_address,
-  surface_types, install_by, space_size, sponsor_tier, sponsor_slots,
-  provenance_status, availability_confirmed_at, instant_booking_enabled,
-  availability_dates, booking_duration_days, booking_timezone,
-  street_view_captured
-);
+-- The helper is called bare, with no alias. It returns `setof public.listings`,
+-- so its columns already carry the right names; a column alias list would rename
+-- them by position instead, and any later migration that adds a listings column
+-- ahead of one named here would silently shift the names onto the wrong values.
+from private.current_user_listing_rows();
