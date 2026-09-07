@@ -1,0 +1,547 @@
+/* The creator's board.
+
+   Five block sizes packed by CSS Grid, arranged by drag. There is no JavaScript
+   layout pass: `grid-auto-flow: row` walks the blocks in DOM order and places
+   each one at or after the cursor where its span fits, which is the skyline
+   first-fit this would otherwise have had to implement - except the browser's
+   version is normative, identical in every engine, and needs no hydration. The
+   public board therefore renders with scripting off, and nobody is ever shown
+   an arrangement the creator could not see themselves.
+
+   `row` and not `dense`: dense back-fills holes with later blocks, so the
+   painted sequence stops matching DOM order, tab order and the position a
+   screen reader announces. The holes are the creative freedom, not a defect. */
+
+.pb-board {
+  --pb-cols: 4;
+}
+
+/* Identity, and the sentence that answers "I thought that was my profile".
+   Outside the grid on purpose: it is not a block, it cannot be dragged, and it
+   is not a row in creator_portfolio_items. */
+.pb-identity {
+  align-items: center;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: flex;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 18px;
+}
+
+.pb-identity img {
+  border-radius: 50%;
+  flex: 0 0 68px;
+  height: 68px;
+  object-fit: cover;
+  width: 68px;
+}
+
+.pb-identity-body {
+  min-width: 0;
+}
+
+.pb-identity .pb-eyebrow {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.pb-identity h4 {
+  font-size: 25px;
+  font-weight: 300;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  margin: 3px 0 4px;
+}
+
+.pb-identity p {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.pb-identity a {
+  font-size: 12px;
+}
+
+.pb-identity-note {
+  color: var(--ink-mute);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.pb-grid {
+  display: grid;
+  gap: 12px;
+  grid-auto-flow: row;
+  grid-auto-rows: 132px;
+  grid-template-columns: repeat(var(--pb-cols), minmax(0, 1fr));
+}
+
+/* minmax(0, 1fr) rather than a bare 1fr: an unbroken URL in a description blows
+   out an equal track otherwise, and a portfolio is full of pasted links. */
+.pb-block {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  display: flex;
+  flex-direction: column;
+  grid-column: span var(--pb-w, 2);
+  grid-row: span var(--pb-h, 1);
+  min-width: 0;
+  overflow: hidden;
+  padding: 14px;
+  position: relative;
+}
+
+/* A block with a picture puts the picture behind the words, with a scrim so the
+   words survive a light photograph. */
+.pb-block.has-media {
+  padding: 0;
+}
+
+.pb-media {
+  height: 100%;
+  inset: 0;
+  object-fit: cover;
+  object-position: center;
+  position: absolute;
+  width: 100%;
+}
+
+.pb-block[data-focus="top"] .pb-media {
+  object-position: top;
+}
+
+.pb-block[data-focus="bottom"] .pb-media {
+  object-position: bottom;
+}
+
+.pb-block.has-media .pb-body {
+  background: linear-gradient(to top, rgba(22, 20, 14, 0.82), transparent 62%);
+  color: var(--white);
+  height: 100%;
+  justify-content: flex-end;
+  padding: 14px;
+  position: relative;
+}
+
+.pb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pb-kind {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pb-block.has-media .pb-kind {
+  color: var(--paper-2);
+}
+
+.pb-title {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  font-size: 17px;
+  font-weight: 300;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  margin: 0;
+  overflow: hidden;
+}
+
+.pb-note {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+  overflow: hidden;
+}
+
+.pb-block.has-media .pb-note {
+  color: var(--paper-2);
+}
+
+/* A one-cell block has no room for prose; a two-row one has room for more. */
+.pb-block[data-size="small"] .pb-note {
+  display: none;
+}
+
+.pb-block[data-size="large"] .pb-note,
+.pb-block[data-size="showcase"] .pb-note {
+  -webkit-line-clamp: 6;
+}
+
+.pb-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+/* The global reset takes an anchor's colour and underline away, so a link in a
+   block has to ask for an affordance back. These are the only clickable things
+   inside a block and a business is meant to follow them. */
+.pb-links a {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 4px 10px;
+  transition: background 150ms var(--ease-out);
+}
+
+.pb-links a:hover {
+  background: var(--paper-2);
+}
+
+.pb-block.has-media .pb-links a {
+  background: rgba(255, 253, 243, 0.16);
+  border-color: rgba(255, 253, 243, 0.55);
+  color: var(--white);
+}
+
+.pb-block[data-accent="ink"] .pb-links a {
+  border-color: rgba(251, 247, 230, 0.45);
+  color: var(--paper);
+}
+
+/* The named palette. Every value resolves to a token that already exists, so a
+   creator picks emphasis and never picks a fill their own words vanish into. */
+.pb-block[data-accent="amber"] {
+  background: var(--lime);
+}
+
+.pb-block[data-accent="mist"] {
+  background: var(--blue);
+}
+
+.pb-block[data-accent="haze"] {
+  background: var(--lavender);
+}
+
+.pb-block[data-accent="ink"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.pb-block[data-accent="ink"] .pb-kind,
+.pb-block[data-accent="ink"] .pb-note {
+  color: var(--paper-2);
+}
+
+/* Grip and menu. Quiet under a mouse, always there under a finger. */
+.pb-grip,
+.pb-menu-button {
+  align-items: center;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  opacity: 0;
+  position: absolute;
+  top: 10px;
+  transition: opacity 150ms var(--ease-out);
+  width: 30px;
+  z-index: 2;
+}
+
+.pb-grip {
+  cursor: grab;
+  left: 10px;
+  /* The browser must never start a scroll gesture here, or it would fire
+     pointercancel out from under a drag that had already begun. */
+  touch-action: none;
+}
+
+.pb-menu-button {
+  cursor: pointer;
+  right: 10px;
+}
+
+.pb-block:hover .pb-grip,
+.pb-block:hover .pb-menu-button,
+.pb-grip:focus-visible,
+.pb-menu-button:focus-visible,
+.pb-block.is-open .pb-menu-button {
+  opacity: 1;
+}
+
+.pb-block.is-dragging {
+  cursor: grabbing;
+  opacity: 0.94;
+  /* The lifted block must not swallow the pointer, or the hit test would only
+     ever find the block being dragged. */
+  pointer-events: none;
+  transform: translate3d(var(--pb-dx, 0px), var(--pb-dy, 0px), 0) scale(1.02);
+  z-index: 3;
+}
+
+/* The lifted look, borrowed from the active role choice rather than inventing a
+   shadow language against the hairline rule the rest of the site keeps. */
+.pb-block.is-dragging {
+  border-color: var(--ink);
+  box-shadow: 5px 6px 0 var(--lime);
+}
+
+/* Where it will land. The board holds still while a block is in the air, so
+   this outline is the only thing that says where a release would put it - and
+   an outline costs no layout, which is the point: reflowing under the finger is
+   what made the lifted block walk away from the pointer. */
+.pb-block.is-target {
+  border-color: var(--ink);
+}
+
+.pb-block.is-target::before {
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
+/* The leading edge, because the outlined block is the one the lifted block
+   lands in front of. */
+.pb-block.is-target::after {
+  background: var(--lime);
+  border-radius: 999px;
+  content: "";
+  height: 3px;
+  inset: 12px 12px auto;
+  position: absolute;
+  z-index: 2;
+}
+
+/* Nothing on the board should answer the pointer while a block is being
+   carried across it. */
+.pb-board.is-arranging .pb-block {
+  cursor: grabbing;
+}
+
+.pb-board.is-arranging .pb-body a {
+  pointer-events: none;
+}
+
+.pb-block.is-dragging .pb-grip {
+  opacity: 1;
+}
+
+/* The lifted block answers no pointer, so its own cursor never resolves. The
+   board can still answer for the gaps and the background behind it. */
+.pb-board.is-arranging,
+.pb-board.is-arranging .pb-grip {
+  cursor: grabbing;
+}
+
+.pb-overflow {
+  color: var(--coral-text);
+  display: block;
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+/* The block clips its cover image to its own rounded corners, which also
+   clipped the popover down to whatever was left of a 132px row - most of the
+   controls were simply not on screen. While the menu is open the block stops
+   clipping and lifts above its neighbours instead, and the image is given the
+   rounding it was getting from the clip. */
+.pb-block.is-open {
+  overflow: visible;
+  z-index: 5;
+}
+
+.pb-media {
+  border-radius: 14px;
+}
+
+/* One popover per block, so a block carries two controls and not seven. */
+.pb-menu {
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  position: absolute;
+  right: 10px;
+  top: 46px;
+  width: 236px;
+  z-index: 4;
+}
+
+.pb-menu label {
+  display: grid;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 6px;
+}
+
+.pb-menu select {
+  width: 100%;
+}
+
+.pb-menu-actions {
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+}
+
+.pb-hint {
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* The board and the form that adds to it are two independent blocks inside a
+   plain-block .account-section: a grid's gap only spaces its own tracks and a
+   <form> has no margin of its own, so the last card sat flush against "What was
+   it?". Twenty-two is larger than the 12px between blocks and the 14px between
+   fields, so it reads as the break between what you have and adding another. */
+.pb-board + .campaign-form {
+  margin-top: 22px;
+}
+
+.pb-empty {
+  border: 1px dashed var(--line);
+  border-radius: 15px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  padding: 28px 18px;
+  text-align: center;
+}
+
+/* --------------------------------------------------------------------------
+   The board inside the listing detail pane.
+
+   .detail-terms is itself two equal columns inside the 1fr column of
+   .detail-layout inside a modal, so one of its cells is around 215px wide at
+   every viewport size. A media query cannot see that and this project has no
+   container queries, so the public board is given the width of the whole column
+   by the markup and its column count by this class - never by guessing from the
+   viewport.
+   -------------------------------------------------------------------------- */
+.detail-portfolio {
+  border-top: 1px solid var(--line);
+  margin-bottom: 25px;
+  padding-top: 13px;
+}
+
+.detail-portfolio > small {
+  color: var(--ink-soft);
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.pb-board.is-compact {
+  --pb-cols: 2;
+}
+
+.pb-board.is-compact .pb-grid {
+  gap: 10px;
+  grid-auto-rows: 118px;
+}
+
+.pb-board.is-compact .pb-block {
+  grid-column: span var(--pb-w2, 2);
+}
+
+/* The public board renders outside .dashboard, so it does not inherit that
+   section's focus ring and has to name the house link ring itself. */
+.pb-board.is-readonly a:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1050px) {
+  .pb-board {
+    --pb-cols: 2;
+  }
+
+  .pb-block {
+    grid-column: span var(--pb-w2, 2);
+  }
+}
+
+@media (max-width: 620px) {
+  .pb-board,
+  .pb-board.is-compact {
+    --pb-cols: 1;
+  }
+
+  .pb-grid,
+  .pb-board.is-compact .pb-grid {
+    grid-auto-rows: 118px;
+  }
+
+  .pb-block,
+  .pb-board.is-compact .pb-block {
+    grid-column: span 1;
+  }
+
+  .pb-identity {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .pb-menu {
+    left: 10px;
+    right: 10px;
+    width: auto;
+  }
+}
+
+/* A finger needs 44px, and a control that only appears on hover never appears
+   at all on a touch screen. */
+@media (hover: none), (pointer: coarse) {
+  .pb-grip,
+  .pb-menu-button {
+    height: 44px;
+    min-width: 44px;
+    opacity: 1;
+    width: 44px;
+  }
+}
+
+/* The reflow that moves the other blocks runs through Element.animate(), which
+   the global reduced-motion block does not reach - that one only forces
+   transition-duration. The component checks the same query in JavaScript and
+   skips the animation; this is here for the two transitions it does own. */
+@media (prefers-reduced-motion: reduce) {
+  .pb-grip,
+  .pb-menu-button {
+    transition: none;
+  }
+
+  .pb-block.is-dragging {
+    transform: translate3d(var(--pb-dx, 0px), var(--pb-dy, 0px), 0);
+  }
+}

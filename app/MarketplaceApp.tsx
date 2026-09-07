@@ -113,6 +113,17 @@ import { bookingDateLabel, pricingLabel } from "@/lib/listings/booking";
 import { InstantBookingPanel } from "@/components/InstantBookingPanel";
 import { addCalendarDays, calendarToday, availableStartDates, type BookingSchedule } from "@/lib/listings/availability";
 import { isUnitedStatesPlaceLabel } from "@/lib/geo/places";
+import {
+  PortfolioBoard,
+  type CreatorPortfolioItem,
+  type PortfolioBlockPatch,
+} from "@/components/PortfolioBoard";
+import {
+  MAX_PORTFOLIO_BLOCKS,
+  PORTFOLIO_READ_LIMIT,
+  comparePortfolioBlocks,
+  moveItem,
+} from "@/lib/portfolio-layout";
 
 const stripeConfigured = /^pk_(?:test|live)_/.test(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "",
@@ -458,21 +469,6 @@ type StripeAccountStatus = {
   payoutsEnabled?: boolean;
   detailsSubmitted?: boolean;
   requirementsDue?: string[];
-};
-
-type CreatorPortfolioItem = {
-  id: string;
-  creator_profile_id: string;
-  title: string;
-  description: string;
-  kind: "video" | "project" | "campaign" | "case_study" | "other";
-  media_url: string;
-  project_url: string;
-  /** The creator's own accounts this work ran on, as https URLs. See the 20260906130000 migration. */
-  social_urls?: string[];
-  sort_order: number;
-  published: boolean;
-  created_at: string;
 };
 
 type CreatorReview = {
@@ -4155,6 +4151,13 @@ function isInternalAccount(person: Profile) {
  * file if anything about the canvas path fails, so a save never breaks over an
  * optimisation. Only jpeg/png/webp reach here, all of which the bucket accepts.
  */
+/** The three types uploadImages accepts, and the extension each is stored as. */
+const EXTENSION_FOR_UPLOAD: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
 async function downscaleForUpload(
   file: File,
   maxEdge: number,
@@ -4162,7 +4165,12 @@ async function downscaleForUpload(
   const original = {
     body: file as Blob,
     contentType: file.type,
-    extension: file.name.split(".").pop()?.toLowerCase() || "jpg",
+    // Named after what is actually being uploaded, not after what the file was
+    // called. A picture saved from a browser arrives as .jfif, and a portfolio
+    // cover is only drawn when its URL looks like an image - so an extension
+    // taken from the filename stored a photograph that then never rendered,
+    // with no error anywhere to explain it.
+    extension: EXTENSION_FOR_UPLOAD[file.type] ?? "jpg",
   };
   if (typeof document === "undefined" || typeof createImageBitmap !== "function") {
     return original;
@@ -4208,6 +4216,22 @@ function friendlyDbError(error: unknown): string {
       : ((error as { message?: string } | null)?.message ?? "");
   const code = (error as { code?: string } | null)?.code ?? "";
 
+  // A write row-level security filtered away is zero rows and no message at
+  // all, so the portfolio callers synthesise this code to say so. Guarded on
+  // the absence of a message because 42501 is also Postgres's real
+  // insufficient_privilege code: a genuine refusal arrives with a sentence
+  // attached and has to fall through to the row-level security branch below,
+  // which says something true about listings. Tested before the 23514 branch,
+  // whose line about highlighted fields would be misleading for a block size
+  // nobody typed.
+  if (code === "42501" && !raw) {
+    return "That change could not be saved to your portfolio. Reload the page and try again.";
+  }
+  if (
+    /creator_portfolio_(block_size|accent|media_focus)/i.test(raw)
+  ) {
+    return "That block could not be saved in that shape. Pick a size from the list and try again.";
+  }
   if (/row-level security/i.test(raw)) {
     // A refused listing write is about the account, not about anybody else:
     // the policy turns down internal, suspended, consumer and unfinished
@@ -5821,6 +5845,11 @@ export default function MarketplaceApp({
   const [adCreditBalanceCents, setAdCreditBalanceCents] = useState(0);
   const [creatorPortfolio, setCreatorPortfolio] = useState<CreatorPortfolioItem[]>([]);
   /**
+   * Which reorder is the current one. A drag answered slowly must not overwrite
+   * the state a later drag already put on the screen.
+   */
+  const portfolioWriteRef = useRef(0);
+  /**
    * The creator's own social accounts, ready to tick onto a portfolio item.
    *
    * Read from their profile rather than asked for again: they filled these in
@@ -6226,7 +6255,8 @@ export default function MarketplaceApp({
             .select("*")
             .eq("creator_profile_id", ownProfile.id)
             .order("sort_order", { ascending: true })
-            .order("created_at", { ascending: false }),
+            .order("created_at", { ascending: false })
+            .limit(PORTFOLIO_READ_LIMIT),
           supabase
             .from("creator_reviews")
             .select("*")
@@ -6292,7 +6322,8 @@ export default function MarketplaceApp({
         .eq("creator_profile_id", creatorId)
         .eq("published", true)
         .order("sort_order", { ascending: true })
-        .order("created_at", { ascending: false }),
+        .order("created_at", { ascending: false })
+        .limit(PORTFOLIO_READ_LIMIT),
       supabase
         .from("creator_reviews")
         .select("*")
@@ -7857,7 +7888,10 @@ export default function MarketplaceApp({
     action();
   }
 
-  async function uploadImages(files: File[], folder: "profiles" | "listings") {
+  async function uploadImages(
+    files: File[],
+    folder: "profiles" | "listings" | "portfolio",
+  ) {
     if (!supabase || !user || !files.length) return [];
     if (files.length > 6) {
       throw new Error("Choose up to 6 photos at a time.");
@@ -8614,8 +8648,17 @@ export default function MarketplaceApp({
     return missingAnswers()[0] ?? null;
   }
 
+  /**
+   * Joining ends once we know who they are.
+   *
+   * Setup used to run to five slides, and the last two existed only to compose
+   * and price a listing: a member could not finish signing up without also
+   * putting something up for sale. That is a decision to make after looking
+   * round, not a toll on the way in. Listings are now created from the
+   * dashboard, where the same composer already lives.
+   */
   function onboardingStepCount() {
-    return onboardingMode === "edit" ? 2 : 5;
+    return onboardingMode === "edit" ? 2 : 3;
   }
 
   function goToOnboardingStep(step: number) {
@@ -8761,7 +8804,7 @@ export default function MarketplaceApp({
       ...current,
       businessSetupPath: "browse",
     }));
-    void publishOnboarding(null, { skipListing: true });
+    void publishOnboarding(null);
   }
 
   async function signInWithGoogle() {
@@ -8835,14 +8878,12 @@ export default function MarketplaceApp({
    * that guard for atomicity is a bad deal when the non-atomic failure mode is
    * recoverable, which it is: see the catch below.
    */
-  async function publishOnboarding(
-    event?: FormEvent<HTMLFormElement> | null,
-    options?: { skipListing?: boolean },
-  ) {
+  async function publishOnboarding(event?: FormEvent<HTMLFormElement> | null) {
     event?.preventDefault();
-    const skipListing =
-      Boolean(options?.skipListing) ||
-      (selectedRole === "business" && answers.businessSetupPath === "browse");
+    // Onboarding writes a profile and nothing else - see onboardingStepCount
+    // for why. Kept as a named constant because several branches below read it
+    // and they document what joining deliberately no longer does.
+    const skipListing = true;
 
     if (avatarCropPending) {
       setOnboardingError(tx("Finish positioning your photo, or cancel the crop, before saving."));
@@ -10921,6 +10962,9 @@ export default function MarketplaceApp({
   async function submitCreatorPortfolioItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !profile || canonicalRole(profile.role) !== "creator") return;
+    if (creatorPortfolio.length >= MAX_PORTFOLIO_BLOCKS) {
+      return setToast("That is as many pieces as one portfolio can hold.", "problem");
+    }
     const form = event.currentTarget;
     const values = new FormData(form);
     setBusy(true);
@@ -10935,7 +10979,11 @@ export default function MarketplaceApp({
       social_urls: portfolioSocials
         .filter((url) => /^https:\/\//i.test(url))
         .slice(0, MAX_PORTFOLIO_SOCIALS),
-      sort_order: creatorPortfolio.length,
+      sort_order:
+        creatorPortfolio.reduce(
+          (highest, item) => Math.max(highest, item.sort_order),
+          -1,
+        ) + 1,
       published: true,
     });
     setBusy(false);
@@ -10947,18 +10995,199 @@ export default function MarketplaceApp({
     await loadAccountMarketplaceState(profile);
   }
 
+  /**
+   * Remove one block, and say whether it went.
+   *
+   * Returns a boolean because promoting a block to the profile line deletes it
+   * afterwards and must not claim success if it is still sitting on the board.
+   * The returned rows matter for the same reason the reorder checks them: a
+   * delete row-level security refuses is zero rows and no error at all.
+   */
   async function deleteCreatorPortfolioItem(itemId: string) {
-    if (!supabase || !profile) return;
+    if (!supabase || !profile) return false;
     setBusy(true);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("creator_portfolio_items")
       .delete()
       .eq("id", itemId)
-      .eq("creator_profile_id", profile.id);
+      .eq("creator_profile_id", profile.id)
+      .select("id");
     setBusy(false);
-    if (error) return setToast(friendlyDbError(error));
+    if (error || !data?.length) {
+      setToast(friendlyDbError(error ?? { code: "42501" }));
+      return false;
+    }
     setToast("Portfolio item removed.");
     await loadAccountMarketplaceState(profile);
+    return true;
+  }
+
+  /**
+   * Rearrange the board, in one statement.
+   *
+   * The whole arrangement goes to set_creator_portfolio_layout rather than a
+   * loop of updates: one statement is one transaction, so a connection lost
+   * mid-write leaves the old order rather than half of the new one. The
+   * function runs as the caller, so the existing update policy is still the
+   * only thing authorising it.
+   *
+   * Returns false when the write did not land, and the board puts the block
+   * back where it was. The returned count is not decoration: row-level
+   * security filters a refused UPDATE to zero rows rather than raising, so
+   * `error === null` alone would report a refusal as a success and the
+   * arrangement would quietly revert on the next page load.
+   */
+  async function moveCreatorPortfolioBlock(itemId: string, toIndex: number) {
+    if (!supabase || !profile) return false;
+    const ordered = [...creatorPortfolio].sort(comparePortfolioBlocks);
+    const from = ordered.findIndex((item) => item.id === itemId);
+    if (from < 0 || from === toIndex) return false;
+    const next = moveItem(ordered, from, toIndex);
+
+    // A newer drag must win over a slower answer to an older one.
+    const token = portfolioWriteRef.current + 1;
+    portfolioWriteRef.current = token;
+    // Only the positions are remembered, and only the positions are put back.
+    // Snapshotting the whole array and restoring it would also roll back a
+    // size or a colour written while the reorder was in flight - a refused
+    // move undoing an edit the member did not make.
+    const previous = new Map(
+      ordered.map((item) => [item.id, item.sort_order] as const),
+    );
+    const rank = new Map(next.map((item, index) => [item.id, index] as const));
+    setCreatorPortfolio((current) =>
+      current.map((item) =>
+        rank.has(item.id)
+          ? { ...item, sort_order: rank.get(item.id) as number }
+          : item,
+      ),
+    );
+
+    const { data, error } = await supabase.rpc("set_creator_portfolio_layout", {
+      target_profile_id: profile.id,
+      block_ids: next.map((item) => item.id),
+      block_orders: next.map((_, index) => index),
+    });
+    if (token !== portfolioWriteRef.current) return true;
+    if (error || data !== next.length) {
+      setCreatorPortfolio((current) =>
+        current.map((item) =>
+          previous.has(item.id)
+            ? { ...item, sort_order: previous.get(item.id) as number }
+            : item,
+        ),
+      );
+      setToast(friendlyDbError(error ?? { code: "42501" }));
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Size, accent, crop or cover image. Same shape, same test for a refusal.
+   *
+   * Only the fields the patch names are remembered, and only those are put
+   * back. Restoring a whole snapshot would undo a reorder that landed while
+   * this write was in flight - and the reorder is written to the database, so
+   * the two would then disagree until the next reload.
+   */
+  async function styleCreatorPortfolioBlock(
+    itemId: string,
+    patch: PortfolioBlockPatch,
+  ) {
+    if (!supabase || !profile) return false;
+    const target = creatorPortfolio.find((item) => item.id === itemId);
+    const previous = target
+      ? (Object.fromEntries(
+          Object.keys(patch).map((key) => [
+            key,
+            (target as unknown as Record<string, unknown>)[key],
+          ]),
+        ) as PortfolioBlockPatch)
+      : null;
+    setCreatorPortfolio((current) =>
+      current.map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
+    );
+    const { data, error } = await supabase
+      .from("creator_portfolio_items")
+      .update(patch)
+      .eq("id", itemId)
+      .eq("creator_profile_id", profile.id)
+      .select("id");
+    if (error || !data?.length) {
+      if (previous) {
+        setCreatorPortfolio((current) =>
+          current.map((item) =>
+            item.id === itemId ? { ...item, ...previous } : item,
+          ),
+        );
+      }
+      setToast(friendlyDbError(error ?? { code: "42501" }));
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Take a block that was really an introduction and make it the profile line
+   * it should have been.
+   *
+   * Nothing does this on its own. The product put somebody in a position where
+   * the only box on the page was a portfolio row, and quietly rewriting their
+   * profile to fix that would be a second thing happening to them without
+   * being asked.
+   */
+  async function promotePortfolioItemToProfile(item: CreatorPortfolioItem) {
+    if (!supabase || !profile) return;
+    // Naming what goes, not just what arrives. A creator with a written profile
+    // line is about to lose it, and a yes/no that does not say so is not a
+    // question they can answer.
+    const existing = profile.bio.trim();
+    const asked = existing
+      ? window.confirm(
+          `${t("app.moveThisToYourProfileLineAnd")}\n\n${t("app.thisReplacesYourCurrentProfileLine")}\n\n${existing}`,
+        )
+      : window.confirm(t("app.moveThisToYourProfileLineAnd"));
+    if (!asked) return;
+    const line = (item.description || item.title).slice(0, 600);
+    setBusy(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ bio: line })
+      .eq("id", profile.id);
+    if (error) {
+      setBusy(false);
+      return setToast(friendlyDbError(error));
+    }
+    setProfile((current) => (current ? { ...current, bio: line } : current));
+    setBusy(false);
+    // Only after the block is actually gone. Announcing the move while the
+    // block is still on the board would leave the bio duplicated as a piece of
+    // work, which is the exact state this exists to clear up.
+    if (await deleteCreatorPortfolioItem(item.id)) {
+      setToast("Your profile line is updated.");
+      return;
+    }
+    // The block stayed, so the profile line goes back. Leaving both would put
+    // the same words in two places, which is the state this exists to clear up.
+    await supabase.from("profiles").update({ bio: profile.bio }).eq("id", profile.id);
+    setProfile((current) => (current ? { ...current, bio: profile.bio } : current));
+  }
+
+  /** One cover image, through the same upload path everything else uses. */
+  async function uploadPortfolioImage(itemId: string, file: File) {
+    if (!supabase) return;
+    setBusy(true);
+    try {
+      const [url] = await uploadImages([file], "portfolio");
+      if (url) await styleCreatorPortfolioBlock(itemId, { media_url: url });
+    } catch (error) {
+      setToast(
+        error instanceof Error ? error.message : "That photo could not be uploaded.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submitCreatorReview(transaction: PaymentTransaction) {
@@ -14639,40 +14868,32 @@ export default function MarketplaceApp({
                   </div>
                   <span className="section-count">{t("app.creatorportfoliocountItems", { creatorPortfolioCount: creatorPortfolio.length })}</span>
                 </div>
-                {creatorPortfolio.length > 0 && (
-                  <div className="campaign-request-list">
-                    {creatorPortfolio.map((item) => (
-                      <article className="campaign-request-card" key={item.id}>
-                        <header>
-                          <div>
-                            <small>{item.kind.replaceAll("_", " ")}</small>
-                            <h4>{item.title}</h4>
-                          </div>
-                          <span className="request-status status-active">{t("app.published")}</span>
-                        </header>
-                        {item.description && <p>{item.description}</p>}
-                        <div className="campaign-request-actions">
-                          {(item.project_url || item.media_url) && (
-                            <a
-                              className="button button-dark button-small"
-                              href={item.project_url || item.media_url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {t("app.viewWork")}
-                            </a>
-                          )}
-                          <button
-                            disabled={busy}
-                            onClick={() => void deleteCreatorPortfolioItem(item.id)}
-                          >
-                            {t("app.remove")}
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
+                {/* The board, not a list of cards. A stack of identical rows
+                    said every piece of work carried the same weight, which is
+                    the one thing a portfolio exists to deny. The identity card
+                    above it is drawn from the profile and is not a row in this
+                    table, so "that was supposed to be my profile" has an answer
+                    on the page rather than only in a support reply. */}
+                <PortfolioBoard
+                  key={profile.id}
+                  busy={busy}
+                  editable
+                  items={creatorPortfolio}
+                  owner={{
+                    display_name: profile.display_name,
+                    avatar_url: profile.avatar_url,
+                    bio: profile.bio,
+                    roleLabel: roleLabel(canonicalRole(profile.role)),
+                  }}
+                  socialLabel={(url) => socialLabelForUrl(url, tx)}
+                  onDelete={(id) => void deleteCreatorPortfolioItem(id)}
+                  onMove={(id, toIndex) => moveCreatorPortfolioBlock(id, toIndex)}
+                  onPickImage={(id, file) => void uploadPortfolioImage(id, file)}
+                  onPromoteToProfile={(item) =>
+                    void promotePortfolioItemToProfile(item)
+                  }
+                  onStyle={(id, patch) => styleCreatorPortfolioBlock(id, patch)}
+                />
                 <form className="field-grid campaign-form" onSubmit={submitCreatorPortfolioItem}>
                   {/* "Work title" read like a job title, and "Type: Project"
                       said nothing at all. The questions now name the thing
@@ -14810,38 +15031,6 @@ export default function MarketplaceApp({
                       placeholder={t("app.scopeDeliverablesResultAndYourRole")}
                     />
                   </label>
-                  {/* Where the work went out. The two URL fields above point at
-                      the work itself; a business reading a portfolio also wants
-                      to know which account carried it, and the creator has
-                      already told us their accounts once. Tick as many as
-                      applied - a campaign that ran on a story and a video is
-                      two accounts, not two portfolio items. */}
-                  <div className="field-wide portfolio-socials">
-                    <span className="portfolio-socials-label">
-                      {t("app.whereDidItRun")}
-                    </span>
-                    {ownSocialAccounts.length ? (
-                      <div className="portfolio-socials-grid">
-                        {ownSocialAccounts.map((account) => (
-                          <label className="chip-check" key={account.key}>
-                            <input
-                              type="checkbox"
-                              name="social_urls"
-                              value={account.url}
-                            />
-                            <span>
-                              <strong>{tx(account.label)}</strong>
-                              <small>{account.handle}</small>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    ) : (
-                      <small className="portfolio-socials-empty">
-                        {t("app.addSocialAccountsToAttachThem")}
-                      </small>
-                    )}
-                  </div>
                   <button className="button button-dark field-wide" disabled={busy}>
                     {busy ? t("app.publishing") : t("app.addToPublicPortfolio")}
                   </button>
@@ -17646,7 +17835,8 @@ export default function MarketplaceApp({
                           : t("app.readyToContinue")}
                       </span>
                       {onboardingMode === "setup" &&
-                      (onboardingStep < 5 || Boolean(nextSelectedCreatorOffer())) ? (
+                      (onboardingStep < onboardingStepCount() ||
+                        Boolean(nextSelectedCreatorOffer())) ? (
                         <button
                           type="button"
                           className="button button-dark"
@@ -17656,9 +17846,7 @@ export default function MarketplaceApp({
                             ? nextSelectedCreatorOffer()
                               ? t("app.nextSection")
                               : t("app.next")
-                            : onboardingStep === 3
-                              ? t("app.nextTheDetails")
-                              : t("app.nextReview")}{" "}
+                            : t("app.next")}{" "}
                           <span>→</span>
                         </button>
                       ) : (
@@ -17677,9 +17865,7 @@ export default function MarketplaceApp({
                               ? t("app.finishPreview")
                               : onboardingMode === "edit"
                                 ? t("app.saveChanges")
-                                : selectedRole === "business"
-                                  ? t("app.postMyBrief")
-                                  : t("app.publishAndFinish")}{" "}
+                                : t("app.finishSetup")}{" "}
                           <span>✓</span>
                         </button>
                       )}
@@ -18114,68 +18300,40 @@ export default function MarketplaceApp({
                 </div>
               )}
               <SocialLinks profile={selectedListing.owner} />
-              {(selectedCreatorReviews.length > 0 || selectedCreatorPortfolio.length > 0) && (
+              {selectedCreatorReviews.length > 0 && (
                 <div className="detail-terms">
-                  {selectedCreatorReviews.length > 0 && (
-                    <div>
-                      <small>{t("app.verifiedSidespaceReviews")}</small>
-                      <p>
-                        <strong>
-                          {(
-                            selectedCreatorReviews.reduce(
-                              (sum, review) => sum + review.rating,
-                              0,
-                            ) / selectedCreatorReviews.length
-                          ).toFixed(1)}
-                          /5
-                        </strong>{" "}{selectedCreatorReviews.length === 1
-                          ? t("app.fromOneCompletedCampaign")
-                          : t("app.fromCompletedCampaigns", { count: selectedCreatorReviews.length })}
-                      </p>
-                      <p>“{selectedCreatorReviews[0].review_text}”</p>
-                    </div>
-                  )}
-                  {selectedCreatorPortfolio.length > 0 && (
-                    <div>
-                      <small>{t("app.creatorPortfolio")}</small>
-                      {selectedCreatorPortfolio.map((item) => (
-                        <p key={item.id}>
-                          <strong>{item.title}</strong>
-                          {item.description ? ` — ${item.description}` : ""}{" "}
-                          {(item.project_url || item.media_url) && (
-                            <a
-                              href={item.project_url || item.media_url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {t("app.viewReplaceall", { replaceAll: item.kind.replaceAll("_", " ") })}
-                            </a>
-                          )}
-                          {/* The accounts it ran on, named rather than dumped
-                              as raw URLs: "Instagram" reads as evidence, a
-                              hostname reads as a link someone forgot to
-                              label. */}
-                          {(item.social_urls ?? [])
-                            // The column already refuses anything but https,
-                            // and this refuses it again: an href is the one
-                            // place a bad string from the database becomes
-                            // executable, and the check costs nothing.
-                            .filter((url) => /^https:\/\//i.test(url))
-                            .map((url) => (
-                            <a
-                              className="portfolio-social-ref"
-                              key={url}
-                              href={url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {socialLabelForUrl(url, tx)}
-                            </a>
-                            ))}
-                        </p>
-                      ))}
-                    </div>
-                  )}
+                  <div>
+                    <small>{t("app.verifiedSidespaceReviews")}</small>
+                    <p>
+                      <strong>
+                        {(
+                          selectedCreatorReviews.reduce(
+                            (sum, review) => sum + review.rating,
+                            0,
+                          ) / selectedCreatorReviews.length
+                        ).toFixed(1)}
+                        /5
+                      </strong>{" "}{selectedCreatorReviews.length === 1
+                        ? t("app.fromOneCompletedCampaign")
+                        : t("app.fromCompletedCampaigns", { count: selectedCreatorReviews.length })}
+                    </p>
+                    <p>“{selectedCreatorReviews[0].review_text}”</p>
+                  </div>
+                </div>
+              )}
+              {/* The same board the creator arranged, read-only. Same
+                  component, same sort, same stylesheet: "what I arranged is
+                  what a business sees" is a property of the code rather than
+                  an intention somebody has to keep. */}
+              {selectedCreatorPortfolio.length > 0 && (
+                <div className="detail-portfolio">
+                  <small>{t("app.creatorPortfolio")}</small>
+                  <PortfolioBoard
+                    key={selectedListing.owner.id}
+                    compact
+                    items={selectedCreatorPortfolio}
+                    socialLabel={(url) => socialLabelForUrl(url, tx)}
+                  />
                 </div>
               )}
               <div className="detail-title-row">
