@@ -8222,7 +8222,13 @@ export default function MarketplaceApp({
    * dashboard, where the same composer already lives.
    */
   function onboardingStepCount() {
-    return onboardingMode === "edit" ? 2 : 3;
+    // Two, in both modes. Setup used to run to five slides and then to three;
+    // the third asked "what do you have to offer" and promised "we'll create
+    // one listing for each", which is a listing composer wearing a sign-up
+    // form's clothes. Joining now ends once we know who somebody is, and the
+    // role-specific questions live in the profile editor, which is where a
+    // member goes when they have decided what to sell.
+    return 2;
   }
 
   function goToOnboardingStep(step: number) {
@@ -15248,22 +15254,36 @@ export default function MarketplaceApp({
                                   : "details" })
                             : t("app.readyToContinue")}
                         </span>
-                        <button
-                          type="button"
-                          className="button button-dark"
-                          onClick={advanceOnboarding}
-                        >
-                          {onboardingStep === 1
-                            ? onboardingMode === "edit"
+                        {onboardingStep >= onboardingStepCount() ? (
+                          <button
+                            type="submit"
+                            className="button button-coral"
+                            // Gated on the Instagram lookup too: publishOnboarding
+                            // snapshots `answers` before it awaits that promise, so
+                            // a follower count filled in afterwards would save as 0.
+                            disabled={busy || igAvatarBusy}
+                          >
+                            {busy
+                              ? t("app.publishing2")
+                              : onboardingPreview
+                                ? t("app.finishPreview")
+                                : onboardingMode === "edit"
+                                  ? t("app.saveChanges")
+                                  : t("app.finishSetup")}{" "}
+                            <span>✓</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="button button-dark"
+                            onClick={advanceOnboarding}
+                          >
+                            {onboardingMode === "edit"
                               ? t("app.nextYourDetails")
-                              : t("app.continue")
-                            : selectedRole === "business"
-                              ? t("app.continue")
-                              : selectedRole === "creator"
-                                ? t("app.nextWhatYouHaveToAdvertise")
-                                : t("app.next")}{" "}
-                          <span>→</span>
-                        </button>
+                              : t("app.continue")}{" "}
+                            <span>→</span>
+                          </button>
+                        )}
                       </span>
                     )}
                   </div>
