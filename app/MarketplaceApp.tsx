@@ -106,7 +106,6 @@ import {
   type SideSpaceRoute,
 } from "@/app/components/SiteChrome";
 import CityAutocomplete from "@/app/components/CityAutocomplete";
-import { ListingAvailabilityFields } from "@/components/AvailabilityCalendar";
 import { ListingComposerFields, revealInvalidField } from "@/components/ListingComposerFields";
 import { BookingFields } from "@/components/BookingFields";
 import { bookingDateLabel, pricingLabel } from "@/lib/listings/booking";
@@ -980,30 +979,6 @@ const CREATOR_OFFER_TYPES: Array<{
 
 type ListingFormKind = "brief" | CreatorOfferType;
 
-/**
- * Example copy for the listing editor, by the shape of the listing.
- *
- * Every placeholder used to show the social example regardless of what was
- * picked: choose "Physical" and the title field still suggested "Three-story
- * launch package" and the offer field "three Instagram stories over 48 hours",
- * directly under a hint that said "like Cafe window, Main Street". Someone
- * listing a window was being shown how to list a story. The form now reads
- * one row of this table, chosen by the same flags that already pick its
- * labels and help text.
- */
-
-
-/** Suggestion chips for `format`, filtered to the platforms actually picked. */
-const CREATOR_OFFER_EXAMPLES: Record<string, string[]> = {
-  instagram: ["three Instagram stories over 48 hours", "one in-feed post"],
-  tiktok: ["a TikTok with a 24-hour pin", "a TikTok product feature"],
-  youtube: ["a dedicated YouTube segment", "a YouTube short"],
-  x: ["a pinned post for 24 hours"],
-  facebook: ["a post to my local group"],
-  newsletter: ["a newsletter mention"],
-  podcast: ["a podcast read"],
-  twitch: ["a stream shout-out"],
-};
 
 /** Space owner: chip -> the LISTING_CHANNELS value it stores. */
 const SPACE_KIND_CHIPS: Array<{ label: string; channel: string }> = [
@@ -1213,20 +1188,6 @@ const BRIEF_PLATFORM_CHIPS = [
   "Other",
 ];
 
-/** Budget range presets: [low, high]. A range beats one number for a brief. */
-const BUDGET_RANGE_CHIPS: Array<{
-  label: string;
-  min: number;
-  max: number | null;
-}> = [
-  { label: "$50 – $150", min: 50, max: 150 },
-  { label: "$150 – $500", min: 150, max: 500 },
-  { label: "$500 – $1,500", min: 500, max: 1500 },
-  { label: "$1,500 – $5,000", min: 1500, max: 5000 },
-  // Open-ended. This used to carry max: 25000, so picking "$5,000+" quietly
-  // wrote a $25,000 ceiling the member never saw, said or agreed to.
-  { label: "$5,000+", min: 5000, max: null },
-];
 
 /** Business timing. Sets availability_notes plus the available_from/to window. */
 const BUSINESS_TIMING_CHIPS: Array<{
@@ -1352,45 +1313,7 @@ function orderedBenefits(benefits: string[]) {
   return [...benefits].sort((a, b) => rank(a) - rank(b));
 }
 
-/**
- * The one-line offer on a sponsorship card.
- *
- * Two perks and a count, rather than a bare first two. A new tier starts from
- * the whole menu and the host prunes downward, so lower tiers are usually
- * PREFIXES of higher ones - and a bare slice(0, 2) then published the same
- * sentence for Gold and Silver:
- *
- *   $1000 Gold    You get logo on jerseys and banner at events
- *   $500  Silver  You get logo on jerseys and banner at events
- *
- * A business could not tell what the extra $500 bought. The count is what
- * makes the levels different on the card, which is the whole reason each tier
- * publishes its own.
- */
-function sponsorOfferLine(benefits: string[]) {
-  const perks = orderedBenefits(benefits).map((item) => item.toLowerCase());
-  if (perks.length <= 2) return joinList(perks);
-  const rest = perks.length - 2;
-  return joinList([...perks.slice(0, 2), `${rest} more`]);
-}
 
-/**
- * The one-line "Looking for" on a brief card.
- *
- * Two problems it fixes. A business that picks broadly published all of it:
- * every physical chip plus every platform is a 234-character run-on where a
- * card headline should be. And everything was lowercased, which is right for
- * "storefront windows" and wrong for a brand - the card asked for "instagram
- * and tiktok", and rendered X as "x".
- */
-function briefWantsLine(placements: string[], platforms: string[]) {
-  const wants = [
-    ...placements.map((item) => item.toLowerCase()),
-    ...platforms,
-  ];
-  if (wants.length <= 3) return joinList(wants);
-  return joinList([...wants.slice(0, 3), `${wants.length - 3} more`]);
-}
 
 /** Sponsorship window. Sets availability_notes and the date pair. */
 const SPONSOR_SEASON_CHIPS: Array<{
@@ -1408,20 +1331,7 @@ const SPONSOR_SEASON_CHIPS: Array<{
   { label: "Year-round", days: 365, sentence: "This runs year-round." },
 ];
 
-/** Price presets per role. "Custom" reveals a number input. */
-const PRICE_CHIPS: Record<string, number[]> = {
-  creator: [50, 150, 300, 600],
-  space_owner: [25, 75, 150, 400],
-  sponsor_host: [250, 500, 1000, 2500],
-};
 
-/** Every unit the editor offers. The row's own value is unioned in at render. */
-
-
-const PRICE_UNIT_CHIPS: Record<string, string[]> = {
-  creator: ["post", "video", "story", "campaign", "week", "month", "day"],
-  space_owner: ["week", "month", "day", "campaign"],
-};
 
 /**
  * Every answer in the onboarding flow, in one controlled object.
@@ -2702,25 +2612,7 @@ function emptyTier(name: string): SponsorTier {
   return { name, price: null, priceMax: null, slots: null, benefits: [] };
 }
 
-/**
- * The names offered as levels are added, in the order a team would add them.
- *
- * Downward: the first tier a host writes is their top one. The `price` these
- * used to carry was never read - emptyTier was called with null - so it is
- * gone; PRICE_CHIPS.sponsor_host is what actually suggests a number now.
- */
-const TIER_PRESETS = ["Gold", "Silver", "Bronze", "Supporter", "Friend"];
 
-/**
- * How many levels a sponsorship can publish.
- *
- * Was `TIER_PRESETS.length`, which made the ceiling on what a team may offer
- * an accident of how many nice names happened to be in a list - three - and
- * plenty of teams run four or five. Now it is a number chosen for its own
- * reason: past five, a business scrolling the marketplace is reading one
- * team's price list rather than browsing.
- */
-const MAX_TIERS = 5;
 
 /**
  * Which flow an invited business lands in.
@@ -3178,9 +3070,6 @@ function defaultCreatorPriceUnit(offer: CreatorOfferType) {
   return offer === "physical" ? "week" : "post";
 }
 
-function creatorPricePresets(offer: "" | CreatorOfferType) {
-  return offer === "physical" ? PRICE_CHIPS.space_owner : PRICE_CHIPS.creator;
-}
 
 /** A legacy role is still allowed in stored data, but reads as Creator now. */
 function canonicalRole(role: Role): Role {
@@ -3406,21 +3295,6 @@ function orgLabel(answers: OnboardingAnswers) {
     : answers.orgKind;
 }
 
-function tierSentences(answers: OnboardingAnswers, tier?: SponsorTier) {
-  const perks = orderedBenefits(
-    tier?.benefits.length ? tier.benefits : answers.benefits,
-  );
-  return [
-    perks.length
-      ? `${tier?.name.trim() ? `${tier.name.trim()} sponsors get` : "Sponsors get"} ${joinList(
-          perks.map((b) => b.toLowerCase()),
-        )}.`
-      : "",
-    tier?.slots ? `Room for ${tier.slots} at this level.` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
 
 /**
  * The longest title a listing carries, and the one place that decides it.
@@ -3536,16 +3410,6 @@ function effectiveTitle(
   );
 }
 
-function effectiveDescription(
-  role: Role,
-  answers: OnboardingAnswers,
-  touched: { description: boolean },
-  tier?: SponsorTier,
-) {
-  const body = descriptionBody(role, answers, touched);
-  if (!isSponsorshipOffer(role, answers)) return body;
-  return [body, tierSentences(answers, tier)].filter(Boolean).join(" ");
-}
 
 /**
  * Just the member's own words - theirs if they edited, our draft if they did
@@ -3585,194 +3449,7 @@ function creatorChannel(answers: OnboardingAnswers) {
   return socialPlatforms.find((p) => p.key === key)?.label ?? "Other";
 }
 
-/**
- * The `listings` row a completed onboarding publishes.
- *
- * Every value lands in a column that already exists. `channel` carries no DB
- * CHECK, which is what lets "Sponsorship" ship with no migration - the
- * marketplace's channel chips are derived from live listings, so it gets its
- * own filter automatically. "Business brief" is the existing magic string that
- * isBrief() renders as a Wanted card.
- */
-function buildListingDraft(
-  role: Role,
-  answers: OnboardingAnswers,
-  touched: { title: boolean; description: boolean },
-  tier?: SponsorTier,
-) {
-  const base = {
-    title: effectiveTitle(role, answers, touched, tier),
-    description: effectiveDescription(role, answers, touched, tier),
-    price_cents: dollarsToCents(answers.price ?? 0),
-    price_max_cents: null as number | null,
-    format: answers.format.trim(),
-    demographics: "",
-    location_area: "",
-    street_address: "",
-    space_size: "",
-    surface_types: [] as string[],
-    install_by: null as string | null,
-    sponsor_tier: null as string | null,
-    sponsor_slots: null as number | null,
-    brief_scope: null as string | null,
-    target_platforms: [] as string[],
-    availability_notes: "",
-    available_from: null as string | null,
-    available_to: null as string | null,
-    deliverables: "",
-    channel: "Other",
-    price_unit: "campaign",
-  };
 
-  if (creatorOfferForRole(role, answers) === "social") {
-    return {
-      ...base,
-      channel: creatorChannel(answers),
-      price_unit: answers.price_unit || "post",
-    };
-  }
-
-  if (isPhysicalOffer(role, answers)) {
-    const kind = SPACE_KIND_CHIPS.find((item) => item.label === answers.spaceKind);
-    const free = AVAILABILITY_CHIPS.find(
-      (item) => item.label === answers.availability,
-    );
-    const size = answers.spaceSize.trim();
-    const unit = answers.price_unit || "week";
-    return {
-      ...base,
-      channel: kind?.channel ?? "Other",
-      price_unit: unit,
-      price_max_cents:
-        answers.priceMax == null ? null : dollarsToCents(answers.priceMax),
-      // Falls back to the city they already gave, so this is a real optional
-      // field: the placeholder shows what will be used, and clearing it is
-      // allowed rather than snapping back under their cursor.
-      location_area: answers.location_area.trim() || answers.city.trim(),
-      street_address: answers.streetAddress.trim(),
-      space_size: size,
-      surface_types: resolvedSurfaces(answers),
-      install_by: answers.installBy || null,
-      deliverables: resolvedSurfaces(answers).join("\n"),
-      demographics: trafficSentence(answers),
-      availability_notes: answers.availability,
-      // A space with no date window cannot be matched to a campaign that runs
-      // in October. "Ask me" still writes nothing, because that is the answer.
-      available_from:
-        free && free.startDays !== null
-          ? isoDaysFromToday(free.startDays)
-          : null,
-      available_to:
-        free && free.startDays !== null
-          ? isoDaysFromToday(free.startDays + free.days)
-          : null,
-      format:
-        base.format ||
-        `${size ? `${size} ` : ""}${(answers.spaceKind || "space").toLowerCase()} for a ${unit}`,
-    };
-  }
-
-  if (role === "business") {
-    const timing = BUSINESS_TIMING_CHIPS.find(
-      (item) => item.label === answers.timing,
-    );
-    const scope = answers.briefScope || null;
-    // What the card reads after "Looking for". A physical-only brief must not
-    // advertise platforms it never asked about, and vice versa.
-    const wants = briefWantsLine(
-      scope !== "virtual" ? answers.placements : [],
-      scope !== "physical" ? answers.targetPlatforms : [],
-    );
-    return {
-      ...base,
-      channel: "Business brief",
-      price_unit: "campaign",
-      format: wants,
-      deliverables: answers.deliverables.trim(),
-      brief_scope: scope,
-      target_platforms: scope !== "physical" ? answers.targetPlatforms : [],
-      // Where they want the space, which is not necessarily where they are.
-      location_area:
-        scope !== "virtual"
-          ? answers.wantedArea.trim() || answers.city.trim()
-          : "",
-      price_max_cents:
-        answers.priceMax == null ? null : dollarsToCents(answers.priceMax),
-      availability_notes: answers.timing,
-      available_from: timing ? isoDaysFromToday(0) : null,
-      available_to: timing ? isoDaysFromToday(timing.days) : null,
-    };
-  }
-
-  if (isSponsorshipOffer(role, answers)) {
-    const season = SPONSOR_SEASON_CHIPS.find(
-      (item) => item.label === answers.season,
-    );
-    const perks = tier?.benefits.length ? tier.benefits : answers.benefits;
-    return {
-      ...base,
-      channel: "Sponsorship",
-      // The form promised "per sponsor" while the card rendered "/ partner",
-      // on the same screen. One word, and the form's was the honest one.
-      price_unit: "sponsor",
-      price_cents: dollarsToCents(tier?.price ?? answers.price ?? 0),
-      price_max_cents:
-        tier?.priceMax == null ? null : dollarsToCents(tier.priceMax),
-      sponsor_tier: tier?.name.trim() || null,
-      sponsor_slots: tier?.slots ?? null,
-      format: sponsorOfferLine(perks),
-      deliverables: orderedBenefits(perks).join("\n"),
-      demographics: reachSentence(answers),
-      availability_notes: answers.season,
-      available_from: season ? isoDaysFromToday(0) : null,
-      available_to: season ? isoDaysFromToday(season.days) : null,
-    };
-  }
-
-  return base;
-}
-
-/**
- * Every listings row this onboarding publishes.
- *
- * One for every role except a sponsorship host, who publishes one card PER
- * TIER - which is the whole point: a business browsing can find the level it
- * can afford instead of one bundled price that fits nobody.
- */
-function buildListingDrafts(
-  role: Role,
-  answers: OnboardingAnswers,
-  touched: { title: boolean; description: boolean },
-) {
-  if (canonicalRole(role) === "creator") {
-    const offers = selectedCreatorOffers(answers);
-    return offers.flatMap((offer) => {
-      const view = creatorOfferView(answers, offer);
-      const offerTouched =
-        offer === answers.creatorOffer
-          ? touched
-          : answers.creatorOfferTouched?.[offer] ?? {
-              title: false,
-              description: false,
-            };
-      if (!isSponsorshipOffer("creator", view)) {
-        return [buildListingDraft("creator", view, offerTouched)];
-      }
-      const tiers = completeTiers(view);
-      return tiers.length
-        ? tiers.map((tier) =>
-            buildListingDraft("creator", view, offerTouched, tier),
-          )
-        : [buildListingDraft("creator", view, offerTouched)];
-    });
-  }
-  if (!isSponsorshipOffer(role, answers)) {
-    return [buildListingDraft(role, answers, touched)];
-  }
-  const tiers = completeTiers(answers);
-  if (!tiers.length) return [buildListingDraft(role, answers, touched)];
-  return tiers.map((tier) => buildListingDraft(role, answers, touched, tier));
-}
 
 /**
  * The first thing wrong with any tier, as [message, data-field].
@@ -3837,13 +3514,6 @@ function tierProblems(answers: OnboardingAnswers, t: Translate = translateEnglis
   return out;
 }
 
-/** The tiers actually filled in, most expensive first. */
-function completeTiers(answers: OnboardingAnswers): SponsorTier[] {
-  return answers.tiers
-    .filter((tier) => tier.name.trim() && tier.price && tier.price >= 1)
-    .slice()
-    .sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
-}
 
 function creatorOfferLabel(offer: CreatorOfferType) {
   return (
@@ -5207,98 +4877,6 @@ function PreferenceChipGroup({
   );
 }
 
-function OnboardingPreviewCards({
-  role,
-  answers,
-  touched,
-  previewPhotoUrl,
-}: {
-  role: Role;
-  answers: OnboardingAnswers;
-  touched: { title: boolean; description: boolean };
-  previewPhotoUrl: string;
-}) {
-  const { t } = useLocale();
-  const drafts = buildListingDrafts(role, answers, touched);
-  const isMulti = drafts.length > 1;
-  return (
-    <div
-      className={"onboarding-preview field-wide" + (isMulti ? " has-multiple" : "")}
-    >
-      <div className="onboarding-preview-heading">
-        <span>
-          {isMulti
-            ? "These are the " + drafts.length + " listings people will see"
-            : t("app.thisIsWhatPeopleWillSee")}
-        </span>
-        {isMulti && (
-          <small>{t("app.oneCardPerSelectedOfferOrSponsorship")}</small>
-        )}
-      </div>
-      <div className="preview-card-grid">
-        {drafts.map((draft, index) => {
-          const hasPrice = draft.price_cents > 0;
-          return (
-            <article
-              className="preview-card"
-              key={draft.channel + "-" + String(index)}
-            >
-              {previewPhotoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  className="preview-card-photo"
-                  src={previewPhotoUrl}
-                  alt=""
-                />
-              ) : (
-                <p className="preview-card-photo is-empty">
-                  {t("app.addAPhotoAboveItFillsThe")}
-                </p>
-              )}
-              <div className="preview-card-top">
-                <span
-                  className={
-                    role === "business"
-                      ? "preview-chip is-brief"
-                      : "preview-chip"
-                  }
-                >
-                  {role === "business" ? t("market.wanted") : draft.channel}
-                </span>
-                <small className="preview-offer">
-                  {answers.display_name.trim() || t("app.yourName")}
-                  {answers.city.trim() ? " · " + answers.city.trim() : ""}
-                </small>
-              </div>
-              <div className="preview-card-body">
-                <strong>{draft.title || t("app.untitledListing")}</strong>
-                <span className="preview-offer">
-                  {draft.format.trim()
-                    ? role === "business"
-                      ? "Looking for " + draft.format.trim()
-                      : "You get " + formatOffer(draft.format)
-                    : t("app.addWhatPeopleGetAbove")}
-                </span>
-                <p className="preview-card-blurb">
-                  {draft.description || t("app.yourDescriptionWillShowHere")}
-                </p>
-                <div className="preview-card-foot">
-                  {role === "business" && (
-                    <span className="preview-lead">{t("market.budget")}</span>
-                  )}
-                  <b className={hasPrice ? undefined : "preview-price-empty"}>
-                    {hasPrice ? priceLabel(draft) : t("app.addAPrice")}
-                  </b>
-                  <small>/ {draft.price_unit}</small>
-                </div>
-              </div>
-            </article>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 /**
  * The dashboard stat icons.
@@ -5585,7 +5163,10 @@ export default function MarketplaceApp({
    */
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarCropPending, setAvatarCropPending] = useState(false);
-  const [listingFiles, setListingFiles] = useState<File[]>([]);
+  // The value is never read - every reader goes through listingFilesRef, which
+  // is current within the same tick. The setter stays because the re-render it
+  // schedules is what repaints the picker.
+  const [, setListingFiles] = useState<File[]>([]);
   const listingFilesRef = useRef<File[]>([]);
   function setPendingListingFiles(files: File[]) {
     listingFilesRef.current = files;
@@ -5646,23 +5227,6 @@ export default function MarketplaceApp({
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const onboardingFormRef = useRef<HTMLFormElement | null>(null);
-  const [onboardingBookings, setOnboardingBookings] = useState<Partial<Record<CreatorOfferType, {
-    schedule: BookingSchedule; deliverables: string; cancellation: string;
-  }>>>({});
-  const activeBookingOffer = answers.creatorOffer || "social";
-  const onboardingSchedule = onboardingBookings[activeBookingOffer]?.schedule ?? {};
-  const onboardingDeliverables = onboardingBookings[activeBookingOffer]?.deliverables ?? "";
-  const onboardingCancellation = onboardingBookings[activeBookingOffer]?.cancellation ?? "";
-  function updateOnboardingBooking(change: Partial<{ schedule: BookingSchedule; deliverables: string; cancellation: string }>) {
-    setOnboardingBookings((current) => ({ ...current, [activeBookingOffer]: {
-      schedule: current[activeBookingOffer]?.schedule ?? {},
-      deliverables: current[activeBookingOffer]?.deliverables ?? "",
-      cancellation: current[activeBookingOffer]?.cancellation ?? "", ...change,
-    } }));
-  }
-  function bookingForDraft(draft: ReturnType<typeof buildListingDraft>) {
-    return onboardingBookings[isSponsorshipListing(draft) ? "sponsorship" : isPhysicalListing(draft) ? "physical" : "social"];
-  }
   const [, setListingInstantEnabled] = useState(false);
   const [listingOpen, setListingOpen] = useState(false);
   const [composerRevision, setComposerRevision] = useState(0);
@@ -8674,22 +8238,6 @@ export default function MarketplaceApp({
     });
   }
 
-  /**
-   * Surface a validation failure where the member is actually looking.
-   *
-   * The primary action is sticky on mobile, so someone can press Publish from
-   * below the field that is missing. Scrolling the control into view is what
-   * makes a sticky footer safe.
-   */
-  /** Patch one tier in place. Every tier input goes through this. */
-  function updateTier(index: number, patch: Partial<SponsorTier>) {
-    setAnswers((current) => ({
-      ...current,
-      tiers: current.tiers.map((tier, i) =>
-        i === index ? { ...tier, ...patch } : tier,
-      ),
-    }));
-  }
 
   /**
    * Put the member in front of one question.
@@ -8880,11 +8428,6 @@ export default function MarketplaceApp({
    */
   async function publishOnboarding(event?: FormEvent<HTMLFormElement> | null) {
     event?.preventDefault();
-    // Onboarding writes a profile and nothing else - see onboardingStepCount
-    // for why. Kept as a named constant because several branches below read it
-    // and they document what joining deliberately no longer does.
-    const skipListing = true;
-
     if (avatarCropPending) {
       setOnboardingError(tx("Finish positioning your photo, or cancel the crop, before saving."));
       return;
@@ -8897,10 +8440,11 @@ export default function MarketplaceApp({
       "bio",
       "contact_email",
     ]);
-    const problem = skipListing
-      ? (allMissingAnswers().find(([, field]) => identityFields.has(field)) ??
-        null)
-      : (allMissingAnswers()[0] ?? null);
+    // Identity only. Joining writes a profile and never a listing, so the
+    // answers that used to describe one cannot hold anybody up - see
+    // onboardingStepCount for why they are no longer asked for at all.
+    const problem =
+      allMissingAnswers().find(([, field]) => identityFields.has(field)) ?? null;
     if (problem) {
       reportMissing(problem);
       return;
@@ -8913,20 +8457,6 @@ export default function MarketplaceApp({
       return;
     }
 
-    if (!skipListing && role !== "business") {
-      const drafts = buildListingDrafts(role, answers, { title: titleTouched, description: descriptionTouched });
-      const invalid = drafts.find((draft) => {
-        const setup = bookingForDraft(draft);
-        return setup?.schedule.instant_booking_enabled && (!isFixedPriceListing(draft) || !availableStartDates(setup.schedule).length ||
-          setup.deliverables.trim().length < 2 || setup.deliverables.trim().length > 1000 ||
-          setup.cancellation.trim().length < 2 || setup.cancellation.trim().length > 1000);
-      });
-      if (invalid) {
-        setOnboardingError(tx("For “{title}”, add a fixed price, open dates, deliverables, and cancellation terms to enable instant booking.", { title: invalid.title }));
-        setOnboardingStep(5);
-        return;
-      }
-    }
 
     if (onboardingPreview) {
       setOnboardingOpen(false);
@@ -8967,7 +8497,6 @@ export default function MarketplaceApp({
       profileLoadFailedRef.current = false;
 
       const avatarFiles = avatarFile && avatarFile.size > 0 ? [avatarFile] : [];
-      const chosenListingFiles = listingFiles.filter((file) => file.size > 0);
       const chosenGalleryFiles = galleryFiles.filter((file) => file.size > 0);
 
       const existingGalleryCount = (existing?.gallery_urls ?? []).length;
@@ -9204,91 +8733,6 @@ export default function MarketplaceApp({
       }
 
       if (onboardingMode === "setup") {
-        if (!skipListing) {
-          // Uploaded only after the profile write succeeds. Uploading first meant
-          // a failed profile save left the photos sitting in a public bucket with
-          // nothing referencing them and no way to reach them again.
-          //
-          // Not sliced to 6: uploadImages enforces its own cap and reports it,
-          // where slicing here would silently publish 6 of the 8 someone picked.
-          const listingUploads = await uploadImages(
-            chosenListingFiles,
-            "listings",
-          );
-          // Plural. A sponsorship offer publishes one row per tier; everyone
-          // else publishes exactly one, which is the same code path with a
-          // one-element array.
-          const drafts = buildListingDrafts(role, answers, {
-            title: titleTouched,
-            description: descriptionTouched,
-          });
-          // Listing photos are written to the listing ONLY, never mirrored into
-          // profiles.gallery_urls. removeProfilePhoto already exists to repair
-          // listings that share a URL with a deleted gallery photo, re-pointing
-          // them at the default cover; double-writing would make that the
-          // guaranteed fate of every listing this flow creates.
-          //
-          // A business publishes a brief - a wanted ad, usually written before
-          // there is anything to photograph - and the chain ends there for
-          // them. Their own logo still stands in, because a brief under the
-          // business's mark reads as theirs; the stock cover never did, and
-          // gave every campaign a photo of somebody else's market stall.
-          const cover =
-            listingUploads[0] ||
-            payload.avatar_url ||
-            payload.gallery_urls[0] ||
-            (role === "business" ? "" : DEFAULT_LISTING_IMAGE);
-          // Captured before the map: narrowing on the outer binding does not
-          // survive into a closure, and this is the only reference inside one.
-          const ownerId = savedProfile.id;
-          const inserted = await supabase
-            .from("listings")
-            .insert(
-              drafts.map((draft) => ({
-                ...draft,
-                ...(role !== "business" && bookingForDraft(draft)?.schedule.instant_booking_enabled ? {
-                  ...bookingForDraft(draft)!.schedule,
-                  deliverables: bookingForDraft(draft)!.deliverables.trim(),
-                  cancellation_policy: bookingForDraft(draft)!.cancellation.trim(),
-                } : {}),
-                owner_profile_id: ownerId,
-                image_url: cover,
-                image_urls: listingUploads.length
-                  ? listingUploads
-                  : cover
-                    ? [cover]
-                    : [],
-                status: "active",
-                provenance_status: "owner_attested",
-                availability_confirmed_at: new Date().toISOString(),
-              })),
-            )
-          .select(PUBLIC_LISTING_COLUMNS);
-          if (inserted.error) throw inserted.error;
-
-          window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
-          setOnboardingDraft(null);
-          setOnboardingOpen(false);
-          setOnboardingStep(1);
-          resetIgAvatarSync();
-          await Promise.all([
-            loadMarketplace(),
-            loadOwnListings(savedProfile),
-            loadAccountMarketplaceState(savedProfile),
-          ]);
-          setToast(
-            role === "business"
-              ? adCreditAwarded
-                ? `Your brief is live. ${formatCents(adCreditAwarded)} in ad credit is ready for your first campaign.`
-                : adCreditSyncFailed
-                  ? "Your brief is live. We could not confirm the intro ad credit yet — refresh your dashboard and try again."
-                  : "Your brief is live. We’ll tell you the moment someone answers."
-                : canonicalRole(role) === "creator" && drafts.length > 1
-                  ? "You’re live. " + drafts.length + " listings are on the marketplace."
-                : `You’re live. “${drafts[0].title}” is on the marketplace.`,
-          );
-          return;
-        }
 
         window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
         setOnboardingDraft(null);
@@ -15984,13 +15428,6 @@ export default function MarketplaceApp({
                               ? t("app.aFewSpecificAnswersMakeYourListing")
                               : t("app.startByChoosingTheKindOfAdvertising")}
                     </p>
-                    {selectedRole === "creator" && onboardingStep > 3 && (
-                      <CreatorOfferSwitcher
-                        answers={answers}
-                        onSelect={switchCreatorOffer}
-                        isOfferComplete={creatorOfferSectionIsComplete}
-                      />
-                    )}
 
                     {/* ---------------- CREATOR ---------------- */}
                     {selectedRole === "creator" && (
@@ -16071,123 +15508,6 @@ export default function MarketplaceApp({
                         </>
                         )}
 
-                        {onboardingStep === 4 && answers.creatorOffer === "social" && (
-                        <>
-                        <div className="form-subsection field-wide">
-                          <h4>{t("app.whatDoesABrandActuallyGet")}</h4>
-                        </div>
-                        {/* Only when there are any: an empty flex row still
-                            takes its margin, leaving a gap under the header
-                            for anyone who has not picked a platform yet. */}
-                        {answers.platforms.some(
-                          (key) => (CREATOR_OFFER_EXAMPLES[key] ?? []).length,
-                        ) && (
-                          <>
-                            <span className="offer-examples-label field-wide">
-                              {t("app.orStartFromOneOfThese")}
-                            </span>
-                            <div className="offer-examples">
-                              {answers.platforms
-                                .flatMap((key) => CREATOR_OFFER_EXAMPLES[key] ?? [])
-                                .slice(0, 6)
-                                .map((example) => (
-                                  <button
-                                    key={example}
-                                    type="button"
-                                    onClick={() =>
-                                      setAnswers((current) => ({
-                                        ...current,
-                                        format: example,
-                                      }))
-                                    }
-                                  >
-                                    {example}
-                                  </button>
-                                ))}
-                            </div>
-                          </>
-                        )}
-                        <div className="field-grid">
-                          <label className="field-wide">
-                            {t("app.whatTheyGet")}
-                            {/* 140 to match the listing editor. At 60 a creator
-                                who wanted "one in-feed post plus three stories
-                                over 48 hours, with a link in bio" found the
-                                field stopping accepting keystrokes, with no
-                                message - measured in Chromium. */}
-                            <input
-                              data-field="format"
-                              maxLength={140}
-                              value={answers.format}
-                              onChange={(event) =>
-                                setAnswers((current) => ({
-                                  ...current,
-                                  format: event.target.value,
-                                }))
-                              }
-                              placeholder={t("app.threeInstagramStoriesOver48Hours")}
-                            />
-                          </label>
-                          {answers.format.trim() && (
-                            <p className="offer-preview field-wide">
-                              {t("app.yourCardWillRead")}{" "}
-                              <strong>{t("app.youGetFormat", { format: formatOffer(answers.format) })}</strong>
-                            </p>
-                          )}
-                        </div>
-                        <details className="onboarding-optional-disclosure field-wide">
-                          <summary>
-                            <span>
-                              {t("app.whatKindOfWork")}{" "}
-                              <span className="optional">{t("app.optional2")}</span>
-                            </span>
-                            <small>
-                              {answers.categories.length
-                                ? t("app.categoriescountSelected", { categoriesCount: answers.categories.length })
-                                : t("app.addCategories")}
-                            </small>
-                          </summary>
-                          <div className="onboarding-optional-disclosure-body">
-                            <ChipRow
-                              field="categories"
-                              label={t("app.whatKindOfWork")}
-                              multi
-                              hideLabel
-                              options={CATEGORY_CHIPS}
-                              selected={answers.categories}
-                              onPick={(value) =>
-                                setAnswers((current) => ({
-                                  ...current,
-                                  categories: current.categories.includes(value)
-                                    ? current.categories.filter((item) => item !== value)
-                                    : [...current.categories, value],
-                                }))
-                              }
-                            />
-                          </div>
-                        </details>
-                        <div className="field-grid">
-                          <label className="field-wide media-upload-field">
-                            <OptionalFieldLabel>
-                              {t("app.photosOfYourWork")}
-                            </OptionalFieldLabel>
-                            <input
-                              type="file"
-                              accept="image/jpeg,image/png,image/webp"
-                              multiple
-                              onChange={(event) =>
-                                chooseListingFiles(
-                                  Array.from(event.target.files ?? []),
-                                )
-                              }
-                            />
-                            <small>
-                              {t("app.add13PhotosWithoutOneYour")}
-                            </small>
-                          </label>
-                        </div>
-                        </>
-                        )}
                       </div>
                     )}
 
@@ -16322,164 +15642,6 @@ export default function MarketplaceApp({
                         </>
                         )}
 
-                        {onboardingStep === 4 && (
-                        <>
-                        <div className="form-subsection field-wide">
-                          <span>{t("app.whatCanGoUp")}</span>
-                          <h4>{t("app.whatWorksHereAndWhoPutsIt")}</h4>
-                          <p>
-                            {t("app.theFirstThingABuyerAsksBefore")}
-                          </p>
-                        </div>
-                        <ChipRow
-                          field="surfaces"
-                          label={t("app.everythingYoudAllow")}
-                          multi
-                          options={SURFACE_CHIPS}
-                          selected={answers.surfaces}
-                          onPick={(value) =>
-                            setAnswers((current) => {
-                              const dropping = current.surfaces.includes(value);
-                              return {
-                                ...current,
-                                surfaces: dropping
-                                  ? current.surfaces.filter(
-                                      (item) => item !== value,
-                                    )
-                                  : [...current.surfaces, value],
-                                // Un-picking the chip clears the text, or a
-                                // surface they took back keeps publishing.
-                                surfaceOther:
-                                  value === SURFACE_OTHER && dropping
-                                    ? ""
-                                    : current.surfaceOther,
-                              };
-                            })
-                          }
-                        />
-                        {answers.surfaces.includes(SURFACE_OTHER) && (
-                          <div className="field-grid">
-                            <label className="field-wide">
-                              {t("app.whatElseCanGoUp")}
-                              <small>
-                                {t("app.aFewWordsItJoinsTheList")}
-                              </small>
-                              <input
-                                data-field="surfaceOther"
-                                maxLength={60}
-                                value={answers.surfaceOther}
-                                onChange={(event) =>
-                                  setAnswers((current) => ({
-                                    ...current,
-                                    surfaceOther: event.target.value,
-                                  }))
-                                }
-                                placeholder={t("app.aShelfForProductSamples")}
-                              />
-                            </label>
-                          </div>
-                        )}
-                        <ChipRow
-                          field="installBy"
-                          label={t("app.whoPutsItUp")}
-                          options={INSTALL_CHIPS.map((item) => item.label)}
-                          selected={
-                            INSTALL_CHIPS.filter(
-                              (item) => item.value === answers.installBy,
-                            ).map((item) => item.label)
-                          }
-                          onPick={(value) => {
-                            const chip = INSTALL_CHIPS.find(
-                              (item) => item.label === value,
-                            );
-                            if (!chip) return;
-                            setAnswers((current) => ({
-                              ...current,
-                              installBy: chip.value,
-                            }));
-                          }}
-                        />
-
-                        <div className="form-subsection field-wide">
-                          <span>{t("app.howBusyIsIt")}</span>
-                          <h4>{t("app.peopleWhoWalkPastOnANormal")}</h4>
-                        </div>
-                        <ChipRow
-                          field="traffic"
-                          label={t("app.footTraffic")}
-                          options={TRAFFIC_CHIPS.map((item) => item.label)}
-                          selected={answers.traffic ? [answers.traffic] : []}
-                          onPick={(value) => {
-                            const chip = TRAFFIC_CHIPS.find(
-                              (item) => item.label === value,
-                            );
-                            setAnswers((current) => ({
-                              ...current,
-                              traffic: value,
-                              // The chip is a shortcut that fills the number in;
-                              // the number is what actually publishes.
-                              trafficCount:
-                                chip && chip.count !== null
-                                  ? chip.count
-                                  : current.trafficCount,
-                            }));
-                          }}
-                        />
-                        <div className="field-grid">
-                          <label>
-                            {t("app.peopleADay")}
-                            <small>
-                              {t("app.pickAChipToFillThisIn")}
-                            </small>
-                            <input
-                              type="number"
-                              min={1}
-                              max={2000000000}
-                              data-field="trafficCount"
-                              value={answers.trafficCount ?? ""}
-                              onChange={(event) =>
-                                setAnswers((current) => ({
-                                  ...current,
-                                  trafficCount: event.target.value
-                                    ? Number(event.target.value)
-                                    : null,
-                                }))
-                              }
-                              placeholder="300"
-                            />
-                          </label>
-                        </div>
-
-                        <div className="form-subsection field-wide">
-                          <span>{t("app.availability")}</span>
-                          <h4>{t("app.whenIsItFree")}</h4>
-                        </div>
-                        <ChipRow
-                          field="availability"
-                          label={t("app.availability")}
-                          options={AVAILABILITY_CHIPS.map((item) => item.label)}
-                          selected={
-                            answers.availability ? [answers.availability] : []
-                          }
-                          onPick={(value) =>
-                            setAnswers((current) => ({
-                              ...current,
-                              availability: value,
-                            }))
-                          }
-                        />
-                        {(() => {
-                          const free = AVAILABILITY_CHIPS.find(
-                            (item) => item.label === answers.availability,
-                          );
-                          return free ? (
-                            <p className="chip-note field-wide">
-                              {windowNote(free.startDays, free.days, t, locale)}
-                            </p>
-                          ) : null;
-                        })()}
-                        </>
-                        )}
                       </>
                     )}
 
@@ -16758,153 +15920,6 @@ export default function MarketplaceApp({
                         </div>
                         )}
 
-                        {onboardingStep === 4 && (
-                        <>
-                        {/* The artwork they need carried. Uploaded here so a
-                            creator or space owner can see exactly what they'd
-                            be posting before they answer. */}
-                        <div className="form-subsection field-wide">
-                          <span>{t("app.yourArtwork")}</span>
-                          <h4>{t("app.whatDoYouNeedPosted")}</h4>
-                        </div>
-                        <div className="field-grid">
-                          <label className="field-wide media-upload-field">
-                            <OptionalFieldLabel>{t("app.flyerStoryOrClip")}</OptionalFieldLabel>
-                            <input
-                              type="file"
-                              accept="image/jpeg,image/png,image/webp"
-                              multiple
-                              onChange={(event) =>
-                                chooseListingFiles(
-                                  Array.from(event.target.files ?? []),
-                                )
-                              }
-                            />
-                            <small>
-                              {t("app.uploadTheGraphicYouWantInThe")}
-                            </small>
-                          </label>
-                        </div>
-                        <ChipRow
-                          field="artwork"
-                          label={t("app.whoMakesTheArtwork")}
-                          optional
-                          options={[
-                            "I’ll supply the artwork",
-                            "I need help making it",
-                          ]}
-                          selected={
-                            answers.artwork === "supply"
-                              ? ["I’ll supply the artwork"]
-                              : answers.artwork === "help"
-                                ? ["I need help making it"]
-                                : []
-                          }
-                          onPick={(value) =>
-                            setAnswers((current) => {
-                              const next =
-                                value === "I’ll supply the artwork"
-                                  ? "supply"
-                                  : "help";
-                              // Tapping the picked chip again clears it. This
-                              // question is optional, but once answered there
-                              // was no way back, and the answer writes a
-                              // sentence into the published description.
-                              return {
-                                ...current,
-                                artwork: current.artwork === next ? "" : next,
-                              };
-                            })
-                          }
-                        />
-
-                        <div className="form-subsection field-wide">
-                          <span>{t("app.budgetAndTiming")}</span>
-                          <h4>{t("app.whatCanYouSpendAndWhen")}</h4>
-                        </div>
-                        <ChipRow
-                          field="budgetRange"
-                          label={t("app.budgetRange")}
-                          options={BUDGET_RANGE_CHIPS.map((item) => item.label)}
-                          selected={BUDGET_RANGE_CHIPS.filter(
-                            (item) =>
-                              item.min === answers.price &&
-                              item.max === answers.priceMax,
-                          ).map((item) => item.label)}
-                          onPick={(value) => {
-                            const chip = BUDGET_RANGE_CHIPS.find(
-                              (item) => item.label === value,
-                            );
-                            if (!chip) return;
-                            setAnswers((current) => ({
-                              ...current,
-                              price: chip.min,
-                              priceMax: chip.max,
-                            }));
-                          }}
-                        />
-                        <div className="field-grid">
-                          <label>
-                            {t("app.budgetFrom")}
-                            <input
-                              type="number"
-                              min={1}
-                              max={2000000000}
-                              data-field="price"
-                              value={answers.price ?? ""}
-                              onChange={(event) =>
-                                setAnswers((current) => ({
-                                  ...current,
-                                  price: event.target.value
-                                    ? Number(event.target.value)
-                                    : null,
-                                }))
-                              }
-                              placeholder="150"
-                            />
-                          </label>
-                          <label>
-                            <OptionalFieldLabel>{t("app.upTo")}</OptionalFieldLabel>
-                            <small>{t("app.leaveBlankForAFlatBudget")}</small>
-                            <input
-                              type="number"
-                              min={1}
-                              max={2000000000}
-                              data-field="priceMax"
-                              value={answers.priceMax ?? ""}
-                              onChange={(event) =>
-                                setAnswers((current) => ({
-                                  ...current,
-                                  priceMax: event.target.value
-                                    ? Number(event.target.value)
-                                    : null,
-                                }))
-                              }
-                              placeholder="500"
-                            />
-                          </label>
-                        </div>
-                        <ChipRow
-                          field="timing"
-                          label={t("app.whenItShouldRun")}
-                          options={BUSINESS_TIMING_CHIPS.map((item) => item.label)}
-                          selected={answers.timing ? [answers.timing] : []}
-                          onPick={(value) =>
-                            setAnswers((current) => ({ ...current, timing: value }))
-                          }
-                        />
-                        {(() => {
-                          const timing = BUSINESS_TIMING_CHIPS.find(
-                            (item) => item.label === answers.timing,
-                          );
-                          return timing ? (
-                            <p className="chip-note field-wide">
-                              {windowNote(0, timing.days, t, locale)}
-                            </p>
-                          ) : null;
-                        })()}
-                        </>
-                        )}
                       </>
                     )}
 
@@ -17062,692 +16077,10 @@ export default function MarketplaceApp({
                         </>
                         )}
 
-                        {onboardingStep === 4 && (
-                        <>
-                        <div className="form-subsection field-wide">
-                          <span>{t("app.theMenu")}</span>
-                          <h4>{t("app.whatCouldASponsorGet")}</h4>
-                          <p>
-                            {t("app.everythingYouWouldEverOfferAtAny")}
-                          </p>
-                        </div>
-                        <ChipRow
-                          field="benefits"
-                          label={t("app.everythingYouCouldOffer")}
-                          multi
-                          options={SPONSOR_BENEFIT_CHIPS}
-                          selected={answers.benefits}
-                          onPick={(value) =>
-                            setAnswers((current) => ({
-                              ...current,
-                              benefits: current.benefits.includes(value)
-                                ? current.benefits.filter((item) => item !== value)
-                                : [...current.benefits, value],
-                              // Dropping a perk from the menu drops it from
-                              // every tier, or a tier keeps advertising a
-                              // benefit the team just said they do not offer.
-                              tiers: current.benefits.includes(value)
-                                ? current.tiers.map((tier) => ({
-                                    ...tier,
-                                    benefits: tier.benefits.filter(
-                                      (item) => item !== value,
-                                    ),
-                                  }))
-                                : current.tiers,
-                            }))
-                          }
-                        />
-
-                        {/* ---- the tiers, one card each on the marketplace ---- */}
-                        <div className="form-subsection field-wide">
-                          <span>{t("app.yourTiers")}</span>
-                          <h4>{t("app.breakItIntoLevelsOrKeepOne")}</h4>
-                          <p>
-                            {t("app.eachTierPublishesItsOwnCardSo")}
-                          </p>
-                        </div>
-                        {answers.tiers.map((tier, index) => (
-                          <div className="tier-card field-wide" key={index}>
-                            <div className="tier-card-head">
-                              <span>{t("app.tier")}{" "}{index + 1}</span>
-                              {answers.tiers.length > 1 && (
-                                <button
-                                  type="button"
-                                  aria-label={t("app.removeTierValueValue2", { value: index + 1, value2: tier.name.trim() ? `, ${tier.name.trim()}` : "" })}
-                                  onClick={() => {
-                                    // Only ask when there is something to lose.
-                                    // A freshly added, still-empty tier should
-                                    // close as easily as it opened.
-                                    const filled =
-                                      tier.price !== null ||
-                                      tier.priceMax !== null ||
-                                      tier.slots !== null ||
-                                      tier.benefits.length > 0;
-                                    if (
-                                      filled &&
-                                      !window.confirm(
-                                        t("app.removeValueWhatYouFilledInFor", { value: tier.name.trim() || `tier ${index + 1}` }),
-                                      )
-                                    ) {
-                                      return;
-                                    }
-                                    setAnswers((current) => ({
-                                      ...current,
-                                      tiers: current.tiers.filter(
-                                        (_, i) => i !== index,
-                                      ),
-                                    }));
-                                  }}
-                                >
-                                  {t("app.remove")}
-                                </button>
-                              )}
-                            </div>
-                            <div className="field-grid">
-                              <label>
-                                {t("app.nameThisLevel")}
-                                <input
-                                  data-field={`tierName${index}`}
-                                  maxLength={40}
-                                  value={tier.name}
-                                  onChange={(event) =>
-                                    updateTier(index, { name: event.target.value })
-                                  }
-                                  placeholder={t("app.gold")}
-                                />
-                              </label>
-                              <label>
-                                <OptionalFieldLabel>{t("app.spotsAtThisLevel")}</OptionalFieldLabel>
-                                <small>{t("app.leaveBlankIfYouDontNeedA")}</small>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={10000}
-                                  data-field={`tierSlots${index}`}
-                                  value={tier.slots ?? ""}
-                                  onChange={(event) =>
-                                    updateTier(index, {
-                                      slots: event.target.value
-                                        ? Number(event.target.value)
-                                        : null,
-                                    })
-                                  }
-                                  placeholder="3"
-                                />
-                              </label>
-                              <label>
-                                {t("app.whatOneSponsorPays")}
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={2000000000}
-                                  data-field={`tierPrice${index}`}
-                                  value={tier.price ?? ""}
-                                  onChange={(event) =>
-                                    updateTier(index, {
-                                      price: event.target.value
-                                        ? Number(event.target.value)
-                                        : null,
-                                    })
-                                  }
-                                  placeholder="1000"
-                                />
-                                {/* PRICE_CHIPS.sponsor_host has existed since
-                                    this role shipped and was never rendered:
-                                    the shared preset row is gated off for a
-                                    host, because their price is per tier. So
-                                    the hardest number in the flow was the only
-                                    one offered no help. */}
-                                <span className="offer-examples-label">
-                                  {t("app.orTapACommonOne")}
-                                </span>
-                                <span className="offer-examples">
-                                  {(PRICE_CHIPS.sponsor_host ?? []).map(
-                                    (amount) => (
-                                      <button
-                                        type="button"
-                                        key={amount}
-                                        className={
-                                          tier.price === amount ? "is-picked" : ""
-                                        }
-                                        onClick={() =>
-                                          updateTier(index, { price: amount })
-                                        }
-                                      >
-                                        ${amount.toLocaleString("en-US")}
-                                      </button>
-                                    ),
-                                  )}
-                                </span>
-                              </label>
-                              <label>
-                                <OptionalFieldLabel>{t("app.upTo")}</OptionalFieldLabel>
-                                <small>{t("app.leaveBlankForAFlatTier")}</small>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={2000000000}
-                                  data-field={`tierPriceMax${index}`}
-                                  value={tier.priceMax ?? ""}
-                                  onChange={(event) =>
-                                    updateTier(index, {
-                                      priceMax: event.target.value
-                                        ? Number(event.target.value)
-                                        : null,
-                                    })
-                                  }
-                                  placeholder="2500"
-                                />
-                              </label>
-                            </div>
-                            {answers.benefits.length ? (
-                              <ChipRow
-                                field={`tierBenefits${index}`}
-                                label={t("app.whatValueIncludes", { value: tier.name || "this level" })}
-                                multi
-                                options={answers.benefits}
-                                selected={tier.benefits}
-                                onPick={(value) =>
-                                  updateTier(index, {
-                                    benefits: tier.benefits.includes(value)
-                                      ? tier.benefits.filter(
-                                          (item) => item !== value,
-                                        )
-                                      : [...tier.benefits, value],
-                                  })
-                                }
-                              />
-                            ) : (
-                              <p className="tier-empty">
-                                {t("app.pickWhatASponsorCouldGetAbove")}
-                              </p>
-                            )}
-                          </div>
-                        ))}
-                        {answers.tiers.length >= MAX_TIERS && (
-                          // The button used to vanish here, so a host who
-                          // wanted a fifth level just found the control gone.
-                          <p className="chip-note field-wide">
-                            {t("app.maxTiersLevelsIsTheMostA", { MAX_TIERS })}
-                          </p>
-                        )}
-                        {answers.tiers.length < MAX_TIERS && (
-                          <button
-                            type="button"
-                            className="tier-add field-wide"
-                            onClick={() =>
-                              setAnswers((current) => {
-                                // Pick the first preset not already in use.
-                                // Indexing by length handed back a duplicate as
-                                // soon as anyone renamed or removed a tier, and
-                                // the validator then rejected the row it had
-                                // just created for them.
-                                const taken = new Set(
-                                  current.tiers.map((tier) =>
-                                    tier.name.trim().toLowerCase(),
-                                  ),
-                                );
-                                const next =
-                                  TIER_PRESETS.find(
-                                    (preset) => !taken.has(preset.toLowerCase()),
-                                  ) ?? "";
-                                return {
-                                  ...current,
-                                  tiers: [
-                                    ...current.tiers,
-                                    {
-                                      ...emptyTier(next),
-                                      // A new level starts from the whole menu
-                                      // rather than empty: most hosts run one
-                                      // tier, and making them re-tick the same
-                                      // perks they just chose is pure
-                                      // re-answering.
-                                      benefits: [...current.benefits],
-                                    },
-                                  ],
-                                };
-                              })
-                            }
-                          >
-                            {t("app.addAnotherTier")}
-                          </button>
-                        )}
-                        <div className="field-grid">
-                          <label className="field-wide media-upload-field">
-                            <OptionalFieldLabel>{t("app.photos")}</OptionalFieldLabel>
-                            <input
-                              type="file"
-                              accept="image/jpeg,image/png,image/webp"
-                              multiple
-                              onChange={(event) =>
-                                chooseListingFiles(
-                                  Array.from(event.target.files ?? []),
-                                )
-                              }
-                            />
-                            <small>
-                              {t("app.aPhotoOfTheTeamTheRobot")}
-                            </small>
-                          </label>
-                        </div>
-                        </>
-                        )}
                       </>
                     )}
 
                     {/* ---------------- shared: title, price, description ------- */}
-                    {onboardingStep === 5 && (
-                    <>
-                    <div className="form-subsection field-wide">
-                      <span>
-                        {selectedRole === "business"
-                          ? t("app.yourBrief")
-                          : answers.creatorOffer === "physical"
-                            ? t("app.yourPlacement")
-                            : answers.creatorOffer === "sponsorship"
-                              ? t("app.yourSponsorship")
-                              : t("app.yourOffer")}
-                      </span>
-                      <h4>
-                        {selectedRole === "business"
-                          ? t("app.nameTheBriefAndSetTheBudget")
-                          : answers.creatorOffer === "physical"
-                            ? t("app.nameThePlacementAndSetTheRent")
-                            : answers.creatorOffer === "sponsorship"
-                              ? t("app.tellThemWhoTheydBeBacking")
-                              : t("app.nameTheOfferAndSetYourRate")}
-                      </h4>
-                    </div>
-                    <div className="field-grid">
-                      {selectedRole !== "business" && (
-                        <>
-                          <ListingAvailabilityFields key={activeBookingOffer} listing={onboardingSchedule} onChange={(schedule) => updateOnboardingBooking({ schedule })} />
-                          {onboardingSchedule.instant_booking_enabled && <>
-                            <label className="field-wide">{t("app.exactlyWhatTheBuyerReceives")}
-                              <small>{t("app.includeQuantitiesHowLongTheAdStays")}</small>
-                              <textarea value={onboardingDeliverables} maxLength={1000} onChange={(event) => updateOnboardingBooking({ deliverables: event.target.value })} placeholder={t("app.oneInstagramReelLiveForAtLeast")} />
-                            </label>
-                            <label className="field-wide">{t("app.cancellationTerms")}
-                              <input value={onboardingCancellation} maxLength={1000} onChange={(event) => updateOnboardingBooking({ cancellation: event.target.value })} placeholder={t("app.freeCancellationUntil48HoursBeforeThe")} />
-                            </label>
-                          </>}
-                        </>
-                      )}
-                      {/* A sponsorship offer names each level in the tier editor,
-                          and every tier composes its own headline from that name
-                          plus what they are raising for. One shared title input
-                          here would overwrite all three. */}
-                      {!isSponsorshipOffer(selectedRole ?? "creator", answers) && (
-                      <label className="field-wide">
-                        {selectedRole === "business"
-                          ? t("app.nameThisBrief")
-                          : answers.creatorOffer === "physical"
-                            ? t("app.nameThisPlacement")
-                            : t("app.nameThisOffer")}
-                        <input
-                          data-field="title"
-                          maxLength={120}
-                          value={
-                            titleTouched
-                              ? answers.title
-                              : composeTitle(selectedRole ?? "creator", answers)
-                          }
-                          onChange={(event) => {
-                            setTitleTouched(true);
-                            setAnswers((current) => ({
-                              ...current,
-                              title: event.target.value,
-                              creatorOfferTouched: current.creatorOffer
-                                ? {
-                                    ...current.creatorOfferTouched,
-                                    [current.creatorOffer]: {
-                                      ...current.creatorOfferTouched[
-                                        current.creatorOffer
-                                      ],
-                                      title: true,
-                                    },
-                                  }
-                                : current.creatorOfferTouched,
-                            }));
-                          }}
-                          placeholder={
-                            selectedRole === "business"
-                              ? t("app.breaCoffeeBarOurNewColdBrew")
-                              : answers.creatorOffer === "physical"
-                                ? t("app.mayasBarbershopWindowInDowntownBrea")
-                                : t("app.instagramReelMayaAlvarez")
-                          }
-                        />
-                      </label>
-                      )}
-                      {/* A business already gave a budget range above; asking
-                          again here would duplicate both the question and the
-                          data-field the validator scrolls to. */}
-                      {selectedRole !== "business" &&
-                        !isSponsorshipOffer(selectedRole ?? "creator", answers) && (
-                      <label>
-                        {answers.creatorOffer === "physical" ? t("app.priceFrom") : t("app.price")}
-                        <input
-                          type="number"
-                          min={1}
-                          // listings.price is an integer column; without this a
-                          // budget of 3000000000 reaches Postgres as "integer
-                          // out of range". Matches every other numeric input.
-                          max={2000000000}
-                          data-field="price"
-                          value={answers.price ?? ""}
-                          onChange={(event) =>
-                            setAnswers((current) => ({
-                              ...current,
-                              price: event.target.value
-                                ? Number(event.target.value)
-                                : null,
-                            }))
-                          }
-                          placeholder="150"
-                        />
-                      </label>
-                      )}
-                      {/* A week in December is not a week in February, and a
-                          mural is not a poster. A space owner could only post
-                          one number, so "$150-400 depending on how long" was
-                          unsayable - the same band a business brief has had
-                          since price_max landed. */}
-                      {isPhysicalOffer(selectedRole ?? "creator", answers) && (
-                        <label>
-                          <OptionalFieldLabel>{t("app.upTo")}</OptionalFieldLabel>
-                          <small>{t("app.leaveBlankForAFlatRate")}</small>
-                          <input
-                            type="number"
-                            min={1}
-                            max={2000000000}
-                            data-field="priceMax"
-                            value={answers.priceMax ?? ""}
-                            onChange={(event) =>
-                              setAnswers((current) => ({
-                                ...current,
-                                priceMax: event.target.value
-                                  ? Number(event.target.value)
-                                  : null,
-                              }))
-                            }
-                            placeholder="400"
-                          />
-                        </label>
-                      )}
-                      {isSponsorshipOffer(selectedRole ?? "creator", answers) ? null : selectedRole ===
-                        "business" ? (
-                        <p className="offer-preview">{t("app.budgetIsPerCampaign")}</p>
-                      ) : (
-                        <label>
-                          {t("app.per")}
-                          <select
-                            value={
-                              answers.price_unit ||
-                              (answers.creatorOffer === "physical" ? "week" : "post")
-                            }
-                            onChange={(event) =>
-                              setAnswers((current) => ({
-                                ...current,
-                                price_unit: event.target.value,
-                              }))
-                            }
-                          >
-                            {(
-                              PRICE_UNIT_CHIPS[selectedRole ?? "creator"] ?? [
-                                "campaign",
-                              ]
-                            ).map((unit) => (
-                              <option key={unit} value={unit}>
-                                {unit}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                    </div>
-                    {selectedRole !== "business" &&
-                      !isSponsorshipOffer(selectedRole ?? "creator", answers) &&
-                      Boolean(PRICE_CHIPS[selectedRole ?? ""]) && (
-                      <ChipRow
-                        field="price_presets"
-                        label={t("app.orPickACommonRate")}
-                        options={(selectedRole === "creator"
-                          ? creatorPricePresets(answers.creatorOffer)
-                          : PRICE_CHIPS[selectedRole ?? ""] ?? []
-                        ).map(
-                          (amount) => `$${amount}`,
-                        )}
-                        selected={answers.price ? [`$${answers.price}`] : []}
-                        onPick={(value) =>
-                          setAnswers((current) => ({
-                            ...current,
-                            price: Number(value.replace("$", "")),
-                          }))
-                        }
-                      />
-                    )}
-                    <div className="field-grid">
-                      <label className="field-wide">
-                        {selectedRole === "business"
-                          ? t("app.whatShouldWhoeverAnswersKnow")
-                          : answers.creatorOffer === "physical"
-                            ? t("app.whatIsThePlacementActuallyLike")
-                            : answers.creatorOffer === "sponsorship"
-                              ? t("app.whyShouldSomeoneSponsorYou")
-                              : t("app.whatDoesABrandGetInYour")}
-                        <small>
-                          {selectedRole === "business"
-                            ? t("app.weDraftedThisFromYourAnswersSay")
-                            : answers.creatorOffer === "physical"
-                              ? t("app.weDraftedThisFromYourAnswersAdd")
-                              : answers.creatorOffer === "sponsorship"
-                                ? t("app.weDraftedThisFromYourAnswersAdd3")
-                                : t("app.weDraftedThisFromYourAnswersAdd2")}
-                        </small>
-                        <textarea
-                          data-field="description"
-                          value={
-                            descriptionTouched
-                              ? answers.description
-                              : composeDescription(
-                                  selectedRole ?? "creator",
-                                  answers,
-                                )
-                          }
-                          onChange={(event) => {
-                            setDescriptionTouched(true);
-                            setAnswers((current) => ({
-                              ...current,
-                              description: event.target.value,
-                              creatorOfferTouched: current.creatorOffer
-                                ? {
-                                    ...current.creatorOfferTouched,
-                                    [current.creatorOffer]: {
-                                      ...current.creatorOfferTouched[
-                                        current.creatorOffer
-                                      ],
-                                      description: true,
-                                    },
-                                  }
-                                : current.creatorOfferTouched,
-                            }));
-                          }}
-                        />
-                        {/* The perk sentence is appended per tier at publish,
-                            so it is deliberately not in the box. Saying so is
-                            what stops a host from typing it themselves and
-                            ending up with it on the card twice. */}
-                        {isSponsorshipOffer(selectedRole ?? "creator", answers) && (
-                          <span className="chip-note">
-                            {t("app.eachTierCardEndsWithItsOwn")}
-                            {completeTiers(answers)[0]?.name.trim()
-                              ? t("app.nameSponsorsGet", { name: completeTiers(answers)[0].name.trim() })
-                              : t("app.goldSponsorsGet")}
-                            {t("app.youDontNeedToWriteItHere")}
-                          </span>
-                        )}
-                      </label>
-                    </div>
-
-                    {/* What they are about to publish, rendered from the live
-                        answers. A business sees the Wanted variant because it
-                        passes the same isBrief check the real card does, so
-                        the preview cannot drift from the marketplace. */}
-                    <>
-                    <OnboardingPreviewCards
-                      role={selectedRole ?? "creator"}
-                      answers={answers}
-                      touched={{
-                        title: titleTouched,
-                        description: descriptionTouched,
-                      }}
-                      previewPhotoUrl={previewPhotoUrl}
-                    />
-                    <div className="onboarding-preview-legacy field-wide">
-                      <span>
-                        {isSponsorshipOffer(selectedRole ?? "creator", answers) &&
-                        completeTiers(answers).length > 1
-                          ? t("app.thisIsWhatPeopleWillSeeAnswerscount", { answersCount: completeTiers(answers).length })
-                          : t("app.thisIsWhatPeopleWillSee")}
-                      </span>
-                      <div className="preview-card">
-                        {/* A real card is a photo with text under it. Without
-                            this the preview quietly implied the picture was a
-                            detail, and a member could finish onboarding never
-                            realising they had published a card with nothing on
-                            the half of it people look at first. */}
-                        {previewPhotoUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            className="preview-card-photo"
-                            src={previewPhotoUrl}
-                            alt=""
-                          />
-                        ) : (
-                          <p className="preview-card-photo is-empty">
-                            {t("app.addAPhotoAboveItFillsThe")}
-                          </p>
-                        )}
-                        <div className="preview-card-top">
-                          <span
-                            className={
-                              selectedRole === "business"
-                                ? "preview-chip is-brief"
-                                : "preview-chip"
-                            }
-                          >
-                            {selectedRole === "business"
-                              ? t("market.wanted")
-                              : buildListingDraft(selectedRole ?? "creator", answers, {
-                                  title: titleTouched,
-                                  description: descriptionTouched,
-                                }).channel}
-                          </span>
-                          <small className="preview-offer">
-                            {answers.display_name.trim() || t("app.yourName")}
-                            {answers.city.trim() ? ` · ${answers.city.trim()}` : ""}
-                          </small>
-                        </div>
-                        <div className="preview-card-body">
-                          <strong>
-                            {effectiveTitle(
-                              selectedRole ?? "creator",
-                              answers,
-                              { title: titleTouched },
-                              completeTiers(answers)[0],
-                            ) || t("app.untitledListing")}
-                          </strong>
-                          <span className="preview-offer">
-                            {(() => {
-                              const draft = buildListingDraft(
-                                selectedRole ?? "creator",
-                                answers,
-                                {
-                                  title: titleTouched,
-                                  description: descriptionTouched,
-                                },
-                                completeTiers(answers)[0],
-                              );
-                              const offer = draft.format.trim();
-                              if (!offer) return "Add what people get above.";
-                              return selectedRole === "business"
-                                ? `Looking for ${offer}`
-                                : `You get ${formatOffer(offer)}`;
-                            })()}
-                          </span>
-                          {/* The description is the longest thing the member
-                              writes and the preview never showed a word of it.
-                              Clamped to two lines in CSS, exactly as the real
-                              card's blurb is. */}
-                          <p className="preview-card-blurb">
-                            {descriptionBody(
-                              selectedRole ?? "creator",
-                              answers,
-                              { description: descriptionTouched },
-                            ) || t("app.yourDescriptionWillShowHere")}
-                          </p>
-                          <div className="preview-card-foot">
-                            {selectedRole === "business" && (
-                              <span className="preview-lead">{t("market.budget")}</span>
-                            )}
-                            <b
-                              className={
-                                (isSponsorshipOffer(selectedRole ?? "creator", answers)
-                                  ? completeTiers(answers)[0]?.price
-                                  : answers.price)
-                                  ? undefined
-                                  : "preview-price-empty"
-                              }
-                            >
-                              {(() => {
-                                // A sponsorship offer has no single price; the
-                                // top tier is what this card shows.
-                                const top = completeTiers(answers)[0];
-                                const price =
-                                  isSponsorshipOffer(selectedRole ?? "creator", answers)
-                                    ? top?.price
-                                    : answers.price;
-                                // Not "$0". Before a price is entered the old
-                                // preview showed "$0 / sponsor", which reads as
-                                // an offer to work for free rather than as a
-                                // field still to fill in.
-                                if (!price) return "Add a price";
-                                return priceLabel({
-                                  price_cents: dollarsToCents(price),
-                                  price_max_cents:
-                                    isSponsorshipOffer(selectedRole ?? "creator", answers)
-                                      ? top?.priceMax == null
-                                        ? null
-                                        : dollarsToCents(top.priceMax)
-                                      : answers.priceMax == null
-                                        ? null
-                                        : dollarsToCents(answers.priceMax),
-                                }, locale);
-                              })()}
-                            </b>
-                            <small>
-                              /{" "}
-                              {
-                                buildListingDraft(
-                                  selectedRole ?? "creator",
-                                  answers,
-                                  {
-                                    title: titleTouched,
-                                    description: descriptionTouched,
-                                  },
-                                  completeTiers(answers)[0],
-                                ).price_unit
-                              }
-                            </small>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    </>
-
-                    </>
-                    )}
 
                   </>
                 )}
