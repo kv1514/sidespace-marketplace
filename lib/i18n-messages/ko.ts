@@ -2385,4 +2385,11 @@ export const KOREAN_MESSAGES: Messages = {
   "errors.thatChangeCouldNotBeSavedTo": "그 변경 사항을 포트폴리오에 저장하지 못했습니다. 페이지를 새로고침한 뒤 다시 시도하세요.",
   "errors.thatBlockCouldNotBeSavedIn": "그 형태로는 블록을 저장할 수 없습니다. 목록에서 크기를 골라 다시 시도하세요.",
   "app.thisReplacesYourCurrentProfileLine": "지금의 프로필 소개를 다음으로 바꿉니다:",
+  "app.offersStartAtMinimum": "제안은 {minimum}부터 가능합니다.",
+  "app.counteroffersStartAtMinimum": "역제안은 {minimum}부터 가능합니다.",
+  "errors.anOfferCannotBeMoreThan": "제안은 {asking} 호가보다 60% 넘게 낮을 수 없습니다. 최소 {floor} 이상으로 제안하세요.",
+  "errors.aCounterofferCannotBeMoreThan": "역제안은 상대가 제시한 {budget}보다 60% 넘게 낮을 수 없습니다. 최소 {floor} 이상으로 역제안하세요.",
+  "app.offersStartAtMinimumAndCannot": "제안은 {minimum}부터 가능하며 {asking} 호가보다 60% 넘게 낮을 수 없습니다.",
+  "app.counteroffersStartAtMinimumAndCannot": "역제안은 {minimum}부터 가능하며 상대가 제시한 {budget}보다 60% 넘게 낮을 수 없습니다.",
+  "app.enterTheAmountYouWantTo": "제안할 금액을 입력하세요.",
 };

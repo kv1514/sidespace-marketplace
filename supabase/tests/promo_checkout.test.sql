@@ -43,8 +43,11 @@ select is((select awarded_cents from public.redeem_business_referral_credit('ss-
 select is((select awarded_cents from public.redeem_business_referral_credit('ss-promotest')),0::bigint,'referral retries cannot mint more credits');
 reset role;
 
--- Only bypass fixture provenance while creating synthetic campaigns.
+-- Only bypass fixture provenance and the offer floor while creating synthetic
+-- campaigns. The $20 and $10 rows exist to exercise partial and full credit
+-- funding against one listing, not to be plausible offers on it.
 alter table public.campaign_requests disable trigger campaign_requests_require_requestable_listing;
+alter table public.campaign_requests disable trigger enforce_offer_floor;
 insert into public.campaign_requests (
  id,listing_id,requester_profile_id,owner_profile_id,campaign_name,goals,requested_deliverables,
  budget_cents,accepted_subtotal_cents,payer_profile_id,payee_profile_id,start_date,end_date,status
@@ -52,6 +55,7 @@ insert into public.campaign_requests (
  'Promo campaign','Test credit funding','One placement',amount,amount,'50000000-0000-4000-8000-000000000011','50000000-0000-4000-8000-000000000012',current_date,current_date+7,'accepted'
 from (values ('50000000-0000-4000-8000-000000000101'::uuid,10000),('50000000-0000-4000-8000-000000000102'::uuid,2000),('50000000-0000-4000-8000-000000000103'::uuid,1000)) x(id,amount);
 alter table public.campaign_requests enable trigger campaign_requests_require_requestable_listing;
+alter table public.campaign_requests enable trigger enforce_offer_floor;
 insert into public.payment_transactions (
  id,campaign_request_id,listing_id,business_profile_id,creator_profile_id,campaign_name,listing_title,business_name,creator_name,
  subtotal_cents,buyer_fee_cents,creator_fee_cents,customer_total_cents,creator_payout_cents,payout_amount_cents,platform_gross_revenue_cents,stripe_connected_account_id

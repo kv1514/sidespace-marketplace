@@ -2385,4 +2385,11 @@ export const MANDARIN_MESSAGES: Messages = {
   "errors.thatChangeCouldNotBeSavedTo": "这项更改没能保存到你的作品集。请重新加载页面后再试。",
   "errors.thatBlockCouldNotBeSavedIn": "这个方块无法以该形状保存。请从列表中选择一个尺寸后再试。",
   "app.thisReplacesYourCurrentProfileLine": "这会替换你当前的个人简介：",
+  "app.offersStartAtMinimum": "报价起步价为 {minimum}。",
+  "app.counteroffersStartAtMinimum": "还价起步价为 {minimum}。",
+  "errors.anOfferCannotBeMoreThan": "报价不能低于 {asking} 标价的 60%。请至少出价 {floor}。",
+  "errors.aCounterofferCannotBeMoreThan": "还价不能低于对方 {budget} 报价的 60%。请至少还价 {floor}。",
+  "app.offersStartAtMinimumAndCannot": "报价起步价为 {minimum}，且不能低于 {asking} 标价的 60%。",
+  "app.counteroffersStartAtMinimumAndCannot": "还价起步价为 {minimum}，且不能低于对方 {budget} 报价的 60%。",
+  "app.enterTheAmountYouWantTo": "请输入你想要出价的金额。",
 };

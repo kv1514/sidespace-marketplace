@@ -47,6 +47,11 @@ import {
   formatCents,
 } from "@/lib/payments/fees";
 import {
+  MINIMUM_OFFER_CENTS,
+  checkOfferAmount,
+  offerFloorCents,
+} from "@/lib/payments/offer-floor";
+import {
   BUSINESS_SIGNUP_CREDIT_CENTS,
   applyAdCreditToCheckout,
   isBusinessReferralCode,
@@ -10663,7 +10668,10 @@ export default function MarketplaceApp({
       (!budgetInput || !Number.isFinite(proposedBudget) || proposedBudget < 0)
     ) {
       setBusy(false);
-      return setCampaignFeedback(tx("Enter a budget of 0 or more."));
+      // The floor itself is checked below, once the amount is in cents. This
+      // only catches an empty or unreadable box, so it must not promise a
+      // number the floor then refuses.
+      return setCampaignFeedback(tx("Enter the amount you want to offer."));
     }
 
     let budgetCents = campaignListing.price_cents;
@@ -10683,6 +10691,29 @@ export default function MarketplaceApp({
           tx(error instanceof Error
             ? error.message
             : "Enter a dollar amount with no more than two decimals."),
+        );
+      }
+      // A first offer is measured against what the listing asks. The database
+      // refuses the same amounts, so this is only about saying which number is
+      // wrong before the owner is notified of anything.
+      const floor = checkOfferAmount({
+        amountCents: budgetCents,
+        referenceCents: campaignListing.price_cents,
+      });
+      if (!floor.ok) {
+        setBusy(false);
+        return setCampaignFeedback(
+          floor.reason === "below_minimum"
+            ? tx("Offers start at {minimum}.", {
+                minimum: formatCents(MINIMUM_OFFER_CENTS),
+              })
+            : tx(
+                "An offer cannot be more than 60% below the {asking} asking price. Offer at least {floor}.",
+                {
+                  asking: formatCents(campaignListing.price_cents),
+                  floor: formatCents(floor.floorCents),
+                },
+              ),
         );
       }
     }
@@ -11237,13 +11268,46 @@ export default function MarketplaceApp({
       return;
     }
     const values = new FormData(event.currentTarget);
+    let counterCents: number;
+    try {
+      counterCents = dollarsToCents(String(values.get("counter_budget") ?? "0"));
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Enter a dollar amount with no more than two decimals.",
+      );
+      return;
+    }
+    // Measured against the member's own budget, never against a counteroffer
+    // already standing: an owner revising downward is conceding toward the
+    // member, and anchoring to their own previous number would forbid it.
+    const floor = checkOfferAmount({
+      amountCents: counterCents,
+      referenceCents: counteringRequest.budget_cents,
+    });
+    if (!floor.ok) {
+      if (floor.reason === "below_minimum") {
+        setToast("Counteroffers start at {minimum}.", "problem", {
+          minimum: formatCents(MINIMUM_OFFER_CENTS),
+        });
+      } else {
+        setToast(
+          "A counteroffer cannot be more than 60% below the {budget} on the table. Counter with at least {floor}.",
+          "problem",
+          {
+            budget: formatCents(counteringRequest.budget_cents),
+            floor: formatCents(floor.floorCents),
+          },
+        );
+      }
+      return;
+    }
     setBusy(true);
     const { error } = await supabase.rpc("respond_campaign_request", {
       request_id: counteringRequest.id,
       next_status: "countered",
-      proposed_budget_cents: dollarsToCents(
-        String(values.get("counter_budget") ?? "0"),
-      ),
+      proposed_budget_cents: counterCents,
       response_message: String(values.get("counter_message") ?? "").trim(),
     });
     setBusy(false);
@@ -18696,7 +18760,9 @@ export default function MarketplaceApp({
           <form className="field-grid campaign-form" onSubmit={submitCampaignRequest} onInvalidCapture={(event) => revealInvalidField(event.target)}>
             <BookingFields listing={campaignListing} quoteRequired={campaignRequestMode === "buy_now"} />
             {campaignRequestMode !== "buy_now" && <>
-              <label className="field-wide">{t("app.offerTotal")}<input name="budget" type="number" min="0" step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
+              <label className="field-wide">{t("app.offerTotal")}
+                <small>{tx("Offers start at {minimum} and cannot be more than 60% below the {asking} asking price.", { minimum: formatCents(MINIMUM_OFFER_CENTS), asking: formatCents(campaignListing.price_cents) })}</small>
+                <input name="budget" type="number" min={centsToInputDollars(offerFloorCents(campaignListing.price_cents))} step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
             <label className="field-wide">{isBrief(campaignListing) ? t("app.whatYoullDeliver") : t("app.whatYouNeed")}<textarea name="requested_deliverables" required minLength={2} maxLength={1000} defaultValue={campaignListingCopy?.deliverables || campaignListingCopy?.format} /></label>
             </>}
             <details className="composer-options field-wide"><summary>{t("app.campaignDetailsOptional")}</summary><div className="field-grid">
@@ -18744,11 +18810,15 @@ export default function MarketplaceApp({
           <form className="stack-form" onSubmit={submitCounteroffer}>
             <label>
               {t("app.counterBudget")}
+              <small>
+                {tx("Counteroffers start at {minimum} and cannot be more than 60% below the {budget} on the table.", { minimum: formatCents(MINIMUM_OFFER_CENTS), budget: formatCents(counteringRequest.budget_cents) })}
+              </small>
               <input
                 name="counter_budget"
                 type="number"
+                step="0.01"
                 max="2000000000"
-                min="0"
+                min={centsToInputDollars(offerFloorCents(counteringRequest.budget_cents))}
                 required
                 // The standing counteroffer when there is one: pre-filling
                 // the requester's original number meant an owner revising

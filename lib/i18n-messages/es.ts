@@ -2385,4 +2385,11 @@ export const SPANISH_MESSAGES: Messages = {
   "errors.thatChangeCouldNotBeSavedTo": "Ese cambio no se pudo guardar en tu portafolio. Recarga la página e inténtalo de nuevo.",
   "errors.thatBlockCouldNotBeSavedIn": "Ese bloque no se pudo guardar con esa forma. Elige un tamaño de la lista e inténtalo de nuevo.",
   "app.thisReplacesYourCurrentProfileLine": "Esto reemplaza la descripción actual de tu perfil:",
+  "app.offersStartAtMinimum": "Las ofertas empiezan en {minimum}.",
+  "app.counteroffersStartAtMinimum": "Las contraofertas empiezan en {minimum}.",
+  "errors.anOfferCannotBeMoreThan": "Una oferta no puede estar más de un 60 % por debajo del precio de {asking}. Ofrece al menos {floor}.",
+  "errors.aCounterofferCannotBeMoreThan": "Una contraoferta no puede estar más de un 60 % por debajo de los {budget} sobre la mesa. Contraoferta al menos {floor}.",
+  "app.offersStartAtMinimumAndCannot": "Las ofertas empiezan en {minimum} y no pueden estar más de un 60 % por debajo del precio de {asking}.",
+  "app.counteroffersStartAtMinimumAndCannot": "Las contraofertas empiezan en {minimum} y no pueden estar más de un 60 % por debajo de los {budget} sobre la mesa.",
+  "app.enterTheAmountYouWantTo": "Introduce el importe que quieres ofrecer.",
 };

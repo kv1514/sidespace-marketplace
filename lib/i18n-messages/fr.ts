@@ -2385,4 +2385,11 @@ export const FRENCH_MESSAGES: Messages = {
   "errors.thatChangeCouldNotBeSavedTo": "Cette modification n'a pas pu être enregistrée dans votre portfolio. Rechargez la page et réessayez.",
   "errors.thatBlockCouldNotBeSavedIn": "Ce bloc n'a pas pu être enregistré sous cette forme. Choisissez une taille dans la liste et réessayez.",
   "app.thisReplacesYourCurrentProfileLine": "Ceci remplace la description actuelle de votre profil :",
+  "app.offersStartAtMinimum": "Les offres commencent à {minimum}.",
+  "app.counteroffersStartAtMinimum": "Les contre-offres commencent à {minimum}.",
+  "errors.anOfferCannotBeMoreThan": "Une offre ne peut pas être inférieure de plus de 60 % au prix demandé de {asking}. Proposez au moins {floor}.",
+  "errors.aCounterofferCannotBeMoreThan": "Une contre-offre ne peut pas être inférieure de plus de 60 % aux {budget} sur la table. Contre-proposez au moins {floor}.",
+  "app.offersStartAtMinimumAndCannot": "Les offres commencent à {minimum} et ne peuvent pas être inférieures de plus de 60 % au prix demandé de {asking}.",
+  "app.counteroffersStartAtMinimumAndCannot": "Les contre-offres commencent à {minimum} et ne peuvent pas être inférieures de plus de 60 % aux {budget} sur la table.",
+  "app.enterTheAmountYouWantTo": "Saisissez le montant que vous voulez proposer.",
 };

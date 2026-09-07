@@ -2385,4 +2385,11 @@ export const VIETNAMESE_MESSAGES: Messages = {
   "errors.thatChangeCouldNotBeSavedTo": "Không thể lưu thay đổi đó vào portfolio của bạn. Hãy tải lại trang và thử lại.",
   "errors.thatBlockCouldNotBeSavedIn": "Không thể lưu khối đó ở hình dạng này. Hãy chọn một kích thước trong danh sách và thử lại.",
   "app.thisReplacesYourCurrentProfileLine": "Điều này thay thế phần giới thiệu hiện tại của bạn:",
+  "app.offersStartAtMinimum": "Đề nghị bắt đầu từ {minimum}.",
+  "app.counteroffersStartAtMinimum": "Đề nghị ngược bắt đầu từ {minimum}.",
+  "errors.anOfferCannotBeMoreThan": "Đề nghị không được thấp hơn quá 60% so với giá chào {asking}. Hãy đề nghị ít nhất {floor}.",
+  "errors.aCounterofferCannotBeMoreThan": "Đề nghị ngược không được thấp hơn quá 60% so với mức {budget} đang có. Hãy đề nghị ngược ít nhất {floor}.",
+  "app.offersStartAtMinimumAndCannot": "Đề nghị bắt đầu từ {minimum} và không được thấp hơn quá 60% so với giá chào {asking}.",
+  "app.counteroffersStartAtMinimumAndCannot": "Đề nghị ngược bắt đầu từ {minimum} và không được thấp hơn quá 60% so với mức {budget} đang có.",
+  "app.enterTheAmountYouWantTo": "Nhập số tiền bạn muốn đề nghị.",
 };

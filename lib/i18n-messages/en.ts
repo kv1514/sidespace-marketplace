@@ -2384,6 +2384,13 @@ export const ENGLISH_MESSAGES = {
   "errors.thatChangeCouldNotBeSavedTo": "That change could not be saved to your portfolio. Reload the page and try again.",
   "errors.thatBlockCouldNotBeSavedIn": "That block could not be saved in that shape. Pick a size from the list and try again.",
   "app.thisReplacesYourCurrentProfileLine": "This replaces your current profile line:",
+  "app.offersStartAtMinimum": "Offers start at {minimum}.",
+  "app.counteroffersStartAtMinimum": "Counteroffers start at {minimum}.",
+  "errors.anOfferCannotBeMoreThan": "An offer cannot be more than 60% below the {asking} asking price. Offer at least {floor}.",
+  "errors.aCounterofferCannotBeMoreThan": "A counteroffer cannot be more than 60% below the {budget} on the table. Counter with at least {floor}.",
+  "app.offersStartAtMinimumAndCannot": "Offers start at {minimum} and cannot be more than 60% below the {asking} asking price.",
+  "app.counteroffersStartAtMinimumAndCannot": "Counteroffers start at {minimum} and cannot be more than 60% below the {budget} on the table.",
+  "app.enterTheAmountYouWantTo": "Enter the amount you want to offer.",
 };
 
 export type TranslationKey = keyof typeof ENGLISH_MESSAGES;
