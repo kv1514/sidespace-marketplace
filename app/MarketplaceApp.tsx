@@ -1281,37 +1281,7 @@ const SPONSOR_REACH_CHIPS: Array<{
   { label: "I’ll put in a number", count: null, unit: "", sentence: "" },
 ];
 
-/** What a sponsor actually receives. First two feed `format`, all feed `deliverables`. */
-const SPONSOR_BENEFIT_CHIPS = [
-  "Logo on jerseys",
-  "Logo on the robot or kit",
-  "Banner at events",
-  "Named tier",
-  "Social shoutouts",
-  "Newsletter mention",
-  "Booth or table",
-  "Logo on our website",
-  "Announcer shout-out",
-  "Program ad",
-];
 
-/**
- * A tier's perks in menu order, not tap order.
- *
- * The card's offer line is built from the first two of these, and it used to
- * take them in whatever order the host happened to tap the chips - so a team
- * that picked "Newsletter mention" before "Logo on jerseys" published a card
- * led by the newsletter. SPONSOR_BENEFIT_CHIPS is already written most
- * tangible first; sorting by it makes the headline the two perks a sponsor
- * cares most about, every time.
- */
-function orderedBenefits(benefits: string[]) {
-  const rank = (item: string) => {
-    const at = SPONSOR_BENEFIT_CHIPS.indexOf(item);
-    return at === -1 ? SPONSOR_BENEFIT_CHIPS.length : at;
-  };
-  return [...benefits].sort((a, b) => rank(a) - rank(b));
-}
 
 
 
@@ -5057,29 +5027,14 @@ export default function MarketplaceApp({
   // mount because the key is per-user, and expires after a week so a stale
   // draft never resurfaces as a surprise.
   useEffect(() => {
-    if (!user) {
-      setOnboardingDraft(null);
-      return;
-    }
+    if (!user) return;
+    // Older builds stashed the answers here when a listing insert failed part
+    // way through joining. Joining writes no listing now, so nothing produces
+    // or consumes one; clear what an earlier version may have left behind.
     try {
-      const raw = window.localStorage.getItem(`sidespace.onboarding.${user.id}`);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as {
-        role?: Role | null;
-        answers?: OnboardingAnswers;
-        savedAt?: number;
-      };
-      const week = 7 * 24 * 60 * 60 * 1000;
-      if (!parsed.answers || Date.now() - (parsed.savedAt ?? 0) > week) {
-        window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
-        return;
-      }
-      setOnboardingDraft({
-        role: parsed.role ?? null,
-        answers: normalizeOnboardingAnswers(parsed.answers),
-      });
+      window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
     } catch {
-      // Unparseable or unavailable storage. The draft is a convenience.
+      // Private browsing, or storage unavailable. Nothing depends on this.
     }
   }, [user]);
   // The auth user whose profile state is already loaded, so background auth
@@ -5140,17 +5095,6 @@ export default function MarketplaceApp({
   // and we stop overwriting their words.
   const [titleTouched, setTitleTouched] = useState(false);
   const [descriptionTouched, setDescriptionTouched] = useState(false);
-  /**
-   * A half-finished onboarding, if there is one.
-   *
-   * Written only when the profile saved but the listing did not, and read only
-   * by the dashboard checklist. Kept for seven days: an unfinished listing is
-   * worth offering back tomorrow, not in a month.
-   */
-  const [onboardingDraft, setOnboardingDraft] = useState<{
-    role: Role | null;
-    answers: OnboardingAnswers;
-  } | null>(null);
   /**
    * Chosen files, captured on change instead of read from the DOM at submit.
    *
@@ -7338,42 +7282,6 @@ export default function MarketplaceApp({
     setToast("Campaign preferences saved. Recommendations are up to date.");
   }
 
-  /**
-   * Reopen onboarding to finish a listing.
-   *
-   * The only reader of the localStorage draft. It exists for one state: the
-   * profile write succeeded and the listing write did not, so the member is on
-   * the marketplace with nothing to book. Their answers come straight back
-   * rather than being retyped into a different form.
-   */
-  function resumeOnboardingDraft() {
-    seedRolePickers(profile);
-    const draft = onboardingDraft;
-    if (draft) {
-      const draftRole = draft.role ? canonicalRole(draft.role) : null;
-      if (draftRole && PICKABLE_ROLES.includes(draftRole)) {
-        setSelectedRole(draftRole);
-        setRoleTouched(true);
-      }
-      const draftAnswers = normalizeOnboardingAnswers(draft.answers);
-      setAnswers(draftAnswers);
-      const activeOffer = draftAnswers.creatorOffer;
-      setTitleTouched(
-        activeOffer
-          ? draftAnswers.creatorOfferTouched[activeOffer].title
-          : Boolean(draftAnswers.title),
-      );
-      setDescriptionTouched(
-        activeOffer
-          ? draftAnswers.creatorOfferTouched[activeOffer].description
-          : Boolean(draftAnswers.description),
-      );
-    }
-    setOnboardingMode("setup");
-    setOnboardingStep(5);
-    setOnboardingInvalidField("");
-    setOnboardingOpen(true);
-  }
 
   /** Open the modal as the profile editor rather than first-run setup. */
   function openProfileEditor(step: 1 | 2 = 1) {
@@ -8739,9 +8647,7 @@ export default function MarketplaceApp({
       }
 
       if (onboardingMode === "setup") {
-
         window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
-        setOnboardingDraft(null);
         setOnboardingOpen(false);
         setOnboardingStep(1);
         resetIgAvatarSync();
@@ -8780,33 +8686,17 @@ export default function MarketplaceApp({
             : "Saved. Your profile is up to date.",
       );
     } catch (error) {
-      // The profile write succeeding and the listing write failing is a real
-      // state, and it is recoverable: they are on the marketplace, and the
-      // draft survives. Rolling the profile back would be worse - it would
-      // take away the thing that did work.
+      // The profile row is already committed by the time anything here can
+      // throw, so what failed is the reload that follows it, not the save.
+      // This branch used to say the listing had not posted and stash a draft
+      // to resume - joining writes no listing now, so that message named a
+      // thing that never happened and the draft had nothing left to restore.
       if (savedProfile) {
-        try {
-          window.localStorage.setItem(
-            `sidespace.onboarding.${user.id}`,
-            JSON.stringify({ role: selectedRole, answers, savedAt: Date.now() }),
-          );
-          setOnboardingDraft({ role: selectedRole, answers });
-        } catch {
-          // Private browsing, or storage full. The draft is a convenience.
-        }
         setOnboardingOpen(false);
         setOnboardingStep(1);
-        await Promise.all([
-          loadMarketplace(),
-          loadOwnListings(savedProfile),
-          loadAccountMarketplaceState(savedProfile),
-        ]);
-        // Include the actual reason. This branch swallowed it, so a listing
-        // rejected for a fixable reason (a number too large, a title too long)
-        // read as an unexplained failure and Publish looped on the same value.
         const why = friendlyDbError(error);
         setToast(
-          "Your profile is saved, but the listing didn’t post.{value} Nothing you typed is lost — open it again from your dashboard.", undefined, { value: why ? ` ${why}` : "" },
+          "Your profile is saved. We could not refresh your dashboard{value} — reload the page.", undefined, { value: why ? `: ${why}` : "" },
         );
       } else if ((error as { code?: string })?.code === "23505") {
         // A duplicate @handle. profiles_handle_unique is a unique index on
@@ -12956,22 +12846,19 @@ export default function MarketplaceApp({
                 <span>{ownListings.length ? "✓" : "3"}</span>
                 <div>
                   <strong>{t("app.publishYourFirstListing")}</strong>
-                  <p>
-                    {onboardingDraft
-                      ? t("app.everythingYouTypedIsStillHere")
-                      : t("app.yourSpaceOrAudienceCannotBeBooked")}
-                  </p>
+                  <p>{t("app.yourSpaceOrAudienceCannotBeBooked")}</p>
                 </div>
                 {!ownListings.length && (
                   <button
                     className="button button-coral button-small"
-                    // Resume onboarding rather than opening the 16-control
-                    // listing form this redesign exists to replace. If the
-                    // profile saved but the listing insert failed, the answers
-                    // are still in localStorage and come straight back.
-                    onClick={resumeOnboardingDraft}
+                    // The listing composer, the same one every other "Create
+                    // listing" button opens. This used to reopen onboarding at
+                    // the slide that composed a listing; joining no longer has
+                    // one, and pointing at a step that does not exist opened an
+                    // empty modal nobody could publish from.
+                    onClick={openListingEditor}
                   >
-                    {onboardingDraft ? t("app.finishMyListing") : t("app.createListing")}
+                    {t("app.createListing")}
                   </button>
                 )}
               </li>
@@ -15338,6 +15225,87 @@ export default function MarketplaceApp({
                   <>
                     <h3>{t("app.yourDetails")}</h3>
                     <p>{t("app.thisIsWhatPeopleSeeOnYour")}</p>
+                    {/* What they actually offer, and how far it reaches.
+                        Both questions used to live on a setup slide that joining
+                        no longer visits, and they were never in the editor - so
+                        every Creator was stamped "social" and a cafe renting its
+                        window was asked for a follower count it does not have,
+                        with nowhere to say "about 300 people a day" instead.
+                        avg_views and reach_unit had no writer left at all. */}
+                    {selectedRole === "creator" && (
+                      <>
+                        <div className="form-subsection field-wide">
+                          <span>{t("app.yourWayToAdvertise")}</span>
+                          <h4>{t("app.whatDoYouHaveToOffer")}</h4>
+                        </div>
+                        <div
+                          className="scope-grid creator-offer-grid"
+                          data-field="creatorOffer"
+                          role="group"
+                          aria-label={t("app.whatKindOfAdvertisingYouOffer")}
+                        >
+                          {CREATOR_OFFER_TYPES.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              aria-pressed={answers.creatorOffers.includes(option.value)}
+                              className={
+                                answers.creatorOffers.includes(option.value) ? "active" : ""
+                              }
+                              onClick={() => toggleCreatorOffer(option.value)}
+                            >
+                              <strong>{tx(option.label)}</strong>
+                              <small>{tx(option.help)}</small>
+                              <span className="offer-card-state">
+                                {answers.creatorOffers.includes(option.value)
+                                  ? t("app.selected")
+                                  : t("app.select")}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                        {isPhysicalOffer(selectedRole, answers) && (
+                          <label className="field-wide">
+                            {t("app.howManyPeoplePassItADay")}
+                            <input
+                              inputMode="numeric"
+                              max={10000000}
+                              min={1}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  trafficCount: event.target.value
+                                    ? Math.max(0, Number(event.target.value))
+                                    : null,
+                                }))
+                              }
+                              type="number"
+                              value={answers.trafficCount ?? ""}
+                            />
+                          </label>
+                        )}
+                        {isSponsorshipOffer(selectedRole, answers) && (
+                          <label className="field-wide">
+                            {t("app.howManyPeopleDoesItReach")}
+                            <input
+                              inputMode="numeric"
+                              max={10000000}
+                              min={1}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  reachCount: event.target.value
+                                    ? Math.max(0, Number(event.target.value))
+                                    : null,
+                                }))
+                              }
+                              type="number"
+                              value={answers.reachCount ?? ""}
+                            />
+                          </label>
+                        )}
+                      </>
+                    )}
                     {/* Gated. This block asks which platforms you post on and
                         your follower count, and it used to render for EVERY
                         role - so a barbershop or a robotics team opening their
