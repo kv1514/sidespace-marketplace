@@ -1537,6 +1537,15 @@ function ProfilePhotoField({
 
 const BUSINESS_BIO_MIN_WORDS = 5;
 const BIO_MIN_CHARACTERS = 10;
+/**
+ * A display name is the whole of a member's identity in the grid, the card
+ * and every conversation, and it was the one profile field with no floor at
+ * all - only a non-empty check. A business completed onboarding with the name
+ * "j", the city "h" and a one-character bio; the city and bio are now caught,
+ * this catches the name. Two characters, because real short names exist and
+ * the point is to stop a keystroke, not to police naming.
+ */
+const DISPLAY_NAME_MIN_CHARACTERS = 2;
 
 function countWords(value: string) {
   return value.trim() ? value.trim().split(/\s+/).length : 0;
@@ -7379,6 +7388,14 @@ export default function MarketplaceApp({
     need(
       !answers.display_name.trim(),
       "Add your display name before continuing.",
+      "display_name",
+    );
+    need(
+      Boolean(answers.display_name.trim()) &&
+        answers.display_name.trim().length < DISPLAY_NAME_MIN_CHARACTERS,
+      role === "business"
+        ? "Use the name people would recognise your business by."
+        : "That name is too short — use the name people know you by.",
       "display_name",
     );
     need(
