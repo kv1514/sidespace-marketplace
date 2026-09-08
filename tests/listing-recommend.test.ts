@@ -641,4 +641,71 @@ describe("what the crowd co-visits, folded into the grid", () => {
     expect(personalScore(walls, stranger, now, index(40))).toBe(0);
     expect(comparePersonal(walls, seed, stranger, now, index(40))).toBe(0);
   });
+
+  /**
+   * The shape that actually broke production.
+   *
+   * The test above pits one co-visited listing against one that is not, which
+   * the weight handles comfortably. What it never modelled is an index where
+   * EVERY listing is co-visited about equally - which is what a co-visit count
+   * fed by impressions produces, because the marketplace renders every listing
+   * on one page and a visitor who scrolls to the bottom "co-visits" the lot.
+   *
+   * A term that is the same for everything carries no information, so it must
+   * not decide anything. Here the reach-heavy listing is on a channel the
+   * visitor never opened and the thin one is on the channel they keep opening.
+   */
+  it("cannot reorder the grid when the crowd co-visits everything alike", () => {
+    // A catalogue with the live one's shape: ten channels, one page, reach
+    // spread unevenly. The visitor scrolled the grid - so every card recorded
+    // an impression - and opened the two walls.
+    const channels = [
+      ["Wall / mural", "Berkeley, CA"],
+      ["Wall / mural", "Berkeley, CA"],
+      ["Instagram", "Diamond Bar"],
+      ["Instagram", "Fullerton, CA"],
+      ["Instagram", "Walnut, CA"],
+      ["YouTube", "Yorba Linda, CA"],
+      ["Vehicle", "Brea"],
+      ["Other", "Berkeley, CA"],
+      ["Website", "Fullerton, CA"],
+      ["Storefront", "Yorba Linda, CA"],
+    ] as const;
+    const wide = channels.map(([channel, location_area], i) =>
+      listing({
+        id: `c-${i}`,
+        channel,
+        location_area,
+        title: `${channel} number ${i}`,
+        // The off-channel listings are the well-read ones, which is what made
+        // the quality prior decide the order once the co-visit term went flat.
+        impressions_7d: channel === "Wall / mural" ? 33 : 60,
+        clicks_7d: channel === "Wall / mural" ? 1 : 8,
+      }),
+    );
+    const events = [
+      ...wide.map((l) => ({ listingId: l.id, kind: "impression" as const, at: now - 120_000 })),
+      { listingId: "c-0", kind: "click" as const, at: now - 90_000 },
+      { listingId: "c-1", kind: "click" as const, at: now - 60_000 },
+    ];
+    const profile = buildTasteProfile(events, wide, now);
+    // What an impression-fed index looks like: everything paired with
+    // everything, because one page showed the visitor the whole catalogue.
+    const uniform: CooccurrenceIndex = new Map(
+      wide.map((entry) => [
+        entry.id,
+        new Map([...wide.map((s) => [s.id, 30] as const), [entry.id, 40] as const]),
+      ]),
+    );
+    const order = (index: CooccurrenceIndex | null) =>
+      [...wide]
+        .sort((a, b) => comparePersonal(a, b, profile, now, index))
+        .map((l) => l.id);
+
+    // An index like this separates nothing: every candidate is paired with
+    // every seed equally hard, so the term cannot tell one listing from
+    // another and must not be what decides the grid.
+    expect(order(uniform).slice(0, 2).sort()).toEqual(["c-0", "c-1"]);
+    expect(order(uniform)).toEqual(order(null));
+  });
 });

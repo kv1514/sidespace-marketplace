@@ -27,13 +27,43 @@ live catalogue before shipping it.
   "you like Instagram, here is more Instagram", but "the people who opened
   what you opened went on to open this". `cooccurrenceAffinity` weighs each
   listing they interacted with by its share of their interest, asks
-  `private.listing_cooccurrence()` how often each candidate was seen
+  `public.listing_cooccurrence()` how often each candidate was **opened**
   alongside it, and is worth up to `COOCCURRENCE_WEIGHT` (0.6) of a perfect
   categorical fit - enough to speak for a listing whose channel and city say
   nothing, never enough to outrank one they have plainly been choosing. It is
   0 with no index, which is a young catalogue's normal state, and each pair
   is damped by `pairs / COOCCURRENCE_CONFIDENCE` so a single shared visitor
   is a whisper rather than a verdict.
+
+  Openings, not impressions, and that distinction is the whole signal. The
+  marketplace puts every active listing on one page, so a visitor who scrolls
+  to the bottom sees all of them: count impressions and every pair co-occurs
+  with every other pair, which is not a weak signal but a flat one. It shipped
+  that way. On production the pair counts ran 12 to 36 for every pair in the
+  catalogue, which pinned the confidence floor at 1 so it never damped
+  anything, and left `cooccurrenceAffinity` between 0.51 and 0.77 for every
+  listing while `tasteFit` ranged 0.03 to 0.35 - so the flat term swamped the
+  one the visitor had actually fed, and the quality prior broke the tie.
+  Scored for someone who had opened two walls and a car window, it ranked an
+  Instagram listing they had never opened above both walls.
+  `20260908190000` narrowed both sides of the join and the denominator to
+  `kind = 'click'`; the same visitor's walls now come first and second.
+
+## What sorts ahead of all of this
+
+Two things outrank the personal score, and both are deliberate:
+
+1. **Hand-picked listings.** `listings.featured_rank` is a number the founders
+   set, and `featuredRank` sorts before everything else in the grid — but only
+   while the visitor has typed neither a search term nor a place, because a pin
+   that ignores what someone asked for is not a highlight. Ten listings carry a
+   rank today, so on an untouched marketplace the first ten cards are that list
+   in that order and personalisation decides the tail. Worth knowing before
+   reading the live grid as evidence of what the ranking is doing: it mostly
+   is not.
+2. **Members, then samples, then briefs.** `listingRank` puts complete member
+   listings first, thin ones next, demo accounts after those, and business
+   briefs last.
 - **A sort the visitor chose by hand** ("Location") is left alone.
   Personalisation applies only to the default "Recommended" order.
 
