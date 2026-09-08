@@ -2255,4 +2255,11 @@ export const KOREAN_MESSAGES: Messages = {
   "app.howManyPeoplePassItADay": "하루에 몇 명이 지나가나요?",
   "app.howManyPeopleDoesItReach": "몇 명에게 도달하나요?",
   "app.yourProfileIsSavedWeCouldNot": "프로필은 저장되었습니다. 대시보드를 새로 고치지 못했습니다{value} — 페이지를 다시 불러오세요.",
+  "app.offersStartAtMinimum": "제안은 {minimum}부터 가능합니다.",
+  "app.counteroffersStartAtMinimum": "역제안은 {minimum}부터 가능합니다.",
+  "errors.anOfferCannotBeMoreThan": "제안은 {asking} 호가보다 60% 넘게 낮을 수 없습니다. 최소 {floor} 이상으로 제안하세요.",
+  "errors.aCounterofferCannotBeMoreThan": "역제안은 상대가 제시한 {budget}보다 60% 넘게 낮을 수 없습니다. 최소 {floor} 이상으로 역제안하세요.",
+  "app.offersStartAtMinimumAndCannot": "제안은 {minimum}부터 가능하며 {asking} 호가보다 60% 넘게 낮을 수 없습니다.",
+  "app.counteroffersStartAtMinimumAndCannot": "역제안은 {minimum}부터 가능하며 상대가 제시한 {budget}보다 60% 넘게 낮을 수 없습니다.",
+  "app.enterTheAmountYouWantTo": "제안할 금액을 입력하세요.",
 };

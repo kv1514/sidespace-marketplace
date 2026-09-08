@@ -2255,4 +2255,11 @@ export const SPANISH_MESSAGES: Messages = {
   "app.howManyPeoplePassItADay": "¿Cuántas personas pasan por ahí al día?",
   "app.howManyPeopleDoesItReach": "¿A cuántas personas llega?",
   "app.yourProfileIsSavedWeCouldNot": "Tu perfil está guardado. No pudimos actualizar tu panel{value}: recarga la página.",
+  "app.offersStartAtMinimum": "Las ofertas empiezan en {minimum}.",
+  "app.counteroffersStartAtMinimum": "Las contraofertas empiezan en {minimum}.",
+  "errors.anOfferCannotBeMoreThan": "Una oferta no puede estar más de un 60 % por debajo del precio de {asking}. Ofrece al menos {floor}.",
+  "errors.aCounterofferCannotBeMoreThan": "Una contraoferta no puede estar más de un 60 % por debajo de los {budget} sobre la mesa. Contraoferta al menos {floor}.",
+  "app.offersStartAtMinimumAndCannot": "Las ofertas empiezan en {minimum} y no pueden estar más de un 60 % por debajo del precio de {asking}.",
+  "app.counteroffersStartAtMinimumAndCannot": "Las contraofertas empiezan en {minimum} y no pueden estar más de un 60 % por debajo de los {budget} sobre la mesa.",
+  "app.enterTheAmountYouWantTo": "Introduce el importe que quieres ofrecer.",
 };

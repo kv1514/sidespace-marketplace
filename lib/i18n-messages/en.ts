@@ -2254,6 +2254,13 @@ export const ENGLISH_MESSAGES = {
   "app.howManyPeoplePassItADay": "How many people pass it a day?",
   "app.howManyPeopleDoesItReach": "How many people does it reach?",
   "app.yourProfileIsSavedWeCouldNot": "Your profile is saved. We could not refresh your dashboard{value} — reload the page.",
+  "app.offersStartAtMinimum": "Offers start at {minimum}.",
+  "app.counteroffersStartAtMinimum": "Counteroffers start at {minimum}.",
+  "errors.anOfferCannotBeMoreThan": "An offer cannot be more than 60% below the {asking} asking price. Offer at least {floor}.",
+  "errors.aCounterofferCannotBeMoreThan": "A counteroffer cannot be more than 60% below the {budget} on the table. Counter with at least {floor}.",
+  "app.offersStartAtMinimumAndCannot": "Offers start at {minimum} and cannot be more than 60% below the {asking} asking price.",
+  "app.counteroffersStartAtMinimumAndCannot": "Counteroffers start at {minimum} and cannot be more than 60% below the {budget} on the table.",
+  "app.enterTheAmountYouWantTo": "Enter the amount you want to offer.",
 };
 
 export type TranslationKey = keyof typeof ENGLISH_MESSAGES;

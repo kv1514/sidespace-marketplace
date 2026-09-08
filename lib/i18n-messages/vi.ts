@@ -2255,4 +2255,11 @@ export const VIETNAMESE_MESSAGES: Messages = {
   "app.howManyPeoplePassItADay": "Mỗi ngày có bao nhiêu người đi qua?",
   "app.howManyPeopleDoesItReach": "Nó tiếp cận được bao nhiêu người?",
   "app.yourProfileIsSavedWeCouldNot": "Hồ sơ của bạn đã được lưu. Chúng tôi không thể làm mới bảng điều khiển{value} — hãy tải lại trang.",
+  "app.offersStartAtMinimum": "Đề nghị bắt đầu từ {minimum}.",
+  "app.counteroffersStartAtMinimum": "Đề nghị ngược bắt đầu từ {minimum}.",
+  "errors.anOfferCannotBeMoreThan": "Đề nghị không được thấp hơn quá 60% so với giá chào {asking}. Hãy đề nghị ít nhất {floor}.",
+  "errors.aCounterofferCannotBeMoreThan": "Đề nghị ngược không được thấp hơn quá 60% so với mức {budget} đang có. Hãy đề nghị ngược ít nhất {floor}.",
+  "app.offersStartAtMinimumAndCannot": "Đề nghị bắt đầu từ {minimum} và không được thấp hơn quá 60% so với giá chào {asking}.",
+  "app.counteroffersStartAtMinimumAndCannot": "Đề nghị ngược bắt đầu từ {minimum} và không được thấp hơn quá 60% so với mức {budget} đang có.",
+  "app.enterTheAmountYouWantTo": "Nhập số tiền bạn muốn đề nghị.",
 };

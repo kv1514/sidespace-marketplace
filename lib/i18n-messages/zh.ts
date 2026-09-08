@@ -2255,4 +2255,11 @@ export const MANDARIN_MESSAGES: Messages = {
   "app.howManyPeoplePassItADay": "每天大约有多少人经过？",
   "app.howManyPeopleDoesItReach": "它能触达多少人？",
   "app.yourProfileIsSavedWeCouldNot": "你的资料已保存。我们无法刷新你的面板{value}——请重新加载页面。",
+  "app.offersStartAtMinimum": "报价起步价为 {minimum}。",
+  "app.counteroffersStartAtMinimum": "还价起步价为 {minimum}。",
+  "errors.anOfferCannotBeMoreThan": "报价不能低于 {asking} 标价的 60%。请至少出价 {floor}。",
+  "errors.aCounterofferCannotBeMoreThan": "还价不能低于对方 {budget} 报价的 60%。请至少还价 {floor}。",
+  "app.offersStartAtMinimumAndCannot": "报价起步价为 {minimum}，且不能低于 {asking} 标价的 60%。",
+  "app.counteroffersStartAtMinimumAndCannot": "还价起步价为 {minimum}，且不能低于对方 {budget} 报价的 60%。",
+  "app.enterTheAmountYouWantTo": "请输入你想要出价的金额。",
 };

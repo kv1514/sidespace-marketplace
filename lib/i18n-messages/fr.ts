@@ -2255,4 +2255,11 @@ export const FRENCH_MESSAGES: Messages = {
   "app.howManyPeoplePassItADay": "Combien de personnes passent devant chaque jour ?",
   "app.howManyPeopleDoesItReach": "Combien de personnes cela touche-t-il ?",
   "app.yourProfileIsSavedWeCouldNot": "Votre profil est enregistré. Nous n'avons pas pu actualiser votre tableau de bord{value} — rechargez la page.",
+  "app.offersStartAtMinimum": "Les offres commencent à {minimum}.",
+  "app.counteroffersStartAtMinimum": "Les contre-offres commencent à {minimum}.",
+  "errors.anOfferCannotBeMoreThan": "Une offre ne peut pas être inférieure de plus de 60 % au prix demandé de {asking}. Proposez au moins {floor}.",
+  "errors.aCounterofferCannotBeMoreThan": "Une contre-offre ne peut pas être inférieure de plus de 60 % aux {budget} sur la table. Contre-proposez au moins {floor}.",
+  "app.offersStartAtMinimumAndCannot": "Les offres commencent à {minimum} et ne peuvent pas être inférieures de plus de 60 % au prix demandé de {asking}.",
+  "app.counteroffersStartAtMinimumAndCannot": "Les contre-offres commencent à {minimum} et ne peuvent pas être inférieures de plus de 60 % aux {budget} sur la table.",
+  "app.enterTheAmountYouWantTo": "Saisissez le montant que vous voulez proposer.",
 };
