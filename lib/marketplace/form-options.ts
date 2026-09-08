@@ -393,37 +393,6 @@ export const SPONSOR_REACH_CHIPS: Array<{
   { label: "I’ll put in a number", count: null, unit: "", sentence: "" },
 ];
 
-/** What a sponsor actually receives. First two feed `format`, all feed `deliverables`. */
-export const SPONSOR_BENEFIT_CHIPS = [
-  "Logo on jerseys",
-  "Logo on the robot or kit",
-  "Banner at events",
-  "Named tier",
-  "Social shoutouts",
-  "Newsletter mention",
-  "Booth or table",
-  "Logo on our website",
-  "Announcer shout-out",
-  "Program ad",
-];
-
-/**
- * A tier's perks in menu order, not tap order.
- *
- * The card's offer line is built from the first two of these, and it used to
- * take them in whatever order the host happened to tap the chips - so a team
- * that picked "Newsletter mention" before "Logo on jerseys" published a card
- * led by the newsletter. SPONSOR_BENEFIT_CHIPS is already written most
- * tangible first; sorting by it makes the headline the two perks a sponsor
- * cares most about, every time.
- */
-export function orderedBenefits(benefits: string[]) {
-  const rank = (item: string) => {
-    const at = SPONSOR_BENEFIT_CHIPS.indexOf(item);
-    return at === -1 ? SPONSOR_BENEFIT_CHIPS.length : at;
-  };
-  return [...benefits].sort((a, b) => rank(a) - rank(b));
-}
 
 
 
@@ -442,17 +411,3 @@ export const SPONSOR_SEASON_CHIPS: Array<{
   { label: "One event", days: 30, sentence: "This is for a single event." },
   { label: "Year-round", days: 365, sentence: "This runs year-round." },
 ];
-
-
-
-/**
- * Every answer in the onboarding flow, in one controlled object.
- *
- * The old flow read its values out of FormData at submit time, which stops
- * working the moment step 2 branches by role: `saveOnboarding` guarded each
- * field with `values.has(...)`, so a creator who picked TikTok but not
- * Instagram never rendered `social_instagram`, `values.has` returned false, and
- * every handle they typed was silently discarded in favour of the stored
- * profile. Chip groups are React state and never appear in FormData at all, so
- * they would write nothing. Controlled state removes the whole bug class.
- */

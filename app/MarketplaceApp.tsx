@@ -47,6 +47,12 @@ import {
   formatCents,
 } from "@/lib/payments/fees";
 import {
+  MINIMUM_OFFER_CENTS,
+  type ProposerSide,
+  checkOfferAmount,
+  offerFloorCents,
+} from "@/lib/payments/offer-floor";
+import {
   BUSINESS_SIGNUP_CREDIT_CENTS,
   applyAdCreditToCheckout,
   isBusinessReferralCode,
@@ -969,6 +975,17 @@ type CreatorOfferTouched = {
   description: boolean;
 };
 
+/**
+ * Every answer in the onboarding flow, in one controlled object.
+ *
+ * The old flow read its values out of FormData at submit time, which stops
+ * working the moment step 2 branches by role: `saveOnboarding` guarded each
+ * field with `values.has(...)`, so a creator who picked TikTok but not
+ * Instagram never rendered `social_instagram`, `values.has` returned false, and
+ * every handle they typed was silently discarded in favour of the stored
+ * profile. Chip groups are React state and never appear in FormData at all, so
+ * they would write nothing. Controlled state removes the whole bug class.
+ */
 type OnboardingAnswers = {
   // Step 1 - identity, asked of every role exactly once.
   display_name: string;
@@ -3596,6 +3613,20 @@ function isBrief(listing: Pick<Listing, "channel">) {
   return listing.channel === "Business brief";
 }
 
+/**
+ * Which side of the money the OWNER is on when they counter this request.
+ *
+ * A supply listing pays its owner, so countering it they are the seller and
+ * only the $2 minimum binds them. Their own business brief pays the requester,
+ * so there they are the buyer and the undercut floor applies. The listing
+ * embed is null once a listing is paused, and an unknown channel reads as the
+ * seller: respond_campaign_request reads the channel directly and is the copy
+ * that actually decides.
+ */
+function counteringRequestSide(request: CampaignRequest): ProposerSide {
+  return request.listing && isBrief(request.listing) ? "payer" : "payee";
+}
+
 function isFixedPriceListing(
   listing: Pick<Listing, "price_cents" | "price_max_cents">,
 ) {
@@ -4639,29 +4670,14 @@ export default function MarketplaceApp({
   // mount because the key is per-user, and expires after a week so a stale
   // draft never resurfaces as a surprise.
   useEffect(() => {
-    if (!user) {
-      setOnboardingDraft(null);
-      return;
-    }
+    if (!user) return;
+    // Older builds stashed the answers here when a listing insert failed part
+    // way through joining. Joining writes no listing now, so nothing produces
+    // or consumes one; clear what an earlier version may have left behind.
     try {
-      const raw = window.localStorage.getItem(`sidespace.onboarding.${user.id}`);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as {
-        role?: Role | null;
-        answers?: OnboardingAnswers;
-        savedAt?: number;
-      };
-      const week = 7 * 24 * 60 * 60 * 1000;
-      if (!parsed.answers || Date.now() - (parsed.savedAt ?? 0) > week) {
-        window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
-        return;
-      }
-      setOnboardingDraft({
-        role: parsed.role ?? null,
-        answers: normalizeOnboardingAnswers(parsed.answers),
-      });
+      window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
     } catch {
-      // Unparseable or unavailable storage. The draft is a convenience.
+      // Private browsing, or storage unavailable. Nothing depends on this.
     }
   }, [user]);
   // The auth user whose profile state is already loaded, so background auth
@@ -4722,17 +4738,6 @@ export default function MarketplaceApp({
   // and we stop overwriting their words.
   const [titleTouched, setTitleTouched] = useState(false);
   const [descriptionTouched, setDescriptionTouched] = useState(false);
-  /**
-   * A half-finished onboarding, if there is one.
-   *
-   * Written only when the profile saved but the listing did not, and read only
-   * by the dashboard checklist. Kept for seven days: an unfinished listing is
-   * worth offering back tomorrow, not in a month.
-   */
-  const [onboardingDraft, setOnboardingDraft] = useState<{
-    role: Role | null;
-    answers: OnboardingAnswers;
-  } | null>(null);
   /**
    * Chosen files, captured on change instead of read from the DOM at submit.
    *
@@ -6920,42 +6925,6 @@ export default function MarketplaceApp({
     setToast("Campaign preferences saved. Recommendations are up to date.");
   }
 
-  /**
-   * Reopen onboarding to finish a listing.
-   *
-   * The only reader of the localStorage draft. It exists for one state: the
-   * profile write succeeded and the listing write did not, so the member is on
-   * the marketplace with nothing to book. Their answers come straight back
-   * rather than being retyped into a different form.
-   */
-  function resumeOnboardingDraft() {
-    seedRolePickers(profile);
-    const draft = onboardingDraft;
-    if (draft) {
-      const draftRole = draft.role ? canonicalRole(draft.role) : null;
-      if (draftRole && PICKABLE_ROLES.includes(draftRole)) {
-        setSelectedRole(draftRole);
-        setRoleTouched(true);
-      }
-      const draftAnswers = normalizeOnboardingAnswers(draft.answers);
-      setAnswers(draftAnswers);
-      const activeOffer = draftAnswers.creatorOffer;
-      setTitleTouched(
-        activeOffer
-          ? draftAnswers.creatorOfferTouched[activeOffer].title
-          : Boolean(draftAnswers.title),
-      );
-      setDescriptionTouched(
-        activeOffer
-          ? draftAnswers.creatorOfferTouched[activeOffer].description
-          : Boolean(draftAnswers.description),
-      );
-    }
-    setOnboardingMode("setup");
-    setOnboardingStep(5);
-    setOnboardingInvalidField("");
-    setOnboardingOpen(true);
-  }
 
   /** Open the modal as the profile editor rather than first-run setup. */
   function openProfileEditor(step: 1 | 2 = 1) {
@@ -7812,7 +7781,13 @@ export default function MarketplaceApp({
    * dashboard, where the same composer already lives.
    */
   function onboardingStepCount() {
-    return onboardingMode === "edit" ? 2 : 3;
+    // Two, in both modes. Setup used to run to five slides and then to three;
+    // the third asked "what do you have to offer" and promised "we'll create
+    // one listing for each", which is a listing composer wearing a sign-up
+    // form's clothes. Joining now ends once we know who somebody is, and the
+    // role-specific questions live in the profile editor, which is where a
+    // member goes when they have decided what to sell.
+    return 2;
   }
 
   function goToOnboardingStep(step: number) {
@@ -8323,9 +8298,7 @@ export default function MarketplaceApp({
       }
 
       if (onboardingMode === "setup") {
-
         window.localStorage.removeItem(`sidespace.onboarding.${user.id}`);
-        setOnboardingDraft(null);
         setOnboardingOpen(false);
         setOnboardingStep(1);
         resetIgAvatarSync();
@@ -8364,33 +8337,17 @@ export default function MarketplaceApp({
             : "Saved. Your profile is up to date.",
       );
     } catch (error) {
-      // The profile write succeeding and the listing write failing is a real
-      // state, and it is recoverable: they are on the marketplace, and the
-      // draft survives. Rolling the profile back would be worse - it would
-      // take away the thing that did work.
+      // The profile row is already committed by the time anything here can
+      // throw, so what failed is the reload that follows it, not the save.
+      // This branch used to say the listing had not posted and stash a draft
+      // to resume - joining writes no listing now, so that message named a
+      // thing that never happened and the draft had nothing left to restore.
       if (savedProfile) {
-        try {
-          window.localStorage.setItem(
-            `sidespace.onboarding.${user.id}`,
-            JSON.stringify({ role: selectedRole, answers, savedAt: Date.now() }),
-          );
-          setOnboardingDraft({ role: selectedRole, answers });
-        } catch {
-          // Private browsing, or storage full. The draft is a convenience.
-        }
         setOnboardingOpen(false);
         setOnboardingStep(1);
-        await Promise.all([
-          loadMarketplace(),
-          loadOwnListings(savedProfile),
-          loadAccountMarketplaceState(savedProfile),
-        ]);
-        // Include the actual reason. This branch swallowed it, so a listing
-        // rejected for a fixable reason (a number too large, a title too long)
-        // read as an unexplained failure and Publish looped on the same value.
         const why = friendlyDbError(error);
         setToast(
-          "Your profile is saved, but the listing didn’t post.{value} Nothing you typed is lost — open it again from your dashboard.", undefined, { value: why ? ` ${why}` : "" },
+          "Your profile is saved. We could not refresh your dashboard{value} — reload the page.", undefined, { value: why ? `: ${why}` : "" },
         );
       } else if ((error as { code?: string })?.code === "23505") {
         // A duplicate @handle. profiles_handle_unique is a unique index on
@@ -9697,7 +9654,10 @@ export default function MarketplaceApp({
       (!budgetInput || !Number.isFinite(proposedBudget) || proposedBudget < 0)
     ) {
       setBusy(false);
-      return setCampaignFeedback(tx("Enter a budget of 0 or more."));
+      // The floor itself is checked below, once the amount is in cents. This
+      // only catches an empty or unreadable box, so it must not promise a
+      // number the floor then refuses.
+      return setCampaignFeedback(tx("Enter the amount you want to offer."));
     }
 
     let budgetCents = campaignListing.price_cents;
@@ -9717,6 +9677,36 @@ export default function MarketplaceApp({
           tx(error instanceof Error
             ? error.message
             : "Enter a dollar amount with no more than two decimals."),
+        );
+      }
+      // A first offer is measured against what the listing asks. The database
+      // refuses the same amounts, so this is only about saying which number is
+      // wrong before the owner is notified of anything.
+      //
+      // On a supply listing the member offering is the side that would pay, so
+      // the undercut floor binds them. A business brief runs the other way -
+      // the business owns the listing and the creator pitches against it - and
+      // a creator naming a smaller number is agreeing to be paid less, not
+      // lowballing anyone, so only the $2 minimum applies there.
+      const floor = checkOfferAmount({
+        amountCents: budgetCents,
+        referenceCents: campaignListing.price_cents,
+        side: isBrief(campaignListing) ? "payee" : "payer",
+      });
+      if (!floor.ok) {
+        setBusy(false);
+        return setCampaignFeedback(
+          floor.reason === "below_minimum"
+            ? tx("Offers start at {minimum}.", {
+                minimum: formatCents(MINIMUM_OFFER_CENTS),
+              })
+            : tx(
+                "An offer cannot be more than 60% below the {asking} asking price. Offer at least {floor}.",
+                {
+                  asking: formatCents(campaignListing.price_cents),
+                  floor: formatCents(floor.floorCents),
+                },
+              ),
         );
       }
     }
@@ -10271,13 +10261,55 @@ export default function MarketplaceApp({
       return;
     }
     const values = new FormData(event.currentTarget);
+    const counterSide = counteringRequestSide(counteringRequest);
+    let counterCents: number;
+    try {
+      counterCents = dollarsToCents(String(values.get("counter_budget") ?? "0"));
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Enter a dollar amount with no more than two decimals.",
+      );
+      return;
+    }
+    // Measured against the member's own budget, never against a counteroffer
+    // already standing: an owner revising downward is conceding toward the
+    // member, and anchoring to their own previous number would forbid it.
+    //
+    // Only the buying side is floored. Countering a supply listing, the owner
+    // is the seller, so their number is theirs to lower; countering a pitch on
+    // their own brief they are the buyer, and the undercut floor applies. The
+    // listing embed is null once a listing is paused, and an unknown channel
+    // reads as the seller here - respond_campaign_request reads the channel
+    // directly and is the copy that actually decides.
+    const floor = checkOfferAmount({
+      amountCents: counterCents,
+      referenceCents: counteringRequest.budget_cents,
+      side: counterSide,
+    });
+    if (!floor.ok) {
+      if (floor.reason === "below_minimum") {
+        setToast("Counteroffers start at {minimum}.", "problem", {
+          minimum: formatCents(MINIMUM_OFFER_CENTS),
+        });
+      } else {
+        setToast(
+          "A counteroffer cannot be more than 60% below the {budget} on the table. Counter with at least {floor}.",
+          "problem",
+          {
+            budget: formatCents(counteringRequest.budget_cents),
+            floor: formatCents(floor.floorCents),
+          },
+        );
+      }
+      return;
+    }
     setBusy(true);
     const { error } = await supabase.rpc("respond_campaign_request", {
       request_id: counteringRequest.id,
       next_status: "countered",
-      proposed_budget_cents: dollarsToCents(
-        String(values.get("counter_budget") ?? "0"),
-      ),
+      proposed_budget_cents: counterCents,
       response_message: String(values.get("counter_message") ?? "").trim(),
     });
     setBusy(false);
@@ -12540,22 +12572,19 @@ export default function MarketplaceApp({
                 <span>{ownListings.length ? "✓" : "3"}</span>
                 <div>
                   <strong>{t("app.publishYourFirstListing")}</strong>
-                  <p>
-                    {onboardingDraft
-                      ? t("app.everythingYouTypedIsStillHere")
-                      : t("app.yourSpaceOrAudienceCannotBeBooked")}
-                  </p>
+                  <p>{t("app.yourSpaceOrAudienceCannotBeBooked")}</p>
                 </div>
                 {!ownListings.length && (
                   <button
                     className="button button-coral button-small"
-                    // Resume onboarding rather than opening the 16-control
-                    // listing form this redesign exists to replace. If the
-                    // profile saved but the listing insert failed, the answers
-                    // are still in localStorage and come straight back.
-                    onClick={resumeOnboardingDraft}
+                    // The listing composer, the same one every other "Create
+                    // listing" button opens. This used to reopen onboarding at
+                    // the slide that composed a listing; joining no longer has
+                    // one, and pointing at a step that does not exist opened an
+                    // empty modal nobody could publish from.
+                    onClick={openListingEditor}
                   >
-                    {onboardingDraft ? t("app.finishMyListing") : t("app.createListing")}
+                    {t("app.createListing")}
                   </button>
                 )}
               </li>
@@ -14838,22 +14867,36 @@ export default function MarketplaceApp({
                                   : "details" })
                             : t("app.readyToContinue")}
                         </span>
-                        <button
-                          type="button"
-                          className="button button-dark"
-                          onClick={advanceOnboarding}
-                        >
-                          {onboardingStep === 1
-                            ? onboardingMode === "edit"
+                        {onboardingStep >= onboardingStepCount() ? (
+                          <button
+                            type="submit"
+                            className="button button-coral"
+                            // Gated on the Instagram lookup too: publishOnboarding
+                            // snapshots `answers` before it awaits that promise, so
+                            // a follower count filled in afterwards would save as 0.
+                            disabled={busy || igAvatarBusy}
+                          >
+                            {busy
+                              ? t("app.publishing2")
+                              : onboardingPreview
+                                ? t("app.finishPreview")
+                                : onboardingMode === "edit"
+                                  ? t("app.saveChanges")
+                                  : t("app.finishSetup")}{" "}
+                            <span>✓</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="button button-dark"
+                            onClick={advanceOnboarding}
+                          >
+                            {onboardingMode === "edit"
                               ? t("app.nextYourDetails")
-                              : t("app.continue")
-                            : selectedRole === "business"
-                              ? t("app.continue")
-                              : selectedRole === "creator"
-                                ? t("app.nextWhatYouHaveToAdvertise")
-                                : t("app.next")}{" "}
-                          <span>→</span>
-                        </button>
+                              : t("app.continue")}{" "}
+                            <span>→</span>
+                          </button>
+                        )}
                       </span>
                     )}
                   </div>
@@ -14908,6 +14951,87 @@ export default function MarketplaceApp({
                   <>
                     <h3>{t("app.yourDetails")}</h3>
                     <p>{t("app.thisIsWhatPeopleSeeOnYour")}</p>
+                    {/* What they actually offer, and how far it reaches.
+                        Both questions used to live on a setup slide that joining
+                        no longer visits, and they were never in the editor - so
+                        every Creator was stamped "social" and a cafe renting its
+                        window was asked for a follower count it does not have,
+                        with nowhere to say "about 300 people a day" instead.
+                        avg_views and reach_unit had no writer left at all. */}
+                    {selectedRole === "creator" && (
+                      <>
+                        <div className="form-subsection field-wide">
+                          <span>{t("app.yourWayToAdvertise")}</span>
+                          <h4>{t("app.whatDoYouHaveToOffer")}</h4>
+                        </div>
+                        <div
+                          className="scope-grid creator-offer-grid"
+                          data-field="creatorOffer"
+                          role="group"
+                          aria-label={t("app.whatKindOfAdvertisingYouOffer")}
+                        >
+                          {CREATOR_OFFER_TYPES.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              aria-pressed={answers.creatorOffers.includes(option.value)}
+                              className={
+                                answers.creatorOffers.includes(option.value) ? "active" : ""
+                              }
+                              onClick={() => toggleCreatorOffer(option.value)}
+                            >
+                              <strong>{tx(option.label)}</strong>
+                              <small>{tx(option.help)}</small>
+                              <span className="offer-card-state">
+                                {answers.creatorOffers.includes(option.value)
+                                  ? t("app.selected")
+                                  : t("app.select")}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                        {isPhysicalOffer(selectedRole, answers) && (
+                          <label className="field-wide">
+                            {t("app.howManyPeoplePassItADay")}
+                            <input
+                              inputMode="numeric"
+                              max={10000000}
+                              min={1}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  trafficCount: event.target.value
+                                    ? Math.max(0, Number(event.target.value))
+                                    : null,
+                                }))
+                              }
+                              type="number"
+                              value={answers.trafficCount ?? ""}
+                            />
+                          </label>
+                        )}
+                        {isSponsorshipOffer(selectedRole, answers) && (
+                          <label className="field-wide">
+                            {t("app.howManyPeopleDoesItReach")}
+                            <input
+                              inputMode="numeric"
+                              max={10000000}
+                              min={1}
+                              onChange={(event) =>
+                                setAnswers((current) => ({
+                                  ...current,
+                                  reachCount: event.target.value
+                                    ? Math.max(0, Number(event.target.value))
+                                    : null,
+                                }))
+                              }
+                              type="number"
+                              value={answers.reachCount ?? ""}
+                            />
+                          </label>
+                        )}
+                      </>
+                    )}
                     {/* Gated. This block asks which platforms you post on and
                         your follower count, and it used to render for EVERY
                         role - so a barbershop or a robotics team opening their
@@ -16619,7 +16743,11 @@ export default function MarketplaceApp({
           <form className="field-grid campaign-form" onSubmit={submitCampaignRequest} onInvalidCapture={(event) => revealInvalidField(event.target)}>
             <BookingFields listing={campaignListing} quoteRequired={campaignRequestMode === "buy_now"} />
             {campaignRequestMode !== "buy_now" && <>
-              <label className="field-wide">{t("app.offerTotal")}<input name="budget" type="number" min="0" step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
+              <label className="field-wide">{t("app.offerTotal")}
+                <small>{isBrief(campaignListing)
+                  ? tx("Offers start at {minimum}.", { minimum: formatCents(MINIMUM_OFFER_CENTS) })
+                  : tx("Offers start at {minimum} and cannot be more than 60% below the {asking} asking price.", { minimum: formatCents(MINIMUM_OFFER_CENTS), asking: formatCents(campaignListing.price_cents) })}</small>
+                <input name="budget" type="number" min={centsToInputDollars(offerFloorCents(campaignListing.price_cents, isBrief(campaignListing) ? "payee" : "payer"))} step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
             <label className="field-wide">{isBrief(campaignListing) ? t("app.whatYoullDeliver") : t("app.whatYouNeed")}<textarea name="requested_deliverables" required minLength={2} maxLength={1000} defaultValue={campaignListingCopy?.deliverables || campaignListingCopy?.format} /></label>
             </>}
             <details className="composer-options field-wide"><summary>{t("app.campaignDetailsOptional")}</summary><div className="field-grid">
@@ -16667,11 +16795,17 @@ export default function MarketplaceApp({
           <form className="stack-form" onSubmit={submitCounteroffer}>
             <label>
               {t("app.counterBudget")}
+              <small>
+                {counteringRequestSide(counteringRequest) === "payer"
+                  ? tx("Counteroffers start at {minimum} and cannot be more than 60% below the {budget} on the table.", { minimum: formatCents(MINIMUM_OFFER_CENTS), budget: formatCents(counteringRequest.budget_cents) })
+                  : tx("Counteroffers start at {minimum}.", { minimum: formatCents(MINIMUM_OFFER_CENTS) })}
+              </small>
               <input
                 name="counter_budget"
                 type="number"
+                step="0.01"
                 max="2000000000"
-                min="0"
+                min={centsToInputDollars(offerFloorCents(counteringRequest.budget_cents, counteringRequestSide(counteringRequest)))}
                 required
                 // The standing counteroffer when there is one: pre-filling
                 // the requester's original number meant an owner revising

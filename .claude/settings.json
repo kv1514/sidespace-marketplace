@@ -92,8 +92,7 @@
       "Bash(mktemp:*)", "Bash(true:*)", "Bash(false:*)", "Bash(test:*)", "Bash(expr:*)",
       "Bash(bc:*)", "Bash(yes:*)", "Bash(cd:*)", "Bash(set:*)", "Bash(unset:*)",
       "Bash(source:*)", "Bash(bash:*)", "Bash(sh:*)", "Bash(zsh:*)", "Bash(xdg-open:*)",
-      "Bash(open:*)", "Bash(sudo:*)", "Bash(dd:*)", "Bash(mkfs:*)", "Bash(mount:*)",
-      "Bash(umount:*)", "Bash(shutdown:*)", "Bash(reboot:*)", "Bash(systemctl:*)",
+      "Bash(open:*)", "Bash(sudo:*)", "Bash(systemctl:*)",
       "Bash(service:*)", "Bash(apt:*)", "Bash(apt-get:*)", "Bash(brew:*)",
 
       "Bash(python3:*)", "Bash(python:*)", "Bash(pip3:*)", "Bash(pip:*)", "Bash(uv:*)",
