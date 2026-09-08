@@ -123,12 +123,22 @@ versions only, so nothing will re-run.
 
 **Action:** none required. Note it when reading the ledger.
 
-### F. The one migration that should genuinely apply (1)
+### F. Migrations that should genuinely apply (4)
 
-`20260907100000_my_listings_carries_the_booking_terms.sql` is new and
-unapplied. Production's `public.my_listings` already has the 44 columns it
-writes, in the same order, so it is a `create or replace` with an identical
-select list: a no-op except for the ledger row.
+These are ordinary unapplied work, not drift. They carry their own version
+numbers, they are missing from the ledger only because nobody has pushed them
+yet, and `db push` should run them once the bookkeeping in A to C is done.
+
+`20260907100000_my_listings_carries_the_booking_terms.sql` is the projection
+repair. Production's `public.my_listings` already has the 44 columns it writes,
+in the same order, so it is a `create or replace` with an identical select
+list: a no-op except for the ledger row.
+
+`20260907120000_offer_and_counteroffer_floors.sql`,
+`20260908080000_a_kpi_event_outlives_what_it_counted.sql` and
+`20260908090000_the_outbox_sends_itself.sql` landed on `main` after this
+document was first written, and are genuinely new behaviour rather than
+bookkeeping. The outbox one needs `pg_cron`; production has it at 1.6.4.
 
 ## The path
 
@@ -159,8 +169,10 @@ supabase migration list --linked
 supabase db push --linked --dry-run
 ```
 
-The dry run must list precisely the eleven versions in sections A, B and F and
-nothing else. If it lists anything more, stop.
+The dry run must list precisely the fourteen versions in sections A, B and F
+and nothing else. If it lists anything more, stop: something has landed on
+`main` since this was written, and it needs the same triage the rest of the
+table got before you go any further.
 
 **4. Record the ten pre-existing repo versions as applied.** This writes ledger
 rows; it does not execute any SQL.
@@ -184,25 +196,25 @@ supabase migration repair --linked --status reverted \
   20260907090829 20260907091225
 ```
 
-**6. Verify the backlog is now one migration.**
+**6. Verify the backlog is now only the section F migrations.**
 
 ```bash
 supabase db push --linked --dry-run
 ```
 
-It must list only `20260907100000`. If it lists anything else, stop and
-re-read steps 4 and 5 before pushing.
+It must list only the four section F versions. If it lists anything else, stop
+and re-read steps 4 and 5 before pushing.
 
-**7. Apply it.**
+**7. Apply them.**
 
 ```bash
 supabase db push --linked
 ```
 
-**8. Verify nothing moved.** Re-run the three fingerprint queries against
-production. All three must be unchanged from step 1, because the only
-migration applied was a no-op view replacement. Then confirm the projection
-directly:
+**8. Verify the projection survived.** `20260907100000` is a no-op, but the
+other three section F migrations are real schema changes, so the column and
+function fingerprints from step 1 are expected to move. What must not move is
+the owner projection this whole exercise exists to protect:
 
 ```sql
 select count(*) from information_schema.columns
