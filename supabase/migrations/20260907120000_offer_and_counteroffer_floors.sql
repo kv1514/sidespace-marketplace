@@ -1,25 +1,33 @@
--- Floors for what either side may put on the table.
+-- Floors for what may be put on the table.
 --
--- A negotiation here is two numbers passed back and forth: a member offers,
--- the owner counters. Neither number was bounded, so a $900 window could be
--- offered $5 and a $2,000 pitch countered at $20. Nothing failed - the other
--- side just got a notification and a decision to make about an amount nobody
--- meant seriously, which is the cheapest way to make a marketplace this size
--- feel worthless to the people supplying it.
+-- A negotiation here is two numbers passed back and forth: one side proposes,
+-- the other counters. Neither number was bounded, so a $900 window could be
+-- offered $5. Nothing failed - the other side just got a notification and a
+-- decision to make about an amount nobody meant seriously, which is the
+-- cheapest way to make a marketplace this size feel worthless to the people
+-- supplying it.
 --
 -- Two rules, matching lib/payments/offer-floor.ts cent for cent:
 --
---   * A proposition may not undercut the amount already on the table by more
---     than 60%. The reference is always what the OTHER side last put up - the
---     listed price for a first offer, the member's budget for a counteroffer.
---     Anchoring a revised counteroffer to the owner's own earlier one would
---     forbid them from conceding toward the member, which is the direction a
---     revision usually moves.
---   * Nothing may be proposed under $2. Below that the card fee is most of the
---     money and neither side is really transacting.
+--   * THE SIDE THAT WOULD PAY may not undercut the amount already on the table
+--     by more than 60%. The reference is always what the OTHER side last put
+--     up - the listed price for a first offer, the member's budget for a
+--     counteroffer. Anchoring a revised counteroffer to the proposer's own
+--     earlier one would forbid them from conceding toward the other side,
+--     which is the direction a revision usually moves.
+--   * Nobody may propose anything under $2. Below that the card fee is most of
+--     the money and neither side is really transacting.
 --
--- Going up is deliberately not capped: asking for more than was offered is an
--- ordinary ask, and the other side can decline it.
+-- Only the buying side is floored. A seller naming a smaller number is not
+-- lowballing anyone - they are agreeing to be paid less, which is theirs to
+-- decide. Which side that is comes from the listing's channel, the same way
+-- respond_campaign_request already picks the payer: a business brief is paid
+-- FOR by its owner and paid TO the requester, and every other listing runs the
+-- other way. So the undercut floor reaches a first offer on a supply listing
+-- and a business countering a pitch on its own brief, and not the reverse.
+--
+-- Going up is deliberately not capped on either side: asking for more than was
+-- offered is an ordinary ask, and the other side can decline it.
 --
 -- Both checks run in the database because the browser writes campaign requests
 -- directly. The matching checks in the client exist to name the wrong number
@@ -66,7 +74,7 @@ security definer
 set search_path = ''
 as $$
 declare
-  asking_cents bigint;
+  listing_row public.listings;
   floor_cents bigint;
 begin
   -- Book-as-listed is not a proposition. Its amount IS the listing's price,
@@ -76,23 +84,31 @@ begin
     return new;
   end if;
 
-  select price_cents into asking_cents
+  select * into listing_row
   from public.listings
   where id = new.listing_id;
 
-  if asking_cents is null then
+  if listing_row.id is null then
     raise exception 'The campaign listing is no longer available.';
   end if;
 
+  -- The $2 minimum binds whoever is proposing.
   if new.budget_cents < 200 then
     raise exception 'Offers start at %.', private.money_text(200);
   end if;
 
-  floor_cents := private.offer_floor_cents(asking_cents);
+  -- The undercut floor binds only the side that would pay. On a business brief
+  -- the requester is the CREATOR pitching against the brief, and a creator
+  -- naming a smaller number is agreeing to be paid less - theirs to decide.
+  if listing_row.channel = 'Business brief' then
+    return new;
+  end if;
+
+  floor_cents := private.offer_floor_cents(listing_row.price_cents);
   if new.budget_cents < floor_cents then
     raise exception
       'An offer cannot be more than 60%% below the % asking price. Offer at least %.',
-      private.money_text(asking_cents),
+      private.money_text(listing_row.price_cents),
       private.money_text(floor_cents);
   end if;
 
@@ -107,7 +123,7 @@ create trigger enforce_offer_floor
   before insert on public.campaign_requests
   for each row execute function private.enforce_offer_floor();
 
--- Same two rules on the reply side. Unchanged from the previous definition
+-- The same two rules on the reply side. Unchanged from the previous definition
 -- apart from the counteroffer floor: the row lock, the status transitions, and
 -- the payer/payee snapshot all still work as they did.
 create or replace function public.respond_campaign_request(
@@ -169,17 +185,23 @@ begin
         or char_length(trim(response_message)) < 10 then
         raise exception 'A counteroffer needs a valid budget and a short explanation.';
       end if;
+      -- The $2 minimum binds whoever is proposing.
       if proposed_budget_cents < 200 then
         raise exception 'Counteroffers start at %.', private.money_text(200);
       end if;
-      -- Against the member's budget, never against a counteroffer already
-      -- standing, so an owner may keep conceding toward the member.
-      counter_floor_cents := private.offer_floor_cents(current_request.budget_cents);
-      if proposed_budget_cents < counter_floor_cents then
-        raise exception
-          'A counteroffer cannot be more than 60%% below the % on the table. Counter with at least %.',
-          private.money_text(current_request.budget_cents),
-          private.money_text(counter_floor_cents);
+      -- The undercut floor binds only the side that would pay, and the owner
+      -- countering is the payer on their own business brief and the payee on
+      -- everything else - the same split the payer/payee snapshot below makes.
+      -- Measured against the member's budget, never against a counteroffer
+      -- already standing, so a business may keep conceding toward the creator.
+      if listing_channel = 'Business brief' then
+        counter_floor_cents := private.offer_floor_cents(current_request.budget_cents);
+        if proposed_budget_cents < counter_floor_cents then
+          raise exception
+            'A counteroffer cannot be more than 60%% below the % on the table. Counter with at least %.',
+            private.money_text(current_request.budget_cents),
+            private.money_text(counter_floor_cents);
+        end if;
       end if;
     end if;
   elsif own_profile_id = current_request.requester_profile_id then

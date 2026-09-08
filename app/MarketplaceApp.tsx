@@ -48,6 +48,7 @@ import {
 } from "@/lib/payments/fees";
 import {
   MINIMUM_OFFER_CENTS,
+  type ProposerSide,
   checkOfferAmount,
   offerFloorCents,
 } from "@/lib/payments/offer-floor";
@@ -3987,6 +3988,20 @@ function featuredRank(listing: Pick<Listing, "featured_rank">) {
 
 function isBrief(listing: Pick<Listing, "channel">) {
   return listing.channel === "Business brief";
+}
+
+/**
+ * Which side of the money the OWNER is on when they counter this request.
+ *
+ * A supply listing pays its owner, so countering it they are the seller and
+ * only the $2 minimum binds them. Their own business brief pays the requester,
+ * so there they are the buyer and the undercut floor applies. The listing
+ * embed is null once a listing is paused, and an unknown channel reads as the
+ * seller: respond_campaign_request reads the channel directly and is the copy
+ * that actually decides.
+ */
+function counteringRequestSide(request: CampaignRequest): ProposerSide {
+  return request.listing && isBrief(request.listing) ? "payer" : "payee";
 }
 
 function isFixedPriceListing(
@@ -10036,9 +10051,16 @@ export default function MarketplaceApp({
       // A first offer is measured against what the listing asks. The database
       // refuses the same amounts, so this is only about saying which number is
       // wrong before the owner is notified of anything.
+      //
+      // On a supply listing the member offering is the side that would pay, so
+      // the undercut floor binds them. A business brief runs the other way -
+      // the business owns the listing and the creator pitches against it - and
+      // a creator naming a smaller number is agreeing to be paid less, not
+      // lowballing anyone, so only the $2 minimum applies there.
       const floor = checkOfferAmount({
         amountCents: budgetCents,
         referenceCents: campaignListing.price_cents,
+        side: isBrief(campaignListing) ? "payee" : "payer",
       });
       if (!floor.ok) {
         setBusy(false);
@@ -10608,6 +10630,7 @@ export default function MarketplaceApp({
       return;
     }
     const values = new FormData(event.currentTarget);
+    const counterSide = counteringRequestSide(counteringRequest);
     let counterCents: number;
     try {
       counterCents = dollarsToCents(String(values.get("counter_budget") ?? "0"));
@@ -10622,9 +10645,17 @@ export default function MarketplaceApp({
     // Measured against the member's own budget, never against a counteroffer
     // already standing: an owner revising downward is conceding toward the
     // member, and anchoring to their own previous number would forbid it.
+    //
+    // Only the buying side is floored. Countering a supply listing, the owner
+    // is the seller, so their number is theirs to lower; countering a pitch on
+    // their own brief they are the buyer, and the undercut floor applies. The
+    // listing embed is null once a listing is paused, and an unknown channel
+    // reads as the seller here - respond_campaign_request reads the channel
+    // directly and is the copy that actually decides.
     const floor = checkOfferAmount({
       amountCents: counterCents,
       referenceCents: counteringRequest.budget_cents,
+      side: counterSide,
     });
     if (!floor.ok) {
       if (floor.reason === "below_minimum") {
@@ -17082,8 +17113,10 @@ export default function MarketplaceApp({
             <BookingFields listing={campaignListing} quoteRequired={campaignRequestMode === "buy_now"} />
             {campaignRequestMode !== "buy_now" && <>
               <label className="field-wide">{t("app.offerTotal")}
-                <small>{tx("Offers start at {minimum} and cannot be more than 60% below the {asking} asking price.", { minimum: formatCents(MINIMUM_OFFER_CENTS), asking: formatCents(campaignListing.price_cents) })}</small>
-                <input name="budget" type="number" min={centsToInputDollars(offerFloorCents(campaignListing.price_cents))} step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
+                <small>{isBrief(campaignListing)
+                  ? tx("Offers start at {minimum}.", { minimum: formatCents(MINIMUM_OFFER_CENTS) })
+                  : tx("Offers start at {minimum} and cannot be more than 60% below the {asking} asking price.", { minimum: formatCents(MINIMUM_OFFER_CENTS), asking: formatCents(campaignListing.price_cents) })}</small>
+                <input name="budget" type="number" min={centsToInputDollars(offerFloorCents(campaignListing.price_cents, isBrief(campaignListing) ? "payee" : "payer"))} step="0.01" max="2000000000" required defaultValue={centsToInputDollars(campaignListing.price_cents)} /></label>
             <label className="field-wide">{isBrief(campaignListing) ? t("app.whatYoullDeliver") : t("app.whatYouNeed")}<textarea name="requested_deliverables" required minLength={2} maxLength={1000} defaultValue={campaignListingCopy?.deliverables || campaignListingCopy?.format} /></label>
             </>}
             <details className="composer-options field-wide"><summary>{t("app.campaignDetailsOptional")}</summary><div className="field-grid">
@@ -17132,14 +17165,16 @@ export default function MarketplaceApp({
             <label>
               {t("app.counterBudget")}
               <small>
-                {tx("Counteroffers start at {minimum} and cannot be more than 60% below the {budget} on the table.", { minimum: formatCents(MINIMUM_OFFER_CENTS), budget: formatCents(counteringRequest.budget_cents) })}
+                {counteringRequestSide(counteringRequest) === "payer"
+                  ? tx("Counteroffers start at {minimum} and cannot be more than 60% below the {budget} on the table.", { minimum: formatCents(MINIMUM_OFFER_CENTS), budget: formatCents(counteringRequest.budget_cents) })
+                  : tx("Counteroffers start at {minimum}.", { minimum: formatCents(MINIMUM_OFFER_CENTS) })}
               </small>
               <input
                 name="counter_budget"
                 type="number"
                 step="0.01"
                 max="2000000000"
-                min={centsToInputDollars(offerFloorCents(counteringRequest.budget_cents))}
+                min={centsToInputDollars(offerFloorCents(counteringRequest.budget_cents, counteringRequestSide(counteringRequest)))}
                 required
                 // The standing counteroffer when there is one: pre-filling
                 // the requester's original number meant an owner revising
