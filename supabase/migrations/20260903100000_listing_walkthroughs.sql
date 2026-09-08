@@ -101,14 +101,5 @@ select
   provenance_status, availability_confirmed_at, instant_booking_enabled,
   availability_dates, booking_duration_days, booking_timezone,
   street_view_captured, street_view_pano, tour_url, tour_kind
-from private.current_user_listing_rows() listing(
-  id, owner_profile_id, title, channel, format, price_cents, price_unit,
-  description, demographics, image_url, status, created_at, updated_at,
-  image_urls, location_area, availability_notes, available_from, available_to,
-  lead_time_days, minimum_booking, deliverables, cancellation_policy,
-  price_max_cents, brief_scope, target_platforms, street_address,
-  surface_types, install_by, space_size, sponsor_tier, sponsor_slots,
-  provenance_status, availability_confirmed_at, instant_booking_enabled,
-  availability_dates, booking_duration_days, booking_timezone,
-  street_view_captured, street_view_pano, tour_url, tour_kind
-);
+-- See 20260903073000 for why the helper is called bare, with no alias list.
+from private.current_user_listing_rows();
