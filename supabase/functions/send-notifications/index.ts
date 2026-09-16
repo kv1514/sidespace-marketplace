@@ -9,8 +9,19 @@
 // It sends exactly what is stored. It never composes a notification, never
 // substitutes a recipient, and never marks sent what it did not send: the row
 // is marked only after Resend returns a message id.
+//
+// A CLAIM SPENDS AN ATTEMPT, so a run that cannot possibly send must not take
+// rows. Everything the run needs is therefore resolved before the first claim.
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
+
+// Values without which no send can succeed. OUTBOX_SHARED_SECRET is checked
+// separately, before these, so that a caller learns nothing either way.
+const REQUIRED = [
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "RESEND_API_KEY",
+] as const;
 
 // Appended to every notification, so a recipient always knows why it reached
 // them. Kept here rather than in the row so the wording is one thing.
@@ -75,9 +86,27 @@ async function send(row: Claimed): Promise<string> {
 
 Deno.serve(async (request: Request) => {
   // The URL is public, so the shared secret is what makes this ours. A wrong
-  // or missing secret is indistinguishable from a wrong URL to a caller.
-  if (request.headers.get("x-outbox-secret") !== required("OUTBOX_SHARED_SECRET")) {
+  // secret, and an unset one, are both indistinguishable from a wrong URL to a
+  // caller - an unset secret must never mean "let everyone in".
+  const secret = Deno.env.get("OUTBOX_SHARED_SECRET");
+  if (!secret || request.headers.get("x-outbox-secret") !== secret) {
     return new Response("Not found", { status: 404 });
+  }
+
+  // Claim nothing we cannot send. Before this check, a missing RESEND_API_KEY
+  // meant the run claimed a batch and then failed every row on the missing
+  // key; because a failure frees the row, the next minute's run claimed it
+  // again, and mail was dead-lettered at three attempts inside three minutes
+  // without one send ever being tried. Missing configuration is now a no-op.
+  // The names are logged, never returned: past the secret this is ours, but
+  // the body still says nothing a prober could collect.
+  const missing = REQUIRED.filter((name) => !Deno.env.get(name));
+  if (missing.length > 0) {
+    console.error(`not configured, claimed nothing: ${missing.join(", ")}`);
+    return new Response(JSON.stringify({ error: "not configured" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const claim = await rpc("claim_notification_batch", { p_limit: 25 });
@@ -103,7 +132,9 @@ Deno.serve(async (request: Request) => {
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       // The row keeps the attempt it spent claiming, so a permanently broken
-      // address dead-letters at three rather than retrying forever.
+      // address dead-letters at three rather than retrying forever. It also
+      // keeps its claim stamp, so the reclaim window - not the next cron
+      // minute - decides when attempt two happens.
       await rpc("mark_notification_failed", { p_id: row.id, p_error: message });
       failures.push({ id: row.id, error: message });
       console.error(`failed ${row.kind} ${row.id}: ${message}`);
