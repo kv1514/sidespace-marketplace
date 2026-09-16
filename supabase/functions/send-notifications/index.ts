@@ -10,6 +10,9 @@
 // substitutes a recipient, and never marks sent what it did not send: the row
 // is marked only after Resend returns a message id.
 //
+// verify_jwt is off because pg_cron calls this with no user session. The
+// x-outbox-secret header is what authenticates the caller instead.
+//
 // A CLAIM SPENDS AN ATTEMPT, so a run that cannot possibly send must not take
 // rows. Everything the run needs is therefore resolved before the first claim.
 
