@@ -2115,6 +2115,8 @@ export const KOREAN_MESSAGES: Messages = {
   "app.findingYourLocationTookTooLongChoose": "위치를 찾는 데 시간이 너무 오래 걸렸습니다. 대신 U.S. 도시와 주를 선택하세요.",
   "app.pickHowYoullUseSidespaceFirst": "SideSpace를 먼저 어떻게 사용할지 선택하세요.",
   "app.addYourDisplayNameBeforeContinuing": "계속하기 전에 표시 이름을 추가하세요.",
+  "app.useTheNamePeopleWouldRecognise": "사람들이 업체를 알아볼 수 있는 이름을 사용하세요.",
+  "app.thatNameIsTooShortUseTheName": "이름이 너무 짧습니다 — 사람들이 알고 있는 이름을 사용하세요.",
   "app.addYourCityOrMarketBeforeContinuing": "계속하기 전에 도시 또는 활동 지역을 추가하세요.",
   "app.chooseAUSCityAndState": "추천 목록에서 U.S. 도시와 주를 선택하세요.",
   "app.describeYourBusinessInAtLeastFive": "업체를 다섯 단어 이상으로 설명하세요.",

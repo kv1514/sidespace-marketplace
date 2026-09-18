@@ -2115,6 +2115,8 @@ export const SPANISH_MESSAGES: Messages = {
   "app.findingYourLocationTookTooLongChoose": "Encontrar tu ubicación tardó demasiado. Mejor elige una ciudad y un estado de EE. UU.",
   "app.pickHowYoullUseSidespaceFirst": "Elige cómo usarás SideSpace primero.",
   "app.addYourDisplayNameBeforeContinuing": "Agrega tu nombre para mostrar antes de continuar.",
+  "app.useTheNamePeopleWouldRecognise": "Usa el nombre por el que la gente reconocería tu negocio.",
+  "app.thatNameIsTooShortUseTheName": "Ese nombre es demasiado corto — usa el nombre por el que te conocen.",
   "app.addYourCityOrMarketBeforeContinuing": "Agrega tu ciudad o mercado antes de continuar.",
   "app.chooseAUSCityAndState": "Elige una ciudad y un estado de EE. UU. de las sugerencias.",
   "app.describeYourBusinessInAtLeastFive": "Describe tu negocio en al menos cinco palabras.",

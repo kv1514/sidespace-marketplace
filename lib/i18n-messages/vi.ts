@@ -2115,6 +2115,8 @@ export const VIETNAMESE_MESSAGES: Messages = {
   "app.findingYourLocationTookTooLongChoose": "Xác định vị trí của bạn mất quá nhiều thời gian. Hãy chọn thành phố và tiểu bang tại U.S. thay thế.",
   "app.pickHowYoullUseSidespaceFirst": "Chọn cách bạn sẽ dùng SideSpace trước tiên.",
   "app.addYourDisplayNameBeforeContinuing": "Hãy thêm tên hiển thị của bạn trước khi tiếp tục.",
+  "app.useTheNamePeopleWouldRecognise": "Hãy dùng tên mà mọi người nhận ra doanh nghiệp của bạn.",
+  "app.thatNameIsTooShortUseTheName": "Tên đó quá ngắn — hãy dùng tên mà mọi người biết đến bạn.",
   "app.addYourCityOrMarketBeforeContinuing": "Hãy thêm thành phố hoặc thị trường của bạn trước khi tiếp tục.",
   "app.chooseAUSCityAndState": "Hãy chọn thành phố và tiểu bang tại U.S. từ các gợi ý.",
   "app.describeYourBusinessInAtLeastFive": "Hãy mô tả doanh nghiệp của bạn bằng ít nhất năm từ.",
