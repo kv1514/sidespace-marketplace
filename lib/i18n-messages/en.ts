@@ -2114,6 +2114,8 @@ export const ENGLISH_MESSAGES = {
   "app.findingYourLocationTookTooLongChoose": "Finding your location took too long. Choose a U.S. city and state instead.",
   "app.pickHowYoullUseSidespaceFirst": "Pick how you’ll use SideSpace first.",
   "app.addYourDisplayNameBeforeContinuing": "Add your display name before continuing.",
+  "app.useTheNamePeopleWouldRecognise": "Use the name people would recognise your business by.",
+  "app.thatNameIsTooShortUseTheName": "That name is too short — use the name people know you by.",
   "app.addYourCityOrMarketBeforeContinuing": "Add your city or market before continuing.",
   "app.chooseAUSCityAndState": "Choose a U.S. city and state from the suggestions.",
   "app.describeYourBusinessInAtLeastFive": "Describe your business in at least five words.",

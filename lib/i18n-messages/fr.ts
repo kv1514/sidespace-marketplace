@@ -2115,6 +2115,8 @@ export const FRENCH_MESSAGES: Messages = {
   "app.findingYourLocationTookTooLongChoose": "La recherche de votre position a pris trop de temps. Choisissez plutôt une ville et un État aux U.S.",
   "app.pickHowYoullUseSidespaceFirst": "Choisissez d’abord comment vous utiliserez SideSpace.",
   "app.addYourDisplayNameBeforeContinuing": "Ajoutez votre nom d’affichage avant de continuer.",
+  "app.useTheNamePeopleWouldRecognise": "Utilisez le nom sous lequel les gens reconnaîtraient votre entreprise.",
+  "app.thatNameIsTooShortUseTheName": "Ce nom est trop court — utilisez le nom sous lequel les gens vous connaissent.",
   "app.addYourCityOrMarketBeforeContinuing": "Ajoutez votre ville ou votre marché avant de continuer.",
   "app.chooseAUSCityAndState": "Choisissez une ville et un État aux U.S. parmi les suggestions.",
   "app.describeYourBusinessInAtLeastFive": "Décrivez votre entreprise en au moins cinq mots.",

@@ -2115,6 +2115,8 @@ export const MANDARIN_MESSAGES: Messages = {
   "app.findingYourLocationTookTooLongChoose": "获取你的位置耗时过长。请改为选择 U.S. 城市和州。",
   "app.pickHowYoullUseSidespaceFirst": "请先选择你将如何使用 SideSpace。",
   "app.addYourDisplayNameBeforeContinuing": "继续前请填写你的显示名称。",
+  "app.useTheNamePeopleWouldRecognise": "请使用大家认得出你商家的名称。",
+  "app.thatNameIsTooShortUseTheName": "这个名称太短了——请使用大家认识你的名字。",
   "app.addYourCityOrMarketBeforeContinuing": "继续前请填写你的城市或市场。",
   "app.chooseAUSCityAndState": "请从建议中选择 U.S. 城市和州。",
   "app.describeYourBusinessInAtLeastFive": "请用至少五个词描述你的商家。",
