@@ -7,9 +7,14 @@ live catalogue before shipping it.
 
 ## What a visitor sees
 
-- **A first visit** shows the members' listings in a stable mixed order
-  (samples last, briefs after them), so one fresh post cannot own the top and
-  the page does not look sorted by anything in particular.
+- **A first visit** leads with the three permanent picks, then orders the rest
+  by what they have earned — stars first, then a week of traffic, then how
+  finished the listing is — with the stable shuffle breaking what is left.
+  It used to fall straight through to the shuffle, so a stranger, which is
+  every business arriving for the first time, saw the catalogue in an order
+  that was fair and completely uninformative. `comparePopularListings` now sits
+  behind `comparePersonal` in the chain, which is a no-op for anyone with
+  history and the whole order for anyone without.
 - **After a little browsing**, the channel the visitor keeps opening comes
   first, their own town keeps meaning something, and likes, reach and
   freshness decide the order inside a channel. Someone who opened three
@@ -51,17 +56,25 @@ live catalogue before shipping it.
 
 ## What sorts ahead of all of this
 
-Two things outrank the personal score, and both are deliberate:
+Three things outrank the personal score, and all three are deliberate:
 
-1. **Hand-picked listings.** `listings.featured_rank` is a number the founders
-   set, and `featuredRank` sorts before everything else in the grid — but only
-   while the visitor has typed neither a search term nor a place, because a pin
-   that ignores what someone asked for is not a highlight. Ten listings carry a
-   rank today, so on an untouched marketplace the first ten cards are that list
-   in that order and personalisation decides the tail. Worth knowing before
-   reading the live grid as evidence of what the ranking is doing: it mostly
-   is not.
-2. **Members, then samples, then briefs.** `listingRank` puts complete member
+1. **The three permanent picks.** `listings.featured_rank` is a number the
+   founders set, and `featuredRank` sorts before everything else in the grid.
+   Ten listings carried a rank until `20260924093000`, which is most of the
+   first screen: the grid's first ten cards were a hand-written list and the
+   ranking only decided the tail. Three is a storefront rather than a
+   substitute for the model, and the check constraint is now `between 1 and 3`,
+   so "the top three are permanent" is an invariant and not a convention.
+
+   The pins used to switch off the moment anyone typed, on the reasoning that a
+   pin ignoring a search is not a highlight. That is true of a pin which does
+   not match the search and false of one that does — and the filter runs before
+   the comparator, so a pin is only still in the list when it answers what was
+   typed. They are unconditional now. Search "wall" and the picks that are not
+   walls are simply gone.
+2. **What the visitor typed.** `searchRelevance` in `lib/listings/search.ts`.
+   See below.
+3. **Members, then samples, then briefs.** `listingRank` puts complete member
    listings first, thin ones next, demo accounts after those, and business
    briefs last.
 - **A sort the visitor chose by hand** ("Location") is left alone.
@@ -75,6 +88,37 @@ Two things outrank the personal score, and both are deliberate:
   always been: with no history it falls through to the stable shuffle, never
   to newest-first. A bookmarked `?sort=popular` still opens the marketplace
   in the default order.
+
+## What they typed
+
+A search used to be a filter and nothing else. Every field a listing has was
+glued into one string, `text.includes(query)` decided who survived, and the
+survivors came back equal — to be ordered by whatever the browsing model
+thought of them. So typing "wall" put a listing that mentions a wall in its
+*description* above the listing actually called "Room 114 — wall or mural",
+because the second happened to be less fresh.
+
+`searchRelevance` is a ladder of kinds of match, highest rung only, and a
+listing scores its best rung rather than accumulating them — three passing
+mentions must not outrank one title:
+
+| Match | Score |
+| --- | --- |
+| the title is exactly what they typed | 100 |
+| the title starts with it | 70 |
+| the title contains it | 55 |
+| it is a channel name | 45 |
+| every word of it is in the title | 40 |
+| the format contains it | 25 |
+| the seller's name contains it | 18 |
+| the city or area contains it | 14 |
+| the description or categories contain it | 8 |
+| some of its words are in the title | 6 each |
+
+It is 0 when nothing was typed, so browsing is untouched, and it sits directly
+under the picks in the sort chain: a typed search is the one time somebody
+states outright what they want, and it outranks everything inferred from what
+they have been scrolling past.
 
 ## Where the signal comes from
 
@@ -138,21 +182,77 @@ the stable shuffle that breaks the remaining ties.
 
 ## The popularity prior
 
-`popularityScore` in `lib/listings/popularity.ts` is shared by the grid and
-the row:
+`popularityScore` in `lib/listings/popularity.ts`:
 
-| Term | Formula | Ceiling |
+| Term | Formula | Range |
 | --- | --- | --- |
-| freshness | `18 / (1 + age in days / 14)` | 18 |
-| likes | `ln(1 + likes) × 12` | none, log-dampened |
-| completeness | 1.5 each for a real title, format and description | 4.5 |
-| trust | 2 for a verified owner | 2 |
-| reach | `ln(1 + clicks_7d) × 5 + ln(1 + impressions_7d) × 1.5` | none, log-dampened |
+| freshness | `18 / (1 + age in days / 14)` | 0 … 18 |
+| **rating** | `(bayesianRating − 3.6) × 12` | **−31 … +17** |
+| completeness | 1.5 each for a real title, format and description | 0 … 4.5 |
+| trust | 2 for a verified owner | 0 … 2 |
+| reach | `ln(1 + clicks_7d) × 5 + ln(1 + impressions_7d) × 1.5` | log-dampened |
+| **no real cover** | −9 unless the listing is a business brief | **−9 … 0** |
 
-One like (about 8.3) still outweighs one click (about 3.5) or ten
-impressions (about 3.6): people say more with a heart than with a scroll.
+Two of these are new and both can go **negative**, which is the change worth
+remembering: every term used to be additive, so the score answered "how much
+has happened to this listing", and a thin listing with a stock photo and a
+little traffic could sit above a good one. A rating and a missing photo are the
+two signals allowed to say a listing is worse than one nobody knows anything
+about. `popularityScore` is therefore signed, and `personalScore` clamps the
+prior at `PRIOR_FLOOR` (−0.6) so a demotion stays a demotion instead of
+multiplying fit by a negative number and inverting the order.
+
 Reach is a seven-day window on purpose, so a listing has to keep earning its
-place.
+place, and a week of real traffic still outweighs a small rating edge
+(`tests/listing-popularity.test.ts`).
+
+### The rating
+
+`lib/listings/ratings.ts`. Stars replaced the heart in `20260924090000`. A
+heart asked whether anybody liked a listing at all — every listing with one
+loyal friend won it, and it could only go up. A star asks how good the
+placement was, and can go down.
+
+The number that ranks is not the average. A raw mean lets one five-star rating
+from the owner's roommate beat forty ratings averaging 4.8, which is how star
+ranking usually fails, so the mean is shrunk toward a prior:
+
+```
+bayesianRating = (average × count + 3.6 × 6) / (count + 6)
+```
+
+- **3.6, not 3.0**, because people rate a marketplace generously — the same
+  reason a 4.7 driver is unremarkable and a 4.2 is a warning. A prior at the
+  arithmetic middle would flatter every badly-rated listing.
+- **An unrated listing returns the prior, not 0.** It is an open question, not
+  a bad review. Scoring it zero would rank it below every one-star listing on
+  the site, so nothing new would ever collect a first rating.
+- Shrinkage is the volume term. At one rating a listing sits most of the way
+  back at 3.6; by about twenty it says what its raters said.
+
+The label and the ranking read the same function, and the view returns a count
+and a sum rather than an average so the two cannot drift apart through
+rounding.
+
+### The cover
+
+`lib/listings/cover.ts`. A listing is penalised when it has no photo of what it
+is selling — either no image at all, or **the owner's own profile picture as
+the cover**. Three live listings did the second; one of them was a 96-pixel
+Google account avatar, a letter on a coloured circle, stretched across a
+marketplace card. Nothing was broken and nothing was missing, so no
+completeness check caught it: the row has an `image_url`, it is just a picture
+of the seller rather than of the wall.
+
+Comparing the cover against `owner.avatar_url` catches that exactly, with no
+guessing from dimensions or hosts and no network request. Business briefs are
+exempt — a brief is a wanted ad written before there is anything to
+photograph.
+
+Nothing is deleted from anybody's listing. The column keeps whatever is in it;
+this is only what the interface agrees to show and what the ranking makes of
+it. An owner who genuinely wants their face on the card can upload it as a
+listing photo.
 
 ## The "Picked for you" row
 
@@ -180,7 +280,10 @@ not demo):
 - `listing_reach()` — seven-day distinct impressions and clicks
   (`supabase/migrations/20260905173350_listing_reach.sql`).
 - `listing_cooccurrence(seed_ids)` — co-visit counts for the row.
-- `listing_like_counts` — like counts.
+- `listing_rating_stats` — a count and a sum of stars per listing, never an
+  average and never a rater.
+- `listing_like_counts` — like counts. Still loaded and still shown on the
+  owner's dashboard; nothing ranks on it any more.
 
 `listing_events` itself is readable by no client role, and
 `supabase/tests/listing_reach.test.sql` asserts both halves: anonymous and

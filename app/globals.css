@@ -11378,66 +11378,140 @@ html.reveal-ready [data-reveal].is-visible {
   position: relative;
 }
 
-.listing-like-button {
+/* The stars a listing has earned. Two stacked rows of the same five glyphs:
+   the track is the empty state, the fill is clipped to a percentage width, so
+   a 4.3 is drawn as 4.3 without needing a half-star character. */
+.star-meter {
+  display: inline-block;
+  flex: 0 0 auto;
+  font-size: 13px;
+  letter-spacing: 1px;
+  line-height: 1;
+  position: relative;
+  white-space: nowrap;
+}
+
+.star-meter-track {
+  color: color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+.star-meter-fill {
+  color: var(--coral);
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}
+
+.listing-rating {
   align-items: center;
+  color: var(--ink);
+  display: inline-flex;
+  gap: 6px;
+  line-height: 1;
+}
+
+.listing-rating-card {
   backdrop-filter: blur(10px);
   background: color-mix(in srgb, var(--white) 94%, transparent);
   border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
   border-radius: 999px;
-  color: var(--ink);
-  cursor: pointer;
-  display: inline-flex;
-  font: inherit;
-  gap: 5px;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 10px 0 9px;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    transform 160ms ease;
-}
-
-.listing-like-button-card {
+  min-height: 30px;
+  padding: 0 10px;
   position: absolute;
   right: 13px;
   top: 13px;
   z-index: 2;
 }
 
-.listing-like-button:hover:not(:disabled) {
-  background: var(--white);
-  border-color: var(--ink);
-  transform: translateY(-1px);
-}
-
-.listing-like-button.is-liked {
-  background: color-mix(in srgb, var(--coral) 15%, var(--white));
-  border-color: color-mix(in srgb, var(--coral) 62%, var(--line));
-  color: var(--coral);
-}
-
-.listing-like-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.62;
-}
-
-.listing-heart {
-  font-size: 18px;
-  line-height: 1;
-}
-
-.listing-like-number {
+.listing-rating-average {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
 }
 
-.listing-like-button-detail {
+.listing-rating-count,
+.listing-rating-empty {
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+  font-size: 11px;
+}
+
+/* An unrated listing says so quietly rather than showing five empty stars,
+   which reads as a bad listing instead of a new one. */
+.listing-rating.is-unrated {
+  font-style: italic;
+}
+
+.listing-rating-detail {
   flex: 0 0 auto;
   margin-top: 32px;
-  min-height: 42px;
-  padding: 0 13px 0 11px;
+}
+
+.listing-rating-detail .star-meter {
+  font-size: 16px;
+}
+
+/* Casting a rating: five discrete targets, the way a passenger rates a driver. */
+.listing-rating-input {
+  align-items: center;
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.listing-rating-input.is-pending {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.listing-rating-input-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.listing-rating-stars {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.listing-rating-star {
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--ink) 34%, transparent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  /* 40px of target on a phone, without 40px of visible star. */
+  min-height: 40px;
+  min-width: 40px;
+  padding: 0;
+  transition:
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.listing-rating-star.is-set {
+  color: var(--coral);
+}
+
+.listing-rating-star:hover:not(:disabled) {
+  color: var(--coral);
+  transform: scale(1.08);
+}
+
+.listing-rating-star:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.listing-rating-note {
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+  flex-basis: 100%;
 }
 
 .detail-title-row {
@@ -11452,7 +11526,7 @@ html.reveal-ready [data-reveal].is-visible {
   min-width: 0;
 }
 
-.listing-like-button:focus-visible,
+.listing-rating-star:focus-visible,
 .listing-sort button:focus-visible {
   outline: 2px solid var(--coral);
   outline-offset: 2px;
@@ -11478,7 +11552,7 @@ html.reveal-ready [data-reveal].is-visible {
     gap: 10px;
   }
 
-  .listing-like-button-detail {
+  .listing-rating-detail {
     margin-top: 32px;
   }
 }

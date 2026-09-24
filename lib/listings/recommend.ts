@@ -467,6 +467,17 @@ const PRIOR_CEILING = 45;
 const PRIOR_LIFT = 1;
 
 /**
+ * How far a bad rating or a missing photo can pull a fitting listing down:
+ * to 40% of what the fit alone would have scored, never past it.
+ *
+ * `popularityScore` became signed when stars replaced hearts - a listing rated
+ * 2.1 by thirty people is worse than one nobody has rated, and the score says
+ * so. Unclamped that would eventually multiply fit by a negative number and
+ * invert the whole order, so the floor is what keeps a demotion a demotion.
+ */
+const PRIOR_FLOOR = -0.6;
+
+/**
  * How far a co-visit pattern alone can carry a listing the visitor's channels
  * and cities say nothing about: 0.6 of a perfect fit. High enough that a
  * strong, well-evidenced pattern outranks a weak categorical match, low
@@ -501,7 +512,10 @@ export function personalScore(
       COOCCURRENCE_WEIGHT * cooccurrenceAffinity(listing.id, taste, cooccurrence),
   );
   if (!relevance) return 0;
-  const prior = Math.min(1, popularityScore(listing, nowMs) / PRIOR_CEILING);
+  const prior = Math.max(
+    PRIOR_FLOOR,
+    Math.min(1, popularityScore(listing, nowMs) / PRIOR_CEILING),
+  );
   return confidence * relevance * (1 + PRIOR_LIFT * prior);
 }
 

@@ -507,12 +507,15 @@ function ListingPreviewCard({
         onClick={() => onOpen(listing.id)}
         aria-label={t("market.openListing", { title: listing.title })}
       >
-        <img
-          src={listing.image_url || "/photos/market-creator.jpg"}
-          alt=""
-          loading="lazy"
-          decoding="async"
-        />
+        {/* No stock stand-in. A listing published without a photo used to
+            show a picture of a stranger's market stall here, captioned with
+            the real seller's name - the blank panel is the honest version and
+            the one the marketplace grid already uses. */}
+        {listing.image_url && listing.image_url !== "/photos/market-creator.jpg" ? (
+          <img src={listing.image_url} alt="" loading="lazy" decoding="async" />
+        ) : (
+          <span className="listing-cover-blank" aria-hidden="true" />
+        )}
           <span>{localizeListingChannel(locale, listing.channel)}</span>
       </button>
       <div>

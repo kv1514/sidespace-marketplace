@@ -4,8 +4,10 @@ import {
   comparePopularListings,
   normalizeLikeCount,
   popularityScore,
+  ratingScore,
 } from "../lib/listings/popularity";
 import { mergeListingLikeCounts } from "../lib/listings/likes";
+import { RATING_PRIOR_AVERAGE } from "../lib/listings/ratings";
 
 const now = Date.parse("2026-09-03T12:00:00.000Z");
 
@@ -19,9 +21,16 @@ function listing(
       "A clear, detailed placement for a local business reaching nearby customers.",
     created_at: "2026-09-02T12:00:00.000Z",
     owner: { verified: false, is_demo: false },
-    like_count: 0,
+    image_url: "/photos/a-photo-of-the-actual-space.jpg",
+    rating_count: 0,
+    rating_sum: 0,
     ...overrides,
   };
+}
+
+/** `count` ratings that all gave `stars`. */
+function rated(stars: number, count: number) {
+  return { rating_count: count, rating_sum: stars * count };
 }
 
 describe("listing popularity", () => {
@@ -34,17 +43,6 @@ describe("listing popularity", () => {
         now,
       ),
     );
-  });
-
-  it("uses diminishing returns for likes", () => {
-    const firstLikeLift =
-      popularityScore(listing({ like_count: 1 }), now) -
-      popularityScore(listing({ like_count: 0 }), now);
-    const hundredthLikeLift =
-      popularityScore(listing({ like_count: 101 }), now) -
-      popularityScore(listing({ like_count: 100 }), now);
-
-    expect(firstLikeLift).toBeGreaterThan(hundredthLikeLift);
   });
 
   it("rewards useful detail and verified owners alongside interest", () => {
@@ -66,7 +64,7 @@ describe("listing popularity", () => {
   it("never lets demo inventory earn a popularity boost", () => {
     expect(
       popularityScore(
-        listing({ like_count: 10_000, owner: { verified: true, is_demo: true } }),
+        listing({ ...rated(5, 500), owner: { verified: true, is_demo: true } }),
         now,
       ),
     ).toBe(0);
@@ -90,6 +88,85 @@ describe("listing popularity", () => {
   });
 });
 
+describe("what raters did to the popularity prior", () => {
+  it("scores an unrated listing exactly as if the rating term were absent", () => {
+    // The whole reason `bayesianRating` returns the prior rather than 0: a
+    // listing nobody has rated is an open question, not a bad review. If this
+    // drifts, nothing new ever collects a first rating.
+    expect(ratingScore(rated(0, 0))).toBe(0);
+    expect(popularityScore(listing(), now)).toBe(
+      popularityScore(listing({ rating_count: null, rating_sum: undefined }), now),
+    );
+  });
+
+  it("lifts a well-rated listing and pushes a badly-rated one below unrated", () => {
+    const unrated = popularityScore(listing(), now);
+    expect(popularityScore(listing(rated(5, 40)), now)).toBeGreaterThan(unrated);
+    expect(popularityScore(listing(rated(2, 40)), now)).toBeLessThan(unrated);
+  });
+
+  it("does not let one five-star rating beat a long run of good ones", () => {
+    // The failure mode star ranking usually ships with. One perfect rating is
+    // mostly prior; forty at 4.6 have earned their way up past it.
+    const onePerfect = popularityScore(listing(rated(5, 1)), now);
+    const fortyGood = popularityScore(listing(rated(4.6, 40)), now);
+    expect(fortyGood).toBeGreaterThan(onePerfect);
+  });
+
+  it("moves further from the prior as more people agree", () => {
+    const shrunkAtOne = ratingScore(rated(5, 1));
+    const shrunkAtTwenty = ratingScore(rated(5, 20));
+    expect(shrunkAtTwenty).toBeGreaterThan(shrunkAtOne);
+    expect(shrunkAtOne).toBeGreaterThan(0);
+  });
+
+  it("treats a rating exactly at the prior as saying nothing", () => {
+    expect(ratingScore(rated(RATING_PRIOR_AVERAGE, 30))).toBeCloseTo(0, 6);
+  });
+});
+
+describe("a card with no photo of what it is selling", () => {
+  it("demotes a listing that never got a cover", () => {
+    const withPhoto = popularityScore(listing(), now);
+    const withNothing = popularityScore(listing({ image_url: null, image_urls: [] }), now);
+    expect(withNothing).toBeLessThan(withPhoto);
+  });
+
+  it("demotes a listing whose cover is the owner's profile picture", () => {
+    // The live case this was written for: a 96px Google account avatar - a
+    // letter on a coloured circle - stretched across a marketplace card.
+    const avatar = "https://lh3.googleusercontent.com/a/ACg8ocExample=s96-c";
+    const ownPhoto = popularityScore(listing(), now);
+    const justTheAvatar = popularityScore(
+      listing({
+        image_url: avatar,
+        owner: { verified: false, is_demo: false, avatar_url: avatar },
+      }),
+      now,
+    );
+    expect(justTheAvatar).toBeLessThan(ownPhoto);
+  });
+
+  it("leaves a business brief alone, because it has nothing to photograph yet", () => {
+    const brief = { channel: "Business brief", image_url: null, image_urls: [] };
+    expect(popularityScore(listing({ ...brief }), now)).toBe(
+      popularityScore(listing({ ...brief, channel: "Business brief" }), now),
+    );
+    expect(popularityScore(listing({ ...brief }), now)).toBeGreaterThan(
+      popularityScore(listing({ image_url: null, image_urls: [] }), now),
+    );
+  });
+
+  it("still counts a real upload that happens to sit beside the seeded frame", () => {
+    expect(
+      popularityScore(
+        listing({ image_urls: ["/photos/market-creator.jpg", "/uploads/the-wall.jpg"] }),
+        now,
+      ),
+    ).toBe(popularityScore(listing(), now));
+  });
+});
+
 describe("views in the popularity prior", () => {
   it("lifts a listing people keep reaching this week", () => {
     expect(
@@ -101,15 +178,6 @@ describe("views in the popularity prior", () => {
     const opened = popularityScore(listing({ clicks_7d: 5 }), now);
     const passed = popularityScore(listing({ impressions_7d: 5 }), now);
     expect(opened).toBeGreaterThan(passed);
-  });
-
-  it("still lets one like outweigh a click or a handful of impressions", () => {
-    const base = popularityScore(listing(), now);
-    const oneLike = popularityScore(listing({ like_count: 1 }), now) - base;
-    const oneClick = popularityScore(listing({ clicks_7d: 1 }), now) - base;
-    const tenViews = popularityScore(listing({ impressions_7d: 10 }), now) - base;
-    expect(oneLike).toBeGreaterThan(oneClick);
-    expect(oneLike).toBeGreaterThan(tenViews);
   });
 
   it("dampens reach so a viral week cannot bury everything else for good", () => {
@@ -125,5 +193,16 @@ describe("views in the popularity prior", () => {
     expect(popularityScore(listing({ impressions_7d: null, clicks_7d: undefined }), now)).toBe(
       popularityScore(listing(), now),
     );
+  });
+
+  it("lets a week of real traffic outweigh a small rating edge", () => {
+    // "More traffic" has to mean something, or the grid cannot tell a listing
+    // people are actually opening from one with three polite ratings.
+    const quietAndSlightlyBetter = popularityScore(listing(rated(4.4, 3)), now);
+    const busyAndOrdinary = popularityScore(
+      listing({ ...rated(4.0, 3), impressions_7d: 400, clicks_7d: 60 }),
+      now,
+    );
+    expect(busyAndOrdinary).toBeGreaterThan(quietAndSlightlyBetter);
   });
 });
