@@ -67,9 +67,22 @@ import {
   mergeListingLikeCounts,
 } from "@/lib/listings/likes";
 import { LISTING_REACH_RPC, mergeListingReach } from "@/lib/listings/reach";
+import {
+  LISTING_RATING_STAT_COLUMNS,
+  MAX_STARS,
+  formatRatingAverage,
+  mergeListingRatings,
+  normalizeRatingCount,
+  normalizeStars,
+  ratingSummary,
+  starFill,
+} from "@/lib/listings/ratings";
+import { STOCK_LISTING_COVER } from "@/lib/listings/cover";
+import { compareSearchRelevance } from "@/lib/listings/search";
 import type { ListingTranslationSeed } from "@/lib/listings/translations";
 import { useListingTranslations } from "@/app/components/useListingTranslations";
 import {
+  comparePopularListings,
   normalizeLikeCount,
 } from "@/lib/listings/popularity";
 import {
@@ -348,11 +361,22 @@ type Listing = BookingSchedule & {
   status: "active" | "paused" | "booked";
   provenance_status?: ListingProvenanceStatus | null;
   availability_confirmed_at?: string | null;
+  /**
+   * Kept for the owner's dashboard, which still reports the hearts a listing
+   * collected before stars replaced them. Nothing ranks on it any more.
+   */
   like_count?: number | string | null;
   /**
-   * Hand-picked position at the top of the marketplace; absent for almost
-   * every listing. Set by the founders, never by an owner - see the
-   * 20260906140000 migration.
+   * How many people rated this listing and what their stars add up to, merged
+   * in from `listing_rating_stats()`; absent when the call did not load. The
+   * average is derived, never stored - see lib/listings/ratings.ts.
+   */
+  rating_count?: number | string | null;
+  rating_sum?: number | string | null;
+  /**
+   * Permanent position in the first three cards of the marketplace; absent for
+   * almost every listing. Set by the founders, never by an owner - see the
+   * 20260906140000 and 20260924093000 migrations.
    */
   featured_rank?: number | null;
   /** Seven-day reach, merged in from listing_reach(); absent when it did not load. */
@@ -802,9 +826,10 @@ function displayHandle(raw: string) {
   return /\s/.test(cleaned) ? cleaned : `@${cleaned}`;
 }
 
-// Cover photo used when a listing has none of its own, and the repair target
-// when a listing's photo is deleted from the member's profile.
-const DEFAULT_LISTING_IMAGE = "/photos/market-creator.jpg";
+// The stock frame seeded onto demo rows and onto older listings that published
+// without a photo. No longer shown as anybody's cover - `listingPhotos` filters
+// it out - and kept here only so that filter has something to compare against.
+const DEFAULT_LISTING_IMAGE = STOCK_LISTING_COVER;
 /** Photos a listing holds; the editor refuses more before anything uploads. */
 const MAX_LISTING_PHOTOS = 6;
 /**
@@ -3888,24 +3913,45 @@ function listingImages(listing: Listing) {
  * presented it as the campaign. A brief now shows a photo only when the
  * business uploaded one.
  *
- * The seed already sitting in the column on older briefs is read as no photo
- * here rather than migrated away: no row has to be rewritten, and a business
- * that uploads later simply replaces it. Only briefs are filtered - the
- * default is still a sensible cover for space that exists and was listed
- * without a picture of it.
+ * The seed already sitting in the column is read as no photo here rather than
+ * migrated away: no row has to be rewritten, and an owner who uploads later
+ * simply replaces it. Nothing is deleted from anybody's listing - the column
+ * keeps whatever is in it, this is only what the interface agrees to show.
+ *
+ * Every listing is filtered now, not just briefs. The stock frame was left in
+ * place for "space that exists and was listed without a picture of it", which
+ * read as a reasonable compromise and was not one: the card showed a stranger's
+ * market stall where the wall should be, captioned with the real owner's name
+ * and price. A photo of the wrong thing is worse than no photo, because only
+ * one of the two is honest about what is missing.
+ *
+ * An owner's own upload is never filtered, including one that happens to be
+ * their profile picture. That was their choice to make; the ranking has an
+ * opinion about it (`lib/listings/cover.ts`) but the grid still shows what they
+ * put there.
  */
 function listingPhotos(listing: Listing) {
-  const images = listingImages(listing);
-  return isBrief(listing)
-    ? images.filter((url) => url !== DEFAULT_LISTING_IMAGE)
-    : images;
+  return listingImages(listing).filter((url) => url !== DEFAULT_LISTING_IMAGE);
 }
 
-/** A listing's cover photo, or "" when a brief has none of its own. */
+/**
+ * A listing's cover photo, or "" when it has none of its own.
+ *
+ * Nothing stands in for a missing photo any more. A listing with no image used
+ * to be handed `DEFAULT_LISTING_IMAGE` - a stock photograph of a stranger's
+ * market stall - and the card then presented that as the space being sold. It
+ * was only ever meant as scaffolding for the seeded demo rows, but it applied
+ * to every real listing too, so a member who skipped the photo step got a
+ * picture of somebody else's business on their card and no indication that it
+ * was not theirs.
+ *
+ * Briefs already showed the hatched panel instead (`listingPhotos` filters the
+ * seed out of them). That is now what everything with no photo shows: honest
+ * about being empty, and the ranking demotes it rather than the grid disguising
+ * it (see `lib/listings/cover.ts`).
+ */
 function listingCover(listing: Listing) {
-  const photos = listingPhotos(listing);
-  if (photos[0]) return photos[0];
-  return isBrief(listing) ? "" : DEFAULT_LISTING_IMAGE;
+  return listingPhotos(listing)[0] ?? "";
 }
 
 /**
@@ -4062,58 +4108,126 @@ function Avatar({
   );
 }
 
-function ListingLikeButton({
-  title,
-  likeCount,
-  liked,
-  isAuthenticated,
-  canLike,
-  disabledReason,
-  disabled,
+/**
+ * The five stars a listing has earned, painted to the nearest half.
+ *
+ * Read-only, and drawn with two stacked rows rather than per-star glyphs so a
+ * 4.3 looks like 4.3. The bottom row is the five outlines; the top row is the
+ * same five filled, clipped to a percentage width. That keeps one text node to
+ * translate, needs no half-star character, and scales with the font.
+ */
+function StarMeter({ average, className = "" }: { average: number; className?: string }) {
+  const filled = starFill(average);
+  return (
+    <span className={`star-meter ${className}`.trim()} aria-hidden="true">
+      <span className="star-meter-track">{"★".repeat(MAX_STARS)}</span>
+      <span className="star-meter-fill" style={{ width: `${(filled / MAX_STARS) * 100}%` }}>
+        {"★".repeat(MAX_STARS)}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * What a card says about a listing's standing: "4.8" and how many said so.
+ *
+ * Says nothing at all when nobody has rated it. The alternative - "0.0" or five
+ * empty stars - reads as a bad listing rather than a new one, and a new listing
+ * that looks bad never collects its first rating. The ranking treats unrated as
+ * an open question too (`bayesianRating`), so the two agree.
+ */
+function ListingRatingSummary({
+  listing,
   placement,
-  onToggle,
 }: {
-  title: string;
-  likeCount?: number | string | null;
-  liked: boolean;
-  isAuthenticated: boolean;
-  canLike: boolean;
-  disabledReason?: string;
-  disabled?: boolean;
+  listing: Pick<Listing, "rating_count" | "rating_sum">;
   placement: "card" | "detail";
-  onToggle: () => void;
 }) {
   const { t } = useLocale();
-  const count = normalizeLikeCount(likeCount);
-  const countLabel = count === 1 ? t("app.oneLike") : t("app.countLikes", { count });
-  const actionLabel = !canLike
-    ? disabledReason || t("app.youCannotLikeThisListing")
-    : isAuthenticated
-      ? liked
-        ? t("app.unlikeTitle", { title })
-        : t("app.likeTitle", { title })
-      : t("app.signInToLikeTitle", { title });
-
+  const { count, average } = ratingSummary(listing);
+  if (!count) {
+    return (
+      <span className={`listing-rating listing-rating-${placement} is-unrated`}>
+        <span className="listing-rating-empty">{t("app.notRatedYet")}</span>
+      </span>
+    );
+  }
+  const label =
+    count === 1
+      ? t("app.oneRating")
+      : t("app.countRatings", { count: compactNumber(count) });
   return (
-    <button
-      type="button"
-      className={`listing-like-button listing-like-button-${placement}${liked ? " is-liked" : ""}`}
-      aria-label={`${actionLabel}. ${countLabel}.`}
-      aria-pressed={canLike ? liked : undefined}
-      disabled={disabled || !canLike}
-      onClick={(event) => {
-        event.stopPropagation();
-        onToggle();
-      }}
-    >
-      <span className="listing-heart" aria-hidden="true">
-        {liked ? "♥" : "♡"}
+    <span className={`listing-rating listing-rating-${placement}`}>
+      <StarMeter average={average} />
+      <span className="listing-rating-average" aria-hidden="true">
+        {formatRatingAverage(listing)}
       </span>
-      <span className="listing-like-number" aria-hidden="true">
-        {compactNumber(count)}
+      <span className="listing-rating-count" aria-hidden="true">
+        ({label})
       </span>
-      <span className="sr-only">{countLabel}</span>
-    </button>
+      <span className="sr-only">
+        {t("app.ratedOutOfFive", { average: formatRatingAverage(listing), label })}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Casting a rating: five buttons, the way a passenger rates a driver.
+ *
+ * Buttons and not a range input, because a rating is five discrete verdicts and
+ * a slider invites dragging through the ones you do not mean. Each carries its
+ * own label, so a screen reader hears "Rate 4 of 5 stars" and not "slider".
+ *
+ * Re-rating is allowed and deliberately not hidden behind an edit affordance -
+ * the row shows the rating you gave, and pressing a different star replaces it.
+ * That is the one thing a heart could not do, and the reason the table carries
+ * an update policy.
+ */
+function ListingRatingInput({
+  title,
+  yourStars,
+  canRate,
+  disabledReason,
+  pending,
+  onRate,
+}: {
+  title: string;
+  yourStars: number;
+  canRate: boolean;
+  disabledReason?: string;
+  pending?: boolean;
+  onRate: (stars: number) => void;
+}) {
+  const { t } = useLocale();
+  return (
+    <div className={`listing-rating-input${pending ? " is-pending" : ""}`}>
+      <span className="listing-rating-input-label">
+        {yourStars ? t("app.yourRating") : t("app.rateThisListing")}
+      </span>
+      <span className="listing-rating-stars" role="group" aria-label={t("app.rateTitle", { title })}>
+        {Array.from({ length: MAX_STARS }, (_, index) => index + 1).map((stars) => (
+          <button
+            key={stars}
+            type="button"
+            className={`listing-rating-star${stars <= yourStars ? " is-set" : ""}`}
+            aria-label={t("app.rateNOfFive", { stars })}
+            aria-pressed={stars === yourStars}
+            disabled={pending || !canRate}
+            title={!canRate ? disabledReason : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRate(stars);
+            }}
+          >
+            <span aria-hidden="true">{stars <= yourStars ? "★" : "☆"}</span>
+          </button>
+        ))}
+      </span>
+      {!canRate && disabledReason ? (
+        <small className="listing-rating-note">{disabledReason}</small>
+      ) : null}
+    </div>
   );
 }
 
@@ -4606,14 +4720,17 @@ export default function MarketplaceApp({
   // Co-visit counts for the listings this browser has shown interest in. Empty
   // until the site has real traffic, which is exactly when it starts to matter.
   const [cooccurrence, setCooccurrence] = useState<CooccurrenceIndex | null>(null);
-  const [likedListingIds, setLikedListingIds] = useState<Set<string>>(
+  // The stars this member gave, per listing. Separate from the public
+  // aggregate for the same reason likes were: the counts are everybody's, the
+  // row saying who said what is only ever this member's own.
+  const [yourRatings, setYourRatings] = useState<Map<string, number>>(
+    () => new Map(),
+  );
+  const [ratingsLoading, setRatingsLoading] = useState(false);
+  const [pendingRatingIds, setPendingRatingIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [likesLoading, setLikesLoading] = useState(false);
-  const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const likeRequestsRef = useRef(new Set<string>());
+  const ratingRequestsRef = useRef(new Set<string>());
   const [loading, setLoading] = useState(configured);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
@@ -5179,7 +5296,13 @@ export default function MarketplaceApp({
     const profileLimit = route === "marketplace" ? 60 : 12;
     const listingLimit = route === "marketplace" ? 200 : 12;
 
-    const [profilesResult, listingsResult, likeCountsResult, reachResult] = await Promise.all([
+    const [
+      profilesResult,
+      listingsResult,
+      likeCountsResult,
+      reachResult,
+      ratingsResult,
+    ] = await Promise.all([
       supabase
         .from("marketplace_profiles")
         .select(PUBLIC_PROFILE_COLUMNS)
@@ -5199,10 +5322,16 @@ export default function MarketplaceApp({
         .eq("status", "active")
         .order("created_at", { ascending: false })
         .limit(listingLimit),
+      // Still loaded, still shown on the owner's dashboard; no longer ranks.
       supabase.from("listing_like_counts").select(LISTING_LIKE_COUNT_COLUMNS),
       // Seven-day reach, for ranking. Best-effort like the like counts: a
       // failure here costs one signal, never the grid.
       supabase.rpc(LISTING_REACH_RPC),
+      // Stars per listing - a count and a sum, never an average and never a
+      // rater. The strongest term in the ranking now, and best-effort like the
+      // other two: if it fails every listing reads as unrated, which the
+      // ranking treats as an open question rather than a bad review.
+      supabase.from("listing_rating_stats").select(LISTING_RATING_STAT_COLUMNS),
     ]);
 
     if (!profilesResult.error) {
@@ -5211,12 +5340,15 @@ export default function MarketplaceApp({
     }
     if (!listingsResult.error) {
       const loaded = safeListings(
-        mergeListingReach(
-          mergeListingLikeCounts(
-            listingsResult.data,
-            likeCountsResult.error ? null : likeCountsResult.data,
+        mergeListingRatings(
+          mergeListingReach(
+            mergeListingLikeCounts(
+              listingsResult.data,
+              likeCountsResult.error ? null : likeCountsResult.data,
+            ),
+            reachResult.error ? null : reachResult.data,
           ),
-          reachResult.error ? null : reachResult.data,
+          ratingsResult.error ? null : ratingsResult.data,
         ),
       );
       setListings(loaded.length ? loaded : demoListings);
@@ -5226,35 +5358,39 @@ export default function MarketplaceApp({
     // temporarily unavailable during a rollout.
   }, [route, supabase]);
 
-  const loadLikedListings = useCallback(
+  /**
+   * The stars this member has already given, so the detail panel can show them
+   * set rather than empty and a second visit does not look like a first.
+   */
+  const loadYourRatings = useCallback(
     async (currentUser: User) => {
       if (!supabase) {
-        setLikedListingIds(new Set());
-        setLikesLoading(false);
+        setYourRatings(new Map());
+        setRatingsLoading(false);
         return;
       }
 
-      // Clear a previous account's optimistic state before the new account's
-      // relationship query returns.
-      setLikedListingIds(new Set());
-      setLikesLoading(true);
+      // Clear a previous account's ratings before this account's query returns,
+      // for the same reason the likes loader does.
+      setYourRatings(new Map());
+      setRatingsLoading(true);
       const { data, error } = await supabase
-        .from("listing_likes")
-        .select("listing_id")
+        .from("listing_ratings")
+        .select("listing_id,stars")
         .eq("user_id", currentUser.id);
 
-      // A member can sign out while this read is in flight. Do not let the
-      // old account's likes leak into the next session.
+      // A member can sign out while this read is in flight.
       if (lastAuthUserIdRef.current !== currentUser.id) return;
       if (!error) {
-        const rows = (data ?? []) as Array<{ listing_id?: unknown }>;
-        const ids = new Set<string>();
+        const rows = (data ?? []) as Array<{ listing_id?: unknown; stars?: unknown }>;
+        const given = new Map<string, number>();
         for (const row of rows) {
-          if (typeof row.listing_id === "string") ids.add(row.listing_id);
+          const stars = normalizeStars(row.stars);
+          if (typeof row.listing_id === "string" && stars) given.set(row.listing_id, stars);
         }
-        setLikedListingIds(ids);
+        setYourRatings(given);
       }
-      setLikesLoading(false);
+      setRatingsLoading(false);
     },
     [supabase],
   );
@@ -5616,7 +5752,7 @@ export default function MarketplaceApp({
             // offered a sign-up form the next time they come back.
             markReturningVisitor(currentUser.email);
             lastAuthUserIdRef.current = currentUser.id;
-            void loadLikedListings(currentUser);
+            void loadYourRatings(currentUser);
             void loadOwnProfile(currentUser);
           }
           setSessionResolved(true);
@@ -5646,7 +5782,7 @@ export default function MarketplaceApp({
         const isDifferentUser = lastAuthUserIdRef.current !== currentUser.id;
         lastAuthUserIdRef.current = currentUser.id;
         if (isDifferentUser) {
-          void loadLikedListings(currentUser);
+          void loadYourRatings(currentUser);
         }
         if (
           isDifferentUser ||
@@ -5676,7 +5812,7 @@ export default function MarketplaceApp({
       subscription.unsubscribe();
     };
   }, [
-    loadLikedListings,
+    loadYourRatings,
     loadMarketplace,
     loadOwnProfile,
     route,
@@ -6070,11 +6206,6 @@ export default function MarketplaceApp({
     const normalized = query.trim().toLowerCase();
     const normalizedLocation = locationQuery.trim();
     const rankingNow = Date.now();
-    // The hand-picked few lead the page, but only while it is a page someone
-    // is browsing. Once they have typed a place or a word they are looking
-    // for something, and a pin that does not match it is not a highlight, it
-    // is the search being ignored.
-    const pinFeatured = !normalized && !normalizedLocation;
     return listings.filter((listing) => {
       if (blockedProfileIds.includes(listing.owner.id)) return false;
       // A test account's listings must not appear in the marketplace, the
@@ -6131,24 +6262,33 @@ export default function MarketplaceApp({
         (!normalized || text.includes(normalized))
       );
     })
-      // Members first, samples last. Within each band the default order is
-      // personal: the channels and cities this visitor keeps opening, plus
-      // the listings that travel with the ones they opened, then likes,
-      // reach and freshness. With no history every score is 0 and the order
-      // falls through to the stable shuffle, so a first visit is mixed
-      // rather than newest-first and one fresh post cannot dominate the top.
-      // A sort the visitor chose by hand is left alone.
+      // The order, strongest claim first:
       //
-      // Nothing on the page says any of this. The ranking used to also feed
-      // a "Picked for you" row above the grid, which announced the very
-      // thing the headings were written to avoid saying. The row is gone and
-      // its co-visit signal moved in here, so the model is stronger and now
-      // has nowhere to give itself away.
+      // 1. The three permanent picks, if they survived the filter.
+      // 2. What the visitor typed. A search is the one time somebody states
+      //    outright what they want, and it outranks everything inferred from
+      //    what they have been scrolling past.
+      // 3. Members first, samples last.
+      // 4. What this visitor keeps opening, lifted or lowered by what the
+      //    listing's raters said. With no history every score is 0 and the
+      //    order falls through to the stable shuffle, so a first visit is
+      //    mixed rather than newest-first and one fresh post cannot own the
+      //    top of the page.
+      //
+      // A sort the visitor chose by hand ("Location") is left alone below the
+      // picks. Nothing on the page says any of this.
       .sort(
         (a, b) =>
-          // Ahead of the members/samples bands: a featured listing is a
-          // member's, and it is meant to be first, not first-of-its-band.
-          (pinFeatured ? featuredRank(a) - featuredRank(b) : 0) ||
+          // Ahead of the members/samples bands: a pick is a member's listing,
+          // and it is meant to be first, not first-of-its-band. Unconditional
+          // now - see the comment on the filter above for why a pin that does
+          // not answer the search is never here to lead with.
+          featuredRank(a) - featuredRank(b) ||
+          // Where the typed words land: a listing called "Room 114 - wall or
+          // mural" beats one that mentions a wall in its description, whatever
+          // either has been doing for traffic this week. Ties at 0 when
+          // nothing was typed, so browsing is unaffected.
+          compareSearchRelevance(a, b, normalized) ||
           (listingSort === "location"
             ? locationMatchScore(listingCity(b), normalizedLocation) -
                 locationMatchScore(listingCity(a), normalizedLocation) ||
@@ -6156,7 +6296,8 @@ export default function MarketplaceApp({
             : 0) ||
           listingRank(a) - listingRank(b) ||
           (listingSort === "recommended"
-            ? comparePersonal(a, b, visitorTaste, rankingNow, cooccurrence)
+            ? comparePersonal(a, b, visitorTaste, rankingNow, cooccurrence) ||
+              comparePopularListings(a, b, rankingNow)
             : 0) ||
           shuffleKey(a.id) - shuffleKey(b.id),
       );
@@ -6528,7 +6669,7 @@ export default function MarketplaceApp({
     let cancelled = false;
     void (async () => {
       if (supabase) {
-        const [listingResult, likeCountsResult] = await Promise.all([
+        const [listingResult, likeCountsResult, ratingResult] = await Promise.all([
           supabase
             .from("listings")
             // A deep link, so anyone with the URL gets this row - narrowed for
@@ -6544,12 +6685,20 @@ export default function MarketplaceApp({
             .select(LISTING_LIKE_COUNT_COLUMNS)
             .eq("listing_id", listingId)
             .maybeSingle(),
+          supabase
+            .from("listing_rating_stats")
+            .select(LISTING_RATING_STAT_COLUMNS)
+            .eq("listing_id", listingId)
+            .maybeSingle(),
         ]);
         if (cancelled) return;
         const [resolved] = safeListings(
-          mergeListingLikeCounts(
-            listingResult.data ? [listingResult.data] : [],
-            likeCountsResult.error ? null : likeCountsResult.data ? [likeCountsResult.data] : [],
+          mergeListingRatings(
+            mergeListingLikeCounts(
+              listingResult.data ? [listingResult.data] : [],
+              likeCountsResult.error ? null : likeCountsResult.data ? [likeCountsResult.data] : [],
+            ),
+            ratingResult.error ? null : ratingResult.data ? [ratingResult.data] : [],
           ),
         );
         if (resolved && !blockedProfileIds.includes(resolved.owner.id)) {
@@ -7075,103 +7224,124 @@ export default function MarketplaceApp({
     return uploaded;
   }
 
-  function patchListingLikeCount(listingId: string, likeCount: number) {
-    setListings((current) =>
-      current.map((listing) =>
-        listing.id === listingId ? { ...listing, like_count: likeCount } : listing,
-      ),
-    );
-    setOwnListings((current) =>
-      current.map((listing) =>
-        listing.id === listingId ? { ...listing, like_count: likeCount } : listing,
-      ),
-    );
-    setSelectedListing((current) =>
-      current?.id === listingId ? { ...current, like_count: likeCount } : current,
-    );
+  function patchListingRating(listingId: string, count: number, sum: number) {
+    const apply = (listing: Listing) =>
+      listing.id === listingId
+        ? { ...listing, rating_count: count, rating_sum: sum }
+        : listing;
+    setListings((current) => current.map(apply));
+    setOwnListings((current) => current.map(apply));
+    setSelectedListing((current) => (current ? apply(current) : current));
   }
 
-  async function refreshListingLikeCount(listingId: string) {
+  async function refreshListingRating(listingId: string) {
     if (!supabase) return;
     const { data, error } = await supabase
-      .from("listing_like_counts")
-      .select(LISTING_LIKE_COUNT_COLUMNS)
+      .from("listing_rating_stats")
+      .select(LISTING_RATING_STAT_COLUMNS)
       .eq("listing_id", listingId)
       .maybeSingle();
     if (!error && data) {
-      patchListingLikeCount(listingId, normalizeLikeCount(data.like_count));
+      patchListingRating(
+        listingId,
+        normalizeRatingCount(data.rating_count),
+        normalizeRatingCount(data.rating_sum),
+      );
     }
   }
 
-  async function toggleListingLike(listing: Listing) {
+  /**
+   * Give a listing a rating, or change the one you already gave.
+   *
+   * Upsert rather than insert-or-update by hand: the primary key is
+   * (listing_id, user_id), so one statement covers both a first rating and a
+   * revision, and two rapid taps cannot leave two rows.
+   *
+   * Pressing the star you already gave withdraws the rating. That is the only
+   * way to take a verdict back - there is no separate clear control, because a
+   * rating row nobody can delete is a rating you are stuck with, and an extra
+   * button next to five stars is one target too many.
+   */
+  async function rateListing(listing: Listing, stars: number) {
     const listingId = listing.id;
-    if (likeRequestsRef.current.has(listingId)) return;
-    // Signed out is answered before the backend question, not after. The two
-    // checks used to run the other way round, and `supabase` is null whenever
-    // Supabase is unconfigured — so in local dev the heart replied to a
-    // signed-out visitor with a toast telling them to sign in and no way to do
-    // it, the one gated control in the product that offered no route in.
+    const value = normalizeStars(stars);
+    if (!value || ratingRequestsRef.current.has(listingId)) return;
+    // Signed out is answered before the backend question, not after - the same
+    // order the heart had to be corrected into. `supabase` is null whenever
+    // Supabase is unconfigured, and answering that first told a signed-out
+    // visitor to sign in without offering any way to do it.
     if (!user) {
       setToast(
         openAuthDialog() === "signin"
-          ? "Sign in to like listings."
-          : "Create an account to like listings.",
+          ? "Sign in to rate listings."
+          : "Create an account to rate listings.",
         "problem",
       );
       return;
     }
     if (!supabase) {
-      setToast("Sign in to like listings.", "problem");
+      setToast("Sign in to rate listings.", "problem");
       return;
     }
     if (listing.owner.is_demo || profile?.id === listing.owner.id) {
-      setToast("You cannot like your own listing.");
+      setToast("You cannot rate your own listing.");
       return;
     }
 
     const currentUser = user;
-    const wasLiked = likedListingIds.has(listingId);
-    const previousCount = normalizeLikeCount(listing.like_count);
-    const optimisticCount = Math.max(0, previousCount + (wasLiked ? -1 : 1));
-    likeRequestsRef.current.add(listingId);
-    setPendingLikeIds((current) => new Set(current).add(listingId));
-    setLikedListingIds((current) => {
-      const next = new Set(current);
-      if (wasLiked) next.delete(listingId);
-      else next.add(listingId);
+    const previousStars = yourRatings.get(listingId) ?? 0;
+    const withdrawing = previousStars === value;
+    const nextStars = withdrawing ? 0 : value;
+    const summary = ratingSummary(listing);
+    const previousCount = summary.count;
+    const previousSum = Math.round(summary.average * summary.count);
+    const optimisticCount = Math.max(
+      0,
+      previousCount + (previousStars ? 0 : 1) - (withdrawing ? 1 : 0),
+    );
+    const optimisticSum = Math.max(0, previousSum - previousStars + nextStars);
+
+    ratingRequestsRef.current.add(listingId);
+    setPendingRatingIds((current) => new Set(current).add(listingId));
+    setYourRatings((current) => {
+      const next = new Map(current);
+      if (nextStars) next.set(listingId, nextStars);
+      else next.delete(listingId);
       return next;
     });
-    patchListingLikeCount(listingId, optimisticCount);
+    patchListingRating(listingId, optimisticCount, optimisticSum);
 
     try {
-      const result = wasLiked
+      const result = withdrawing
         ? await supabase
-            .from("listing_likes")
+            .from("listing_ratings")
             .delete()
             .eq("listing_id", listingId)
             .eq("user_id", currentUser.id)
-        : await supabase.from("listing_likes").upsert(
-            { listing_id: listingId, user_id: currentUser.id },
-            { onConflict: "listing_id,user_id", ignoreDuplicates: true },
+        : await supabase.from("listing_ratings").upsert(
+            { listing_id: listingId, user_id: currentUser.id, stars: nextStars },
+            { onConflict: "listing_id,user_id" },
           );
       if (result.error) throw result.error;
-      // Only a like teaches the row anything; taking one back should not.
-      if (!wasLiked) trackLike(listingId);
-      await refreshListingLikeCount(listingId);
+      // Rating something is interest in it; taking the rating back is not, so
+      // only one of the two teaches the browsing model anything. Same asymmetry
+      // the heart had.
+      if (!withdrawing) trackLike(listingId);
+      await refreshListingRating(listingId);
     } catch (error) {
       if (lastAuthUserIdRef.current === currentUser.id) {
-        setLikedListingIds((current) => {
-          const next = new Set(current);
-          if (wasLiked) next.add(listingId);
+        setYourRatings((current) => {
+          const next = new Map(current);
+          if (previousStars) next.set(listingId, previousStars);
           else next.delete(listingId);
           return next;
         });
-        patchListingLikeCount(listingId, previousCount);
+        patchListingRating(listingId, previousCount, previousSum);
         setToast(friendlyDbError(error));
       }
     } finally {
-      likeRequestsRef.current.delete(listingId);
-      setPendingLikeIds((current) => {
+      ratingRequestsRef.current.delete(listingId);
+      setPendingRatingIds((current) => {
         const next = new Set(current);
         next.delete(listingId);
         return next;
@@ -10669,10 +10839,10 @@ export default function MarketplaceApp({
     setProfile(null);
     setProfileChecked(false);
     setOwnListings([]);
-    setLikedListingIds(new Set());
-    setLikesLoading(false);
-    setPendingLikeIds(new Set());
-    likeRequestsRef.current.clear();
+    setYourRatings(new Map());
+    setRatingsLoading(false);
+    setPendingRatingIds(new Set());
+    ratingRequestsRef.current.clear();
     setCampaignRequests([]);
     setPaymentTransactions([]);
     setAdCreditBalanceCents(0);
@@ -13032,28 +13202,12 @@ export default function MarketplaceApp({
                   </b>
                 </span>
               </button>
-              <ListingLikeButton
-                placement="card"
-                title={copy.title}
-                likeCount={listing.like_count}
-                liked={likedListingIds.has(listing.id)}
-                isAuthenticated={Boolean(user)}
-                canLike={
-                  !listing.owner.is_demo && profile?.id !== listing.owner.id
-                }
-                disabledReason={
-                  listing.owner.is_demo
-                    ? t("app.likesUnavailableOnSampleListings")
-                    : profile?.id === listing.owner.id
-                      ? t("app.youCannotLikeYourOwnListing")
-                      : undefined
-                }
-                disabled={
-                  pendingLikeIds.has(listing.id) ||
-                  (Boolean(user) && likesLoading)
-                }
-                onToggle={() => void toggleListingLike(listing)}
-              />
+              {/* The card reports the verdict and does not collect one. Rating
+                  is a judgement about a placement you used, so it belongs on
+                  the listing you opened, not on a tile you are scrolling past
+                  - and a five-target control inside a card that is itself a
+                  button is a misclick waiting to happen. */}
+              <ListingRatingSummary placement="card" listing={listing} />
               <div className="listing-body">
                 <div className="owner-line">
                   <Avatar profile={listing.owner} size="small" />
@@ -13188,32 +13342,14 @@ export default function MarketplaceApp({
             </button>
           </div>
         </div>
-        <div className="space-collage">
-          <figure className="space-tile tile-wide">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/roadside-farm-stand.jpg" alt={t("app.roadsideFarmStand")} loading="lazy" decoding="async" />
-            <figcaption>
-              <strong>{t("app.roadsideFarmStand")}</strong>
-              <span>{t("app.dinubaCaOwnerSetsTheRate")}</span>
-            </figcaption>
-          </figure>
-          <figure className="space-tile">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/small-town-barber.jpg" alt={t("app.smallTownBarberShop")} loading="lazy" decoding="async" />
-            <figcaption>
-              <strong>{t("app.barberWaitingBench")}</strong>
-              <span>{t("app.lanesboroMn3Week")}</span>
-            </figcaption>
-          </figure>
-          <figure className="space-tile">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/photos/rural-market.jpg" alt={t("app.ruralMainStreetMarket")} loading="lazy" decoding="async" />
-            <figcaption>
-              <strong>{t("app.marketCounterCard")}</strong>
-              <span>{t("app.mercerWi4Week")}</span>
-            </figcaption>
-          </figure>
-        </div>
+        {/* A "space collage" of three stock photographs stood here, captioned
+            as real inventory: a roadside farm stand in Dinuba, a barber's
+            bench in Lanesboro, a market counter in Mercer, each with a rate.
+            None of them existed. Stock photography as decoration is one thing;
+            stock photography with a town and a price under it is a picture of
+            a listing that was never posted, on the page asking people to post
+            one. Removed rather than relabelled - the section makes its point
+            with the copy above it. */}
       </section>)}
 
       {legacyPublicSections && (<section className="people-section" id="creators">
@@ -16385,30 +16521,28 @@ export default function MarketplaceApp({
               )}
               <div className="detail-title-row">
                 <h2>{detailCopy?.title ?? selectedListing.title}</h2>
-                <ListingLikeButton
-                  placement="detail"
-                  title={detailCopy?.title ?? selectedListing.title}
-                  likeCount={selectedListing.like_count}
-                  liked={likedListingIds.has(selectedListing.id)}
-                  isAuthenticated={Boolean(user)}
-                  canLike={
-                    !selectedListing.owner.is_demo &&
-                    profile?.id !== selectedListing.owner.id
-                  }
-                  disabledReason={
-                    selectedListing.owner.is_demo
-                      ? t("app.likesUnavailableOnSampleListings")
-                      : profile?.id === selectedListing.owner.id
-                        ? t("app.youCannotLikeYourOwnListing")
-                        : undefined
-                  }
-                  disabled={
-                    pendingLikeIds.has(selectedListing.id) ||
-                    (Boolean(user) && likesLoading)
-                  }
-                  onToggle={() => void toggleListingLike(selectedListing)}
-                />
+                <ListingRatingSummary placement="detail" listing={selectedListing} />
               </div>
+              <ListingRatingInput
+                title={detailCopy?.title ?? selectedListing.title}
+                yourStars={yourRatings.get(selectedListing.id) ?? 0}
+                canRate={
+                  !selectedListing.owner.is_demo &&
+                  profile?.id !== selectedListing.owner.id
+                }
+                disabledReason={
+                  selectedListing.owner.is_demo
+                    ? t("app.ratingsUnavailableOnSampleListings")
+                    : profile?.id === selectedListing.owner.id
+                      ? t("app.youCannotRateYourOwnListing")
+                      : undefined
+                }
+                pending={
+                  pendingRatingIds.has(selectedListing.id) ||
+                  (Boolean(user) && ratingsLoading)
+                }
+                onRate={(stars) => void rateListing(selectedListing, stars)}
+              />
               {detailHasTranslation && (
                 <p className="detail-translation-note">
                   <span>

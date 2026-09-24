@@ -26,27 +26,26 @@ export const revalidate = 300;
 
 type Row = Record<string, unknown>;
 
-const FALLBACK_IMAGE = "/photos/market-creator.jpg";
+const SEEDED_COVER = "/photos/market-creator.jpg";
 
 /**
  * A listing's cover, or "" when it has none.
  *
- * A business brief is a wanted ad, written before there is anything to
- * photograph, and publishing used to seed those with FALLBACK_IMAGE - so every
- * campaign showed up here as a picture of somebody else's market stall.
- * Briefs no longer get it, and the ones published before that stopped are read
- * as having no photo rather than being rewritten. .cardMedia keeps its ratio
- * and surface tone with no <img> inside it, so those cards stay cards.
+ * Publishing used to seed a listing with no photo from SEEDED_COVER - a stock
+ * picture of somebody else's market stall - so the card showed that as the
+ * space being sold. Briefs stopped getting it first; now nothing does, and the
+ * rows seeded before that stopped are read as having no photo rather than
+ * being rewritten. .cardMedia keeps its ratio and surface tone with no <img>
+ * inside it, so those cards stay cards.
  */
 function listingImage(listing: Row) {
   const gallery = listing.image_urls as string[] | null | undefined;
   const first = gallery?.find((url) => typeof url === "string" && url);
   const single = typeof listing.image_url === "string" ? listing.image_url : "";
   const cover = first || single;
-  if (listing.channel === "Business brief") {
-    return cover === FALLBACK_IMAGE ? "" : cover;
-  }
-  return cover || FALLBACK_IMAGE;
+  // Every listing now, not just briefs. Nothing on this page stands in for a
+  // photo somebody did not take.
+  return cover === SEEDED_COVER ? "" : cover;
 }
 
 function initials(name: string) {
